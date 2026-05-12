@@ -1,9 +1,14 @@
 <template>
   <div class="main-layout">
     <header class="topbar">
-      <div class="logo">MES 排产系统</div>
+      <router-link to="/dashboard" class="logo-link">
+        <div class="logo">AIMes</div>
+      </router-link>
       <nav class="nav">
-        <router-link to="/scheduling" class="nav-link active">
+        <router-link to="/dashboard" class="nav-link">
+          生产概览
+        </router-link>
+        <router-link to="/scheduling" class="nav-link">
           排产甘特图
         </router-link>
       </nav>
@@ -84,11 +89,16 @@ body {
   gap: 32px;
 }
 
+.logo-link {
+  text-decoration: none;
+}
+
 .logo {
   color: #fff;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   white-space: nowrap;
+  letter-spacing: 1px;
 }
 
 .nav {
