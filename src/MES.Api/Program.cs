@@ -122,7 +122,11 @@ if (!isDevelopment)
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics =>
     {
-        metrics.AddMeter("MES.Scheduling").AddConsoleExporter();
+        metrics.AddMeter("MES.Scheduling")
+               .AddAspNetCoreInstrumentation()   // HTTP 请求速率/错误/耗时
+               .AddHttpClientInstrumentation()    // 出站 HTTP 指标
+               .AddRuntimeInstrumentation()       // GC/CPU/内存
+               .AddConsoleExporter();
         if (!isDevelopment) metrics.AddOtlpExporter();
     })
     .WithTracing(tracing =>

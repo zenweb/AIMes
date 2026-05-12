@@ -2,8 +2,10 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Dashboard 生产概览', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/dashboard')
-    await page.waitForTimeout(500)
+    await page.goto('/scheduling/')
+    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
+    await page.goto('/scheduling/dashboard')
+    await page.waitForTimeout(1000)
   })
 
   test('页面标题显示正确', async ({ page }) => {

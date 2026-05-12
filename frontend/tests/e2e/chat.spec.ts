@@ -2,7 +2,10 @@ import { test, expect } from '@playwright/test'
 
 test.describe('AI 生产助手 (ChatPanel)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/scheduling/')
+    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
+    await page.goto('/scheduling/dashboard')
+    await page.waitForTimeout(500)
   })
 
   test('浮动按钮可见', async ({ page }) => {

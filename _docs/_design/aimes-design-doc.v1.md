@@ -46,7 +46,10 @@ V1 已经从设计辩论阶段进入可运行状态。以下能力已全部建�
 | 认证与授权 | JWT、4 角色（Operator/Lead/Engineer/Admin） | 已交付 |
 | 部署 | Docker Compose（postgres/redis/rabbitmq/qdrant/api）+ GitHub Actions CI | 已交付 |
 | 演示降级 | 所有看板内置"后端不可用 → 演示数据"分支 | 已交付 |
-| 测试 | 152 单元测试 + 45 集成测试 + Playwright E2E | 全部通过 |
+| 测试 | 152 单元测试 + 45 集成测试 + Playwright E2E + BenchmarkDotNet 性能基准 | 全部通过 |
+| 采纳反馈 | ScheduleAdoptionFeedback 领域实体 + AdoptionFeedbackService | 已交付 |
+| 认证安全 | Refresh Token 轮转 + 固定窗口速率限制 | 已交付 |
+| 多目标优化 | IObjectiveFunction 接口 + 4 实现（DueDate/Utilization/Changeover/Balanced） | 已交付 |
 
 ---
 
@@ -199,9 +202,11 @@ ScheduleRequest {
 
 ## 安全模型
 
-- **认证**: JWT（HS256），Access Token 无状态
+- **认证**: JWT（HS256），Access Token 8h 有效期
+- **刷新**: Refresh Token 轮转模式（7d 有效期，每次使用 TryRemove + 重新生成，防重放）
+- **速率限制**: 固定窗口限流器（认证端点 10 req/min，返回 429）
 - **角色**: Operator（操作员）/ Lead（班组长）/ Engineer（工程师）/ Admin（管理员）
-- **待补齐**: Refresh Token 轮转、密钥轮转策略、API 速率限制、审计日志归档周期
+- **待补齐**: 密钥轮转策略、审计日志归档周期
 
 ---
 
@@ -215,7 +220,6 @@ ScheduleRequest {
 - 边缘 Agent（Edge Agent）规范与实现
 - 多租户 SaaS（DB 层 tenant_id 已设计，但完整隔离 v2.0+）
 - 多目标 Pareto Top-3 方案选择
-- 排程采纳反馈回路（ScheduleAdoptionFeedback）
 
 ---
 

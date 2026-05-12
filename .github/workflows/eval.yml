@@ -21,8 +21,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Restore
+        run: dotnet restore
+
       - name: Build
-        run: dotnet build --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
+        run: dotnet build --no-restore --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
 
       - name: Unit Tests
         run: dotnet test tests/MES.Tests.Unit/ --no-build --verbosity quiet

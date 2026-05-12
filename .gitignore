@@ -36,6 +36,10 @@ docker-data/
 # BenchmarkDotNet
 BenchmarkDotNet.Artifacts/
 
+# Playwright test results
+test-results/
+frontend/test-results/
+
 # Build
 packages/
 *.zip
