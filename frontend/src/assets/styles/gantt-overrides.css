@@ -42,3 +42,24 @@
 .gantt_tree_icon {
   display: none;
 }
+
+/* 冲突任务 — 红色边框 + 闪烁 */
+.gantt-task-conflict .gantt_task_line {
+  border: 2px solid #ff4d4f !important;
+  animation: conflict-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes conflict-blink {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 77, 79, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(255, 77, 79, 0.6); }
+}
+
+/* 瓶颈工序 — 橙色左边框 */
+.gantt-task-bottleneck .gantt_task_line {
+  border-left: 4px solid #fa8c16;
+}
+
+/* 已排产状态 — 柔和绿色 */
+.gantt-task-scheduled .gantt_task_line {
+  opacity: 0.85;
+}

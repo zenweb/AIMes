@@ -8,6 +8,8 @@ export interface SchedulePlanDto {
   items: ScheduleItemDto[]
   overallUtilizationRate: number
   onTimeDeliveryRate: number
+  totalChangeoverMinutes?: number
+  groupCount?: number
   optimizationNotes?: string
   createdAt: string
 }
@@ -77,6 +79,7 @@ export interface OptimizeScheduleRequest {
   workshopId: string
   startDate?: string
   endDate?: string
+  optimizationObjective?: string
   workOrderIds?: string[]
   considerHistoricalData?: boolean
   constraints?: Record<string, unknown>

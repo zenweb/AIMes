@@ -3,12 +3,14 @@
     <div class="schedule-board">
       <GanttToolbar
         :scale="currentScale"
+        :objective="currentObjective"
         :plan-name="planName"
         :lock-period-hours="8"
         :loading="loading"
         @optimize="handleOptimize"
         @refresh="loadData"
         @update:scale="currentScale = $event"
+        @update:objective="currentObjective = $event"
       />
 
       <ScheduleMetrics
@@ -70,6 +72,7 @@ import type {
 
 const ganttRef = ref()
 const currentScale = ref<'day' | 'week' | 'month'>('day')
+const currentObjective = ref('due_date')
 const loading = ref(false)
 const loadingMessage = ref('加载中...')
 const error = ref('')
@@ -108,6 +111,8 @@ async function loadData() {
     // 更新指标
     metrics.utilization = Math.round(plan.overallUtilizationRate * 100)
     metrics.onTimeDelivery = Math.round(plan.onTimeDeliveryRate * 100)
+    metrics.changeoverMinutes = plan.totalChangeoverMinutes ?? 0
+    metrics.groupCount = plan.groupCount ?? 0
 
     // 转换为甘特图数据
     ganttData.value = planToGanttData(plan, equipment)
@@ -196,11 +201,12 @@ function loadDemoData() {
 
 async function handleOptimize() {
   loading.value = true
-  loadingMessage.value = '排产优化中...'
+  loadingMessage.value = `排产优化中（目标: ${currentObjective.value}）...`
 
   try {
     const result = await api.optimizeSchedule({
       workshopId: 'workshop-1',
+      optimizationObjective: currentObjective.value,
     })
 
     if (result.plan) {

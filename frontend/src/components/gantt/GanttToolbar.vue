@@ -1,12 +1,24 @@
 <template>
   <div class="toolbar">
     <div class="toolbar-left">
-      <button class="btn btn-primary" @click="$emit('optimize')">
-        排产优化
+      <button class="btn btn-primary" :disabled="loading" @click="$emit('optimize')">
+        {{ loading ? '优化中...' : '排产优化' }}
       </button>
       <button class="btn btn-secondary" @click="$emit('refresh')">
         刷新
       </button>
+      <label class="objective-label">
+        优化目标:
+        <select
+          :value="objective"
+          @change="$emit('update:objective', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="due_date">交期优先</option>
+          <option value="utilization">利用率优先</option>
+          <option value="changeover">换线成本优先</option>
+          <option value="balanced">综合平衡</option>
+        </select>
+      </label>
       <label class="scale-label">
         时间刻度:
         <select
@@ -31,6 +43,7 @@
 <script setup lang="ts">
 defineProps<{
   scale: string
+  objective: string
   planName?: string
   lockPeriodHours?: number
   loading?: boolean
@@ -40,6 +53,7 @@ defineEmits<{
   optimize: []
   refresh: []
   'update:scale': [value: 'day' | 'week' | 'month']
+  'update:objective': [value: string]
 }>()
 </script>
 
@@ -71,13 +85,18 @@ defineEmits<{
   transition: background 0.2s;
 }
 
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: #1890ff;
   color: white;
   border-color: #1890ff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: #40a9ff;
 }
 
@@ -92,6 +111,7 @@ defineEmits<{
   color: #1890ff;
 }
 
+.objective-label,
 .scale-label {
   display: flex;
   align-items: center;
@@ -100,6 +120,7 @@ defineEmits<{
   color: #555;
 }
 
+.objective-label select,
 .scale-label select {
   padding: 3px 8px;
   border: 1px solid #d9d9d9;
