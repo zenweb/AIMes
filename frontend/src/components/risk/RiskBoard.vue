@@ -1,33 +1,44 @@
 <template>
   <MainLayout>
     <div class="risk-board">
+      <!-- 加载中 -->
+      <div v-if="loading" class="loading-overlay">
+        <div class="spinner"></div>
+        <span>加载风险数据...</span>
+      </div>
+
+      <!-- 错误提示 -->
+      <div v-if="error" class="error-banner">
+        <span>{{ error }}（已加载演示数据）</span>
+      </div>
+
       <!-- 风险概览 KPI -->
       <div class="kpi-row">
         <div class="kpi-card critical">
           <div class="kpi-icon">🔴</div>
           <div class="kpi-body">
-            <span class="kpi-value">{{ riskCounts.critical }}</span>
+            <span class="kpi-value">{{ dashboard.counts.critical }}</span>
             <span class="kpi-label">严重风险</span>
           </div>
         </div>
         <div class="kpi-card warning">
           <div class="kpi-icon">🟡</div>
           <div class="kpi-body">
-            <span class="kpi-value">{{ riskCounts.warning }}</span>
+            <span class="kpi-value">{{ dashboard.counts.warning }}</span>
             <span class="kpi-label">一般预警</span>
           </div>
         </div>
         <div class="kpi-card healthy">
           <div class="kpi-icon">🟢</div>
           <div class="kpi-body">
-            <span class="kpi-value">{{ riskCounts.healthy }}</span>
+            <span class="kpi-value">{{ dashboard.counts.healthy }}</span>
             <span class="kpi-label">正常</span>
           </div>
         </div>
         <div class="kpi-card info">
           <div class="kpi-icon">📋</div>
           <div class="kpi-body">
-            <span class="kpi-value">{{ riskCounts.total }}</span>
+            <span class="kpi-value">{{ dashboard.counts.total }}</span>
             <span class="kpi-label">监控总数</span>
           </div>
         </div>
@@ -42,7 +53,7 @@
             <span class="section-badge" :class="orderRiskBadge">{{ orderRiskSummary }}</span>
           </div>
           <div class="section-body">
-            <div v-for="item in orderRisks" :key="item.id" class="risk-row" :class="item.level">
+            <div v-for="item in dashboard.orderRisks" :key="item.id" class="risk-row" :class="item.level">
               <span class="risk-indicator"></span>
               <span class="risk-order">{{ item.orderNumber }}</span>
               <span class="risk-product">{{ item.productName }}</span>
@@ -56,7 +67,7 @@
               <span class="risk-gap" :class="item.level">{{ item.gapText }}</span>
               <span class="risk-detail">{{ item.riskDetail }}</span>
             </div>
-            <div v-if="orderRisks.length === 0" class="empty-state">暂无工单延期风险</div>
+            <div v-if="dashboard.orderRisks.length === 0" class="empty-state">暂无工单延期风险</div>
           </div>
         </div>
 
@@ -67,7 +78,7 @@
             <span class="section-badge" :class="equipRiskBadge">{{ equipRiskSummary }}</span>
           </div>
           <div class="section-body">
-            <div v-for="item in equipmentRisks" :key="item.id" class="risk-row" :class="item.level">
+            <div v-for="item in dashboard.equipmentRisks" :key="item.id" class="risk-row" :class="item.level">
               <span class="risk-indicator"></span>
               <span class="risk-order">{{ item.equipmentName }}</span>
               <span class="risk-product">{{ item.type }}</span>
@@ -81,7 +92,7 @@
               <span class="risk-gap" :class="item.level">{{ item.daysSinceMaintenance }}天未维护</span>
               <span class="risk-detail">{{ item.riskDetail }}</span>
             </div>
-            <div v-if="equipmentRisks.length === 0" class="empty-state">暂无设备故障预警</div>
+            <div v-if="dashboard.equipmentRisks.length === 0" class="empty-state">暂无设备故障预警</div>
           </div>
         </div>
 
@@ -92,7 +103,7 @@
             <span class="section-badge" :class="materialRiskBadge">{{ materialRiskSummary }}</span>
           </div>
           <div class="section-body">
-            <div v-for="item in materialRisks" :key="item.code" class="risk-row" :class="item.level">
+            <div v-for="item in dashboard.materialRisks" :key="item.code" class="risk-row" :class="item.level">
               <span class="risk-indicator"></span>
               <span class="risk-order">{{ item.materialName }}</span>
               <span class="risk-product">{{ item.materialCode }}</span>
@@ -106,7 +117,7 @@
               <span class="risk-gap" :class="item.level">{{ item.stockPercent < 30 ? '缺料' : item.stockPercent < 60 ? '紧张' : '充足' }}</span>
               <span class="risk-detail">{{ item.riskDetail }}</span>
             </div>
-            <div v-if="materialRisks.length === 0" class="empty-state">暂无物料齐套风险</div>
+            <div v-if="dashboard.materialRisks.length === 0" class="empty-state">暂无物料齐套风险</div>
           </div>
         </div>
 
@@ -117,7 +128,7 @@
             <span class="section-badge" :class="bottleneckRiskBadge">{{ bottleneckRiskSummary }}</span>
           </div>
           <div class="section-body">
-            <div v-for="item in bottleneckRisks" :key="item.id" class="risk-row" :class="item.level">
+            <div v-for="item in dashboard.bottleneckRisks" :key="item.id" class="risk-row" :class="item.level">
               <span class="risk-indicator"></span>
               <span class="risk-order">{{ item.equipmentName }}</span>
               <span class="risk-product">{{ item.type }}</span>
@@ -131,7 +142,7 @@
               <span class="risk-gap" :class="item.level">{{ item.queueHours }}h积压</span>
               <span class="risk-detail">{{ item.riskDetail }}</span>
             </div>
-            <div v-if="bottleneckRisks.length === 0" class="empty-state">暂无产能瓶颈</div>
+            <div v-if="dashboard.bottleneckRisks.length === 0" class="empty-state">暂无产能瓶颈</div>
           </div>
         </div>
       </div>
@@ -140,69 +151,114 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import MainLayout from '../layout/MainLayout.vue'
+import { getRiskDashboard } from '../../api/risk'
+import type {
+  RiskDashboardDto,
+  OrderRiskDto,
+  EquipmentRiskDto,
+  MaterialRiskDto,
+  BottleneckRiskDto,
+} from '../../types/risk'
 
-// ---- 风险计数 ----
-const riskCounts = reactive({
-  critical: 3,
-  warning: 5,
-  healthy: 12,
-  total: 20,
+const loading = ref(true)
+const error = ref('')
+const dashboard = ref<RiskDashboardDto>({
+  counts: { critical: 0, warning: 0, healthy: 0, total: 0 },
+  orderRisks: [],
+  equipmentRisks: [],
+  materialRisks: [],
+  bottleneckRisks: [],
+  generatedAt: '',
 })
 
-// ---- 工单延期风险 ----
-const orderRisks = [
-  { id: '1', orderNumber: 'WO-2026-0042', productName: '精密转接座', progress: 35, dueDate: '2026-05-14', gapText: '滞后2天', level: 'critical', riskDetail: 'CNC-001 故障导致停工8小时，预计延期2天' },
-  { id: '2', orderNumber: 'WO-2026-0045', productName: '壳体组件A型', progress: 60, dueDate: '2026-05-15', gapText: '滞后1天', level: 'warning', riskDetail: '前道工序未完成，物料未齐套' },
-  { id: '3', orderNumber: 'WO-2026-0048', productName: '传动轴总成', progress: 80, dueDate: '2026-05-16', gapText: '进度正常', level: 'healthy', riskDetail: '按计划推进中' },
-  { id: '4', orderNumber: 'WO-2026-0039', productName: '液压阀体', progress: 10, dueDate: '2026-05-13', gapText: '滞后3天', level: 'critical', riskDetail: '来料检验不合格，需重新采购' },
-  { id: '5', orderNumber: 'WO-2026-0050', productName: '法兰盘DN100', progress: 50, dueDate: '2026-05-17', gapText: '进度正常', level: 'healthy', riskDetail: '按计划推进中' },
-  { id: '6', orderNumber: 'WO-2026-0041', productName: '轴承座总成', progress: 45, dueDate: '2026-05-14', gapText: '滞后1天', level: 'warning', riskDetail: 'CNC-003 排队积压，排程等待中' },
-]
-
-// ---- 设备故障预警 ----
-const equipmentRisks = [
-  { id: 'EQ-001', equipmentName: 'CNC-001 加工中心', type: 'CNC', healthScore: 32, lastMaintenance: '2026-04-10', daysSinceMaintenance: 32, level: 'critical', riskDetail: '主轴振动异常（+47%），建议本周检修' },
-  { id: 'EQ-005', equipmentName: '注塑机-2号', type: '注塑', healthScore: 55, lastMaintenance: '2026-03-25', daysSinceMaintenance: 48, level: 'warning', riskDetail: '液压油温度偏高，已超保养周期18天' },
-  { id: 'EQ-008', equipmentName: '热处理炉', type: '热处理', healthScore: 78, lastMaintenance: '2026-04-28', daysSinceMaintenance: 14, level: 'healthy', riskDetail: '运行正常，下次保养剩余16天' },
-  { id: 'EQ-003', equipmentName: 'CNC-003 加工中心', type: 'CNC', healthScore: 45, lastMaintenance: '2026-04-05', daysSinceMaintenance: 37, level: 'warning', riskDetail: '冷却液位偏低，刀库换刀异响' },
-]
-
-// ---- 物料齐套风险 ----
-const materialRisks = [
-  { code: 'AL-6061', materialName: '铝合金6061', materialCode: 'AL-6061', available: 45, required: 200, stockPercent: 22, affectedOrders: '影响3个工单', level: 'critical', riskDetail: '供应商交期延误5天，建议紧急调拨' },
-  { code: 'OIL-HM46', materialName: '抗磨液压油', materialCode: 'OIL-HM46', available: 35, required: 50, stockPercent: 70, affectedOrders: '设备维护用', level: 'warning', riskDetail: '库存低于安全库存线，建议本周补货' },
-  { code: 'BRG-6205', materialName: '6205轴承', materialCode: 'BRG-6205', available: 85, required: 100, stockPercent: 85, affectedOrders: '装配线备用', level: 'healthy', riskDetail: '库存充足，可维持正常生产' },
-]
-
-// ---- 产能瓶颈预警 ----
-const bottleneckRisks = [
-  { id: 'BN-01', equipmentName: '热处理炉', type: '热处理', utilization: 95, queueOrders: 4, queueHours: 16, level: 'critical', riskDetail: '唯一热处理设备，超负荷运行，建议评估外协' },
-  { id: 'BN-02', equipmentName: 'CNC-001 加工中心', type: 'CNC', utilization: 88, queueOrders: 3, queueHours: 8, level: 'warning', riskDetail: '关键工序设备，即将满负荷运转' },
-  { id: 'BN-03', equipmentName: '装配线-1号', type: '装配', utilization: 72, queueOrders: 2, queueHours: 4, level: 'healthy', riskDetail: '产能充足，可承接更多订单' },
-]
-
 // ---- 派生状态 ----
-const orderRiskSummary = orderRisks.filter(r => r.level !== 'healthy').length
-  ? `${orderRisks.filter(r => r.level !== 'healthy').length}个工单风险`
-  : '全部正常'
-const orderRiskBadge = orderRisks.some(r => r.level === 'critical') ? 'critical' : orderRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+const orderRiskSummary = computed(() => {
+  const risky = dashboard.value.orderRisks.filter(r => r.level !== 'healthy').length
+  return risky ? `${risky}个工单风险` : '全部正常'
+})
+const orderRiskBadge = computed(() =>
+  dashboard.value.orderRisks.some(r => r.level === 'critical') ? 'critical'
+    : dashboard.value.orderRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+)
 
-const equipRiskSummary = equipmentRisks.filter(r => r.level !== 'healthy').length
-  ? `${equipmentRisks.filter(r => r.level !== 'healthy').length}台设备预警`
-  : '全部正常'
-const equipRiskBadge = equipmentRisks.some(r => r.level === 'critical') ? 'critical' : equipmentRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+const equipRiskSummary = computed(() => {
+  const risky = dashboard.value.equipmentRisks.filter(r => r.level !== 'healthy').length
+  return risky ? `${risky}台设备预警` : '全部正常'
+})
+const equipRiskBadge = computed(() =>
+  dashboard.value.equipmentRisks.some(r => r.level === 'critical') ? 'critical'
+    : dashboard.value.equipmentRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+)
 
-const materialRiskSummary = materialRisks.filter(r => r.level !== 'healthy').length
-  ? `${materialRisks.filter(r => r.level !== 'healthy').length}种物料预警`
-  : '全部充足'
-const materialRiskBadge = materialRisks.some(r => r.level === 'critical') ? 'critical' : materialRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+const materialRiskSummary = computed(() => {
+  const risky = dashboard.value.materialRisks.filter(r => r.level !== 'healthy').length
+  return risky ? `${risky}种物料预警` : '全部充足'
+})
+const materialRiskBadge = computed(() =>
+  dashboard.value.materialRisks.some(r => r.level === 'critical') ? 'critical'
+    : dashboard.value.materialRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+)
 
-const bottleneckRiskSummary = bottleneckRisks.filter(r => r.level !== 'healthy').length
-  ? `${bottleneckRisks.filter(r => r.level !== 'healthy').length}个瓶颈预警`
-  : '产能均衡'
-const bottleneckRiskBadge = bottleneckRisks.some(r => r.level === 'critical') ? 'critical' : bottleneckRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+const bottleneckRiskSummary = computed(() => {
+  const risky = dashboard.value.bottleneckRisks.filter(r => r.level !== 'healthy').length
+  return risky ? `${risky}个瓶颈预警` : '产能均衡'
+})
+const bottleneckRiskBadge = computed(() =>
+  dashboard.value.bottleneckRisks.some(r => r.level === 'critical') ? 'critical'
+    : dashboard.value.bottleneckRisks.some(r => r.level === 'warning') ? 'warning' : 'healthy'
+)
+
+function loadDemoData() {
+  dashboard.value = {
+    counts: { critical: 3, warning: 5, healthy: 12, total: 20 },
+    orderRisks: [
+      { id: '1', orderNumber: 'WO-2026-0042', productName: '精密转接座', progress: 35, dueDate: '2026-05-14', gapText: '滞后2天', level: 'critical', riskDetail: 'CNC-001 故障导致停工8小时，预计延期2天' },
+      { id: '2', orderNumber: 'WO-2026-0045', productName: '壳体组件A型', progress: 60, dueDate: '2026-05-15', gapText: '滞后1天', level: 'warning', riskDetail: '前道工序未完成，物料未齐套' },
+      { id: '3', orderNumber: 'WO-2026-0048', productName: '传动轴总成', progress: 80, dueDate: '2026-05-16', gapText: '进度正常', level: 'healthy', riskDetail: '按计划推进中' },
+      { id: '4', orderNumber: 'WO-2026-0039', productName: '液压阀体', progress: 10, dueDate: '2026-05-13', gapText: '滞后3天', level: 'critical', riskDetail: '来料检验不合格，需重新采购' },
+      { id: '5', orderNumber: 'WO-2026-0050', productName: '法兰盘DN100', progress: 50, dueDate: '2026-05-17', gapText: '进度正常', level: 'healthy', riskDetail: '按计划推进中' },
+      { id: '6', orderNumber: 'WO-2026-0041', productName: '轴承座总成', progress: 45, dueDate: '2026-05-14', gapText: '滞后1天', level: 'warning', riskDetail: 'CNC-003 排队积压，排程等待中' },
+    ],
+    equipmentRisks: [
+      { id: 'EQ-001', equipmentName: 'CNC-001 加工中心', type: 'CNC', healthScore: 32, lastMaintenance: '2026-04-10', daysSinceMaintenance: 32, level: 'critical', riskDetail: '主轴振动异常（+47%），建议本周检修' },
+      { id: 'EQ-005', equipmentName: '注塑机-2号', type: '注塑', healthScore: 55, lastMaintenance: '2026-03-25', daysSinceMaintenance: 48, level: 'warning', riskDetail: '液压油温度偏高，已超保养周期18天' },
+      { id: 'EQ-008', equipmentName: '热处理炉', type: '热处理', healthScore: 78, lastMaintenance: '2026-04-28', daysSinceMaintenance: 14, level: 'healthy', riskDetail: '运行正常，下次保养剩余16天' },
+      { id: 'EQ-003', equipmentName: 'CNC-003 加工中心', type: 'CNC', healthScore: 45, lastMaintenance: '2026-04-05', daysSinceMaintenance: 37, level: 'warning', riskDetail: '冷却液位偏低，刀库换刀异响' },
+    ],
+    materialRisks: [
+      { code: 'AL-6061', materialName: '铝合金6061', materialCode: 'AL-6061', available: 45, required: 200, stockPercent: 22, affectedOrders: '影响3个工单', level: 'critical', riskDetail: '供应商交期延误5天，建议紧急调拨' },
+      { code: 'OIL-HM46', materialName: '抗磨液压油', materialCode: 'OIL-HM46', available: 35, required: 50, stockPercent: 70, affectedOrders: '设备维护用', level: 'warning', riskDetail: '库存低于安全库存线，建议本周补货' },
+      { code: 'BRG-6205', materialName: '6205轴承', materialCode: 'BRG-6205', available: 85, required: 100, stockPercent: 85, affectedOrders: '装配线备用', level: 'healthy', riskDetail: '库存充足，可维持正常生产' },
+    ],
+    bottleneckRisks: [
+      { id: 'BN-01', equipmentName: '热处理炉', type: '热处理', utilization: 95, queueOrders: 4, queueHours: 16, level: 'critical', riskDetail: '唯一热处理设备，超负荷运行，建议评估外协' },
+      { id: 'BN-02', equipmentName: 'CNC-001 加工中心', type: 'CNC', utilization: 88, queueOrders: 3, queueHours: 8, level: 'warning', riskDetail: '关键工序设备，即将满负荷运转' },
+      { id: 'BN-03', equipmentName: '装配线-1号', type: '装配', utilization: 72, queueOrders: 2, queueHours: 4, level: 'healthy', riskDetail: '产能充足，可承接更多订单' },
+    ],
+    generatedAt: new Date().toISOString(),
+  }
+}
+
+async function loadData() {
+  loading.value = true
+  error.value = ''
+  try {
+    const data = await getRiskDashboard()
+    dashboard.value = data
+  } catch (e: any) {
+    console.error('加载风险数据失败:', e)
+    error.value = `加载失败: ${e?.message || '未知错误'}`
+    loadDemoData()
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  loadData()
+})
 </script>
 
 <style scoped>
@@ -399,6 +455,40 @@ const bottleneckRiskBadge = bottleneckRisks.some(r => r.level === 'critical') ? 
   padding: 32px 16px;
   text-align: center;
   color: #bbb;
+  font-size: 13px;
+}
+
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  gap: 12px;
+  color: #888;
+  font-size: 14px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e8e8e8;
+  border-top-color: #1890ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-banner {
+  padding: 8px 16px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  color: #ff4d4f;
+  margin-bottom: 16px;
   font-size: 13px;
 }
 

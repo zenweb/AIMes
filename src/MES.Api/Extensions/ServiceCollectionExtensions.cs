@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmployeeAppService, EmployeeAppService>();
         services.AddScoped<IAdminAppService, AdminAppService>();
         services.AddScoped<IAuditLogAppService, AuditLogAppService>();
+        services.AddScoped<IRiskAppService, RiskAppService>();
         services.AddScoped<IOperationService, OperationService>();
         services.AddScoped<AdoptionFeedbackService>();
         services.AddScoped<IErpService, ErpServiceStub>();
