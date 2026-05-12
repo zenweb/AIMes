@@ -33,6 +33,9 @@ appsettings.*.local.json
 # Docker
 docker-data/
 
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
 # Build
 packages/
 *.zip

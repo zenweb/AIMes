@@ -1,9 +1,13 @@
 using MES.Domain.Entities;
+using MES.Domain.Entities.Admin;
 using MES.Domain.Entities.Anomalies;
 using MES.Domain.Entities.Bom;
+using MES.Domain.Entities.Employee;
 using MES.Domain.Entities.Equipment;
+using MES.Domain.Entities.Inventory;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Entities.Production;
+using MES.Domain.Entities.Purchase;
 using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Routing;
 using MES.Domain.Entities.Scheduling;
@@ -59,6 +63,25 @@ public class MesDbContext : DbContext
 
     // AI 决策追踪
     public DbSet<AiDecisionTraceEntity> AiDecisionTraces => Set<AiDecisionTraceEntity>();
+
+    // 排产方案采纳反馈
+    public DbSet<ScheduleAdoptionFeedback> ScheduleAdoptionFeedbacks => Set<ScheduleAdoptionFeedback>();
+
+    // 库存交易
+    public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
+
+    // 采购订单
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+
+    // 员工
+    public DbSet<Employee> Employees => Set<Employee>();
+
+    // 系统用户
+    public DbSet<SystemUser> SystemUsers => Set<SystemUser>();
+
+    // 系统配置
+    public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -394,6 +417,30 @@ public class MesDbContext : DbContext
             entity.HasIndex(e => e.CreatedAt);
         });
 
+        // 排产方案采纳反馈配置
+        modelBuilder.Entity<ScheduleAdoptionFeedback>(entity =>
+        {
+            entity.ToTable("schedule_adoption_feedbacks");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.SchedulePlanId).HasColumnName("schedule_plan_id").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.WorkshopId).HasColumnName("workshop_id").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.OptimizationObjective).HasColumnName("optimization_objective").HasMaxLength(50);
+            entity.Property(e => e.OriginalAssignmentsJson).HasColumnName("original_assignments_json");
+            entity.Property(e => e.ModifiedAssignmentsJson).HasColumnName("modified_assignments_json");
+            entity.Property(e => e.ReasonCategory).HasColumnName("reason_category").HasConversion<string>().HasMaxLength(50);
+            entity.Property(e => e.ReasonDetail).HasColumnName("reason_detail").HasMaxLength(1000);
+            entity.Property(e => e.MovedOrderIdsJson).HasColumnName("moved_order_ids_json");
+            entity.Property(e => e.OperatorUser).HasColumnName("operator_user").IsRequired().HasMaxLength(100);
+            entity.Property(e => e.AiTraceId).HasColumnName("ai_trace_id").HasMaxLength(100);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+
+            entity.HasIndex(e => e.SchedulePlanId);
+            entity.HasIndex(e => e.WorkshopId);
+            entity.HasIndex(e => e.OperatorUser);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
         modelBuilder.Entity<BillOfMaterial>(entity =>
         {
             entity.ToTable("bills_of_material");
@@ -567,6 +614,133 @@ public class MesDbContext : DbContext
         });
 
 
+        // 库存交易配置
+        modelBuilder.Entity<StockTransaction>(entity =>
+        {
+            entity.ToTable("stock_transactions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.MaterialCode).HasColumnName("material_code").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.MaterialName).HasColumnName("material_name").HasMaxLength(200);
+            entity.Property(e => e.TransactionType).HasColumnName("transaction_type").HasConversion<string>();
+            entity.Property(e => e.Quantity).HasColumnName("quantity").HasColumnType("decimal(18,4)");
+            entity.Property(e => e.BalanceBefore).HasColumnName("balance_before").HasColumnType("decimal(18,4)");
+            entity.Property(e => e.BalanceAfter).HasColumnName("balance_after").HasColumnType("decimal(18,4)");
+            entity.Property(e => e.ReferenceType).HasColumnName("reference_type").HasMaxLength(50);
+            entity.Property(e => e.ReferenceNumber).HasColumnName("reference_number").HasMaxLength(50);
+            entity.Property(e => e.Warehouse).HasColumnName("warehouse").HasMaxLength(100);
+            entity.Property(e => e.Location).HasColumnName("location").HasMaxLength(100);
+            entity.Property(e => e.Operator).HasColumnName("operator").HasMaxLength(50);
+            entity.Property(e => e.Remark).HasColumnName("remark").HasMaxLength(500);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+
+            entity.HasIndex(e => e.MaterialCode);
+            entity.HasIndex(e => e.TransactionType);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // 采购订单配置
+        modelBuilder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.ToTable("purchase_orders");
+            entity.HasKey(e => e.Id);
+            entity.Ignore(e => e.DomainEvents);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken();
+            entity.Property(e => e.OrderNumber).HasColumnName("order_number").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.SupplierName).HasColumnName("supplier_name").IsRequired().HasMaxLength(200);
+            entity.Property(e => e.SupplierContact).HasColumnName("supplier_contact").HasMaxLength(100);
+            entity.Property(e => e.Status).HasColumnName("status").HasConversion<string>();
+            entity.Property(e => e.OrderDate).HasColumnName("order_date");
+            entity.Property(e => e.ExpectedDeliveryDate).HasColumnName("expected_delivery_date");
+            entity.Property(e => e.CompletedDate).HasColumnName("completed_date");
+            entity.Ignore(e => e.TotalAmount);
+            entity.Property(e => e.Remark).HasColumnName("remark").HasMaxLength(1000);
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by").HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasMany(e => e.Items)
+                .WithOne()
+                .HasForeignKey("purchase_order_id")
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.OrderNumber).IsUnique();
+            entity.HasIndex(e => e.SupplierName);
+            entity.HasIndex(e => e.Status);
+        });
+
+        // 采购订单行项配置 (owned by PurchaseOrder)
+        modelBuilder.Entity<PurchaseOrderLineItem>(entity =>
+        {
+            entity.ToTable("purchase_order_items");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.MaterialCode).HasColumnName("material_code").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.MaterialName).HasColumnName("material_name").HasMaxLength(200);
+            entity.Property(e => e.Unit).HasColumnName("unit").HasMaxLength(20);
+            entity.Property(e => e.Quantity).HasColumnName("quantity").HasColumnType("decimal(18,4)");
+            entity.Property(e => e.ReceivedQuantity).HasColumnName("received_quantity").HasColumnType("decimal(18,4)");
+            entity.Property(e => e.UnitPrice).HasColumnName("unit_price").HasColumnType("decimal(18,4)");
+            entity.Ignore(e => e.TotalPrice);
+            entity.Property(e => e.ExpectedDate).HasColumnName("expected_date");
+            entity.Property(e => e.Remark).HasColumnName("remark").HasMaxLength(500);
+        });
+
+        // 员工配置
+        modelBuilder.Entity<Employee>(entity =>
+        {
+            entity.ToTable("employees");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.EmployeeNumber).HasColumnName("employee_number").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Phone).HasColumnName("phone").HasMaxLength(30);
+            entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(200);
+            entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(50);
+            entity.Property(e => e.Team).HasColumnName("team").HasMaxLength(100);
+            entity.Property(e => e.Shift).HasColumnName("shift").HasMaxLength(50);
+            entity.Property(e => e.IsActive).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.EmployeeNumber).IsUnique();
+            entity.HasIndex(e => e.Team);
+            entity.HasIndex(e => e.Role);
+        });
+
+        // 系统用户配置
+        modelBuilder.Entity<SystemUser>(entity =>
+        {
+            entity.ToTable("system_users");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Username).HasColumnName("username").IsRequired().HasMaxLength(50);
+            entity.Property(e => e.DisplayName).HasColumnName("display_name").HasMaxLength(100);
+            entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(50);
+            entity.Property(e => e.IsActive).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
+
+            entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        // 系统配置
+        modelBuilder.Entity<SystemConfig>(entity =>
+        {
+            entity.ToTable("system_configs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.ConfigKey).HasColumnName("config_key").IsRequired().HasMaxLength(100);
+            entity.Property(e => e.ConfigValue).HasColumnName("config_value").IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Description).HasColumnName("description").HasMaxLength(500);
+            entity.Property(e => e.Category).HasColumnName("category").HasMaxLength(100);
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.UpdatedBy).HasColumnName("updated_by").HasMaxLength(50);
+
+            entity.HasIndex(e => e.ConfigKey).IsUnique();
+        });
+
         // 种子数据
         SeedData(modelBuilder);
     }
@@ -621,6 +795,26 @@ public class MesDbContext : DbContext
                 StorageLocation = "A-01-01",
                 CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
+        );
+
+        // 种子员工
+        modelBuilder.Entity<Employee>().HasData(
+            new Employee { Id = "emp-001", EmployeeNumber = "EMP-001", Name = "张三", Role = "Operator", Team = "班组A", Shift = "Day", IsActive = true, CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Employee { Id = "emp-002", EmployeeNumber = "EMP-002", Name = "李四", Role = "Engineer", Team = "班组A", Shift = "Day", IsActive = true, CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Employee { Id = "emp-003", EmployeeNumber = "EMP-003", Name = "王五", Role = "Lead", Team = "班组A", Shift = "Day", IsActive = true, CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+        );
+
+        // 种子系统用户
+        modelBuilder.Entity<SystemUser>().HasData(
+            new SystemUser { Id = "su-001", Username = "admin", DisplayName = "管理员", Role = "Admin", IsActive = true, CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SystemUser { Id = "su-002", Username = "operator1", DisplayName = "操作员1", Role = "Operator", IsActive = true, CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+        );
+
+        // 种子系统配置
+        modelBuilder.Entity<SystemConfig>().HasData(
+            new SystemConfig { Id = "sc-001", ConfigKey = "site.name", ConfigValue = "AIMes 制造执行系统", Description = "站点名称", Category = "基本设置", UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), UpdatedBy = "admin" },
+            new SystemConfig { Id = "sc-002", ConfigKey = "shift.morning.start", ConfigValue = "08:00", Description = "早班开始时间", Category = "排班设置", UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), UpdatedBy = "admin" },
+            new SystemConfig { Id = "sc-003", ConfigKey = "shift.morning.end", ConfigValue = "20:00", Description = "早班结束时间", Category = "排班设置", UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), UpdatedBy = "admin" }
         );
     }
 }

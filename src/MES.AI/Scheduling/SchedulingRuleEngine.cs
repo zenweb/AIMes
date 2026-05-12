@@ -1,8 +1,9 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 using MES.Domain.Entities.Scheduling;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 /// <summary>确定性排产规则引擎 — 不依赖LLM，基于确定性规则生成初始排产方案</summary>
 public class SchedulingRuleEngine : ISchedulingRuleEngine
@@ -26,6 +27,15 @@ public class SchedulingRuleEngine : ISchedulingRuleEngine
         return GenerateInitialScheduleInternalAsync(request, context, priorityRule, capacityStrategy, null, ct);
     }
 
+    private RuleEngineResult RecordMetrics(RuleEngineResult result, int orderCount, long elapsedMs)
+    {
+        MesMetrics.SchedulingDuration.Record(elapsedMs / 1000.0);
+        MesMetrics.SchedulingOrderCount.Record(orderCount);
+        MesMetrics.SchedulingOnTimeDelivery.Record(result.OnTimeDeliveryRate);
+        MesMetrics.SchedulingUtilization.Record(result.UtilizationRate);
+        return result;
+    }
+
     internal Task<RuleEngineResult> GenerateInitialScheduleInternalAsync(
         ScheduleRequest request,
         SchedulingContextSnapshot context,
@@ -34,6 +44,7 @@ public class SchedulingRuleEngine : ISchedulingRuleEngine
         DateTime? referenceTime,
         CancellationToken ct)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var now = referenceTime ?? DateTime.UtcNow;
         var orders = PriorityRuleEngine.Sort(request.Orders, priorityRule, now);
 
@@ -135,6 +146,7 @@ public class SchedulingRuleEngine : ISchedulingRuleEngine
             Validation = validation
         };
 
+        RecordMetrics(result, orders.Count, sw.ElapsedMilliseconds);
         return Task.FromResult(result);
     }
 

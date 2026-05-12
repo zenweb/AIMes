@@ -13,6 +13,9 @@ public class OptimizeScheduleRequest
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
 
+    /// <summary>优化目标：due_date / utilization / changeover / balanced</summary>
+    public string? OptimizationObjective { get; set; }
+
     public List<string>? WorkOrderIds { get; set; }
     public bool ConsiderHistoricalData { get; set; } = true;
     public Dictionary<string, object>? Constraints { get; set; }
@@ -30,6 +33,8 @@ public class SchedulePlanDto
     public List<ScheduleItemDto> Items { get; set; } = new();
     public double OverallUtilizationRate { get; set; }
     public double OnTimeDeliveryRate { get; set; }
+    public double TotalChangeoverMinutes { get; set; }
+    public int GroupCount { get; set; }
     public string? OptimizationNotes { get; set; }
     public DateTime CreatedAt { get; set; }
 }

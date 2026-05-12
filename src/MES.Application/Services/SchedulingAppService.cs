@@ -6,8 +6,8 @@ using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
-using MES.AI.Agents;
-using MES.AI.Models;
+using MES.AI.Core.Models;
+using MES.AI.Pro.Agents;
 
 namespace MES.Application.Services;
 
@@ -72,6 +72,7 @@ public class SchedulingAppService : ISchedulingAppService
             Equipment = equipment.Select(MapToEquipmentCapacity).ToList(),
             Materials = materials,
             Deadlines = workOrders.ToDictionary(w => w.Id, w => w.PlannedEndDate),
+            OptimizationObjective = request.OptimizationObjective,
             HistoricalData = request.ConsiderHistoricalData ? await GetHistoricalData(request.WorkshopId, ct) : null
         };
 
