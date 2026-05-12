@@ -2,7 +2,10 @@ using MES.Api.Extensions;
 using MES.Api.Filters;
 using MES.Api.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
 using System.Text;
@@ -26,6 +29,18 @@ builder.Host.UseSerilog();
 var isDevelopment = builder.Environment.IsDevelopment();
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"] ?? "AIMes-Development-Signing-Key-For-Local-Only-Change-Me";
+
+// 速率限制
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("Auth", config =>
+    {
+        config.PermitLimit = 10;
+        config.Window = TimeSpan.FromMinutes(1);
+        config.QueueLimit = 0;
+    });
+});
 
 // 添加控制器
 builder.Services.AddControllers(options =>
@@ -86,18 +101,38 @@ builder.Services.AddCacheServices(builder.Configuration);
 // 添加消息总线服务
 builder.Services.AddMessagingServices(builder.Configuration);
 
+// SignalR 实时通知
+builder.Services.AddSignalR();
+builder.Services.AddScoped<MES.Api.Hubs.INotificationService, MES.Api.Hubs.NotificationService>();
+
 // 添加跨域服务
 builder.Services.AddCorsServices(builder.Configuration);
 
 // Swagger 按 API 版本分组
 builder.Services.AddSwaggerServices();
 
-// 健康检查（含各组件探针）
-builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql", tags: new[] { "db", "sql" })
-    .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
-// OpenTelemetry 基础链路（具体 instrumentation 在 Phase 1A 补充）
-builder.Services.AddOpenTelemetry();
+// 健康检查（含各组件探针，开发环境跳过不可用服务）
+if (!isDevelopment)
+{
+    builder.Services.AddHealthChecks()
+        .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql", tags: new[] { "db", "sql" })
+        .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
+}
+// OpenTelemetry — 指标 + 链路追踪
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics.AddMeter("MES.Scheduling").AddConsoleExporter();
+        if (!isDevelopment) metrics.AddOtlpExporter();
+    })
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation()
+               .AddHttpClientInstrumentation()
+               .AddSource("MES.Scheduling")
+               .AddConsoleExporter();
+        if (!isDevelopment) tracing.AddOtlpExporter();
+    });
 var app = builder.Build();
 
 // 开发环境配置
@@ -120,6 +155,7 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TraceValidationMiddleware>();
@@ -151,6 +187,9 @@ app.MapWhen(ctx => ctx.Request.Path.StartsWithSegments("/scheduling"), spApp =>
 
 app.MapControllers();
 
+// SignalR 实时通知
+app.MapHub<MES.Api.Hubs.NotificationHub>("/hubs/notifications");
+
 // 健康检查端点
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/healthz/secured", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
@@ -158,12 +197,20 @@ app.MapHealthChecks("/healthz/secured", new Microsoft.AspNetCore.Diagnostics.Hea
     Predicate = _ => true
 }).RequireAuthorization();
 
-// 确保数据库创建（仅 dev 模式）
+// 确保数据库创建（仅 dev 模式，无 PG 时静默跳过）
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<MES.Infrastructure.Data.MesDbContext>();
-    dbContext.Database.EnsureCreated();
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MES.Infrastructure.Data.MesDbContext>();
+        dbContext.Database.EnsureCreated();
+    }
+    catch (Exception ex)
+    {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "数据库不可用，API 将以无持久化模式运行");
+    }
 }
 
 app.Run();
