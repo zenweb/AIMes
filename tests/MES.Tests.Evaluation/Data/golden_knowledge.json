@@ -1,0 +1,82 @@
+{
+  "agent": "KnowledgeAgent",
+  "version": "1.0",
+  "description": "Golden dataset for KnowledgeAgent evaluation — RAG 知识问答",
+  "testCases": [
+    {
+      "id": "KNO-RAG-001",
+      "scenario": "工艺文档检索-参数范围查询",
+      "input": {
+        "query": "ABS TG-7 注塑成型温度范围是多少？",
+        "expectedContext": ["injection_molding_parameters", "ABS_TG-7_spec"],
+        "maxResults": 3
+      },
+      "expected": {
+        "minResults": 1,
+        "relevanceMin": 0.6,
+        "answerContains": ["temperature", "185", "220"]
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "KNO-RAG-002",
+      "scenario": "异常处理SOP检索",
+      "input": {
+        "query": "CNC 主轴过热应该怎么处理？",
+        "expectedContext": ["maintenance_sop", "spindle_overheating"],
+        "maxResults": 3
+      },
+      "expected": {
+        "minResults": 1,
+        "relevanceMin": 0.65,
+        "answerContains": ["stop", "coolant", "inspect_bearing"]
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "KNO-RAG-003",
+      "scenario": "历史缺陷案例查询",
+      "input": {
+        "query": "去年 CNC-003 出现过哪些主轴故障？",
+        "expectedContext": ["equipment_history", "CNC-003", "spindle_failure"],
+        "maxResults": 5
+      },
+      "expected": {
+        "minResults": 1,
+        "relevanceMin": 0.5,
+        "answerContains": ["spindle", "bearing", "failure"]
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "KNO-RAG-004",
+      "scenario": "质量标准查询",
+      "input": {
+        "query": "SKU-A001 的外观检验标准是什么？",
+        "expectedContext": ["quality_standard", "SKU-A001", "visual_inspection"],
+        "maxResults": 3
+      },
+      "expected": {
+        "minResults": 1,
+        "relevanceMin": 0.6,
+        "answerContains": ["scratch", "depth", "0.1mm"]
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "KNO-RAG-005",
+      "scenario": "无相关文档-应明确回复不知",
+      "input": {
+        "query": "隔壁工厂的排产计划是什么？",
+        "expectedContext": [],
+        "maxResults": 3
+      },
+      "expected": {
+        "minResults": 0,
+        "answerDoesNotContain": ["推测", "猜测", "可能"],
+        "acknowledgesUnknown": true
+      },
+      "dimensions": ["accuracy", "reliability"]
+    }
+  ]
+}

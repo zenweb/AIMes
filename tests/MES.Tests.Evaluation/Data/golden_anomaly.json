@@ -1,0 +1,106 @@
+{
+  "agent": "AnomalyAgent",
+  "version": "1.0",
+  "description": "Golden dataset for AnomalyAgent evaluation — 异常识别与响应建议",
+  "testCases": [
+    {
+      "id": "AN-RULE-001",
+      "scenario": "温度超限异常-立即响应",
+      "input": {
+        "anomalyType": "sensor_reading",
+        "source": "equipment",
+        "sourceId": "CNC-003",
+        "reading": { "sensor": "temperature", "value": 125, "unit": "C", "threshold": 100 },
+        "context": {
+          "productInProduction": "SKU-A001",
+          "operatorId": "OP-001",
+          "durationMinutes": 5
+        }
+      },
+      "expected": {
+        "severity": "critical",
+        "immediateAction": "stop_production",
+        "responseTimeMinutes": { "max": 5 },
+        "notificationChannels": ["operator_panel", "lead_dashboard"]
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "AN-RULE-002",
+      "scenario": "质量趋势异常-渐进恶化",
+      "input": {
+        "anomalyType": "quality_trend",
+        "source": "production_line",
+        "sourceId": "LINE-A",
+        "trendData": {
+          "defectRate": [0.02, 0.025, 0.03, 0.04, 0.055, 0.07],
+          "measurements": [10.1, 10.2, 10.4, 10.7, 11.0, 11.5],
+          "period": "last_6_hours"
+        },
+        "context": {
+          "productInProduction": "SKU-B002",
+          "shiftLead": "SL-003"
+        }
+      },
+      "expected": {
+        "severity": "warning",
+        "rootCauseHypothesis": "tool_wear_or_parameter_drift",
+        "suggestedAction": "inspect_tool_and_calibrate",
+        "timeToCriticalHours": { "min": 2, "max": 4 }
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "AN-LLM-001",
+      "scenario": "物料异常-批次不一致",
+      "input": {
+        "anomalyType": "material_deviation",
+        "source": "incoming_quality",
+        "sourceId": "BATCH-0523",
+        "supplierInfo": {
+          "supplierId": "SUP-ABC",
+          "material": "ABS_TG-7",
+          "specSize": { "nominal": 100, "tolerance": 0.2 },
+          "actualSize": { "min": 100.35, "max": 100.52 }
+        },
+        "context": {
+          "purchaseOrder": "PO-202605-01",
+          "inspectorId": "QC-007"
+        }
+      },
+      "expected": {
+        "severity": "medium",
+        "dispositionOptions": ["return", "accept_with_concession"],
+        "recommendedDisposition": "return",
+        "followUpAction": "supplier_quality_alert"
+      },
+      "dimensions": ["accuracy", "completeness", "adoptability"]
+    },
+    {
+      "id": "AN-LLM-002",
+      "scenario": "产线异常-多因素综合判断",
+      "input": {
+        "anomalyType": "composite",
+        "source": "production_line",
+        "sourceId": "LINE-B",
+        "signals": [
+          { "type": "temperature", "value": 98, "threshold": 95 },
+          { "type": "vibration", "value": 4.5, "threshold": 4.0 },
+          { "type": "defect_rate", "value": 0.06, "threshold": 0.03 }
+        ],
+        "context": {
+          "productInProduction": "SKU-C003",
+          "operatorId": "OP-004",
+          "recentMaintenance": { "date": "2026-05-01", "type": "preventive" }
+        }
+      },
+      "expected": {
+        "severity": "high",
+        "likelyRootCause": "bearing_degradation_or_coolant_issue",
+        "immediateAction": "schedule_inspection_within_1hr",
+        "productionImpact": "partial_shutdown_if_unresolved"
+      },
+      "dimensions": ["accuracy", "completeness", "adaptability"]
+    }
+  ]
+}

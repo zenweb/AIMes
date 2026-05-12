@@ -1,0 +1,92 @@
+{
+  "agent": "ProcessParameterAgent",
+  "version": "1.0",
+  "description": "Golden dataset for ProcessParameterAgent evaluation — 工艺参数优化与配方推荐",
+  "testCases": [
+    {
+      "id": "PP-OPT-001",
+      "scenario": "注塑参数优化-缺陷率偏高",
+      "input": {
+        "productId": "SKU-C001",
+        "process": "injection_molding",
+        "currentParameters": {
+          "temperature": 195,
+          "pressure": 85,
+          "speed": 55,
+          "coolingTime": 20
+        },
+        "defectRate": 0.08,
+        "defectTypes": ["warpage", "short_shot"],
+        "material": "ABS_TG-7",
+        "targetQuality": "class_A"
+      },
+      "expected": {
+        "recommendedChanges": {
+          "temperature": { "min": 185, "max": 190 },
+          "coolingTime": { "min": 25 }
+        },
+        "estimatedImprovement": { "min": 0.03 },
+        "riskLevel": "low"
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "PP-OPT-002",
+      "scenario": "CNC切削参数优化-节拍缩短",
+      "input": {
+        "productId": "SKU-B002",
+        "process": "cnc_machining",
+        "currentParameters": {
+          "spindleSpeed": 8000,
+          "feedRate": 0.15,
+          "depthOfCut": 2.0,
+          "coolantFlow": 8
+        },
+        "cycleTimeSec": 180,
+        "material": "AL6061_T6",
+        "toolLife": 120,
+        "optimizationGoal": "cycle_time"
+      },
+      "expected": {
+        "recommendedChanges": {
+          "spindleSpeed": { "min": 10000, "max": 12000 },
+          "feedRate": { "min": 0.18, "max": 0.22 }
+        },
+        "estimatedCycleTimeReduction": { "min": 15 },
+        "toolLifeImpact": "acceptable",
+        "riskLevel": "medium"
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "PP-REC-001",
+      "scenario": "参数配方切换-换型推荐",
+      "input": {
+        "productId": "SKU-D003",
+        "fromProduct": "SKU-D002",
+        "process": "injection_molding",
+        "material": "PC_LEXAN-101",
+        "moldId": "MOLD-H7",
+        "parameters": {
+          "temperature": { "current": 200, "range": [180, 230] },
+          "pressure": { "current": 80, "range": [60, 100] },
+          "speed": { "current": 50, "range": [30, 70] },
+          "coolingTime": { "current": 18, "range": [15, 30] }
+        },
+        "historicalData": [
+          { "temperature": 210, "pressure": 75, "defectRate": 0.04 },
+          { "temperature": 190, "pressure": 85, "defectRate": 0.06 }
+        ]
+      },
+      "expected": {
+        "recommendedParameters": {
+          "temperature": { "min": 205, "max": 215 },
+          "pressure": { "min": 70, "max": 80 }
+        },
+        "estimatedDefectRate": { "max": 0.05 },
+        "confidenceLevel": "high"
+      },
+      "dimensions": ["accuracy", "completeness", "adoptability"]
+    }
+  ]
+}

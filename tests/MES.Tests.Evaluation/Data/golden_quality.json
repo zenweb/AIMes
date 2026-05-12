@@ -1,0 +1,56 @@
+{
+  "agent": "QualityAgent",
+  "version": "1.0",
+  "description": "Golden dataset for QualityAgent evaluation",
+  "testCases": [
+    {
+      "id": "QA-VIS-001",
+      "scenario": "视觉缺陷判定-划痕",
+      "input": { "features": [0.12, 0.45, 0.78, 0.23, 0.91], "threshold": 0.7 },
+      "expected": { "defectType": "scratch", "confidenceMin": 0.7 },
+      "dimensions": ["accuracy"]
+    },
+    {
+      "id": "QA-VIS-002",
+      "scenario": "视觉缺陷判定-凹陷",
+      "input": { "features": [0.88, 0.12, 0.34, 0.67, 0.45], "threshold": 0.7 },
+      "expected": { "defectType": "dent", "confidenceMin": 0.7 },
+      "dimensions": ["accuracy"]
+    },
+    {
+      "id": "QA-VIS-003",
+      "scenario": "视觉缺陷判定-合格品",
+      "input": { "features": [0.02, 0.03, 0.01, 0.04, 0.02], "threshold": 0.7 },
+      "expected": { "defectType": "none", "confidenceMin": 0.8 },
+      "dimensions": ["accuracy"]
+    },
+    {
+      "id": "QA-RCA-001",
+      "scenario": "根因分析-工艺参数偏移",
+      "input": { "defectType": "scratch", "parameters": { "temperature": 185, "pressure": 4.2, "speed": 120 }, "standards": { "temperature": [170, 180], "pressure": [3.5, 4.0], "speed": [100, 110] } },
+      "expected": { "rootCause": "temperature_out_of_range", "confidenceMin": 0.6 },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "QA-SPC-001",
+      "scenario": "SPC异常-连续7点上升",
+      "input": { "measurements": [10.1, 10.3, 10.5, 10.7, 10.9, 11.1, 11.3], "usl": 12.0, "lsl": 8.0, "target": 10.0 },
+      "expected": { "alarm": true, "rule": "run_up_7", "confidenceMin": 0.9 },
+      "dimensions": ["accuracy"]
+    },
+    {
+      "id": "QA-SPC-002",
+      "scenario": "SPC正常-随机波动",
+      "input": { "measurements": [10.2, 9.8, 10.1, 10.3, 9.9, 10.0, 10.1], "usl": 12.0, "lsl": 8.0, "target": 10.0 },
+      "expected": { "alarm": false, "confidenceMin": 0.8 },
+      "dimensions": ["accuracy"]
+    },
+    {
+      "id": "QA-RAG-001",
+      "scenario": "历史缺陷检索",
+      "input": { "defectDescription": "表面划痕深度超过0.1mm", "maxResults": 3 },
+      "expected": { "minResults": 1, "relevanceMin": 0.6 },
+      "dimensions": ["completeness"]
+    }
+  ]
+}

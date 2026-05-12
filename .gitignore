@@ -1,0 +1,43 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+*.vs/
+*.nupkg
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local
+appsettings.*.local.json
+
+# Docker
+docker-data/
+
+# Build
+packages/
+*.zip
+*.tar.gz
+
+# Frontend build output in API wwwroot
+src/MES.Api/wwwroot/scheduling/
+

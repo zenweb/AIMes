@@ -1,0 +1,97 @@
+{
+  "agent": "SchedulingAgent",
+  "version": "1.0",
+  "description": "Golden dataset for SchedulingAgent evaluation — 排产建议与快照上下文",
+  "testCases": [
+    {
+      "id": "SCH-MIX-001",
+      "scenario": "混合产线排产-紧急插单",
+      "input": {
+        "workOrders": [
+          { "id": "WO-001", "product": "SKU-A", "quantity": 100, "dueDate": "2026-05-15", "priority": 2 },
+          { "id": "WO-002", "product": "SKU-B", "quantity": 50, "dueDate": "2026-05-14", "priority": 1 },
+          { "id": "WO-003", "product": "SKU-A", "quantity": 200, "dueDate": "2026-05-16", "priority": 3 }
+        ],
+        "equipment": [
+          { "id": "CNC-001", "line": "A", "status": "running", "capabilities": ["SKU-A"] },
+          { "id": "CNC-002", "line": "B", "status": "idle", "capabilities": ["SKU-A", "SKU-B"] }
+        ],
+        "urgencyType": "rush_order",
+        "rushOrderId": "WO-002"
+      },
+      "expected": {
+        "wo002StartTime": "same_day",
+        "wo001Constraint": "preemptible",
+        "minCncUtilization": 0.6,
+        "strategyLabel": "urgency_first"
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "SCH-LOAD-001",
+      "scenario": "负载均衡-双产线分配",
+      "input": {
+        "workOrders": [
+          { "id": "WO-010", "product": "SKU-A", "quantity": 300, "dueDate": "2026-05-18", "priority": 2 },
+          { "id": "WO-011", "product": "SKU-A", "quantity": 250, "dueDate": "2026-05-19", "priority": 2 },
+          { "id": "WO-012", "product": "SKU-B", "quantity": 150, "dueDate": "2026-05-17", "priority": 1 }
+        ],
+        "equipment": [
+          { "id": "CNC-010", "line": "A", "status": "running", "capabilities": ["SKU-A"] },
+          { "id": "CNC-011", "line": "B", "status": "running", "capabilities": ["SKU-A", "SKU-B"] }
+        ],
+        "urgencyType": "normal",
+        "strategy": "load_balance"
+      },
+      "expected": {
+        "skuABalanceDiff": { "max": 1 },
+        "wo012AssignedTo": "B",
+        "strategyLabel": "load_balance"
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "SCH-CAPA-001",
+      "scenario": "产能不足预警-超负荷",
+      "input": {
+        "workOrders": [
+          { "id": "WO-020", "product": "SKU-A", "quantity": 500, "dueDate": "2026-05-13", "priority": 1 },
+          { "id": "WO-021", "product": "SKU-A", "quantity": 400, "dueDate": "2026-05-14", "priority": 1 }
+        ],
+        "equipment": [
+          { "id": "CNC-020", "line": "A", "status": "running", "capabilities": ["SKU-A"], "dailyCapacity": 200 }
+        ],
+        "urgencyType": "normal",
+        "strategy": "feasibility_first"
+      },
+      "expected": {
+        "capacityWarning": true,
+        "suggestedAction": "overtime_or_outsource",
+        "overloadPercent": { "min": 50 }
+      },
+      "dimensions": ["accuracy", "completeness"]
+    },
+    {
+      "id": "SCH-PREEMPT-001",
+      "scenario": "设备故障重排产",
+      "input": {
+        "workOrders": [
+          { "id": "WO-030", "product": "SKU-A", "quantity": 100, "dueDate": "2026-05-15", "priority": 2, "assignedTo": "CNC-030" },
+          { "id": "WO-031", "product": "SKU-B", "quantity": 80, "dueDate": "2026-05-15", "priority": 2, "assignedTo": "CNC-031" }
+        ],
+        "equipment": [
+          { "id": "CNC-030", "line": "A", "status": "down", "capabilities": ["SKU-A"] },
+          { "id": "CNC-031", "line": "B", "status": "running", "capabilities": ["SKU-A", "SKU-B"], "loadPercent": 60 }
+        ],
+        "urgencyType": "equipment_failure",
+        "failedEquipmentId": "CNC-030"
+      },
+      "expected": {
+        "wo030Reassigned": true,
+        "newEquipmentId": "CNC-031",
+        "delayRiskAcknowledged": true
+      },
+      "dimensions": ["accuracy", "completeness", "adaptability"]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+name: Agent Evaluation
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./v1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
+
+      - name: Unit Tests
+        run: dotnet test tests/MES.Tests.Unit/ --no-build --verbosity quiet
+
+      - name: Agent Evaluation
+        run: pwsh tests/MES.Tests.Evaluation/eval.ps1
+
+      - name: Check Evaluation Gate
+        shell: pwsh
+        run: |
+          $results = Get-Content tests/MES.Tests.Evaluation/eval_results.json | ConvertFrom-Json
+          if (-not $results.gate_pass) {
+            Write-Error "Evaluation gate failed!"
+            $results.agents | ForEach-Object {
+              if (-not $_.pass) {
+                Write-Error "  $($_.name): precision=$($_.precision) recall=$($_.recall) adoptability=$($_.adoptability)"
+              }
+            }
+            exit 1
+          }
+          Write-Host "All agents passed evaluation gate!"
