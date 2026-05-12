@@ -1,12 +1,12 @@
-using MES.AI.Models;
-using MES.AI.Services;
+using MES.AI.Pro.Models;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Entities.Quality;
 using MES.Domain.Interfaces.Services;
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace MES.AI.Agents;
+namespace MES.AI.Pro.Agents;
 
 /// <summary>
 /// 智能质检Agent

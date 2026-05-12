@@ -1,4 +1,4 @@
-namespace MES.AI.Models;
+namespace MES.AI.Pro.Models;
 
 /// <summary>
 /// 聊天请求

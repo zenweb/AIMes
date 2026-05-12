@@ -1,7 +1,7 @@
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.ValueObjects;
 
-namespace MES.AI.Models;
+namespace MES.AI.Pro.Models;
 
 public sealed class TracedInspectionResult : InspectionResult
 {

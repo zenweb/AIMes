@@ -1,4 +1,4 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
 /// <summary>插单策略</summary>
 public enum InsertionStrategy

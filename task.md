@@ -1,9 +1,12 @@
 AIMes v4.0 - 智能 MES 架构：
 
+> **⚠️ v4.0 是 12–24 个月长期远景，不是 V1 实施依据。**
+> **V1 已落地基于确定规则引擎的排程 + 完整 P0–P3 功能面，详见 [`_docs/_design/aimes-design-doc.v1.md`](_docs/_design/aimes-design-doc.v1.md)**
+
 <MARKDOWN>
 # AIMes v4.0 - 智能驱动的下一代制造执行系统
 <div align="center">
-[![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4)](https://dotnet.microsoft.com/)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![AI Framework](https://img.shields.io/badge/AI-Semantic_Kernel-0F74C0)](https://learn.microsoft.com/semantic-kernel/)
 [![LLM Ready](https://img.shields.io/badge/LLM-OpenAI_|_Azure_AI-purple)](https://azure.microsoft.com/services/ai-services/)
 [![RAG Enabled](https://img.shields.io/badge-RAG-Retrieval_Augmented-FF6B35)](https://python.langchain.com/docs/get_started/introduction)

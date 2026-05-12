@@ -1,7 +1,7 @@
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 /// <summary>
 /// 向量存储服务实现

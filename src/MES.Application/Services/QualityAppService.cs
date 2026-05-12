@@ -6,8 +6,8 @@ using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
-using MES.AI.Agents;
-using MES.AI.Models;
+using MES.AI.Pro.Agents;
+using MES.AI.Pro.Models;
 using DomainInspectionResult = MES.Domain.Enums.InspectionResult;
 
 namespace MES.Application.Services;

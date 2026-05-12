@@ -1,4 +1,4 @@
-namespace MES.AI.Models;
+namespace MES.AI.Core.Models;
 
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.ValueObjects;

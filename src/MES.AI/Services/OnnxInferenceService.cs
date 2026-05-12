@@ -1,9 +1,9 @@
-using MES.AI.Configuration;
+using MES.AI.Pro.Configuration;
 using MES.Domain.Interfaces.Services;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 /// <summary>
 /// ONNX推理服务实现

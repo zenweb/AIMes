@@ -1,6 +1,6 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 using MES.Domain.Entities.Scheduling;
 
 /// <summary>重排结果</summary>

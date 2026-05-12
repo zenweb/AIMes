@@ -1,4 +1,4 @@
-using MES.AI.Configuration;
+using MES.AI.Pro.Configuration;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Embeddings;
 using OpenAI;
@@ -6,7 +6,7 @@ using OpenAI;
 #pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates.
 #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates.
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 /// <summary>
 /// LLM网关服务实现

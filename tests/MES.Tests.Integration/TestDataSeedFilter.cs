@@ -46,6 +46,39 @@ public class TestDataSeedFilter : IStartupFilter
                 db.SaveChanges();
             }
 
+            if (!db.Materials.Any())
+            {
+                db.Materials.AddRange(
+                    new MES.Domain.Entities.Production.Material
+                    {
+                        Id = "mat-test-1",
+                        MaterialCode = "TEST-AL-001",
+                        MaterialName = "测试铝合金",
+                        MaterialType = "原材料",
+                        Unit = "KG",
+                        AvailableQuantity = 500,
+                        ReservedQuantity = 0,
+                        SafetyStock = 50,
+                        StorageLocation = "A-01",
+                        CreatedAt = DateTime.UtcNow
+                    },
+                    new MES.Domain.Entities.Production.Material
+                    {
+                        Id = "mat-test-2",
+                        MaterialCode = "TEST-STEEL-001",
+                        MaterialName = "测试钢材",
+                        MaterialType = "原材料",
+                        Unit = "KG",
+                        AvailableQuantity = 100,
+                        ReservedQuantity = 30,
+                        SafetyStock = 80,
+                        StorageLocation = "B-02",
+                        CreatedAt = DateTime.UtcNow
+                    }
+                );
+                db.SaveChanges();
+            }
+
             next(app);
         };
     }

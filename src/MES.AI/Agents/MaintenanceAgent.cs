@@ -1,12 +1,12 @@
-using MES.AI.Models;
-using MES.AI.Services;
+using MES.AI.Pro.Models;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace MES.AI.Agents;
+namespace MES.AI.Pro.Agents;
 
 public class MaintenanceAgent
 {

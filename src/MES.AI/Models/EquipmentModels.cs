@@ -1,6 +1,6 @@
 using MES.Domain.Enums;
 
-namespace MES.AI.Models;
+namespace MES.AI.Pro.Models;
 
 /// <summary>
 /// 设备健康报告

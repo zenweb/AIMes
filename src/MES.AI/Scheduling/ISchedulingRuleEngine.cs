@@ -1,6 +1,6 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 using MES.Domain.Entities.Scheduling;
 
 /// <summary>优先级规则</summary>

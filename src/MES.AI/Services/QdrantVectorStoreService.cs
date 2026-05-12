@@ -1,11 +1,11 @@
-using MES.AI.Configuration;
+using MES.AI.Pro.Configuration;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
 {

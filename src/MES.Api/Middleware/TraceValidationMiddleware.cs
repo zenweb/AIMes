@@ -1,4 +1,4 @@
-using MES.AI.Services;
+using MES.AI.Pro.Services;
 using MES.Domain.ValueObjects;
 
 namespace MES.Api.Middleware;

@@ -1,4 +1,4 @@
-namespace MES.AI.Configuration;
+namespace MES.AI.Pro.Configuration;
 
 /// <summary>
 /// 向量数据库配置

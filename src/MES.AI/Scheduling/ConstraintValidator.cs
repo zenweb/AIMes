@@ -1,6 +1,6 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 using MES.Domain.Entities.Scheduling;
 
 /// <summary>硬约束验证器 — 检查产能/物料/交期/依赖约束</summary>

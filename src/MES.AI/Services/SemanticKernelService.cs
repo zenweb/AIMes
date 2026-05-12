@@ -1,6 +1,6 @@
 using Microsoft.SemanticKernel;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 /// <summary>
 /// Semantic Kernel服务

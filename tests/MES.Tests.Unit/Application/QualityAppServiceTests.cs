@@ -7,7 +7,7 @@ using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
-using MES.AI.Agents;
+using MES.AI.Pro.Agents;
 using Moq;
 using FluentAssertions;
 using Xunit;

@@ -1,6 +1,6 @@
-using MES.AI.Models;
-using MES.AI.Scheduling;
-using MES.AI.Services;
+using MES.AI.Core.Models;
+using MES.AI.Core.Scheduling;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.ValueObjects;
@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace MES.AI.Agents;
+namespace MES.AI.Pro.Agents;
 
 public class SchedulingAgent
 {
@@ -33,7 +33,7 @@ public class SchedulingAgent
         _constraintValidator = constraintValidator;
     }
 
-    public async Task<SchedulingResult> OptimizeScheduleAsync(
+    public virtual async Task<SchedulingResult> OptimizeScheduleAsync(
         ScheduleRequest request,
         CancellationToken ct = default)
     {

@@ -6,7 +6,7 @@ using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
-using MES.AI.Models;
+using MES.AI.Pro.Models;
 
 namespace MES.Application.Services;
 

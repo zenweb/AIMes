@@ -1,6 +1,6 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 
 /// <summary>锁定周期管理 — 确定哪些工单在锁定期内不可调整</summary>
 public class LockPeriodManager

@@ -1,6 +1,6 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
+using MES.AI.Core.Models;
 
 /// <summary>优先级规则引擎 — 按不同规则对工单排序</summary>
 public static class PriorityRuleEngine

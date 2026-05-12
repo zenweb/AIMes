@@ -8,7 +8,7 @@ using MES.Domain.Interfaces.Repositories;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 
-namespace MES.AI.Skills;
+namespace MES.AI.Pro.Skills;
 
 /// <summary>
 /// MES业务技能 - 排产相关操作

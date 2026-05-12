@@ -1,4 +1,4 @@
-using MES.AI.Services;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Anomalies;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
@@ -6,7 +6,7 @@ using MES.Domain.ValueObjects;
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace MES.AI.Agents;
+namespace MES.AI.Pro.Agents;
 
 public class AnomalyAgent
 {

@@ -2,7 +2,7 @@ using MES.Domain.ValueObjects;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 internal static class AiTraceFactory
 {

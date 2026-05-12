@@ -1,7 +1,7 @@
-namespace MES.AI.Scheduling;
+namespace MES.AI.Core.Scheduling;
 
-using MES.AI.Models;
-using MES.AI.Services;
+using MES.AI.Core.Models;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.ValueObjects;

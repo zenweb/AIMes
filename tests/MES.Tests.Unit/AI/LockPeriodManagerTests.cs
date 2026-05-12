@@ -1,5 +1,5 @@
-using MES.AI.Models;
-using MES.AI.Scheduling;
+using MES.AI.Core.Models;
+using MES.AI.Core.Scheduling;
 using FluentAssertions;
 using Xunit;
 

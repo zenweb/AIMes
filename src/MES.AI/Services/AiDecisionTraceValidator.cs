@@ -1,6 +1,6 @@
 using MES.Domain.ValueObjects;
 
-namespace MES.AI.Services;
+namespace MES.AI.Pro.Services;
 
 public sealed class AiDecisionTraceValidator : ITraceValidator
 {
