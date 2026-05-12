@@ -40,6 +40,32 @@ body {
   border-color: #91d5ff;
   background: #bae7ff;
 }
+
+.gantt_task_line.gantt-task-bottleneck {
+  border-color: #ffa39e;
+  background: #ffccc7;
+}
+
+.gantt_task_line.gantt-task-bottleneck .gantt_task_content {
+  font-weight: 600;
+}
+
+.gantt_tree_content {
+  font-size: 13px;
+}
+
+/* 冲突任务: 红色边框 + 斜线背景 */
+.gantt_task_line.gantt-task-conflict {
+  border-color: #ff4d4f !important;
+  background: repeating-linear-gradient(
+    45deg,
+    #ffccc7,
+    #ffccc7 4px,
+    #ffd8bf 4px,
+    #ffd8bf 8px
+  ) !important;
+  box-shadow: 0 0 6px rgba(255, 77, 79, 0.5) !important;
+}
 </style>
 
 <style scoped>

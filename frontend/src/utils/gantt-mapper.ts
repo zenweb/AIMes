@@ -15,9 +15,15 @@ import type {
  * - 每个 ScheduleItem 为一个 task（bar），挂在对应设备 parent 下
  * - 依赖关系转换为 links
  */
+/** 判断瓶颈设备: 利用率 >= 80% 视为瓶颈 */
+function isBottleneckEquip(eq: EquipmentDto): boolean {
+  return eq.utilizationRate >= 0.8 || eq.equipmentType === 'HeatTreatment'
+}
+
 export function planToGanttData(
   plan: SchedulePlanDto,
-  equipment: EquipmentDto[]
+  equipment: EquipmentDto[],
+  bottlenecks?: Set<string>
 ): GanttData {
   const tasks: GanttTask[] = []
   const links: GanttLink[] = []
@@ -34,16 +40,26 @@ export function planToGanttData(
     (planEnd.getTime() - planStart.getTime()) / (1000 * 60 * 60 * 24)
   )
 
+  const bottleneckSet = bottlenecks ?? new Set(
+    equipment.filter(isBottleneckEquip).map(e => e.id)
+  )
+
   for (const eqId of usedEqIds) {
     const eq = eqMap.get(eqId)
+    const isBottleneck = bottleneckSet.has(eqId)
     tasks.push({
       id: `eq-${eqId}`,
-      text: eq?.equipmentName ?? eqId,
+      text: eq?.equipmentName
+        ? isBottleneck
+          ? `🔴 ${eq.equipmentName} [瓶颈]`
+          : eq.equipmentName
+        : eqId,
       start_date: formatDate(planStart),
       duration: totalDays,
       parent: '0',
       progress: 0,
       open: true,
+      isOnBottleneck: isBottleneck,
     })
   }
 
@@ -56,6 +72,7 @@ export function planToGanttData(
       (end.getTime() - start.getTime()) / (1000 * 60 * 60)
     const durationDays = Math.max(durationHours / 24, 0.01)
 
+    const isBottleneck = bottleneckSet.has(item.equipmentId)
     const task: GanttTask = {
       id: item.id,
       text: item.workOrderNumber,
@@ -67,7 +84,7 @@ export function planToGanttData(
       equipmentId: item.equipmentId,
       equipmentName: item.equipmentName,
       setupMinutes: parseSetupTime(item.setupTime),
-      isOnBottleneck: false,
+      isOnBottleneck: isBottleneck,
       status: 'scheduled',
     }
 

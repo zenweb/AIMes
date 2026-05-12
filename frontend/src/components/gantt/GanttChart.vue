@@ -64,6 +64,7 @@ function initGantt() {
   // 空余进度
   gantt.templates.task_class = (start: Date, end: Date, task: GanttTask) => {
     if (task.hasConflict) return 'gantt-task-conflict'
+    if (task.isOnBottleneck) return 'gantt-task-bottleneck'
     if (task.progress === 1) return 'gantt-task-scheduled'
     return ''
   }

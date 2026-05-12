@@ -59,9 +59,10 @@ import ScheduleMetrics from './ScheduleMetrics.vue'
 import OrderDetailPanel from './OrderDetailPanel.vue'
 import MainLayout from '../layout/MainLayout.vue'
 import * as api from '../../api/scheduling'
-import { planToGanttData } from '../../utils/gantt-mapper'
+import { planToGanttData, detectConflicts } from '../../utils/gantt-mapper'
 import type {
   SchedulePlanDto,
+  ScheduleItemDto,
   EquipmentDto,
   GanttData,
   WorkOrderDto,
@@ -110,6 +111,7 @@ async function loadData() {
 
     // 转换为甘特图数据
     ganttData.value = planToGanttData(plan, equipment)
+    markConflicts(plan.items)
   } catch (e: any) {
     console.error('加载排产计划失败:', e)
     error.value = `加载失败: ${e?.response?.data?.message || e?.message || '未知错误'}`
@@ -126,85 +128,55 @@ function loadDemoData() {
   const start = new Date(now)
   start.setHours(8, 0, 0, 0)
 
+  function t(hour: number, day = 0) {
+    return new Date(start.getTime() + day * 24 * 60 * 60 * 1000 + hour * 60 * 60 * 1000)
+  }
+  function dur(hours: number) {
+    return hours * 60 * 60 * 1000
+  }
+
   const demoPlan: SchedulePlanDto = {
     id: 'demo-1',
-    planName: '演示排产计划',
+    planName: '2026年5月第2周排产计划',
     planStartDate: start.toISOString(),
     planEndDate: new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     overallUtilizationRate: 0.72,
     onTimeDeliveryRate: 0.88,
     createdAt: now.toISOString(),
     items: [
-      {
-        id: 'task-1',
-        workOrderId: 'WO-001',
-        workOrderNumber: 'WO-001',
-        equipmentId: 'EQ-001',
-        equipmentName: 'CNC 加工中心',
-        plannedStartTime: start.toISOString(),
-        plannedEndTime: new Date(start.getTime() + 8 * 60 * 60 * 1000).toISOString(),
-        sequence: 1,
-        setupTime: '30 分钟',
-        dependentItems: [],
-      },
-      {
-        id: 'task-2',
-        workOrderId: 'WO-002',
-        workOrderNumber: 'WO-002',
-        equipmentId: 'EQ-001',
-        equipmentName: 'CNC 加工中心',
-        plannedStartTime: new Date(start.getTime() + 8 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
-        plannedEndTime: new Date(start.getTime() + 16 * 60 * 60 * 1000).toISOString(),
-        sequence: 2,
-        setupTime: '45 分钟',
-        dependentItems: ['task-1'],
-      },
-      {
-        id: 'task-3',
-        workOrderId: 'WO-003',
-        workOrderNumber: 'WO-003',
-        equipmentId: 'EQ-002',
-        equipmentName: '注塑机',
-        plannedStartTime: start.toISOString(),
-        plannedEndTime: new Date(start.getTime() + 12 * 60 * 60 * 1000).toISOString(),
-        sequence: 1,
-        setupTime: '60 分钟',
-        dependentItems: [],
-      },
-      {
-        id: 'task-4',
-        workOrderId: 'WO-004',
-        workOrderNumber: 'WO-004',
-        equipmentId: 'EQ-002',
-        equipmentName: '注塑机',
-        plannedStartTime: new Date(start.getTime() + 12 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-        plannedEndTime: new Date(start.getTime() + 20 * 60 * 60 * 1000).toISOString(),
-        sequence: 2,
-        setupTime: '20 分钟',
-        dependentItems: [],
-      },
+      // ---- CNC-001 (瓶颈设备, 利用率最高) ----
+      { id: 'task-1', workOrderId: 'WO-001', workOrderNumber: 'WO-001\n转接座-A', equipmentId: 'EQ-001', equipmentName: 'CNC-001 加工中心', plannedStartTime: t(8, 0).toISOString(), plannedEndTime: t(16, 0).toISOString(), sequence: 1, setupTime: '30 分钟', dependentItems: [] },
+      { id: 'task-2', workOrderId: 'WO-002', workOrderNumber: 'WO-002\n阀体-B', equipmentId: 'EQ-001', equipmentName: 'CNC-001 加工中心', plannedStartTime: t(16, 0).toISOString(), plannedEndTime: t(24, 0).toISOString(), sequence: 2, setupTime: '45 分钟', dependentItems: ['task-1'] },
+      { id: 'task-3', workOrderId: 'WO-003', workOrderNumber: 'WO-003\n齿轮-C', equipmentId: 'EQ-001', equipmentName: 'CNC-001 加工中心', plannedStartTime: t(8, 1).toISOString(), plannedEndTime: t(18, 1).toISOString(), sequence: 3, setupTime: '30 分钟', dependentItems: [] },
+      { id: 'task-4', workOrderId: 'WO-004', workOrderNumber: 'WO-004\n转接座-B', equipmentId: 'EQ-001', equipmentName: 'CNC-001 加工中心', plannedStartTime: t(18, 1).toISOString(), plannedEndTime: t(24, 1).toISOString(), sequence: 4, setupTime: '30 分钟', dependentItems: ['task-3'] },
+
+      // ---- CNC-002 (正常负荷) ----
+      { id: 'task-5', workOrderId: 'WO-005', workOrderNumber: 'WO-005\n基座-D', equipmentId: 'EQ-002', equipmentName: 'CNC-002 加工中心', plannedStartTime: t(8, 0).toISOString(), plannedEndTime: t(14, 0).toISOString(), sequence: 1, setupTime: '20 分钟', dependentItems: [] },
+      { id: 'task-6', workOrderId: 'WO-006', workOrderNumber: 'WO-006\n法兰-E', equipmentId: 'EQ-002', equipmentName: 'CNC-002 加工中心', plannedStartTime: t(14, 0).toISOString(), plannedEndTime: t(20, 0).toISOString(), sequence: 2, setupTime: '35 分钟', dependentItems: ['task-5'] },
+      { id: 'task-7', workOrderId: 'WO-007', workOrderNumber: 'WO-007\n底座-F', equipmentId: 'EQ-002', equipmentName: 'CNC-002 加工中心', plannedStartTime: t(8, 1).toISOString(), plannedEndTime: t(12, 1).toISOString(), sequence: 3, setupTime: '20 分钟', dependentItems: [] },
+
+      // ---- 注塑机 (单设备, 连续排产) ----
+      { id: 'task-8', workOrderId: 'WO-008', workOrderNumber: 'WO-008\n外壳-G', equipmentId: 'EQ-003', equipmentName: '注塑机', plannedStartTime: t(8, 0).toISOString(), plannedEndTime: t(12, 0).toISOString(), sequence: 1, setupTime: '60 分钟', dependentItems: [] },
+      { id: 'task-9', workOrderId: 'WO-009', workOrderNumber: 'WO-009\n面板-H', equipmentId: 'EQ-003', equipmentName: '注塑机', plannedStartTime: t(13, 0).toISOString(), plannedEndTime: t(17, 0).toISOString(), sequence: 2, setupTime: '45 分钟', dependentItems: ['task-8'] },
+      { id: 'task-10', workOrderId: 'WO-010', workOrderNumber: 'WO-010\n壳体-I', equipmentId: 'EQ-003', equipmentName: '注塑机', plannedStartTime: t(18, 0).toISOString(), plannedEndTime: t(24, 0).toISOString(), sequence: 3, setupTime: '30 分钟', dependentItems: [] },
+
+      // ---- 装配线-1 (依赖注塑任务) ----
+      { id: 'task-11', workOrderId: 'WO-011', workOrderNumber: 'WO-011\n组件-J', equipmentId: 'EQ-004', equipmentName: '装配线-1', plannedStartTime: t(8, 1).toISOString(), plannedEndTime: t(14, 1).toISOString(), sequence: 1, setupTime: '15 分钟', dependentItems: ['task-8'] },
+      { id: 'task-12', workOrderId: 'WO-012', workOrderNumber: 'WO-012\n组件-K', equipmentId: 'EQ-004', equipmentName: '装配线-1', plannedStartTime: t(14, 1).toISOString(), plannedEndTime: t(20, 1).toISOString(), sequence: 2, setupTime: '15 分钟', dependentItems: ['task-11', 'task-2'] },
+
+      // ---- 热处理炉 (冲突演示: 两个任务重叠) ----
+      { id: 'task-13', workOrderId: 'WO-013', workOrderNumber: 'WO-013\n淬火-L', equipmentId: 'EQ-005', equipmentName: '热处理炉', plannedStartTime: t(10, 0).toISOString(), plannedEndTime: t(14, 0).toISOString(), sequence: 1, setupTime: '120 分钟', dependentItems: [] },
+      // 冲突任务! 与 task-13 时间重叠
+      { id: 'task-14', workOrderId: 'WO-014', workOrderNumber: 'WO-014\n回火-M', equipmentId: 'EQ-005', equipmentName: '热处理炉', plannedStartTime: t(12, 0).toISOString(), plannedEndTime: t(16, 0).toISOString(), sequence: 2, setupTime: '90 分钟', dependentItems: [] },
     ],
   }
 
   const demoEquipment: EquipmentDto[] = [
-    {
-      id: 'EQ-001',
-      equipmentCode: 'CNC-001',
-      equipmentName: 'CNC 加工中心',
-      equipmentType: 'CNC',
-      status: 'Running',
-      capacity: 100,
-      utilizationRate: 0.75,
-    },
-    {
-      id: 'EQ-002',
-      equipmentCode: 'INJ-001',
-      equipmentName: '注塑机',
-      equipmentType: 'InjectionMolding',
-      status: 'Running',
-      capacity: 200,
-      utilizationRate: 0.6,
-    },
+    { id: 'EQ-001', equipmentCode: 'CNC-001', equipmentName: 'CNC-001 加工中心', equipmentType: 'CNC', status: 'Running', capacity: 100, utilizationRate: 0.85 },
+    { id: 'EQ-002', equipmentCode: 'CNC-002', equipmentName: 'CNC-002 加工中心', equipmentType: 'CNC', status: 'Running', capacity: 100, utilizationRate: 0.55 },
+    { id: 'EQ-003', equipmentCode: 'INJ-001', equipmentName: '注塑机', equipmentType: 'InjectionMolding', status: 'Running', capacity: 200, utilizationRate: 0.70 },
+    { id: 'EQ-004', equipmentCode: 'ASM-001', equipmentName: '装配线-1', equipmentType: 'Assembly', status: 'Running', capacity: 150, utilizationRate: 0.45 },
+    { id: 'EQ-005', equipmentCode: 'HT-001', equipmentName: '热处理炉', equipmentType: 'HeatTreatment', status: 'Running', capacity: 80, utilizationRate: 0.40 },
   ]
 
   planData.value = demoPlan
@@ -212,7 +184,14 @@ function loadDemoData() {
   planName.value = demoPlan.planName
   metrics.utilization = Math.round(demoPlan.overallUtilizationRate * 100)
   metrics.onTimeDelivery = Math.round(demoPlan.onTimeDeliveryRate * 100)
-  ganttData.value = planToGanttData(demoPlan, demoEquipment)
+  metrics.changeoverMinutes = 580
+  metrics.groupCount = 5
+  ganttData.value = planToGanttData(
+    demoPlan,
+    demoEquipment,
+    new Set(['EQ-001']) // CNC-001 是瓶颈
+  )
+  markConflicts(demoPlan.items)
 }
 
 async function handleOptimize() {
@@ -283,6 +262,19 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
   console.log(`Task ${taskId} moved to`, newStart, newEnd)
   // 拖拽后可触发重新排产
   // handleOptimize()
+}
+
+function markConflicts(items: ScheduleItemDto[]) {
+  const conflicts = detectConflicts(items)
+  if (conflicts.size > 0) {
+    ganttData.value.tasks = ganttData.value.tasks.map(t => {
+      if (conflicts.has(t.id)) {
+        return { ...t, hasConflict: true, conflictMessage: conflicts.get(t.id) }
+      }
+      return t
+    })
+    error.value = '' // 冲突不是错误，不显示红色横幅
+  }
 }
 
 onMounted(() => {
