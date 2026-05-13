@@ -1,6 +1,7 @@
 using MES.Api.Extensions;
 using MES.Api.Filters;
 using MES.Api.Middleware;
+using MES.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
@@ -29,6 +30,11 @@ builder.Host.UseSerilog();
 var isDevelopment = builder.Environment.IsDevelopment();
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"] ?? "AIMes-Development-Signing-Key-For-Local-Only-Change-Me";
+
+// 密钥轮转 + Token 黑名单
+var keyStore = new SigningKeyStore(signingKey);
+builder.Services.AddSingleton(keyStore);
+builder.Services.AddSingleton<TokenBlacklistService>();
 
 // 速率限制
 builder.Services.AddRateLimiter(options =>
@@ -62,13 +68,37 @@ builder.Services
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            IssuerSigningKeyResolver = (_, _, kid, _) =>
+            {
+                if (kid is { Length: > 0 })
+                {
+                    var k = keyStore.GetKeyById(kid);
+                    if (k != null) return [k];
+                }
+                return keyStore.GetAllValidKeys();
+            },
             ValidateIssuer = !isDevelopment,
             ValidateAudience = !isDevelopment,
             ValidIssuer = jwtSection["Issuer"],
             ValidAudience = jwtSection["Audience"],
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                if (jti != null)
+                {
+                    var blacklist = context.HttpContext.RequestServices.GetRequiredService<TokenBlacklistService>();
+                    if (blacklist.IsBlacklisted(jti))
+                    {
+                        context.Fail("Token has been revoked");
+                    }
+                }
+                return Task.CompletedTask;
+            }
         };
     });
 

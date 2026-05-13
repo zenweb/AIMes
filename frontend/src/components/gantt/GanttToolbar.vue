@@ -7,6 +7,12 @@
       <button class="btn btn-secondary" @click="$emit('refresh')">
         刷新
       </button>
+      <button class="btn btn-feedback" @click="$emit('feedback')">
+        采纳反馈
+      </button>
+      <button class="btn btn-compare" @click="$emit('compare')">
+        多目标对比
+      </button>
       <label class="objective-label">
         优化目标:
         <select
@@ -52,6 +58,8 @@ defineProps<{
 defineEmits<{
   optimize: []
   refresh: []
+  feedback: []
+  compare: []
   'update:scale': [value: 'day' | 'week' | 'month']
   'update:objective': [value: string]
 }>()
@@ -109,6 +117,30 @@ defineEmits<{
 .btn-secondary:hover {
   border-color: #1890ff;
   color: #1890ff;
+}
+
+.btn-feedback {
+  background: #fff;
+  color: #722ed1;
+  border-color: #d9d9d9;
+}
+
+.btn-feedback:hover {
+  border-color: #722ed1;
+  color: #722ed1;
+  background: #f9f0ff;
+}
+
+.btn-compare {
+  background: #fff;
+  color: #13c2c2;
+  border-color: #d9d9d9;
+}
+
+.btn-compare:hover {
+  border-color: #13c2c2;
+  color: #13c2c2;
+  background: #e6fffb;
 }
 
 .objective-label,

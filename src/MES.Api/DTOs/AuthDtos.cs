@@ -27,3 +27,8 @@ public class RefreshTokenResponseDto
     public string RefreshToken { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
 }
+
+public class RevokeUserRequestDto
+{
+    public string Username { get; set; } = string.Empty;
+}

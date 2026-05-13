@@ -7,6 +7,7 @@ using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
 using MES.AI.Core.Models;
+using MES.AI.Core.Scheduling;
 using MES.AI.Pro.Agents;
 
 namespace MES.Application.Services;
@@ -25,6 +26,8 @@ public interface ISchedulingAppService
     Task<PagedResult<WorkOrderDto>> GetWorkOrdersAsync(WorkOrderQueryParameters parameters, CancellationToken ct = default);
     Task<WorkOrderDto> UpdateWorkOrderStatusAsync(string id, string status, CancellationToken ct = default);
     Task DeleteWorkOrderAsync(string id, CancellationToken ct = default);
+    Task RecordAdoptionFeedbackAsync(AdoptionFeedbackRequest request, string operatorUser, CancellationToken ct = default);
+    Task<BatchOptimizeResultDto> BatchOptimizeAsync(BatchOptimizeRequest request, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -37,19 +40,22 @@ public class SchedulingAppService : ISchedulingAppService
     private readonly IMaterialRepository _materialRepo;
     private readonly IScheduleRepository _scheduleRepo;
     private readonly SchedulingAgent _schedulingAgent;
+    private readonly AdoptionFeedbackService _feedbackService;
 
     public SchedulingAppService(
         IWorkOrderRepository workOrderRepo,
         IEquipmentRepository equipmentRepo,
         IMaterialRepository materialRepo,
         IScheduleRepository scheduleRepo,
-        SchedulingAgent schedulingAgent)
+        SchedulingAgent schedulingAgent,
+        AdoptionFeedbackService feedbackService)
     {
         _workOrderRepo = workOrderRepo;
         _equipmentRepo = equipmentRepo;
         _materialRepo = materialRepo;
         _scheduleRepo = scheduleRepo;
         _schedulingAgent = schedulingAgent;
+        _feedbackService = feedbackService;
     }
 
     public async Task<SchedulingResultDto> OptimizeScheduleAsync(OptimizeScheduleRequest request, CancellationToken ct = default)
@@ -203,6 +209,117 @@ public class SchedulingAppService : ISchedulingAppService
     public async Task DeleteWorkOrderAsync(string id, CancellationToken ct = default)
     {
         await _workOrderRepo.DeleteAsync(id);
+    }
+
+    public async Task<BatchOptimizeResultDto> BatchOptimizeAsync(BatchOptimizeRequest request, CancellationToken ct = default)
+    {
+        var objectives = request.Objectives ?? new List<string> { "due_date", "utilization", "changeover", "balanced" };
+
+        var objectiveLabels = new Dictionary<string, string>
+        {
+            ["due_date"] = "交期优先",
+            ["utilization"] = "利用率优先",
+            ["changeover"] = "换线成本优先",
+            ["balanced"] = "综合平衡",
+        };
+
+        // 共享数据：一次获取，多目标共用
+        var workOrders = await GetWorkOrdersForScheduling(
+            new OptimizeScheduleRequest { WorkshopId = request.WorkshopId, WorkOrderIds = request.WorkOrderIds }, ct);
+        var equipment = await _equipmentRepo.GetByWorkshopAsync(request.WorkshopId);
+        var materialCodes = workOrders.SelectMany(w => GetMaterialCodesForProduct(w.ProductCode)).Distinct().ToList();
+        var materials = await GetMaterialAvailability(materialCodes, ct);
+
+        var baseRequest = new ScheduleRequest
+        {
+            WorkshopId = request.WorkshopId,
+            Orders = workOrders.Select(MapToWorkOrderInfo).ToList(),
+            Equipment = equipment.Select(MapToEquipmentCapacity).ToList(),
+            Materials = materials,
+            Deadlines = workOrders.ToDictionary(w => w.Id, w => w.PlannedEndDate),
+        };
+
+        // 各目标并行优化
+        var tasks = objectives.Select(objective =>
+        {
+            var req = new ScheduleRequest
+            {
+                WorkshopId = baseRequest.WorkshopId,
+                Orders = baseRequest.Orders,
+                Equipment = baseRequest.Equipment,
+                Materials = baseRequest.Materials,
+                Deadlines = baseRequest.Deadlines,
+                OptimizationObjective = objective,
+            };
+            return _schedulingAgent.OptimizeScheduleAsync(req, ct);
+        });
+
+        var results = await Task.WhenAll(tasks);
+        var items = new List<ObjectiveCompareItemDto>();
+        double bestScore = double.MinValue;
+        string? bestObjective = null;
+
+        for (int i = 0; i < objectives.Count && i < results.Length; i++)
+        {
+            var result = results[i];
+            var objective = objectives[i];
+            var plan = MapToSchedulePlanDto(MapToSchedulePlan(result, new OptimizeScheduleRequest { WorkshopId = request.WorkshopId }));
+            var completionRate = result.Assignments.Count > 0
+                ? result.Assignments.Count(a => a.EndTime <= workOrders
+                    .Where(w => w.Id == a.WorkOrderId).Select(w => w.PlannedEndDate).FirstOrDefault())
+                    / (double)result.Assignments.Count
+                : 0;
+
+            var item = new ObjectiveCompareItemDto
+            {
+                Objective = objective,
+                ObjectiveLabel = objectiveLabels.GetValueOrDefault(objective, objective),
+                Plan = plan,
+                UtilizationRate = result.UtilizationRate,
+                OnTimeDeliveryRate = result.OnTimeDeliveryRate,
+                TotalChangeoverMinutes = result.TotalChangeoverMinutes,
+                GroupCount = result.GroupCount,
+                EstimatedCompletionRate = completionRate,
+                TotalWorkOrders = result.Assignments.Count,
+            };
+            items.Add(item);
+
+            // 加权评分：利用率40% + 准时率40% + 换线效率20%
+            var score = item.UtilizationRate * 0.4 + item.OnTimeDeliveryRate * 0.4
+                        + Math.Max(0, 1 - item.TotalChangeoverMinutes / 1000) * 0.2;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestObjective = objective;
+            }
+        }
+
+        return new BatchOptimizeResultDto
+        {
+            Items = items,
+            BestOverallObjective = bestObjective,
+        };
+    }
+
+    public async Task RecordAdoptionFeedbackAsync(AdoptionFeedbackRequest request, string operatorUser, CancellationToken ct = default)
+    {
+        var reasonCategory = Enum.TryParse<OverrideReasonCategory>(request.ReasonCategory, out var category)
+            ? category
+            : OverrideReasonCategory.Other;
+
+        var feedback = _feedbackService.RecordOverride(
+            request.SchedulePlanId,
+            request.WorkshopId,
+            request.OptimizationObjective ?? string.Empty,
+            [],
+            [],
+            reasonCategory,
+            request.ReasonDetail,
+            request.MovedOrderIds,
+            operatorUser,
+            request.AiTraceId);
+
+        await _scheduleRepo.SaveFeedbackAsync(feedback);
     }
 
     #region Private Methods

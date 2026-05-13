@@ -57,6 +57,59 @@ export async function getWorkOrderById(
   return data
 }
 
+export interface BatchOptimizeRequest {
+  workshopId: string
+  startDate?: string
+  endDate?: string
+  objectives?: string[]
+  workOrderIds?: string[]
+}
+
+export interface ObjectiveCompareItem {
+  objective: string
+  objectiveLabel: string
+  plan: SchedulePlanDto
+  utilizationRate: number
+  onTimeDeliveryRate: number
+  totalChangeoverMinutes: number
+  groupCount: number
+  estimatedCompletionRate: number
+  totalWorkOrders: number
+}
+
+export interface BatchOptimizeResult {
+  items: ObjectiveCompareItem[]
+  bestOverallObjective?: string
+}
+
+// 批量优化对比
+export async function batchOptimize(
+  request: BatchOptimizeRequest
+): Promise<BatchOptimizeResult> {
+  const { data } = await http.post<BatchOptimizeResult>(
+    '/scheduling/optimize-compare',
+    request
+  )
+  return data
+}
+
+export interface AdoptionFeedbackRequest {
+  schedulePlanId: string
+  workshopId: string
+  optimizationObjective?: string
+  reasonCategory: string
+  reasonDetail?: string
+  movedOrderIds?: string[]
+  aiTraceId?: string
+}
+
+// 提交排产方案采纳反馈
+export async function submitAdoptionFeedback(
+  request: AdoptionFeedbackRequest
+): Promise<void> {
+  await http.post('/scheduling/adoption-feedback', request)
+}
+
 // 获取工单列表
 export async function getWorkOrders(params?: {
   status?: string

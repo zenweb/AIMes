@@ -173,6 +173,43 @@ public class SchedulingController : ControllerBase
         await _schedulingService.DeleteWorkOrderAsync(id, ct);
         return NoContent();
     }
+
+    /// <summary>
+    /// 批量优化对比（多目标并行）
+    /// </summary>
+    [HttpPost("optimize-compare")]
+    [Audit]
+    [ProducesResponseType(typeof(BatchOptimizeResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BatchOptimizeResultDto>> BatchOptimize(
+        [FromBody] BatchOptimizeRequest request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _schedulingService.BatchOptimizeAsync(request, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// 提交排产方案采纳反馈
+    /// </summary>
+    [HttpPost("adoption-feedback")]
+    [Audit]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SubmitAdoptionFeedback(
+        [FromBody] AdoptionFeedbackRequest request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var operatorUser = User.Identity?.Name ?? "unknown";
+        await _schedulingService.RecordAdoptionFeedbackAsync(request, operatorUser, ct);
+        return Created();
+    }
 }
 
 /// <summary>

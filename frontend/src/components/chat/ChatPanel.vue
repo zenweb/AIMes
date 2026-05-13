@@ -4,7 +4,10 @@
       <div class="chat-panel">
         <!-- 头部 -->
         <div class="chat-header">
-          <h3>AI 生产助手</h3>
+          <div class="header-left">
+            <h3>AI 生产助手</h3>
+            <span v-if="modelLabel" class="model-badge" :title="modelFullLabel">{{ modelLabel }}</span>
+          </div>
           <button class="close-btn" @click="$emit('close')" aria-label="关闭聊天">✕</button>
         </div>
 
@@ -68,8 +71,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 import { queryKnowledge, getChatHistory } from '../../api/knowledge'
+import { getLlmStatus } from '../../api/llm'
 import type { ChatMessage, KnowledgeSourceDto, KnowledgeQueryResponse } from '../../types/knowledge'
 
 const props = defineProps<{ visible: boolean }>()
@@ -82,6 +86,8 @@ const error = ref('')
 const sessionId = ref(`session-${Date.now()}`)
 const expandedSources = ref(new Set<string>())
 const messagesRef = ref<HTMLElement | null>(null)
+const modelLabel = ref('')
+const modelFullLabel = ref('')
 
 watch(() => props.visible, async (show) => {
   if (show) {
@@ -196,6 +202,21 @@ function getDemoReply(question: string): string {
   return '感谢您的提问！根据当前生产数据分析：\n\n- 今日整体排产达成率 **86%**\n- 设备综合利用率 **72%**\n- 质量合格率 **94%**\n\n如需更详细的分析，请提供更具体的问题描述，例如："CNC-001 的设备利用率趋势如何？"'
 }
 
+onMounted(async () => {
+  try {
+    const status = await getLlmStatus()
+    if (status.provider === 'Ollama') {
+      modelLabel.value = 'Ollama'
+      modelFullLabel.value = `Ollama (${status.model})`
+    } else {
+      modelLabel.value = status.provider
+      modelFullLabel.value = `${status.provider} / ${status.model}`
+    }
+  } catch {
+    // LLM 状态不可用时静默忽略
+  }
+})
+
 function getDemoSources(): KnowledgeSourceDto[] {
   return [
     { sourceId: 'demo-001', sourceName: '生产日报 2026-05-12', content: '', relevanceScore: 0.92 },
@@ -241,10 +262,25 @@ function getDemoSources(): KnowledgeSourceDto[] {
   color: #fff;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chat-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+.model-badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: help;
 }
 
 .close-btn {

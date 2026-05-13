@@ -73,4 +73,10 @@ public class ScheduleRepository : IScheduleRepository
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
     }
+
+    public async Task SaveFeedbackAsync(ScheduleAdoptionFeedback feedback)
+    {
+        _context.ScheduleAdoptionFeedbacks.Add(feedback);
+        await _context.SaveChangesAsync();
+    }
 }

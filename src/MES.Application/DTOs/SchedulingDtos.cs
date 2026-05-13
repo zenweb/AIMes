@@ -111,3 +111,68 @@ public class ParameterSensitivityDto
     public string Direction { get; set; } = string.Empty;
     public string Impact { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// 批量优化对比请求
+/// </summary>
+public class BatchOptimizeRequest
+{
+    [Required(ErrorMessage = "车间ID不能为空")]
+    public string WorkshopId { get; set; } = string.Empty;
+
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+
+    /// <summary>需要对比的优化目标列表，默认全部</summary>
+    public List<string>? Objectives { get; set; }
+
+    public List<string>? WorkOrderIds { get; set; }
+    public bool ConsiderHistoricalData { get; set; } = true;
+}
+
+/// <summary>
+/// 单个目标优化结果（用于对比）
+/// </summary>
+public class ObjectiveCompareItemDto
+{
+    public string Objective { get; set; } = string.Empty;
+    public string ObjectiveLabel { get; set; } = string.Empty;
+    public SchedulePlanDto Plan { get; set; } = new();
+    public double UtilizationRate { get; set; }
+    public double OnTimeDeliveryRate { get; set; }
+    public double TotalChangeoverMinutes { get; set; }
+    public int GroupCount { get; set; }
+    public double EstimatedCompletionRate { get; set; }
+    public int TotalWorkOrders { get; set; }
+}
+
+/// <summary>
+/// 批量优化对比结果
+/// </summary>
+public class BatchOptimizeResultDto
+{
+    public List<ObjectiveCompareItemDto> Items { get; set; } = new();
+    /// <summary>最优方案的目标名称</summary>
+    public string? BestOverallObjective { get; set; }
+}
+
+/// <summary>
+/// 排产方案采纳反馈请求
+/// </summary>
+public class AdoptionFeedbackRequest
+{
+    [Required(ErrorMessage = "排产计划ID不能为空")]
+    public string SchedulePlanId { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "车间ID不能为空")]
+    public string WorkshopId { get; set; } = string.Empty;
+
+    public string? OptimizationObjective { get; set; }
+
+    [Required(ErrorMessage = "修改原因分类不能为空")]
+    public string ReasonCategory { get; set; } = string.Empty;
+
+    public string? ReasonDetail { get; set; }
+    public List<string>? MovedOrderIds { get; set; }
+    public string? AiTraceId { get; set; }
+}

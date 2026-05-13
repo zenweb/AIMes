@@ -9,6 +9,8 @@
         :loading="loading"
         @optimize="handleOptimize"
         @refresh="loadData"
+        @feedback="showFeedbackForm = true"
+        @compare="showParetoCompare = true"
         @update:scale="currentScale = $event"
         @update:objective="currentObjective = $event"
       />
@@ -49,6 +51,22 @@
         :order="selectedOrder"
         @close="detailVisible = false"
       />
+
+      <FeedbackForm
+        :visible="showFeedbackForm"
+        :schedule-plan-id="planData?.id ?? ''"
+        :workshop-id="'workshop-1'"
+        :optimization-objective="currentObjective"
+        @close="showFeedbackForm = false"
+        @submitted="onFeedbackSubmitted"
+      />
+
+      <ParetoCompare
+        :visible="showParetoCompare"
+        :workshop-id="'workshop-1'"
+        @close="showParetoCompare = false"
+        @apply="onApplyObjective"
+      />
     </div>
   </MainLayout>
 </template>
@@ -59,6 +77,8 @@ import GanttChart from '../gantt/GanttChart.vue'
 import GanttToolbar from '../gantt/GanttToolbar.vue'
 import ScheduleMetrics from './ScheduleMetrics.vue'
 import OrderDetailPanel from './OrderDetailPanel.vue'
+import FeedbackForm from '../gantt/FeedbackForm.vue'
+import ParetoCompare from './ParetoCompare.vue'
 import MainLayout from '../layout/MainLayout.vue'
 import * as api from '../../api/scheduling'
 import { planToGanttData, detectConflicts } from '../../utils/gantt-mapper'
@@ -85,6 +105,8 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
 const selectedOrder = ref<WorkOrderDto | null>(null)
+const showFeedbackForm = ref(false)
+const showParetoCompare = ref(false)
 
 const metrics = reactive({
   utilization: 0,
@@ -281,6 +303,16 @@ function markConflicts(items: ScheduleItemDto[]) {
     })
     error.value = '' // 冲突不是错误，不显示红色横幅
   }
+}
+
+function onFeedbackSubmitted() {
+  showFeedbackForm.value = false
+}
+
+function onApplyObjective(objective: string) {
+  currentObjective.value = objective
+  showParetoCompare.value = false
+  handleOptimize()
 }
 
 onMounted(() => {

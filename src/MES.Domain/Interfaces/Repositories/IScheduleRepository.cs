@@ -17,4 +17,5 @@ public interface IScheduleRepository
     Task<SchedulePlan> UpdateAsync(SchedulePlan plan);
     Task DeleteAsync(string id);
     Task<SchedulePlan?> GetCurrentPlanAsync();
+    Task SaveFeedbackAsync(ScheduleAdoptionFeedback feedback);
 }

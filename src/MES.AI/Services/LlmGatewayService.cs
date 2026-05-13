@@ -98,4 +98,75 @@ public class LlmGatewayService : ILlmGateway
         var embedding = await _embeddingService.GenerateEmbeddingAsync(text, cancellationToken: ct);
         return embedding.ToArray();
     }
+
+    public async Task<LlmStatusDto> GetStatusAsync(CancellationToken ct = default)
+    {
+        var status = new LlmStatusDto
+        {
+            Provider = _config.Provider,
+            Model = _config.Provider switch
+            {
+                "AzureOpenAI" => _config.AzureOpenAI.DeploymentName,
+                "OpenAI" => _config.OpenAI.ModelId,
+                "Ollama" => _config.Ollama.Model,
+                _ => "unknown",
+            },
+        };
+
+        try
+        {
+            if (_config.Provider == "Ollama")
+            {
+                // Ping Ollama's /api/tags endpoint to check reachability
+                using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                var baseUrl = await TryGetOllamaTags(httpClient, ct);
+
+                if (baseUrl != null)
+                {
+                    status.Reachable = true;
+                    status.Version = baseUrl;
+                }
+                else
+                {
+                    status.Reachable = false;
+                    status.Error = "Ollama 服务未响应，请确认 Ollama 已启动 (ollama serve)";
+                }
+            }
+            else
+            {
+                // For cloud providers, just report configured
+                status.Reachable = true;
+                status.Version = "configured";
+            }
+        }
+        catch (Exception ex)
+        {
+            status.Reachable = false;
+            status.Error = ex.Message;
+        }
+
+        return status;
+    }
+
+    private static async Task<string?> TryGetOllamaTags(HttpClient httpClient, CancellationToken ct)
+    {
+        // Try common Ollama endpoints: localhost:11434 and host.docker.internal:11434
+        var urls = new[] { "http://localhost:11434", "http://host.docker.internal:11434" };
+        foreach (var url in urls)
+        {
+            try
+            {
+                var response = await httpClient.GetAsync($"{url}/api/tags", ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    return url;
+                }
+            }
+            catch
+            {
+                // Try next URL
+            }
+        }
+        return null;
+    }
 }

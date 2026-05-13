@@ -7,6 +7,7 @@
       <button class="tab" :class="{ active: tab === 'roles' }" @click="tab = 'roles'">角色权限</button>
       <button class="tab" :class="{ active: tab === 'configs' }" @click="tab = 'configs'">系统配置</button>
       <button class="tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'">通知配置</button>
+      <button class="tab" :class="{ active: tab === 'llm' }" @click="tab = 'llm'; loadLlmStatus()">LLM 设置</button>
     </div>
 
     <!-- 用户管理 -->
@@ -103,6 +104,78 @@
       </div>
     </div>
 
+    <!-- LLM 设置 -->
+    <div v-if="tab === 'llm'" class="tab-content">
+      <div class="llm-section">
+        <h4>LLM 状态</h4>
+        <div v-if="llmLoading" class="llm-loading">检测中...</div>
+        <div v-else class="llm-status">
+          <div class="status-row">
+            <span class="status-label">提供者</span>
+            <span class="status-value">{{ llmStatus.provider || '-' }}</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">模型</span>
+            <span class="status-value">{{ llmStatus.model || '-' }}</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">连通性</span>
+            <span class="status-dot" :class="llmStatus.reachable ? 'dot-green' : 'dot-red'"></span>
+            <span :style="{ color: llmStatus.reachable ? '#52c41a' : '#ff4d4f' }">
+              {{ llmStatus.reachable ? '已连接' : '未连接' }}
+            </span>
+          </div>
+          <div v-if="llmStatus.version" class="status-row">
+            <span class="status-label">服务地址</span>
+            <span class="status-value mono">{{ llmStatus.version }}</span>
+          </div>
+          <div v-if="llmStatus.error" class="status-row">
+            <span class="status-label">错误信息</span>
+            <span class="status-error">{{ llmStatus.error }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="llm-section">
+        <h4>当前配置</h4>
+        <div v-if="llmConfig" class="llm-config">
+          <div v-if="llmConfig.provider === 'Ollama'" class="config-detail">
+            <div><span class="config-key">Ollama 地址：</span><code>{{ llmConfig.ollama.baseUrl }}</code></div>
+            <div><span class="config-key">模型：</span><code>{{ llmConfig.ollama.model }}</code></div>
+          </div>
+          <div v-else-if="llmConfig.provider === 'AzureOpenAI'" class="config-detail">
+            <div><span class="config-key">端点：</span><code>{{ llmConfig.azureOpenAI.endpoint }}</code></div>
+            <div><span class="config-key">部署名：</span><code>{{ llmConfig.azureOpenAI.deploymentName }}</code></div>
+          </div>
+          <div v-else-if="llmConfig.provider === 'OpenAI'" class="config-detail">
+            <div><span class="config-key">模型：</span><code>{{ llmConfig.openAI.modelId }}</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="llm-section">
+        <h4>切换提供者</h4>
+        <p class="section-desc">在 <code>appsettings.Development.json</code> 中修改 <code>AI:Llm:Provider</code> 后重启服务。</p>
+        <div class="provider-cards">
+          <div class="provider-card" :class="{ active: llmConfig?.provider === 'Ollama' }">
+            <div class="provider-name">Ollama</div>
+            <div class="provider-desc">本地部署，无需联网</div>
+            <div class="provider-badge" v-if="llmConfig?.provider === 'Ollama'">当前</div>
+          </div>
+          <div class="provider-card" :class="{ active: llmConfig?.provider === 'AzureOpenAI' }">
+            <div class="provider-name">Azure OpenAI</div>
+            <div class="provider-desc">企业级云服务</div>
+            <div class="provider-badge" v-if="llmConfig?.provider === 'AzureOpenAI'">当前</div>
+          </div>
+          <div class="provider-card" :class="{ active: llmConfig?.provider === 'OpenAI' }">
+            <div class="provider-name">OpenAI</div>
+            <div class="provider-desc">标准 OpenAI API</div>
+            <div class="provider-badge" v-if="llmConfig?.provider === 'OpenAI'">当前</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 编辑用户对话框 -->
     <div v-if="editUserTarget" class="modal-overlay" @click.self="editUserTarget = null">
       <div class="modal-content">
@@ -131,12 +204,17 @@
 import { ref, computed, onMounted } from 'vue'
 import type { SystemUser, SystemConfig, CreateUserRequest, UpdateUserRequest, UpdateConfigRequest, NotificationConfig } from '../../types/admin'
 import { getUsers, createUser, updateUser, getConfigs, updateConfig, getNotificationConfigs, updateNotificationConfig } from '../../api/admin'
+import { getLlmStatus, getLlmConfig } from '../../api/llm'
+import type { LlmStatus, LlmConfig } from '../../api/llm'
 
 const tab = ref('users')
 const users = ref<SystemUser[]>([])
 const configs = ref<SystemConfig[]>([])
 const notificationConfigs = ref<NotificationConfig[]>([])
 const userSearch = ref('')
+const llmStatus = ref<LlmStatus>({ provider: '', model: '', reachable: false })
+const llmConfig = ref<LlmConfig | null>(null)
+const llmLoading = ref(false)
 const showUserCreate = ref(false)
 const editUserTarget = ref<SystemUser | null>(null)
 const editUserForm = ref<UpdateUserRequest>({})
@@ -190,6 +268,19 @@ async function handleNotifToggle(nc: NotificationConfig) {
   try { await updateNotificationConfig(nc.id, { enabled }) }
   catch { /* ok */ }
   nc.enabled = enabled
+}
+
+async function loadLlmStatus() {
+  llmLoading.value = true
+  try {
+    llmStatus.value = await getLlmStatus()
+    llmConfig.value = await getLlmConfig()
+  } catch {
+    llmStatus.value = { provider: '-', model: '-', reachable: false }
+    llmConfig.value = null
+  } finally {
+    llmLoading.value = false
+  }
 }
 
 function formatTime(t: string) { return t?.slice(0, 16).replace('T', ' ') || '' }
@@ -282,4 +373,29 @@ onMounted(async () => {
 .toggle-slider::before { content: ''; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
 .toggle-switch input:checked + .toggle-slider { background: #1890ff; }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+/* LLM 设置 */
+.llm-section { margin-bottom: 24px; }
+.llm-section h4 { font-size: 14px; margin: 0 0 12px; color: #333; }
+.llm-loading { color: #999; font-size: 13px; font-style: italic; }
+.llm-status { display: flex; flex-direction: column; gap: 8px; }
+.status-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.status-label { color: #666; min-width: 80px; flex-shrink: 0; }
+.status-value { color: #333; font-weight: 500; }
+.status-error { color: #ff4d4f; font-size: 12px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-green { background: #52c41a; }
+.dot-red { background: #ff4d4f; }
+.code { font-family: monospace; background: #f5f5f5; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+.llm-config { background: #fafafa; border-radius: 6px; padding: 12px 16px; }
+.config-detail { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #333; }
+.config-detail code { font-family: monospace; background: #f0f0f0; padding: 1px 6px; border-radius: 3px; }
+.section-desc { font-size: 13px; color: #999; margin-bottom: 12px; }
+.section-desc code { font-family: monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 2px; font-size: 12px; }
+.provider-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+.provider-card { border: 1px solid #d9d9d9; border-radius: 8px; padding: 16px; flex: 1; min-width: 160px; position: relative; background: #fafafa; }
+.provider-card.active { border-color: #1890ff; background: #e6f7ff; }
+.provider-name { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 4px; }
+.provider-desc { font-size: 12px; color: #999; }
+.provider-badge { position: absolute; top: 8px; right: 8px; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: #1890ff; color: #fff; }
 </style>
