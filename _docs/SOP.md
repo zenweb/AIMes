@@ -42,7 +42,7 @@ v1/
 │   │   └── MES.AI/           # AI 排产 Agent
 │   ├── frontend/             # Vue 3 + Vite 前端
 │   └── tests/                # 单元/集成/评估/基准测试
-└── AIMes.slnx                # 解决方案
+│   └── AIMes.slnx            # 解决方案
 ```
 
 ---

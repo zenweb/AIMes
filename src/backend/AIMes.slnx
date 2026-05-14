@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="MES.AI/MES.AI.csproj" />
+    <Project Path="MES.Api/MES.Api.csproj" />
+    <Project Path="MES.Application/MES.Application.csproj" />
+    <Project Path="MES.Domain/MES.Domain.csproj" />
+    <Project Path="MES.Infrastructure/MES.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../tests/MES.Tests.Integration/MES.Tests.Integration.csproj" />
+    <Project Path="../tests/MES.Tests.Unit/MES.Tests.Unit.csproj" />
+    <Project Path="../tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj" />
+    <Project Path="../tests/MES.Benchmarks/MES.Benchmarks.csproj" />
+  </Folder>
+</Solution>

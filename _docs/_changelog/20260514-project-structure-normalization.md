@@ -9,7 +9,6 @@
 
 ### 1. 仓库目录重整
 - 根目录保留：
-  - `AIMes.slnx`
   - `src/`
   - `_docs/`
   - `db/`
@@ -19,12 +18,12 @@
 - 原 `database/` 迁移至 `db/`
 
 ### 2. 解决方案文件位置确认
-- **解决方案文件位置**: `C:\AIWorks\AIMes\v1\AIMes.slnx`
-- 解决方案未放入 `src/`，而是保留在仓库根目录。
-- 这是标准的多项目 .NET 仓库布局，便于统一管理后端、前端、测试、文档和基础设施文件。
+- **解决方案文件位置**: `C:\AIWorks\AIMes\v1\src\backend\AIMes.slnx`
+- 解决方案文件放入 `src/backend/`，与后端项目同层。
+- 测试项目仍通过相对路径从 `src/backend/` 解决到 `src/tests/`。
 
 ### 3. 工程与工具链路径同步
-- **文件**: `AIMes.slnx`
+- **文件**: `src/backend/AIMes.slnx`
   - 解决方案项目路径改为：
     - `src/backend/*`
     - `src/tests/*`
@@ -55,7 +54,6 @@
 
 ```text
 v1/
-├── AIMes.slnx
 ├── _docs/
 ├── db/
 │   ├── init.sql
@@ -63,6 +61,7 @@ v1/
 │   └── README.md
 └── src/
     ├── backend/
+    │   ├── AIMes.slnx
     │   ├── MES.AI/
     │   ├── MES.Api/
     │   ├── MES.Application/
@@ -78,7 +77,7 @@ v1/
 
 | 项目 | 状态 |
 |------|------|
-| `dotnet sln AIMes.slnx list` | ✅ 通过 |
+| `dotnet sln src/backend/AIMes.slnx list` | ✅ 通过 |
 | `dotnet build src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore` | ✅ 通过 |
 | `npm run build`（`src/frontend`） | ✅ 通过 |
 
@@ -86,6 +85,6 @@ v1/
 
 ## 说明
 
-- 本次重构是**目录结构规范化**，不是把解决方案文件移动到 `src/`。
-- 如果按旧路径去 `src` 下查找 `.sln` / `.slnx`，会找不到；当前正确位置是仓库根目录：
-  - `C:\AIWorks\AIMes\v1\AIMes.slnx`
+- 本次重构后，解决方案文件位于后端目录下。
+- 当前正确位置：
+  - `C:\AIWorks\AIMes\v1\src\backend\AIMes.slnx`
