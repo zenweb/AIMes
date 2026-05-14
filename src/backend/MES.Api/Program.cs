@@ -1,0 +1,334 @@
+using System.Text;
+using System.Text.Json.Serialization;
+using MES.Api.Endpoints;
+using MES.Api.Extensions;
+using MES.Api.Middleware;
+using MES.Api.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+using Serilog;
+using Serilog.Events;
+using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
+
+// 全局结构化日志
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithMachineName()
+    .WriteTo.Console(
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {UserId} {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Serilog 接管 ASP.NET 日志
+builder.Host.UseSerilog();
+
+var isDevelopment = builder.Environment.IsDevelopment();
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var signingKey = jwtSection["SigningKey"] ?? (isDevelopment ? "AIMes-Development-Signing-Key-For-Local-Only-Change-Me" : throw new InvalidOperationException("Jwt:SigningKey is required in production"));
+
+// 密钥轮转 + Token 黑名单
+var keyStore = new SigningKeyStore(signingKey);
+builder.Services.AddSingleton(keyStore);
+builder.Services.AddSingleton<TokenBlacklistService>();
+builder.Services.AddSingleton<PasswordHasher>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// 速率限制 — 登录接口按 IP 分区，避免全局共享配额
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("Auth", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
+// 添加控制器（已迁移到 Minimal API 端点）
+// 保留 AddAuthorization 等基础设施
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+});
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = !isDevelopment;
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKeyResolver = (_, _, kid, _) =>
+            {
+                if (kid is { Length: > 0 })
+                {
+                    var k = keyStore.GetKeyById(kid);
+                    if (k != null) return [k];
+                }
+                return keyStore.GetAllValidKeys();
+            },
+            ValidateIssuer = !isDevelopment,
+            ValidateAudience = !isDevelopment,
+            ValidIssuer = jwtSection["Issuer"],
+            ValidAudience = jwtSection["Audience"],
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(2)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                if (jti != null)
+                {
+                    var blacklist = context.HttpContext.RequestServices.GetRequiredService<TokenBlacklistService>();
+                    if (blacklist.IsBlacklisted(jti))
+                    {
+                        context.Fail("Token has been revoked");
+                    }
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Operator", policy => policy.RequireRole("Operator", "Lead", "Engineer", "Admin"));
+    options.AddPolicy("Lead", policy => policy.RequireRole("Lead", "Engineer", "Admin"));
+    options.AddPolicy("Engineer", policy => policy.RequireRole("Engineer", "Admin"));
+    options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+});
+
+// 添加数据库服务
+builder.Services.AddDatabaseServices(builder.Configuration);
+
+// 添加仓储服务
+builder.Services.AddRepositoryServices();
+
+// 添加应用服务
+builder.Services.AddApplicationServices();
+
+// 添加验证服务
+builder.Services.AddValidationServices();
+
+// 添加AI服务
+builder.Services.AddAIServices(builder.Configuration);
+
+// 添加缓存服务
+builder.Services.AddCacheServices(builder.Configuration);
+
+// 添加消息总线服务
+builder.Services.AddMessagingServices(builder.Configuration);
+
+// SignalR 实时通知
+builder.Services.AddSignalR();
+builder.Services.AddScoped<MES.Api.Hubs.INotificationService, MES.Api.Hubs.NotificationService>();
+builder.Services.AddHostedService<MES.Api.Services.MetricsBackgroundService>();
+
+// 添加跨域服务
+builder.Services.AddCorsServices(builder.Configuration);
+
+// Swagger 按 API 版本分组
+builder.Services.AddSwaggerServices();
+
+// 健康检查（含各组件探针，开发环境使用基础检查）
+if (!isDevelopment)
+{
+    builder.Services.AddHealthChecks()
+        .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql", tags: new[] { "db", "sql" })
+        .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
+}
+else
+{
+    builder.Services.AddHealthChecks();
+}
+// OpenTelemetry — 指标 + 链路追踪
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics.AddMeter("MES.Scheduling")
+               .AddAspNetCoreInstrumentation()   // HTTP 请求速率/错误/耗时
+               .AddHttpClientInstrumentation()    // 出站 HTTP 指标
+               .AddRuntimeInstrumentation()       // GC/CPU/内存
+               .AddConsoleExporter();
+        if (!isDevelopment) metrics.AddOtlpExporter();
+    })
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation()
+               .AddHttpClientInstrumentation()
+               .AddSource("MES.Scheduling")
+               .AddConsoleExporter();
+        if (!isDevelopment) tracing.AddOtlpExporter();
+    });
+var app = builder.Build();
+
+// 开发环境配置
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler("/error");
+    app.UseHsts();
+}
+
+// 中间件链路
+app.UseSerilogRequestLogging();
+app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
+
+app.UseHttpsRedirection();
+app.UseCors(isDevelopment ? "AllowAll" : "Production");
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseMiddleware<TraceValidationMiddleware>();
+// 提供静态文件（仪表盘原型等）
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// SPA fallback — 前端路由交给 index.html
+app.MapWhen(ctx => ctx.Request.Path.StartsWithSegments("/scheduling"), spApp =>
+{
+    spApp.UseDefaultFiles(new DefaultFilesOptions { DefaultFileNames = ["index.html"] });
+    spApp.UseStaticFiles();
+    spApp.Run(async ctx =>
+    {
+        var filePath = Path.Combine(ctx.Request.Path.Value ?? "", "index.html");
+        var fullPath = Path.Combine(app.Environment.WebRootPath, "scheduling", "index.html");
+        if (File.Exists(fullPath))
+        {
+            ctx.Response.ContentType = "text/html";
+            await ctx.Response.SendFileAsync(fullPath);
+        }
+        else
+        {
+            ctx.Response.StatusCode = 404;
+            await ctx.Response.WriteAsync("前端尚未构建，请执行 cd frontend && npm run build");
+        }
+    });
+});
+
+// 极简 API 端点
+app.MapGroup("/api/v1/auth")
+   .MapAuthEndpoints();
+
+app.MapGroup("/api/v1/admin")
+   .RequireAuthorization("Admin")
+   .MapAdminEndpoints();
+
+app.MapGroup("/api/v1/equipment")
+   .RequireAuthorization()
+   .MapEquipmentEndpoints();
+
+app.MapGroup("/api/v1/scheduling")
+   .MapSchedulingEndpoints();
+
+app.MapGroup("/api/v1/quality")
+   .MapQualityEndpoints();
+
+app.MapGroup("/api/v1/anomaly")
+   .RequireAuthorization()
+   .MapAnomalyEndpoints();
+
+app.MapGroup("/api/v1/production")
+   .MapProductionEndpoints();
+
+app.MapGroup("/api/v1/audit-logs")
+   .RequireAuthorization("Admin")
+   .MapAuditLogEndpoints();
+
+app.MapGroup("/api/v1/bom")
+   .RequireAuthorization()
+   .MapBomEndpoints();
+
+app.MapGroup("/api/v1/employee")
+   .RequireAuthorization()
+   .MapEmployeeEndpoints();
+
+app.MapGroup("/api/v1/inventory")
+   .RequireAuthorization()
+   .MapInventoryEndpoints();
+
+app.MapGroup("/api/v1/knowledge")
+   .MapKnowledgeEndpoints();
+
+app.MapGroup("/api/v1/llm")
+   .MapLlmEndpoints();
+
+app.MapGroup("/api/v1/purchase")
+   .RequireAuthorization()
+   .MapPurchaseEndpoints();
+
+app.MapGroup("/api/v1/dashboard")
+   .RequireAuthorization()
+   .MapDashboardEndpoints();
+
+app.MapGroup("/api/v1/scan")
+   .RequireAuthorization()
+   .MapScanEndpoints();
+
+app.MapGroup("/api/v1/report")
+   .RequireAuthorization()
+   .MapReportEndpoints();
+
+app.MapGroup("/api/v1/risk")
+   .RequireAuthorization()
+   .MapRiskEndpoints();
+
+app.MapGroup("/api/v1/routing")
+   .RequireAuthorization()
+   .MapRoutingEndpoints();
+
+// SignalR 实时通知
+app.MapHub<MES.Api.Hubs.NotificationHub>("/hubs/notifications");
+app.MapHub<MES.Api.Hubs.MonitoringHub>("/hubs/monitoring");
+
+// 健康检查端点
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/healthz/secured", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => true
+}).RequireAuthorization();
+
+// 自动执行数据库迁移
+try
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<MES.Infrastructure.Data.MesDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    if (app.Environment.IsDevelopment())
+    {
+        logger.LogWarning(ex, "数据库不可用，API 将以无持久化模式运行");
+    }
+    else
+    {
+        logger.LogCritical(ex, "数据库不可用，无法启动");
+        throw;
+    }
+}
+
+app.Run();

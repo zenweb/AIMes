@@ -9,8 +9,8 @@ obj/
 *.nupkg
 
 # Node / Frontend
-frontend/node_modules/
-frontend/dist/
+src/frontend/node_modules/
+src/frontend/dist/
 
 # IDE
 .idea/
@@ -38,7 +38,7 @@ BenchmarkDotNet.Artifacts/
 
 # Playwright test results
 test-results/
-frontend/test-results/
+src/frontend/test-results/
 
 # Build
 packages/
@@ -46,5 +46,4 @@ packages/
 *.tar.gz
 
 # Frontend build output in API wwwroot
-src/MES.Api/wwwroot/scheduling/
-
+src/backend/MES.Api/wwwroot/scheduling/

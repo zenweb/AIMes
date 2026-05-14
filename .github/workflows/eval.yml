@@ -28,15 +28,15 @@ jobs:
         run: dotnet build --no-restore --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
 
       - name: Unit Tests
-        run: dotnet test tests/MES.Tests.Unit/ --no-build --verbosity quiet
+        run: dotnet test src/tests/MES.Tests.Unit/ --no-build --verbosity quiet
 
       - name: Agent Evaluation
-        run: pwsh tests/MES.Tests.Evaluation/eval.ps1
+        run: pwsh src/tests/MES.Tests.Evaluation/eval.ps1
 
       - name: Check Evaluation Gate
         shell: pwsh
         run: |
-          $results = Get-Content tests/MES.Tests.Evaluation/eval_results.json | ConvertFrom-Json
+          $results = Get-Content src/tests/MES.Tests.Evaluation/eval_results.json | ConvertFrom-Json
           if (-not $results.gate_pass) {
             Write-Error "Evaluation gate failed!"
             $results.agents | ForEach-Object {

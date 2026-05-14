@@ -1,13 +1,15 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/MES.AI/MES.AI.csproj" />
-    <Project Path="src/MES.Api/MES.Api.csproj" />
-    <Project Path="src/MES.Application/MES.Application.csproj" />
-    <Project Path="src/MES.Domain/MES.Domain.csproj" />
-    <Project Path="src/MES.Infrastructure/MES.Infrastructure.csproj" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/MES.AI/MES.AI.csproj" />
+    <Project Path="src/backend/MES.Api/MES.Api.csproj" />
+    <Project Path="src/backend/MES.Application/MES.Application.csproj" />
+    <Project Path="src/backend/MES.Domain/MES.Domain.csproj" />
+    <Project Path="src/backend/MES.Infrastructure/MES.Infrastructure.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/MES.Tests.Integration/MES.Tests.Integration.csproj" />
-    <Project Path="tests/MES.Tests.Unit/MES.Tests.Unit.csproj" />
+  <Folder Name="/src/tests/">
+    <Project Path="src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj" />
+    <Project Path="src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj" />
+    <Project Path="src/tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj" />
+    <Project Path="src/tests/MES.Benchmarks/MES.Benchmarks.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MES.Domain\MES.Domain.csproj" />
+  </ItemGroup>
+
+<!-- Semantic Kernel - AI Orchestration Framework -->
+<ItemGroup>
+  <PackageReference Include="Microsoft.SemanticKernel" />
+  <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" />
+  <PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" />
+  <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" />
+</ItemGroup>
+
+<!-- Vector Database Client -->
+<ItemGroup>
+  <PackageReference Include="Qdrant.Client" />
+</ItemGroup>
+
+<!-- ONNX Runtime for AI Inference -->
+<ItemGroup>
+  <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+</ItemGroup>
+
+<!-- Document Processing -->
+<ItemGroup>
+  <PackageReference Include="Microsoft.KernelMemory.Core" />
+</ItemGroup>
+
+  <!-- Configuration -->
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+</Project>
