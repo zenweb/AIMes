@@ -179,10 +179,16 @@ builder.Services.AddOpenTelemetry()
 var app = builder.Build();
 
 // 开发环境配置
-if (app.Environment.IsDevelopment())
+var enableSwagger = app.Environment.IsDevelopment()
+    || builder.Configuration.GetValue<bool>("Aimes:EnableSwagger");
+if (enableSwagger)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+
+if (app.Environment.IsDevelopment())
+{
     app.UseDeveloperExceptionPage();
 }
 else
@@ -196,7 +202,13 @@ app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 
-app.UseHttpsRedirection();
+// HTTPS 重定向：开源/演示环境可通过 Aimes:DisableHttpsRedirect 关闭，
+// 否则 docker compose 的 http://localhost:5000 会 307 跳到 https 翻车
+var disableHttpsRedirect = builder.Configuration.GetValue<bool>("Aimes:DisableHttpsRedirect");
+if (!app.Environment.IsDevelopment() && !disableHttpsRedirect)
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors(isDevelopment ? "AllowAll" : "Production");
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -227,6 +239,9 @@ app.MapWhen(ctx => ctx.Request.Path.StartsWithSegments("/scheduling"), spApp =>
         }
     });
 });
+
+// 根路径跳转到排程看板，避免评估人猜路径
+app.MapGet("/", () => Results.Redirect("/scheduling/"));
 
 // 极简 API 端点
 app.MapGroup("/api/v1/auth")
@@ -330,5 +345,30 @@ catch (Exception ex)
         throw;
     }
 }
+
+// 启动后打印评估人友好横幅 — 让 docker compose up 后第一眼就知道下一步
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var addresses = app.Urls.Count > 0
+        ? string.Join(", ", app.Urls)
+        : "http://localhost:5000";
+    var primary = app.Urls.FirstOrDefault() ?? "http://localhost:5000";
+    Console.WriteLine();
+    Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+    Console.WriteLine("║  AIMes V1 — 智能 MES 系统（开源版）                       ║");
+    Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
+    Console.WriteLine($"║  ✓ 后端就绪：  {primary,-42}║");
+    Console.WriteLine($"║  ✓ 看板入口：  {primary + "/scheduling/",-42}║");
+    Console.WriteLine($"║  ✓ API 文档：  {primary + "/swagger",-42}║");
+    Console.WriteLine($"║  ✓ 健康检查：  {primary + "/health",-42}║");
+    Console.WriteLine("║                                                          ║");
+    Console.WriteLine("║  默认账号：    admin / admin@123                          ║");
+    Console.WriteLine("║  ⚠️  仅演示用。生产环境请立即修改密码 + 配置 Jwt:SigningKey ║");
+    Console.WriteLine("║                                                          ║");
+    Console.WriteLine("║  💡 商业版（LLM 多目标 Pareto / 自学习 / 私有部署）       ║");
+    Console.WriteLine("║      详见 _docs/commercial-vs-opensource.md              ║");
+    Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
+    Console.WriteLine();
+});
 
 app.Run();

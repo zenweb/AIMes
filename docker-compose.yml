@@ -83,6 +83,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:5000
+      # 开源/演示场景：开启 Swagger UI + 关闭 HTTPS 重定向（避免 docker compose 起来后浏览器 307 翻车）
+      Aimes__EnableSwagger: "true"
+      Aimes__DisableHttpsRedirect: "true"
       ConnectionStrings__DefaultConnection: "Host=postgresql;Database=mes;Username=postgres;Password=postgres"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__RabbitMQ: "rabbitmq://rabbitmq"
