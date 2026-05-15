@@ -66,9 +66,10 @@ public class OnnxInferenceService : IOnnxModelService, IDisposable
         return result;
     }
 
-    public Task<bool> LoadModelAsync(string modelName, CancellationToken ct = default)
+    public async Task<bool> LoadModelAsync(string modelName, CancellationToken ct = default)
     {
-        return GetOrLoadModelAsync(modelName, ct).ContinueWith(t => t.Result != null, ct);
+        var session = await GetOrLoadModelAsync(modelName, ct);
+        return session != null;
     }
 
     public Task UnloadModelAsync(string modelName)
@@ -83,6 +84,8 @@ public class OnnxInferenceService : IOnnxModelService, IDisposable
 
     private Task<InferenceSession> GetOrLoadModelAsync(string modelName, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (_loadedModels.TryGetValue(modelName, out var existingSession))
         {
             return Task.FromResult(existingSession);
