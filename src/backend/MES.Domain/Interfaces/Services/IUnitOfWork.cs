@@ -1,22 +1,22 @@
 namespace MES.Domain.Interfaces.Services;
 
 /// <summary>
-/// 工作单元接口。把多次跨 Repository 的 SaveChanges 包在一个事务里。
-/// InMemory provider 不支持事务，实现层应做 no-op fallback。
+/// 工作单元接口（lambda 模式）。把多次跨 Repository 的 SaveChanges 包在一个事务里。
+/// 实现层用 EF Core 的 <c>IExecutionStrategy.ExecuteAsync</c> 包裹，
+/// 让事务能与 retry-on-failure 共存（直接用 BeginTransaction 会与执行策略冲突）。
+/// InMemory provider 不支持事务，实现层做 no-op fallback（直接执行 action）。
 /// </summary>
 public interface IUnitOfWork
 {
     /// <summary>
-    /// 开启事务，返回一个 IDisposable handle。
-    /// dispose 时自动 commit；若已 abort 则 rollback。
+    /// 在单一事务内执行一段返回值的逻辑。
+    /// PostgreSQL 等关系数据库会用 IExecutionStrategy 自动重试瞬时故障；
+    /// 这意味着 action 必须是幂等的（在 retry 重做时业务结果仍正确）。
     /// </summary>
-    Task<IUnitOfWorkScope> BeginAsync(CancellationToken ct = default);
-}
+    Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken ct = default);
 
-public interface IUnitOfWorkScope : IAsyncDisposable
-{
     /// <summary>
-    /// 显式提交。dispose 时若已提交则不重复执行。
+    /// 在单一事务内执行一段无返回值的逻辑。
     /// </summary>
-    Task CommitAsync(CancellationToken ct = default);
+    Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken ct = default);
 }

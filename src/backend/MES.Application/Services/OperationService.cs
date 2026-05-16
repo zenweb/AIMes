@@ -65,36 +65,37 @@ public class OperationService : IOperationService
         return new OperationResultDto { OperationId = execution.Id, Status = execution.Status.ToString(), Message = "Operation started." };
     }
 
-    public async Task<OperationResultDto> CompleteAsync(string operationId, CompleteOperationRequest request, CancellationToken ct = default)
+    public Task<OperationResultDto> CompleteAsync(string operationId, CompleteOperationRequest request, CancellationToken ct = default)
     {
-        await using var scope = await _unitOfWork.BeginAsync(ct);
-        var execution = await GetExecution(operationId, ct);
-        execution.Complete(request.Quantity);
-
-        var report = new OperationReport(
-            execution.WorkOrderId,
-            execution.Id,
-            request.Quantity,
-            request.DefectQuantity,
-            new ParameterSnapshot(request.Parameters),
-            request.Materials.Select(m => new OperationReportMaterialConsumed(m.MaterialCode, m.Quantity, m.Unit, m.BatchNumber)),
-            request.InspectionResult,
-            request.ReportedBy);
-
-        var workOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId)
-            ?? throw new InvalidOperationException("Related work order was not found.");
-        workOrder.AddCompletedQuantity(request.Quantity);
-        if (workOrder.CompletedQuantity >= workOrder.PlannedQuantity)
+        return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            workOrder.Complete(workOrder.CompletedQuantity);
-        }
-        await _workOrderRepository.UpdateAsync(workOrder);
+            var execution = await GetExecution(operationId, innerCt);
+            execution.Complete(request.Quantity);
 
-        await _operationRepository.UpdateExecutionAsync(execution, ct);
-        await _operationRepository.AddReportAsync(report, ct);
+            var report = new OperationReport(
+                execution.WorkOrderId,
+                execution.Id,
+                request.Quantity,
+                request.DefectQuantity,
+                new ParameterSnapshot(request.Parameters),
+                request.Materials.Select(m => new OperationReportMaterialConsumed(m.MaterialCode, m.Quantity, m.Unit, m.BatchNumber)),
+                request.InspectionResult,
+                request.ReportedBy);
 
-        await scope.CommitAsync(ct);
-        return new OperationResultDto { OperationId = execution.Id, Status = execution.Status.ToString(), Message = "Operation completed." };
+            var workOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId)
+                ?? throw new InvalidOperationException("Related work order was not found.");
+            workOrder.AddCompletedQuantity(request.Quantity);
+            if (workOrder.CompletedQuantity >= workOrder.PlannedQuantity)
+            {
+                workOrder.Complete(workOrder.CompletedQuantity);
+            }
+            await _workOrderRepository.UpdateAsync(workOrder);
+
+            await _operationRepository.UpdateExecutionAsync(execution, innerCt);
+            await _operationRepository.AddReportAsync(report, innerCt);
+
+            return new OperationResultDto { OperationId = execution.Id, Status = execution.Status.ToString(), Message = "Operation completed." };
+        }, ct);
     }
 
     public async Task<OperationResultDto> ReportExceptionAsync(string operationId, ReportExceptionRequest request, CancellationToken ct = default)

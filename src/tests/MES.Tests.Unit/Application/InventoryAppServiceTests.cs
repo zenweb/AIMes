@@ -22,8 +22,11 @@ public class InventoryAppServiceTests
         _materialRepoMock = new Mock<IMaterialRepository>();
         _txRepoMock = new Mock<IStockTransactionRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
-        var scope = new Mock<IUnitOfWorkScope>();
-        _unitOfWorkMock.Setup(u => u.BeginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(scope.Object);
+        // lambda 模式：测试桩直接调用 action 跑过去（不真起事务，单测里不需要）
+        _unitOfWorkMock
+            .Setup(u => u.ExecuteAsync(It.IsAny<Func<CancellationToken, Task<StockTransactionDto>>>(), It.IsAny<CancellationToken>()))
+            .Returns<Func<CancellationToken, Task<StockTransactionDto>>, CancellationToken>(
+                (action, ct) => action(ct));
         _sut = new InventoryAppService(_materialRepoMock.Object, _txRepoMock.Object, _unitOfWorkMock.Object);
     }
 

@@ -1,10 +1,13 @@
 using FluentValidation;
 using MassTransit;
-using MES.AI.Adapters;
 using MES.AI.Core.Scheduling;
+#if !AIMES_OPEN_SOURCE
+using MES.AI.Adapters;
 using MES.AI.Pro.Agents;
 using MES.AI.Pro.Configuration;
 using MES.AI.Pro.Services;
+using Microsoft.SemanticKernel;
+#endif
 using MES.Application.Services;
 using MES.Domain.Interfaces.Integration;
 using MES.Domain.Interfaces.Repositories;
@@ -15,7 +18,6 @@ using MES.Infrastructure.Persistence;
 using MES.Infrastructure.Repositories;
 using MES.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.SemanticKernel;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace MES.Api.Extensions;
@@ -40,11 +42,16 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddDbContext<MesDbContext>(options =>
-            options.UseNpgsql(connectionString));
-        // 注意：不启用 EnableRetryOnFailure。
-        // 原因：EF Core 的 NpgsqlRetryingExecutionStrategy 与用户手动 BeginTransaction（IUnitOfWork.BeginAsync）
-        //   不兼容，会抛 InvalidOperationException。要重试需把整个事务块包进 ExecuteAsync 里。
-        // 替代方案：在反向代理 / K8s ingress 层做请求级重试（更适合分布式部署）。
+            options.UseNpgsql(connectionString, npgsqlOptions =>
+            {
+                // 重启 retry-on-failure。要让事务和 retry 共存，所有手动事务必须走 IUnitOfWork.ExecuteAsync
+                // （它内部用 IExecutionStrategy.ExecuteAsync 包裹整个事务作为 retriable unit）。
+                // 直接 BeginTransactionAsync 在 retry 启用时会抛 InvalidOperationException —— 不要这么用。
+                npgsqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorCodesToAdd: null);
+            }));
 
         return services;
     }
@@ -122,10 +129,24 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 添加AI服务
+    /// 添加AI服务。
+    /// 默认（商业版）注册全部 Pro Agents/Adapters/向量库/ONNX/SemanticKernel；
+    /// 开源构建（AimesOpenSource=true → AIMES_OPEN_SOURCE 编译常量）只注册 Core 部分（Scheduling 规则引擎）。
     /// </summary>
     public static IServiceCollection AddAIServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // ============ Core 部分：开源版与商业版共享 ============
+
+        // 注册排产规则引擎
+        services.AddSingleton<IConstraintValidator, ConstraintValidator>();
+        services.AddSingleton<ISchedulingRuleEngine, SchedulingRuleEngine>();
+        services.AddSingleton<LockPeriodManager>();
+        services.AddSingleton<IRescheduler, Rescheduler>();
+        services.AddScoped<ReschedulingTrigger>();
+
+#if !AIMES_OPEN_SOURCE
+        // ============ Pro 部分：仅商业版构建 ============
+
         // 配置LLM — 使用 IOptions<T> + 启动时验证
         services.AddOptions<LlmConfig>()
             .Bind(configuration.GetSection("AI:Llm"))
@@ -172,13 +193,6 @@ public static class ServiceCollectionExtensions
         // 注册Semantic Kernel（AI Agents 依赖 Kernel 注入）
         services.AddSingleton<Kernel>(_ => Kernel.CreateBuilder().Build());
 
-        // 注册排产规则引擎
-        services.AddSingleton<IConstraintValidator, ConstraintValidator>();
-        services.AddSingleton<ISchedulingRuleEngine, SchedulingRuleEngine>();
-        services.AddSingleton<LockPeriodManager>();
-        services.AddSingleton<IRescheduler, Rescheduler>();
-        services.AddScoped<ReschedulingTrigger>();
-
         // 注册AI Agents
         services.AddTransient<SchedulingAgent>();
         services.AddTransient<QualityAgent>();
@@ -191,11 +205,12 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IAnomalyAnalysisService, AnomalyAnalysisAdapter>();
         services.AddTransient<IQualityAnalysisService, QualityAnalysisAdapter>();
         services.AddTransient<IScheduleOptimizationService, ScheduleOptimizationAdapter>();
-        services.AddTransient<AdoptionFeedbackService>();
+        // AdoptionFeedbackService 已在 AddApplicationServices 注册为 Scoped；这里只注册 adapter。
         services.AddTransient<IAdoptionFeedbackService, AdoptionFeedbackAdapter>();
 
         // Trace验证器
         services.AddTransient<ITraceValidator, AiDecisionTraceValidator>();
+#endif
 
         return services;
     }
@@ -220,18 +235,29 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 添加缓存服务
+    /// 添加缓存服务。
+    /// IDistributedCache 用于 TokenBlacklist 的多实例共享：
+    /// - 默认 DistributedMemoryCache（单实例 + 重启丢失）
+    /// - 配置了 ConnectionStrings:Redis 时自动切到 StackExchange.Redis（多实例 + 持久）
     /// </summary>
     public static IServiceCollection AddCacheServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddMemoryCache();
 
-        // 可选：启用Redis分布式缓存
-        // services.AddStackExchangeRedisCache(options =>
-        // {
-        //     options.Configuration = configuration.GetConnectionString("Redis") ?? "localhost:6379";
-        //     options.InstanceName = "AIMes:";
-        // });
+        var redisConn = configuration.GetConnectionString("Redis");
+        if (!string.IsNullOrWhiteSpace(redisConn))
+        {
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConn;
+                options.InstanceName = "aimes:";
+            });
+        }
+        else
+        {
+            // 单实例 fallback：进程内共享 memory，符合 IDistributedCache 接口契约
+            services.AddDistributedMemoryCache();
+        }
 
         return services;
     }

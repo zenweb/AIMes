@@ -92,91 +92,95 @@ public class InventoryAppService : IInventoryAppService
         return items.Select(MapTransaction).ToList();
     }
 
-    public async Task<StockTransactionDto> StockInAsync(StockInRequest request, CancellationToken ct = default)
+    public Task<StockTransactionDto> StockInAsync(StockInRequest request, CancellationToken ct = default)
     {
-        await using var scope = await _unitOfWork.BeginAsync(ct);
-        var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
-            ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
+        return _unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+                ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
-        var before = material.AvailableQuantity;
-        material.StockIn(request.Quantity);
-        await _materialRepo.UpdateAsync(material);
+            var before = material.AvailableQuantity;
+            material.StockIn(request.Quantity);
+            await _materialRepo.UpdateAsync(material);
 
-        var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockIn,
-            request.Quantity, before, material.AvailableQuantity,
-            request.ReferenceType, request.ReferenceNumber, request.Remark, request.Warehouse, request.Location, request.Operator);
-        await _txRepo.AddAsync(tx, ct);
+            var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockIn,
+                request.Quantity, before, material.AvailableQuantity,
+                request.ReferenceType, request.ReferenceNumber, request.Remark, request.Warehouse, request.Location, request.Operator);
+            await _txRepo.AddAsync(tx, innerCt);
 
-        await scope.CommitAsync(ct);
-        return MapTransaction(tx);
+            return MapTransaction(tx);
+        }, ct);
     }
 
-    public async Task<StockTransactionDto> StockOutAsync(StockOutRequest request, CancellationToken ct = default)
+    public Task<StockTransactionDto> StockOutAsync(StockOutRequest request, CancellationToken ct = default)
     {
-        await using var scope = await _unitOfWork.BeginAsync(ct);
-        var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
-            ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
+        return _unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+                ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
-        var realQty = material.NetAvailable;
-        if (realQty < request.Quantity)
-            throw new InvalidOperationException($"物料 {request.MaterialCode} 可用库存不足 (可用: {realQty}, 需求: {request.Quantity})");
+            var realQty = material.NetAvailable;
+            if (realQty < request.Quantity)
+                throw new InvalidOperationException($"物料 {request.MaterialCode} 可用库存不足 (可用: {realQty}, 需求: {request.Quantity})");
 
-        var before = material.AvailableQuantity;
-        material.Consume(request.Quantity);
-        await _materialRepo.UpdateAsync(material);
+            var before = material.AvailableQuantity;
+            material.Consume(request.Quantity);
+            await _materialRepo.UpdateAsync(material);
 
-        var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockOut,
-            request.Quantity, before, material.AvailableQuantity,
-            request.ReferenceType, request.ReferenceNumber, request.Remark, null, null, request.Operator);
-        await _txRepo.AddAsync(tx, ct);
+            var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockOut,
+                request.Quantity, before, material.AvailableQuantity,
+                request.ReferenceType, request.ReferenceNumber, request.Remark, null, null, request.Operator);
+            await _txRepo.AddAsync(tx, innerCt);
 
-        await scope.CommitAsync(ct);
-        return MapTransaction(tx);
+            return MapTransaction(tx);
+        }, ct);
     }
 
-    public async Task<StockTransactionDto> TransferAsync(TransferRequest request, CancellationToken ct = default)
+    public Task<StockTransactionDto> TransferAsync(TransferRequest request, CancellationToken ct = default)
     {
-        await using var scope = await _unitOfWork.BeginAsync(ct);
-        var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
-            ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
+        return _unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+                ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
-        var realQty = material.NetAvailable;
-        if (realQty < request.Quantity)
-            throw new InvalidOperationException($"物料 {request.MaterialCode} 可用库存不足");
+            var realQty = material.NetAvailable;
+            if (realQty < request.Quantity)
+                throw new InvalidOperationException($"物料 {request.MaterialCode} 可用库存不足");
 
-        var before = material.AvailableQuantity;
-        material.Consume(request.Quantity);
-        material.UpdateLocation(request.ToWarehouse);
-        await _materialRepo.UpdateAsync(material);
+            var before = material.AvailableQuantity;
+            material.Consume(request.Quantity);
+            material.UpdateLocation(request.ToWarehouse);
+            await _materialRepo.UpdateAsync(material);
 
-        var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.TransferOut,
-            request.Quantity, before, material.AvailableQuantity,
-            "Transfer", $"{request.FromWarehouse}->{request.ToWarehouse}", request.Remark, request.FromWarehouse, request.ToWarehouse, request.Operator);
-        await _txRepo.AddAsync(tx, ct);
+            var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.TransferOut,
+                request.Quantity, before, material.AvailableQuantity,
+                "Transfer", $"{request.FromWarehouse}->{request.ToWarehouse}", request.Remark, request.FromWarehouse, request.ToWarehouse, request.Operator);
+            await _txRepo.AddAsync(tx, innerCt);
 
-        await scope.CommitAsync(ct);
-        return MapTransaction(tx);
+            return MapTransaction(tx);
+        }, ct);
     }
 
-    public async Task<StockTransactionDto> AdjustAsync(AdjustmentRequest request, CancellationToken ct = default)
+    public Task<StockTransactionDto> AdjustAsync(AdjustmentRequest request, CancellationToken ct = default)
     {
-        await using var scope = await _unitOfWork.BeginAsync(ct);
-        var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
-            ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
+        return _unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+                ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
-        var before = material.AvailableQuantity;
-        var diff = request.NewQuantity - before;
-        if (diff > 0) material.StockIn(diff);
-        else if (diff < 0) material.Consume(-diff);
-        await _materialRepo.UpdateAsync(material);
+            var before = material.AvailableQuantity;
+            var diff = request.NewQuantity - before;
+            if (diff > 0) material.StockIn(diff);
+            else if (diff < 0) material.Consume(-diff);
+            await _materialRepo.UpdateAsync(material);
 
-        var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.Adjustment,
-            Math.Abs(diff), before, material.AvailableQuantity,
-            "Adjustment", null, request.Remark, null, null, request.Operator);
-        await _txRepo.AddAsync(tx, ct);
+            var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.Adjustment,
+                Math.Abs(diff), before, material.AvailableQuantity,
+                "Adjustment", null, request.Remark, null, null, request.Operator);
+            await _txRepo.AddAsync(tx, innerCt);
 
-        await scope.CommitAsync(ct);
-        return MapTransaction(tx);
+            return MapTransaction(tx);
+        }, ct);
     }
 
     private static StockTransaction CreateTransaction(

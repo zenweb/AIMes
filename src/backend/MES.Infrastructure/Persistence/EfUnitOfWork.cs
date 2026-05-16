@@ -1,14 +1,13 @@
 using MES.Domain.Interfaces.Services;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace MES.Infrastructure.Persistence;
 
 /// <summary>
-/// IUnitOfWork EF Core 实现。
-/// 实际 provider 不支持事务时（InMemory/relational-on-pg-test）退化为 no-op，
-/// 仍保留 SaveChanges 的语义但不提供原子保证。
+/// IUnitOfWork EF Core 实现（lambda 模式 + IExecutionStrategy）。
+/// - 关系型 provider（PostgreSQL/SqlServer）走 ExecutionStrategy，自动重试瞬时故障 + 用户事务。
+/// - InMemory provider 不支持事务，直接执行 action（保留测试兼容）。
 /// </summary>
 public sealed class EfUnitOfWork : IUnitOfWork
 {
@@ -19,48 +18,31 @@ public sealed class EfUnitOfWork : IUnitOfWork
         _context = context;
     }
 
-    public async Task<IUnitOfWorkScope> BeginAsync(CancellationToken ct = default)
+    public async Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken ct = default)
     {
-        // InMemory provider 不支持事务，返回 no-op scope
         if (!_context.Database.IsRelational())
         {
-            return new NoOpScope();
+            // InMemory：无事务，无重试。直接跑 action 保留 SaveChanges 语义。
+            return await action(ct);
         }
 
-        var transaction = await _context.Database.BeginTransactionAsync(ct);
-        return new EfScope(transaction);
+        var strategy = _context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            var result = await action(ct);
+            await transaction.CommitAsync(ct);
+            return result;
+        });
     }
 
-    private sealed class EfScope : IUnitOfWorkScope
+    public async Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken ct = default)
     {
-        private readonly IDbContextTransaction _transaction;
-        private bool _committed;
-
-        public EfScope(IDbContextTransaction transaction)
+        // 复用泛型版本，避免重复包裹 strategy/transaction 逻辑
+        await ExecuteAsync<object?>(async innerCt =>
         {
-            _transaction = transaction;
-        }
-
-        public async Task CommitAsync(CancellationToken ct = default)
-        {
-            if (_committed) return;
-            await _transaction.CommitAsync(ct);
-            _committed = true;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            if (!_committed)
-            {
-                await _transaction.RollbackAsync();
-            }
-            await _transaction.DisposeAsync();
-        }
-    }
-
-    private sealed class NoOpScope : IUnitOfWorkScope
-    {
-        public Task CommitAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+            await action(innerCt);
+            return null;
+        }, ct);
     }
 }
