@@ -14,7 +14,7 @@
             id="username"
             v-model="username"
             type="text"
-            placeholder="admin / operator / engineer / lead"
+            :placeholder="usernamePlaceholder"
             :disabled="loading"
             autocomplete="username"
           />
@@ -25,7 +25,7 @@
             id="password"
             v-model="password"
             type="password"
-            placeholder="admin123 / 123456"
+            :placeholder="passwordPlaceholder"
             :disabled="loading"
             autocomplete="current-password"
           />
@@ -38,8 +38,8 @@
         </button>
       </form>
 
-      <div class="login-hints">
-        <p class="hint-title">演示账号</p>
+      <div v-if="showDemoHints" class="login-hints">
+        <p class="hint-title">演示账号 <span class="hint-badge">仅评估环境显示</span></p>
         <div class="hint-row"><span>admin</span><span>admin123</span><span>管理员</span></div>
         <div class="hint-row"><span>operator</span><span>123456</span><span>操作员</span></div>
         <div class="hint-row"><span>engineer</span><span>123456</span><span>工程师</span></div>
@@ -56,6 +56,14 @@ import { useAuth } from '../../stores/auth'
 
 const router = useRouter()
 const { login } = useAuth()
+
+// 演示账号 hint：只在 dev 模式或显式启用 VITE_SHOW_DEMO_HINTS 时显示。
+// 生产部署不应直接告诉所有访客默认账号——但开源 docker compose 演示场景需要。
+const showDemoHints = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+
+// placeholder 同样区分演示/生产。生产环境不在 input placeholder 里泄漏凭证示例。
+const usernamePlaceholder = showDemoHints ? 'admin / operator / engineer / lead' : '请输入用户名'
+const passwordPlaceholder = showDemoHints ? 'admin123 / 123456' : '请输入密码'
 
 const username = ref('')
 const password = ref('')

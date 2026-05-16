@@ -17,7 +17,7 @@ public class WorkOrderRepository : IWorkOrderRepository
 
     public async Task<List<WorkOrder>> GetAllAsync(WorkOrderStatus? status = null, CancellationToken ct = default)
     {
-        var query = _context.WorkOrders.AsQueryable();
+        var query = _context.WorkOrders.AsNoTracking();
 
         if (status.HasValue)
             query = query.Where(w => w.Status == status.Value);
@@ -61,6 +61,7 @@ public class WorkOrderRepository : IWorkOrderRepository
     public async Task<List<WorkOrder>> GetByWorkshopAsync(string workshopId, CancellationToken ct = default)
     {
         return await _context.WorkOrders
+            .AsNoTracking()
             .Where(w => w.WorkshopId == workshopId)
             .OrderByDescending(w => w.Priority)
             .ThenBy(w => w.PlannedStartDate)
@@ -70,6 +71,7 @@ public class WorkOrderRepository : IWorkOrderRepository
     public async Task<List<WorkOrder>> GetByDateRangeAsync(DateTime startDate, DateTime endDate, CancellationToken ct = default)
     {
         return await _context.WorkOrders
+            .AsNoTracking()
             .Where(w => w.PlannedStartDate >= startDate && w.PlannedEndDate <= endDate)
             .OrderBy(w => w.PlannedStartDate)
             .ToListAsync(ct);

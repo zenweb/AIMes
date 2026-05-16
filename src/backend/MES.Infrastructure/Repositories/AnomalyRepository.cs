@@ -23,6 +23,7 @@ public class AnomalyRepository : IAnomalyRepository
     public async Task<List<ProductionAnomaly>> GetOpenByWorkOrderAsync(WorkOrderNumber workOrderNumber, CancellationToken ct = default)
     {
         return await _context.ProductionAnomalies
+            .AsNoTracking()
             .Where(e => e.WorkOrderNumber == workOrderNumber && (e.Status == AnomalyStatus.Open || e.Status == AnomalyStatus.Acknowledged))
             .ToListAsync(ct);
     }
@@ -30,6 +31,7 @@ public class AnomalyRepository : IAnomalyRepository
     public async Task<List<ProductionAnomaly>> GetCriticalOpenAsync(CancellationToken ct = default)
     {
         return await _context.ProductionAnomalies
+            .AsNoTracking()
             .Where(e => e.Severity == AnomalySeverity.Critical && (e.Status == AnomalyStatus.Open || e.Status == AnomalyStatus.Acknowledged))
             .ToListAsync(ct);
     }

@@ -15,6 +15,7 @@ public class RiskAppService : IRiskAppService
         var dashboard = new RiskDashboardDto
         {
             GeneratedAt = now,
+            IsDemoData = true,
             OrderRisks =
             [
                 new() { Id = "1", OrderNumber = "WO-2026-0042", ProductName = "精密转接座", Progress = 35, DueDate = now.AddDays(2).ToString("yyyy-MM-dd"), GapText = "滞后2天", Level = "critical", RiskDetail = "CNC-001 故障导致停工8小时，预计延期2天" },

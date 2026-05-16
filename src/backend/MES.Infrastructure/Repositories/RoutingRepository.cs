@@ -22,7 +22,7 @@ public class RoutingRepository : IRoutingRepository
 
     public async Task<List<ProcessRoute>> GetByProductCodeAsync(ProductCode productCode, CancellationToken ct = default)
     {
-        return await _context.ProcessRoutes.Where(e => e.ProductCode == productCode).ToListAsync(ct);
+        return await _context.ProcessRoutes.AsNoTracking().Where(e => e.ProductCode == productCode).ToListAsync(ct);
     }
 
     public async Task<ProcessRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken ct = default)

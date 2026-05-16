@@ -22,7 +22,7 @@ public class BomRepository : IBomRepository
 
     public async Task<List<BillOfMaterial>> GetByProductCodeAsync(ProductCode productCode, CancellationToken ct = default)
     {
-        return await _context.BillsOfMaterial.Where(e => e.ProductCode == productCode).ToListAsync(ct);
+        return await _context.BillsOfMaterial.AsNoTracking().Where(e => e.ProductCode == productCode).ToListAsync(ct);
     }
 
     public async Task<BillOfMaterial?> GetByBomCodeAsync(string bomCode, CancellationToken ct = default)

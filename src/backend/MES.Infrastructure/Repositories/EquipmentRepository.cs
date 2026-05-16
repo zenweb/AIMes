@@ -18,6 +18,7 @@ public class EquipmentRepository : IEquipmentRepository
     public async Task<List<Equipment>> GetAllAsync(CancellationToken ct = default)
     {
         return await _context.Equipment
+            .AsNoTracking()
             .OrderBy(e => e.WorkshopId)
             .ThenBy(e => e.EquipmentCode)
             .ToListAsync(ct);
@@ -56,6 +57,7 @@ public class EquipmentRepository : IEquipmentRepository
     public async Task<List<Equipment>> GetByWorkshopAsync(string workshopId, CancellationToken ct = default)
     {
         return await _context.Equipment
+            .AsNoTracking()
             .Where(e => e.WorkshopId == workshopId)
             .OrderBy(e => e.EquipmentCode)
             .ToListAsync(ct);
@@ -64,6 +66,7 @@ public class EquipmentRepository : IEquipmentRepository
     public async Task<List<Equipment>> GetByStatusAsync(EquipmentStatus status, CancellationToken ct = default)
     {
         return await _context.Equipment
+            .AsNoTracking()
             .Where(e => e.Status == status)
             .OrderBy(e => e.WorkshopId)
             .ThenBy(e => e.EquipmentCode)
@@ -81,6 +84,7 @@ public class EquipmentRepository : IEquipmentRepository
     public async Task<List<MaintenanceRecord>> GetFailureHistoryAsync(string equipmentId, CancellationToken ct = default)
     {
         return await _context.MaintenanceRecords
+            .AsNoTracking()
             .Where(m => m.EquipmentId == equipmentId)
             .OrderByDescending(m => m.StartTime)
             .ToListAsync(ct);

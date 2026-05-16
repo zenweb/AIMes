@@ -17,6 +17,7 @@ public class ScheduleRepository : IScheduleRepository
     public async Task<List<SchedulePlan>> GetAllAsync(CancellationToken ct = default)
     {
         return await _context.SchedulePlans
+            .AsNoTracking()
             .Include(p => p.Items)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(ct);

@@ -17,6 +17,7 @@ public class MaterialRepository : IMaterialRepository
     public async Task<List<Material>> GetAllAsync(CancellationToken ct = default)
     {
         return await _context.Materials
+            .AsNoTracking()
             .OrderBy(m => m.MaterialCode)
             .ToListAsync(ct);
     }

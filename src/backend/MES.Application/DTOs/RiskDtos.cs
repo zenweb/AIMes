@@ -8,6 +8,11 @@ public class RiskDashboardDto
     public List<MaterialRiskDto> MaterialRisks { get; set; } = new();
     public List<BottleneckRiskDto> BottleneckRisks { get; set; } = new();
     public DateTime GeneratedAt { get; set; }
+    /// <summary>
+    /// 当前 RiskBoard 是否仍以演示数据返回（v0.1 真实风险计算未接通）。
+    /// 前端依据此标志显示「演示数据」横幅，避免评估人误把示例数据当真实运营状态。
+    /// </summary>
+    public bool IsDemoData { get; set; }
 }
 
 public class RiskCountsDto
