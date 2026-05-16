@@ -14,7 +14,11 @@ public class OperationReportConfiguration : IEntityTypeConfiguration<OperationRe
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
         entity.Property(e => e.Id).HasColumnName("id");
-        entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken();
+        entity.Property(e => e.Version)
+              .HasColumnName("xmin")
+              .HasColumnType("xid")
+              .ValueGeneratedOnAddOrUpdate()
+              .IsConcurrencyToken();
         entity.Property(e => e.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(50);
         entity.Property(e => e.OperationId).HasColumnName("operation_id").IsRequired().HasMaxLength(50);
         entity.Property(e => e.ReportedQuantity).HasColumnName("reported_quantity");

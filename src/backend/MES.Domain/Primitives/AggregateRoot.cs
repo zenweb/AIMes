@@ -13,7 +13,11 @@ public abstract class AggregateRoot
     public string Id { get; protected set; } = Guid.NewGuid().ToString();
 
     /// <summary>
-    /// 乐观并发控制版本（EF Core 可映射为 concurrency token）。
+    /// 乐观并发控制版本。
+    /// 不在此处加 [ConcurrencyCheck]：基础设施层的 EntityTypeConfiguration 用
+    /// IsConcurrencyToken() + ValueGeneratedOnAddOrUpdate() + HasColumnName("xmin")
+    /// 显式映射到 PostgreSQL xmin 系统列（避免 BillOfMaterial/ProcessRoute 用 `new string Version`
+    /// 影子化基类时引发 EF 模型扫描冲突）。
     /// </summary>
     public uint Version { get; protected set; }
 
