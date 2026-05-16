@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MES.AI.Core.Models;
-using MES.AI.Pro.Services;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.ValueObjects;

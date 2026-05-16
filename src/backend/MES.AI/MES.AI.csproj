@@ -4,37 +4,50 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      P2-2 Pro/Core 边界（按设计文档锁定开源版功能集）：
+      - Core 命名空间：Scheduling/ConstraintValidator/规则引擎，仅依赖 Domain，可独立编译。
+      - Pro 命名空间：Agents/Skills/Onnx/Qdrant/SemanticKernel + Adapters。
+      开源构建命令：dotnet build /p:AimesOpenSource=true
+      会自动排除 Pro 代码 + Pro 专属 NuGet 包，符合 Apache-2.0 开源 80% 切片。
+    -->
+    <DefineConstants Condition="'$(AimesOpenSource)' == 'true'">$(DefineConstants);AIMES_OPEN_SOURCE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MES.Domain\MES.Domain.csproj" />
+    <!-- Core Scheduling 用 ILogger<T>，需要 Logging.Abstractions（无论开源/商业构建都需要） -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
-<!-- Semantic Kernel - AI Orchestration Framework -->
-<ItemGroup>
-  <PackageReference Include="Microsoft.SemanticKernel" />
-  <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" />
-  <PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" />
-  <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" />
-</ItemGroup>
+  <!-- 开源构建：排除所有 Pro 代码 + Adapters（Adapters 桥接 Pro 实现） -->
+  <ItemGroup Condition="'$(AimesOpenSource)' == 'true'">
+    <Compile Remove="Agents\**" />
+    <Compile Remove="Skills\**" />
+    <Compile Remove="Services\LlmGatewayService.cs" />
+    <Compile Remove="Services\OnnxInferenceService.cs" />
+    <Compile Remove="Services\QdrantVectorStoreService.cs" />
+    <Compile Remove="Services\SemanticKernelService.cs" />
+    <Compile Remove="Services\VectorStoreService.cs" />
+    <Compile Remove="Services\AiTraceFactory.cs" />
+    <Compile Remove="Services\AiDecisionTraceValidator.cs" />
+    <Compile Remove="Configuration\**" />
+    <Compile Remove="Models\AiDeepeningModels.cs" />
+    <Compile Remove="Models\ChatModels.cs" />
+    <Compile Remove="Models\EquipmentModels.cs" />
+    <Compile Remove="Models\QualityModels.cs" />
+    <Compile Remove="Adapters\**" />
+  </ItemGroup>
 
-<!-- Vector Database Client -->
-<ItemGroup>
-  <PackageReference Include="Qdrant.Client" />
-</ItemGroup>
-
-<!-- ONNX Runtime for AI Inference -->
-<ItemGroup>
-  <PackageReference Include="Microsoft.ML.OnnxRuntime" />
-</ItemGroup>
-
-<!-- Document Processing -->
-<ItemGroup>
-  <PackageReference Include="Microsoft.KernelMemory.Core" />
-</ItemGroup>
-
-  <!-- Configuration -->
-  <ItemGroup>
+  <!-- Pro 专属包（仅在非开源构建时引用） -->
+  <ItemGroup Condition="'$(AimesOpenSource)' != 'true'">
+    <PackageReference Include="Microsoft.SemanticKernel" />
+    <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" />
+    <PackageReference Include="Qdrant.Client" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+    <PackageReference Include="Microsoft.KernelMemory.Core" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
