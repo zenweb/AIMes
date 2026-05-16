@@ -108,18 +108,17 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
                 if (jti != null)
                 {
                     var blacklist = context.HttpContext.RequestServices.GetRequiredService<TokenBlacklistService>();
-                    if (blacklist.IsBlacklisted(jti))
+                    if (await blacklist.IsBlacklistedAsync(jti, context.HttpContext.RequestAborted))
                     {
                         context.Fail("Token has been revoked");
                     }
                 }
-                return Task.CompletedTask;
             }
         };
     });
@@ -342,9 +341,12 @@ app.MapGroup("/api/v1/knowledge")
    .RequireAuthorization()
    .MapKnowledgeEndpoints();
 
+#if !AIMES_OPEN_SOURCE
+// /llm 端点暴露 LLM Provider 配置查询，仅商业版构建包含
 app.MapGroup("/api/v1/llm")
    .RequireAuthorization()
    .MapLlmEndpoints();
+#endif
 
 app.MapGroup("/api/v1/purchase")
    .RequireAuthorization()

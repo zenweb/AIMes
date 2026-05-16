@@ -100,7 +100,7 @@ public static class AuthEndpoints
             var expiry = expClaim != null && long.TryParse(expClaim, out var expUnix)
                 ? DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime
                 : DateTime.UtcNow.AddHours(8);
-            blacklist.Blacklist(jti, expiry);
+            await blacklist.BlacklistAsync(jti, expiry, ct);
         }
 
         return TypedResults.Ok(new { message = "已登出" });
