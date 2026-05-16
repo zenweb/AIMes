@@ -94,11 +94,13 @@ docker compose ps
 
 `docker-compose.yml` **是开发/演示配置，不能直接用于生产**。生产部署至少需要：
 
-- ✅ 修改 `Jwt:SigningKey`（环境变量 `Jwt__SigningKey`）
+- ✅ 修改 `Jwt:SigningKey`（环境变量 `Jwt__SigningKey`，强随机 ≥32 字节：`openssl rand -base64 48`）
 - ✅ 修改 PostgreSQL 默认密码
 - ✅ 修改 admin / admin@123 默认账号密码
 - ✅ 反向代理 (nginx/traefik) + HTTPS 证书
-- ✅ 把 `Aimes:DisableHttpsRedirect` 设为 false（生产开 HTTPS 重定向）
+- ✅ **关闭演示开关**：把环境变量 `Aimes__DisableHttpsRedirect` 设为 `false`（或不设，让 `appsettings.Production.json` 生效）。否则全程 HTTP 跑工厂 MES，账号/工单数据明文走网络。
+- ✅ **关闭 Swagger**：把 `Aimes__EnableSwagger` 设为 `false`。
+- ✅ **反向代理后必须显式开启 `Aimes__TrustForwardedHeaders=true`**：否则 ASP.NET 不读 X-Forwarded-For，登录速率限制（10次/分/IP）会把整个工厂折叠成同一个网关 IP 桶——任何一个员工触发限速则全员被锁。**默认关闭是安全设计（直接暴露公网时防 IP 伪造）**，但一旦在反代后必须开启。
 - ✅ 数据卷外挂 / 备份策略
 - ✅ Serilog → 集中日志（ELK / Loki）
 
