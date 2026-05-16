@@ -22,9 +22,10 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
         _logger = logger;
     }
 
-    public async Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks)
+    public async Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks, CancellationToken ct = default)
     {
-        await EnsureCollectionAsync(collectionName);
+        ct.ThrowIfCancellationRequested();
+        await EnsureCollectionAsync(collectionName, ct);
 
         var points = chunks.Select(chunk =>
         {
@@ -43,17 +44,18 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
         });
 
         var pointsList = points.ToList();
-        await _client.UpsertAsync(collectionName, pointsList);
+        await _client.UpsertAsync(collectionName, pointsList, cancellationToken: ct);
         _logger.LogDebug("Upserted {Count} chunks to collection {Collection}", pointsList.Count, collectionName);
     }
 
-    public async Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5)
+    public async Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (!_knownCollections.ContainsKey(collectionName))
         {
             try
             {
-                await _client.GetCollectionInfoAsync(collectionName);
+                await _client.GetCollectionInfoAsync(collectionName, cancellationToken: ct);
                 _knownCollections.TryAdd(collectionName, 0);
             }
             catch
@@ -68,7 +70,8 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
             new ReadOnlyMemory<float>(embedding),
             limit: (ulong)top,
             payloadSelector: true,
-            vectorsSelector: true
+            vectorsSelector: true,
+            cancellationToken: ct
         );
 
         return results.Select(r =>
@@ -90,24 +93,34 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
         }).ToList();
     }
 
-    public async Task DeleteCollectionAsync(string collectionName)
+    public Task<List<DocumentChunk>> SearchAsync(string collectionName, string query, int top = 5, CancellationToken ct = default)
     {
-        await _client.DeleteCollectionAsync(collectionName);
+        // Qdrant provider 不直接支持文本搜索；上层应当先 GenerateEmbedding 再调 float[] 重载。
+        // 这里返回空列表，避免接口实现缺失（与本类历史行为一致：未实现则空集）。
+        ct.ThrowIfCancellationRequested();
+        _logger.LogWarning("Qdrant text-search overload is not supported; call SearchAsync(float[]) instead");
+        return Task.FromResult(new List<DocumentChunk>());
+    }
+
+    public async Task DeleteCollectionAsync(string collectionName, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await _client.DeleteCollectionAsync(collectionName, cancellationToken: ct);
         _knownCollections.TryRemove(collectionName, out _);
     }
 
-    private async Task EnsureCollectionAsync(string collectionName)
+    private async Task EnsureCollectionAsync(string collectionName, CancellationToken ct = default)
     {
         if (_knownCollections.ContainsKey(collectionName)) return;
 
-        var collections = await _client.ListCollectionsAsync();
+        var collections = await _client.ListCollectionsAsync(cancellationToken: ct);
         if (!collections.Any(c => c == collectionName))
         {
             await _client.CreateCollectionAsync(collectionName, new VectorParams
             {
                 Size = VectorSize,
                 Distance = Distance.Cosine
-            });
+            }, cancellationToken: ct);
             _logger.LogInformation("Created Qdrant collection {Name}", collectionName);
         }
 

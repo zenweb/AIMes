@@ -26,8 +26,9 @@ public class VectorStoreService : IVectorStoreService
     private object GetLock(string collectionName) =>
         _collectionLocks.GetOrAdd(collectionName, _ => new object());
 
-    public Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks)
+    public Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var list = _collections.GetOrAdd(collectionName, _ => new List<DocumentChunk>());
         lock (GetLock(collectionName))
         {
@@ -40,8 +41,9 @@ public class VectorStoreService : IVectorStoreService
         return Task.CompletedTask;
     }
 
-    public Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5)
+    public Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (!_collections.TryGetValue(collectionName, out var list))
         {
             return Task.FromResult(new List<DocumentChunk>());
@@ -76,7 +78,7 @@ public class VectorStoreService : IVectorStoreService
         }
 
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        return await SearchAsync(collectionName, embedding, top);
+        return await SearchAsync(collectionName, embedding, top, ct);
     }
 
     public Task StoreAsync(
@@ -99,8 +101,9 @@ public class VectorStoreService : IVectorStoreService
         return UpsertAsync(collectionName, new[] { chunk });
     }
 
-    public Task DeleteCollectionAsync(string collectionName)
+    public Task DeleteCollectionAsync(string collectionName, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         _collections.TryRemove(collectionName, out _);
         _collectionLocks.TryRemove(collectionName, out _);
         return Task.CompletedTask;

@@ -1,8 +1,4 @@
-using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Knowledge;
-using MES.Domain.Entities.Production;
-using MES.Domain.Entities.Quality;
-using MES.Domain.Entities.Scheduling;
 
 namespace MES.Domain.Interfaces.Services;
 
@@ -11,7 +7,8 @@ namespace MES.Domain.Interfaces.Services;
 /// </summary>
 public interface IVectorStoreService
 {
-    Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks);
-    Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5);
-    Task DeleteCollectionAsync(string collectionName);
+    Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks, CancellationToken ct = default);
+    Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5, CancellationToken ct = default);
+    Task<List<DocumentChunk>> SearchAsync(string collectionName, string query, int top = 5, CancellationToken ct = default);
+    Task DeleteCollectionAsync(string collectionName, CancellationToken ct = default);
 }
