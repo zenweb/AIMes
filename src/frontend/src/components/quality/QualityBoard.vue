@@ -189,7 +189,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import MainLayout from '../layout/MainLayout.vue'
-import axios from 'axios'
+import http from '../../api/http'
 import { getInspections, getQualityStatistics, analyzeRootCause, analyzeSpcTrend } from '../../api/quality'
 import type { InspectionDto, QualityStatisticsDto, RootCauseAnalysisDto, SpcAnalysisDto, AnomalyDto } from '../../types/quality'
 
@@ -321,7 +321,7 @@ onMounted(async () => {
 
   // 异常数据
   try {
-    const { data } = await axios.get('/api/v1/anomalies')
+    const { data } = await http.get('/anomalies')
     anomalies.value = data
   } catch {
     anomalies.value = [

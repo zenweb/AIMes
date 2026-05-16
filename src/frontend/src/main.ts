@@ -1,42 +1,10 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import axios from 'axios'
 import { addToast } from './stores/notifications'
 
-// Axios 拦截器 — 自动附加 Authorization header
-axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('aimes_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-axios.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('aimes_token')
-      localStorage.removeItem('aimes_user')
-      if (window.location.pathname !== '/scheduling/login') {
-        window.location.href = '/scheduling/login'
-      }
-      return Promise.reject(error)
-    }
-
-    // 全局 API 错误提示
-    const msg =
-      error.response?.data?.message ||
-      error.response?.data?.title ||
-      (typeof error.response?.data === 'string' ? error.response.data : null) ||
-      error.message ||
-      '请求失败'
-
-    addToast('error', '请求错误', msg)
-    return Promise.reject(error)
-  }
-)
+// 注：axios 全局拦截器已统一收敛到 src/api/http.ts（含 401 → /auth/refresh → retry 流程）。
+// 所有业务模块通过 import http from '@/api/http' 调用，不再使用裸 axios。
 
 const app = createApp(App)
 
