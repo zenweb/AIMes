@@ -2,6 +2,7 @@ using MES.Application.DTOs;
 using MES.Domain.Entities.Production;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
+using MES.Domain.Interfaces.Services;
 using MES.Domain.ValueObjects;
 
 namespace MES.Application.Services;
@@ -18,11 +19,13 @@ public class OperationService : IOperationService
 {
     private readonly IOperationRepository _operationRepository;
     private readonly IWorkOrderRepository _workOrderRepository;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public OperationService(IOperationRepository operationRepository, IWorkOrderRepository workOrderRepository)
+    public OperationService(IOperationRepository operationRepository, IWorkOrderRepository workOrderRepository, IUnitOfWork unitOfWork)
     {
         _operationRepository = operationRepository;
         _workOrderRepository = workOrderRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<OperationInfoDto> ScanAsync(ScanOperationRequest request, CancellationToken ct = default)
@@ -64,6 +67,7 @@ public class OperationService : IOperationService
 
     public async Task<OperationResultDto> CompleteAsync(string operationId, CompleteOperationRequest request, CancellationToken ct = default)
     {
+        await using var scope = await _unitOfWork.BeginAsync(ct);
         var execution = await GetExecution(operationId, ct);
         execution.Complete(request.Quantity);
 
@@ -89,6 +93,7 @@ public class OperationService : IOperationService
         await _operationRepository.UpdateExecutionAsync(execution, ct);
         await _operationRepository.AddReportAsync(report, ct);
 
+        await scope.CommitAsync(ct);
         return new OperationResultDto { OperationId = execution.Id, Status = execution.Status.ToString(), Message = "Operation completed." };
     }
 

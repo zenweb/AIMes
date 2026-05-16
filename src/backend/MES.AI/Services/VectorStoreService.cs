@@ -1,15 +1,18 @@
+using System.Collections.Concurrent;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 
 namespace MES.AI.Pro.Services;
 
 /// <summary>
-/// 向量存储服务实现
+/// 向量存储服务实现（内存 InMemory provider）。
+/// 注册为 Singleton，所有可变状态用 ConcurrentDictionary + per-collection lock 保护。
 /// </summary>
 public class VectorStoreService : IVectorStoreService
 {
     private readonly ILlmGateway? _llmGateway;
-    private readonly Dictionary<string, List<DocumentChunk>> _collections = new();
+    private readonly ConcurrentDictionary<string, List<DocumentChunk>> _collections = new();
+    private readonly ConcurrentDictionary<string, object> _collectionLocks = new();
 
     public VectorStoreService()
     {
@@ -20,34 +23,38 @@ public class VectorStoreService : IVectorStoreService
         _llmGateway = llmGateway;
     }
 
+    private object GetLock(string collectionName) =>
+        _collectionLocks.GetOrAdd(collectionName, _ => new object());
+
     public Task UpsertAsync(string collectionName, IEnumerable<DocumentChunk> chunks)
     {
-        if (!_collections.ContainsKey(collectionName))
+        var list = _collections.GetOrAdd(collectionName, _ => new List<DocumentChunk>());
+        lock (GetLock(collectionName))
         {
-            _collections[collectionName] = new List<DocumentChunk>();
-        }
-
-        foreach (var chunk in chunks)
-        {
-            var existing = _collections[collectionName].FirstOrDefault(c => c.Id == chunk.Id);
-            if (existing != null)
+            foreach (var chunk in chunks)
             {
-                _collections[collectionName].Remove(existing);
+                list.RemoveAll(c => c.Id == chunk.Id);
+                list.Add(chunk);
             }
-            _collections[collectionName].Add(chunk);
         }
-
         return Task.CompletedTask;
     }
 
     public Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5)
     {
-        if (!_collections.ContainsKey(collectionName))
+        if (!_collections.TryGetValue(collectionName, out var list))
         {
             return Task.FromResult(new List<DocumentChunk>());
         }
 
-        var results = _collections[collectionName]
+        // 在锁内拷贝快照，避免遍历过程中被并发 upsert 修改
+        DocumentChunk[] snapshot;
+        lock (GetLock(collectionName))
+        {
+            snapshot = list.ToArray();
+        }
+
+        var results = snapshot
             .Select(chunk => new
             {
                 Chunk = chunk,
@@ -94,10 +101,8 @@ public class VectorStoreService : IVectorStoreService
 
     public Task DeleteCollectionAsync(string collectionName)
     {
-        if (_collections.ContainsKey(collectionName))
-        {
-            _collections.Remove(collectionName);
-        }
+        _collections.TryRemove(collectionName, out _);
+        _collectionLocks.TryRemove(collectionName, out _);
         return Task.CompletedTask;
     }
 
@@ -123,13 +128,19 @@ public class VectorStoreService : IVectorStoreService
 
     private List<DocumentChunk> TextSearch(string collectionName, string query, int top)
     {
-        if (!_collections.TryGetValue(collectionName, out var chunks))
+        if (!_collections.TryGetValue(collectionName, out var list))
         {
             return new List<DocumentChunk>();
         }
 
+        DocumentChunk[] snapshot;
+        lock (GetLock(collectionName))
+        {
+            snapshot = list.ToArray();
+        }
+
         var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return chunks
+        return snapshot
             .Select(chunk => new
             {
                 Chunk = chunk,

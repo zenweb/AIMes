@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using MES.AI.Pro.Configuration;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
@@ -12,7 +13,8 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
     private const int VectorSize = 1536;
     private readonly QdrantClient _client;
     private readonly ILogger<QdrantVectorStoreService> _logger;
-    private readonly HashSet<string> _knownCollections = new();
+    // 注册为 Singleton；用 ConcurrentDictionary 当 set 用，避免并发 EnsureCollection 的 HashSet 竞争
+    private readonly ConcurrentDictionary<string, byte> _knownCollections = new();
 
     public QdrantVectorStoreService(QdrantConfig config, ILogger<QdrantVectorStoreService> logger)
     {
@@ -47,12 +49,12 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
 
     public async Task<List<DocumentChunk>> SearchAsync(string collectionName, float[] embedding, int top = 5)
     {
-        if (!_knownCollections.Contains(collectionName))
+        if (!_knownCollections.ContainsKey(collectionName))
         {
             try
             {
                 await _client.GetCollectionInfoAsync(collectionName);
-                _knownCollections.Add(collectionName);
+                _knownCollections.TryAdd(collectionName, 0);
             }
             catch
             {
@@ -91,12 +93,12 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
     public async Task DeleteCollectionAsync(string collectionName)
     {
         await _client.DeleteCollectionAsync(collectionName);
-        _knownCollections.Remove(collectionName);
+        _knownCollections.TryRemove(collectionName, out _);
     }
 
     private async Task EnsureCollectionAsync(string collectionName)
     {
-        if (_knownCollections.Contains(collectionName)) return;
+        if (_knownCollections.ContainsKey(collectionName)) return;
 
         var collections = await _client.ListCollectionsAsync();
         if (!collections.Any(c => c == collectionName))
@@ -109,7 +111,7 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
             _logger.LogInformation("Created Qdrant collection {Name}", collectionName);
         }
 
-        _knownCollections.Add(collectionName);
+        _knownCollections.TryAdd(collectionName, 0);
     }
 
     public async ValueTask DisposeAsync()

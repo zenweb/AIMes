@@ -4,6 +4,7 @@ using MES.Application.Services;
 using MES.Domain.Entities.Inventory;
 using MES.Domain.Entities.Production;
 using MES.Domain.Interfaces.Repositories;
+using MES.Domain.Interfaces.Services;
 using Moq;
 using Xunit;
 
@@ -13,13 +14,17 @@ public class InventoryAppServiceTests
 {
     private readonly Mock<IMaterialRepository> _materialRepoMock;
     private readonly Mock<IStockTransactionRepository> _txRepoMock;
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly InventoryAppService _sut;
 
     public InventoryAppServiceTests()
     {
         _materialRepoMock = new Mock<IMaterialRepository>();
         _txRepoMock = new Mock<IStockTransactionRepository>();
-        _sut = new InventoryAppService(_materialRepoMock.Object, _txRepoMock.Object);
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        var scope = new Mock<IUnitOfWorkScope>();
+        _unitOfWorkMock.Setup(u => u.BeginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(scope.Object);
+        _sut = new InventoryAppService(_materialRepoMock.Object, _txRepoMock.Object, _unitOfWorkMock.Object);
     }
 
     [Fact]

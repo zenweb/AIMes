@@ -1,6 +1,7 @@
 using MES.Application.DTOs;
 using MES.Domain.Entities.Inventory;
 using MES.Domain.Interfaces.Repositories;
+using MES.Domain.Interfaces.Services;
 
 namespace MES.Application.Services;
 
@@ -20,11 +21,13 @@ public class InventoryAppService : IInventoryAppService
 {
     private readonly IMaterialRepository _materialRepo;
     private readonly IStockTransactionRepository _txRepo;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public InventoryAppService(IMaterialRepository materialRepo, IStockTransactionRepository txRepo)
+    public InventoryAppService(IMaterialRepository materialRepo, IStockTransactionRepository txRepo, IUnitOfWork unitOfWork)
     {
         _materialRepo = materialRepo;
         _txRepo = txRepo;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<InventoryDashboardDto> GetDashboardAsync(CancellationToken ct = default)
@@ -91,6 +94,7 @@ public class InventoryAppService : IInventoryAppService
 
     public async Task<StockTransactionDto> StockInAsync(StockInRequest request, CancellationToken ct = default)
     {
+        await using var scope = await _unitOfWork.BeginAsync(ct);
         var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
             ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
@@ -103,11 +107,13 @@ public class InventoryAppService : IInventoryAppService
             request.ReferenceType, request.ReferenceNumber, request.Remark, request.Warehouse, request.Location, request.Operator);
         await _txRepo.AddAsync(tx, ct);
 
+        await scope.CommitAsync(ct);
         return MapTransaction(tx);
     }
 
     public async Task<StockTransactionDto> StockOutAsync(StockOutRequest request, CancellationToken ct = default)
     {
+        await using var scope = await _unitOfWork.BeginAsync(ct);
         var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
             ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
@@ -124,11 +130,13 @@ public class InventoryAppService : IInventoryAppService
             request.ReferenceType, request.ReferenceNumber, request.Remark, null, null, request.Operator);
         await _txRepo.AddAsync(tx, ct);
 
+        await scope.CommitAsync(ct);
         return MapTransaction(tx);
     }
 
     public async Task<StockTransactionDto> TransferAsync(TransferRequest request, CancellationToken ct = default)
     {
+        await using var scope = await _unitOfWork.BeginAsync(ct);
         var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
             ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
@@ -146,11 +154,13 @@ public class InventoryAppService : IInventoryAppService
             "Transfer", $"{request.FromWarehouse}->{request.ToWarehouse}", request.Remark, request.FromWarehouse, request.ToWarehouse, request.Operator);
         await _txRepo.AddAsync(tx, ct);
 
+        await scope.CommitAsync(ct);
         return MapTransaction(tx);
     }
 
     public async Task<StockTransactionDto> AdjustAsync(AdjustmentRequest request, CancellationToken ct = default)
     {
+        await using var scope = await _unitOfWork.BeginAsync(ct);
         var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
             ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
@@ -165,6 +175,7 @@ public class InventoryAppService : IInventoryAppService
             "Adjustment", null, request.Remark, null, null, request.Operator);
         await _txRepo.AddAsync(tx, ct);
 
+        await scope.CommitAsync(ct);
         return MapTransaction(tx);
     }
 
