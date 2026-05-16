@@ -31,7 +31,25 @@ builder.Host.UseSerilog();
 
 var isDevelopment = builder.Environment.IsDevelopment();
 var jwtSection = builder.Configuration.GetSection("Jwt");
-var signingKey = jwtSection["SigningKey"] ?? (isDevelopment ? "AIMes-Development-Signing-Key-For-Local-Only-Change-Me" : throw new InvalidOperationException("Jwt:SigningKey is required in production"));
+// JWT 签名密钥：必须由环境变量或 user-secrets 提供（避免任何 demo key 进入 Production 流程）。
+// 开发环境如未配置则生成临时随机 key 并打印警告；生产环境直接抛错。
+var configuredSigningKey = jwtSection["SigningKey"];
+string signingKey;
+if (!string.IsNullOrWhiteSpace(configuredSigningKey))
+{
+    signingKey = configuredSigningKey;
+}
+else if (isDevelopment)
+{
+    var randomBytes = new byte[32];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
+    signingKey = Convert.ToBase64String(randomBytes);
+    Log.Warning("Jwt:SigningKey 未配置，已生成临时开发密钥（重启失效）。生产部署必须通过 Jwt__SigningKey 环境变量提供。");
+}
+else
+{
+    throw new InvalidOperationException("Jwt:SigningKey is required in production. Set the Jwt__SigningKey environment variable.");
+}
 
 // 密钥轮转 + Token 黑名单
 var keyStore = new SigningKeyStore(signingKey);
@@ -114,6 +132,25 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
 });
 
+// ForwardedHeaders：在反向代理（nginx/traefik/K8s ingress）后保留真实客户端 IP，
+// 让 RateLimiter 的 IP partitioning 不会把整个工厂折叠成网关 IP。
+// 默认关闭：直接暴露给客户端时若信任所有代理，攻击者可伪造 X-Forwarded-For 绕过 IP 限速。
+// 生产部署在受信任反代后请显式开启 Aimes:TrustForwardedHeaders=true。
+var trustForwarded = builder.Configuration.GetValue<bool>("Aimes:TrustForwardedHeaders");
+if (trustForwarded)
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+            | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+        // 默认清空 known networks/proxies；允许任何代理转发头（适配 K8s ingress 多跳）。
+        // 生产环境如需更严格信任，按部署拓扑增加 KnownProxies/KnownIPNetworks。
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 // 添加数据库服务
 builder.Services.AddDatabaseServices(builder.Configuration);
 
@@ -149,8 +186,15 @@ builder.Services.AddSwaggerServices();
 // 健康检查（含各组件探针，开发环境使用基础检查）
 if (!isDevelopment)
 {
+    var healthDbConn = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (string.IsNullOrWhiteSpace(healthDbConn))
+    {
+        throw new InvalidOperationException(
+            "Production health checks require ConnectionStrings:DefaultConnection. " +
+            "Set ConnectionStrings__DefaultConnection environment variable.");
+    }
     builder.Services.AddHealthChecks()
-        .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql", tags: new[] { "db", "sql" })
+        .AddNpgSql(healthDbConn, name: "postgresql", tags: new[] { "db", "sql" })
         .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
 }
 else
@@ -201,6 +245,13 @@ else
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
+
+// ForwardedHeaders 必须放在 RateLimiter / Auth 之前，让 Connection.RemoteIpAddress 反映真实客户端 IP
+// （仅当 Aimes:TrustForwardedHeaders=true 时才注册并启用）
+if (trustForwarded)
+{
+    app.UseForwardedHeaders();
+}
 
 // HTTPS 重定向：开源/演示环境可通过 Aimes:DisableHttpsRedirect 关闭，
 // 否则 docker compose 的 http://localhost:5000 会 307 跳到 https 翻车
@@ -256,9 +307,11 @@ app.MapGroup("/api/v1/equipment")
    .MapEquipmentEndpoints();
 
 app.MapGroup("/api/v1/scheduling")
+   .RequireAuthorization()
    .MapSchedulingEndpoints();
 
 app.MapGroup("/api/v1/quality")
+   .RequireAuthorization()
    .MapQualityEndpoints();
 
 app.MapGroup("/api/v1/anomaly")
@@ -266,6 +319,7 @@ app.MapGroup("/api/v1/anomaly")
    .MapAnomalyEndpoints();
 
 app.MapGroup("/api/v1/production")
+   .RequireAuthorization()
    .MapProductionEndpoints();
 
 app.MapGroup("/api/v1/audit-logs")
@@ -285,9 +339,11 @@ app.MapGroup("/api/v1/inventory")
    .MapInventoryEndpoints();
 
 app.MapGroup("/api/v1/knowledge")
+   .RequireAuthorization()
    .MapKnowledgeEndpoints();
 
 app.MapGroup("/api/v1/llm")
+   .RequireAuthorization()
    .MapLlmEndpoints();
 
 app.MapGroup("/api/v1/purchase")

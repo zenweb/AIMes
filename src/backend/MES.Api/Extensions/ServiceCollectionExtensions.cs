@@ -11,6 +11,7 @@ using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
 using MES.Infrastructure.Data;
 using MES.Infrastructure.Events;
+using MES.Infrastructure.Persistence;
 using MES.Infrastructure.Repositories;
 using MES.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -29,17 +30,21 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDatabaseServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? "Host=localhost;Database=mes;Username=postgres;Password=postgres";
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "ConnectionStrings:DefaultConnection is required. Set it via environment variable " +
+                "ConnectionStrings__DefaultConnection or appsettings.{Environment}.json. " +
+                "See docker-compose.yml for the open-source demo example.");
+        }
 
         services.AddDbContext<MesDbContext>(options =>
-            options.UseNpgsql(connectionString, npgsqlOptions =>
-            {
-                npgsqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: 5,
-                    maxRetryDelay: TimeSpan.FromSeconds(30),
-                    errorCodesToAdd: null);
-            }));
+            options.UseNpgsql(connectionString));
+        // 注意：不启用 EnableRetryOnFailure。
+        // 原因：EF Core 的 NpgsqlRetryingExecutionStrategy 与用户手动 BeginTransaction（IUnitOfWork.BeginAsync）
+        //   不兼容，会抛 InvalidOperationException。要重试需把整个事务块包进 ExecuteAsync 里。
+        // 替代方案：在反向代理 / K8s ingress 层做请求级重试（更适合分布式部署）。
 
         return services;
     }
@@ -49,6 +54,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddRepositoryServices(this IServiceCollection services)
     {
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IWorkOrderRepository, WorkOrderRepository>();
         services.AddScoped<IEquipmentRepository, EquipmentRepository>();
         services.AddScoped<IMaterialRepository, MaterialRepository>();

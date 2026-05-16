@@ -86,6 +86,9 @@ services:
       # 开源/演示场景：开启 Swagger UI + 关闭 HTTPS 重定向（避免 docker compose 起来后浏览器 307 翻车）
       Aimes__EnableSwagger: "true"
       Aimes__DisableHttpsRedirect: "true"
+      # ⚠️ JWT 签名密钥 — 仅用于本地评估！生产环境必须替换为强随机值（≥32 字节）。
+      # 生成方式： openssl rand -base64 48
+      Jwt__SigningKey: "DEMO-ONLY-DO-NOT-USE-IN-PRODUCTION-replace-with-openssl-rand-base64-48"
       ConnectionStrings__DefaultConnection: "Host=postgresql;Database=mes;Username=postgres;Password=postgres"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__RabbitMQ: "rabbitmq://rabbitmq"

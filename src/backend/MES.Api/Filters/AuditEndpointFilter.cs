@@ -28,7 +28,7 @@ public sealed class AuditEndpointFilter(string resource) : IEndpointFilter
                         and not IEndpointFilter
                         and not string)
             .ToList();
-        var newValues = newValuesArgs.Count != 0 ? JsonSerializer.Serialize(newValuesArgs) : null;
+        var newValues = newValuesArgs.Count != 0 ? AuditRedaction.RedactAndSerialize(newValuesArgs) : null;
 
         dbContext.AuditLogs.Add(new AuditLog
         {

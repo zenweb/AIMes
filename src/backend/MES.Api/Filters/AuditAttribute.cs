@@ -1,11 +1,5 @@
 using System.Security.Claims;
-using System.Text.Json;
 using MES.Domain.Entities;
-using MES.Domain.Entities.Equipment;
-using MES.Domain.Entities.Knowledge;
-using MES.Domain.Entities.Production;
-using MES.Domain.Entities.Quality;
-using MES.Domain.Entities.Scheduling;
 using MES.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -29,7 +23,10 @@ public class AuditAttribute : ActionFilterAttribute
         var controller = routeValues.TryGetValue("controller", out var controllerValue) ? controllerValue?.ToString() : null;
         var action = routeValues.TryGetValue("action", out var actionValue) ? actionValue?.ToString() : null;
         var resourceId = routeValues.TryGetValue("id", out var idValue) ? idValue?.ToString() : null;
-        var newValues = JsonSerializer.Serialize(context.ActionArguments.Where(argument => argument.Value is not CancellationToken));
+        var argValues = context.ActionArguments
+            .Where(argument => argument.Value is not CancellationToken)
+            .Select(argument => (object?)argument.Value);
+        var newValues = AuditRedaction.RedactAndSerialize(argValues);
 
         dbContext.AuditLogs.Add(new AuditLog
         {
