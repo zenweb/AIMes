@@ -2,9 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test.describe('AI 生产助手 (ChatPanel)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/scheduling/')
-    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
-    await page.goto('/scheduling/dashboard')
+    await page.goto('./')
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('dashboard')
     await page.waitForTimeout(500)
   })
 

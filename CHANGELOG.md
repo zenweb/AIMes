@@ -7,6 +7,9 @@
 ## [Unreleased]
 
 ### Added
+- 前端回归 Vue 技术路线并升级为 Nuxt 3 SPA：保留 `/scheduling/` 基路径，新增 Nuxt pages、全局认证中间件和生产 preview 启动脚本
+- 引入 Tailwind CSS + PrimeVue + PrimeIcons，重塑为数据密集型 AI MES 运维壳层，并保留现有业务看板组件
+- Playwright E2E 配置改为面向 Nuxt 生产构建产物，默认验证 `http://localhost:4173/scheduling/`
 - Pre-Launch DX 配套：根 README、v1 README、LICENSE、CHANGELOG、商业版 CTA 落地页
 - `MES.Api` 启动横幅：打印登录 URL / 默认账号 / Swagger 入口 / 商业版指引
 - 根路径 `/` 自动跳转到 `/scheduling/`，消除评估人猜路径摩擦
@@ -17,6 +20,8 @@
 - Development 演示数据扩展：自动补齐 BOM、工艺路线、质检、异常、采购、库存物料和排产计划示例数据
 
 ### Fixed
+- 固定 Nuxt/Nuxi/Nitro 版本以兼容本机 Node.js 20.7.0，避免新版本 CLI 使用 `node:util.styleText` 导致构建失败
+- 移除旧 `vite.config.ts` 与 Nuxt 构建配置冲突，前端代理、baseURL、分包策略统一收敛到 `nuxt.config.ts`
 - `OnnxInferenceService.LoadModelAsync` 类型不匹配编译错误，改为 `async/await` 写法
 - `OnnxInferenceService.GetOrLoadModelAsync` 增加 `ct.ThrowIfCancellationRequested()`，让所有调用路径在阻塞模型加载前响应取消
 - 本地没有 PostgreSQL 时登录接口会卡在 Npgsql 连接失败；Development 默认改为 SQL Server `sa / zen`，并让 `admin / admin123` 种子账号可正常写入本地库

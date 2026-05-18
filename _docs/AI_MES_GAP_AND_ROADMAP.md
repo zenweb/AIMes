@@ -131,9 +131,10 @@
 - 仓储/采购：齐套、缺料、到货、替代料。
 - 管理层：交期、OEE、质量、成本、AI 采纳率。
 
-### 原型位置
+### 前端升级位置
 
-- React + Tailwind + Shadcn UI 风格原型：`src/frontend-ai-mes/`
+- Nuxt + Tailwind CSS + PrimeVue 主前端：`src/frontend/`
+- 当前策略是迁移现有 Vue 业务组件，避免另起 React 技术路线。
 
 ### 验收
 

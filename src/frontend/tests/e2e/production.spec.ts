@@ -2,8 +2,11 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Production 生产看板', () => {
   test.beforeEach(async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
-    await page.goto('/production')
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('production')
     await page.waitForSelector('.production-board', { timeout: 20000 })
   })
 
@@ -171,7 +174,7 @@ test.describe('Production 生产看板', () => {
 
   test('空状态下显示暂无工单', async ({ page }) => {
     // 拦截工单列表 API 返回空
-    await page.route('**/api/production/work-orders*', (route) => {
+    await page.route('**/api/v1/production/work-orders*', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',

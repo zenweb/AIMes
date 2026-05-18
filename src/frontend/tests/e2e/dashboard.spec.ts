@@ -2,8 +2,11 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Dashboard 生产概览', () => {
   test.beforeEach(async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
-    await page.goto('/scheduling/dashboard')
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('dashboard')
     await page.waitForTimeout(1000)
   })
 

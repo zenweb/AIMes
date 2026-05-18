@@ -2,9 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Scheduling 排产甘特图', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/scheduling/')
-    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
-    await page.goto('/scheduling/scheduling')
+    await page.goto('./')
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('scheduling')
     await page.waitForSelector('.schedule-board', { timeout: 20000 })
   })
 

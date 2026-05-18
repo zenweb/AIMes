@@ -4,21 +4,30 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc && vite build",
-    "preview": "vite preview",
+    "dev": "node ./node_modules/nuxt/bin/nuxt.mjs dev --host 127.0.0.1 --port 5173",
+    "build": "node ./node_modules/nuxt/bin/nuxt.mjs build",
+    "preview": "node ./scripts/preview.mjs",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.vue --max-warnings 0",
     "format": "prettier --write src"
   },
   "dependencies": {
+    "@nuxtjs/tailwindcss": "6.12.2",
     "@microsoft/signalr": "^10.0.0",
+    "@primevue/themes": "^4.4.1",
     "axios": "^1.7.0",
     "dhtmlx-gantt": "^8.0.0",
     "html5-qrcode": "^2.3.8",
+    "nuxt": "3.11.2",
+    "primeicons": "^7.0.0",
+    "primevue": "^4.4.1",
     "qrcode": "^1.5.4",
     "vue": "^3.4.0",
     "vue-router": "^4.3.0"
+  },
+  "overrides": {
+    "nuxi": "3.11.1",
+    "nitropack": "2.9.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

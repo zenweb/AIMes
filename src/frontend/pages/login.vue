@@ -1,0 +1,9 @@
+<template>
+  <LoginPage />
+</template>
+
+<script setup lang="ts">
+import LoginPage from '@/components/auth/LoginPage.vue'
+
+definePageMeta({ requiresAuth: false })
+</script>

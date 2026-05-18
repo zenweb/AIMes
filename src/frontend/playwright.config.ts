@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:4173/scheduling',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -18,9 +18,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx vite',
-    url: 'http://localhost:5173',
+    command: 'npm run build && npm run preview',
+    url: 'http://localhost:4173/scheduling/login',
     reuseExistingServer: true,
-    timeout: 30000,
+    timeout: 120000,
   },
 })

@@ -2,8 +2,11 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Equipment 设备管理', () => {
   test.beforeEach(async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_token', 'mock-e2e-token'))
-    await page.goto('/equipment')
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('equipment')
     await page.waitForSelector('.equipment-board', { timeout: 20000 })
   })
 
@@ -170,7 +173,7 @@ test.describe('Equipment 设备管理', () => {
 
   test('空筛选结果显示空状态', async ({ page }) => {
     // 拦截设备列表 API 返回空
-    await page.route('**/api/equipment/list*', (route) => {
+    await page.route('**/api/v1/equipment/list*', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
