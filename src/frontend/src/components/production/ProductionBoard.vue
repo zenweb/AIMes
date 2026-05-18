@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="production-board">
+  <div class="production-board">
       <!-- 产量摘要 -->
       <div class="summary-bar">
         <div class="summary-item">
@@ -233,13 +232,11 @@
         <div v-if="notification.show" class="notification" :class="notification.type">{{ notification.message }}</div>
       </Transition>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import MainLayout from '../layout/MainLayout.vue'
 import { useAuth } from '../../stores/auth'
 import { getWorkOrders, scanOperation, startOperation, completeOperation, reportException } from '../../api/production'
 import type { WorkOrderDto, OperationInfoDto } from '../../types/production'

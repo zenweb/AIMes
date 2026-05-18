@@ -18,6 +18,11 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
+      '/hubs': {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   preview: {
@@ -26,6 +31,11 @@ export default defineConfig({
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+      },
+      '/hubs': {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

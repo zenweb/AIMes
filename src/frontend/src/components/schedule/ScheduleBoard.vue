@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="schedule-board">
+  <div class="schedule-board">
       <GanttToolbar
         :scale="currentScale"
         :objective="currentObjective"
@@ -74,7 +73,6 @@
         @apply="onApplyObjective"
       />
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
@@ -84,7 +82,6 @@ import ScheduleMetrics from './ScheduleMetrics.vue'
 import OrderDetailPanel from './OrderDetailPanel.vue'
 import FeedbackForm from '../gantt/FeedbackForm.vue'
 import ParetoCompare from './ParetoCompare.vue'
-import MainLayout from '../layout/MainLayout.vue'
 
 const GanttChart = defineAsyncComponent({
   loader: () => import('../gantt/GanttChart.vue'),

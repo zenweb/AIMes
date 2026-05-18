@@ -31,10 +31,13 @@ public class AnomalyAppService : IAnomalyAppService
 
     public async Task<PagedResult<ProductionAnomalyDto>> GetOpenAnomaliesAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
+        var total = await _anomalyRepo.CountAsync(ct);
+        var anomalies = await _anomalyRepo.GetPagedAsync(page, pageSize, ct);
+
         return new PagedResult<ProductionAnomalyDto>
         {
-            Items = new List<ProductionAnomalyDto>(),
-            TotalCount = 0,
+            Items = anomalies.Select(MapToDto).ToList(),
+            TotalCount = total,
             Page = page,
             PageSize = pageSize,
         };

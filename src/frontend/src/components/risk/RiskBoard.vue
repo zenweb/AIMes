@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="risk-board">
+  <div class="risk-board">
       <!-- 加载中 -->
       <div v-if="loading" class="loading-overlay">
         <div class="spinner"></div>
@@ -147,12 +146,10 @@
         </div>
       </div>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import MainLayout from '../layout/MainLayout.vue'
 import { getRiskDashboard } from '../../api/risk'
 import type {
   RiskDashboardDto,

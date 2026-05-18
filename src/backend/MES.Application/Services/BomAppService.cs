@@ -28,12 +28,12 @@ public class BomAppService : IBomAppService
 
     public async Task<PagedResult<BomSummaryDto>> GetAllBomsAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        // IBomRepository 没有 GetAllAsync，通过领域服务遍历
-        // 此处简化：从仓储获取所有 Bom（实际使用中可扩展仓储）
+        var all = await _bomRepo.GetAllAsync(ct);
+        var skip = Math.Max(0, page - 1) * pageSize;
         return new PagedResult<BomSummaryDto>
         {
-            Items = new List<BomSummaryDto>(),
-            TotalCount = 0,
+            Items = all.Skip(skip).Take(pageSize).Select(MapToSummary).ToList(),
+            TotalCount = all.Count,
             Page = page,
             PageSize = pageSize,
         };

@@ -17,6 +17,7 @@ namespace MES.Application.Services;
 public interface IQualityAppService
 {
     Task<InspectionDto> CreateInspectionAsync(CreateInspectionRequest request, CancellationToken ct = default);
+    Task<List<InspectionDto>> GetAllInspectionsAsync(CancellationToken ct = default);
     Task<InspectionDto?> GetInspectionByIdAsync(string id, CancellationToken ct = default);
     Task<List<InspectionDto>> GetInspectionsByWorkOrderAsync(string workOrderId, CancellationToken ct = default);
     Task<QualityStatisticsDto> GetStatisticsAsync(string? productCode = null, CancellationToken ct = default);
@@ -59,6 +60,12 @@ public class QualityAppService : IQualityAppService
     {
         var inspection = await _inspectionRepo.GetByIdAsync(id);
         return inspection != null ? MapToInspectionDto(inspection) : null;
+    }
+
+    public async Task<List<InspectionDto>> GetAllInspectionsAsync(CancellationToken ct = default)
+    {
+        var inspections = await _inspectionRepo.GetAllAsync(ct);
+        return inspections.Select(MapToInspectionDto).ToList();
     }
 
     public async Task<List<InspectionDto>> GetInspectionsByWorkOrderAsync(string workOrderId, CancellationToken ct = default)
@@ -174,4 +181,3 @@ public class QualityAppService : IQualityAppService
 
     #endregion
 }
-

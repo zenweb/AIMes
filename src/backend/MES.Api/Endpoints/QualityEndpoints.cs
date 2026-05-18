@@ -15,6 +15,7 @@ public static class QualityEndpoints
              .RequireAuthorization()
              .AddEndpointFilter<ValidationEndpointFilter>()
              .AddEndpointFilter(Audit);
+        group.MapGet("/inspections", GetInspectionsAsync).WithTags("质量管理");
         group.MapGet("/inspections/{id}", GetInspectionByIdAsync).WithTags("质量管理");
         group.MapGet("/inspections/workorder/{workOrderId}", GetInspectionsByWorkOrderAsync).WithTags("质量管理");
         group.MapGet("/statistics", GetStatisticsAsync).WithTags("质量管理");
@@ -33,6 +34,14 @@ public static class QualityEndpoints
     {
         var inspection = await qualityService.CreateInspectionAsync(request, ct);
         return TypedResults.Created($"/api/v1/quality/inspections/{inspection.Id}", inspection);
+    }
+
+    private static async Task<IResult> GetInspectionsAsync(
+        IQualityAppService qualityService,
+        CancellationToken ct)
+    {
+        var inspections = await qualityService.GetAllInspectionsAsync(ct);
+        return TypedResults.Ok(inspections);
     }
 
     private static async Task<IResult> GetInspectionByIdAsync(

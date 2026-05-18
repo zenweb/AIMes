@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="quality-board">
+  <div class="quality-board">
       <!-- 顶部 KPI -->
       <div class="kpi-row">
         <div class="kpi-card">
@@ -183,12 +182,10 @@
         </div>
       </Transition>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import MainLayout from '../layout/MainLayout.vue'
 import http from '../../api/http'
 import { getInspections, getQualityStatistics, analyzeRootCause, analyzeSpcTrend } from '../../api/quality'
 import type { InspectionDto, QualityStatisticsDto, RootCauseAnalysisDto, SpcAnalysisDto, AnomalyDto } from '../../types/quality'
@@ -321,8 +318,8 @@ onMounted(async () => {
 
   // 异常数据
   try {
-    const { data } = await http.get('/anomalies')
-    anomalies.value = data
+    const { data } = await http.get('/anomaly')
+    anomalies.value = data.items ?? data
   } catch {
     anomalies.value = [
       { id: 'ANM-001', workOrderId: 'WO-004', anomalyType: '尺寸超差', severity: 'critical', description: '装配后轴孔配合间隙 0.12mm，超过 0.08mm 标准上限', status: 'open', detectedAt: '2026-05-12T09:15:00' },

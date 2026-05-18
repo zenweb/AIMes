@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="monitoring">
+  <div class="monitoring">
       <div class="page-header">
         <h2 class="page-title">生产实时监控</h2>
         <div class="header-right">
@@ -132,13 +131,11 @@
         </div>
       </div>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
-import MainLayout from '../layout/MainLayout.vue'
 
 interface EquipmentMetric {
   id: string
@@ -225,7 +222,9 @@ function addEvent(type: string, text: string) {
 
 function connectSignalR() {
   connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/monitoring')
+    .withUrl('/hubs/monitoring', {
+      accessTokenFactory: () => localStorage.getItem('aimes_token') ?? '',
+    })
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .configureLogging(signalR.LogLevel.Warning)
     .build()

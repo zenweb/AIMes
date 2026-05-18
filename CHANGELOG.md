@@ -14,11 +14,16 @@
 - `Aimes:DisableHttpsRedirect` 配置：允许在 docker-compose 等纯 HTTP 场景关闭 HTTPS 重定向
 - `Database:Provider` 配置：支持在本地开发环境使用 SQL Server 2016，并保留 PostgreSQL 作为默认/Docker 路径
 - `Messaging:Transport=Disabled` 开发配置：本地调试不再依赖 RabbitMQ/MassTransit License
+- Development 演示数据扩展：自动补齐 BOM、工艺路线、质检、异常、采购、库存物料和排产计划示例数据
 
 ### Fixed
 - `OnnxInferenceService.LoadModelAsync` 类型不匹配编译错误，改为 `async/await` 写法
 - `OnnxInferenceService.GetOrLoadModelAsync` 增加 `ct.ThrowIfCancellationRequested()`，让所有调用路径在阻塞模型加载前响应取消
 - 本地没有 PostgreSQL 时登录接口会卡在 Npgsql 连接失败；Development 默认改为 SQL Server `sa / zen`，并让 `admin / admin123` 种子账号可正常写入本地库
+- Vite dev/preview 增加 `/hubs` 代理并修复 SignalR JWT 查询串认证，`/hubs/notifications/negotiate` 不再返回 404/401
+- `GET /api/v1/quality/inspections` 补齐查询端点，质量看板不再触发 405
+- BOM、工艺路线、异常列表服务返回真实分页数据，不再显示空看板
+- `/scheduling/*` 认证后页面统一使用全局导航布局，避免进入模块后丢失顶部导航和左侧菜单
 
 ## [v0.1.0] - 2026-05-14
 

@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="equipment-board">
+  <div class="equipment-board">
       <!-- 顶部 KPI -->
       <div class="kpi-row">
         <div class="kpi-card">
@@ -211,12 +210,10 @@
         </div>
       </Transition>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import MainLayout from '../layout/MainLayout.vue'
 import { getEquipmentList, getEquipmentStatistics, getHealthReport, getMaintenanceHistory, diagnose } from '../../api/equipment'
 import type { EquipmentDto, EquipmentStatisticsDto, EquipmentHealthDto, DiagnosticReportDto, MaintenanceRecordDto } from '../../types/equipment'
 import { formatDate } from '../../utils/date'

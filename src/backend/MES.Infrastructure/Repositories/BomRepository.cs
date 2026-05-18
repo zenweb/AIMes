@@ -15,6 +15,14 @@ public class BomRepository : IBomRepository
         _context = context;
     }
 
+    public async Task<List<BillOfMaterial>> GetAllAsync(CancellationToken ct = default)
+    {
+        return await _context.BillsOfMaterial
+            .AsNoTracking()
+            .OrderBy(e => e.BomCode)
+            .ToListAsync(ct);
+    }
+
     public async Task<BillOfMaterial?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.BillsOfMaterial.FirstOrDefaultAsync(e => e.Id == id, ct);

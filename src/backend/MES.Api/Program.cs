@@ -109,6 +109,18 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken)
+                    && (path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/hubs/monitoring")))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            },
             OnTokenValidated = async context =>
             {
                 var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
@@ -398,10 +410,15 @@ try
     if (DatabaseProvider.IsSqlServer(databaseProvider) && app.Environment.IsDevelopment())
     {
         await dbContext.Database.EnsureCreatedAsync();
+        await DemoDataSeeder.SeedAsync(dbContext);
     }
     else
     {
         await dbContext.Database.MigrateAsync();
+        if (app.Environment.IsDevelopment())
+        {
+            await DemoDataSeeder.SeedAsync(dbContext);
+        }
     }
 }
 catch (Exception ex)

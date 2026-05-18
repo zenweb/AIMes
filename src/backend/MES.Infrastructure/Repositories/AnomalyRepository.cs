@@ -17,7 +17,24 @@ public class AnomalyRepository : IAnomalyRepository
 
     public async Task<ProductionAnomaly?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.ProductionAnomalies.FirstOrDefaultAsync(e => e.Id == id, ct);
+        return await _context.ProductionAnomalies
+            .Include(e => e.Responses)
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    public async Task<List<ProductionAnomaly>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.ProductionAnomalies
+            .AsNoTracking()
+            .OrderByDescending(e => e.DetectedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.ProductionAnomalies.CountAsync(ct);
     }
 
     public async Task<List<ProductionAnomaly>> GetOpenByWorkOrderAsync(WorkOrderNumber workOrderNumber, CancellationToken ct = default)

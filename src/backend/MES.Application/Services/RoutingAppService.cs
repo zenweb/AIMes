@@ -24,10 +24,12 @@ public class RoutingAppService : IRoutingAppService
 
     public async Task<PagedResult<ProcessRouteDto>> GetAllRoutesAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
+        var all = await _routingRepo.GetAllAsync(ct);
+        var skip = Math.Max(0, page - 1) * pageSize;
         return new PagedResult<ProcessRouteDto>
         {
-            Items = new List<ProcessRouteDto>(),
-            TotalCount = 0,
+            Items = all.Skip(skip).Take(pageSize).Select(MapToSummary).ToList(),
+            TotalCount = all.Count,
             Page = page,
             PageSize = pageSize,
         };
@@ -99,6 +101,10 @@ public class RoutingAppService : IRoutingAppService
             OperationCode = s.OperationCode.Value,
             OperationName = s.OperationName,
             WorkstationType = s.WorkstationType,
+            StandardSetupMinutes = s.StandardSetupMinutes,
+            StandardRunMinutesPerUnit = s.StandardRunMinutesPerUnit,
+            EquipmentType = s.EquipmentType,
+            InspectionRequired = s.InspectionRequired,
             Parameters = s.Parameters.Select(p => new StepParameterDto
             {
                 ParameterCode = p.ParameterCode,

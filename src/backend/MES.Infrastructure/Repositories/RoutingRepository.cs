@@ -15,6 +15,14 @@ public class RoutingRepository : IRoutingRepository
         _context = context;
     }
 
+    public async Task<List<ProcessRoute>> GetAllAsync(CancellationToken ct = default)
+    {
+        return await _context.ProcessRoutes
+            .AsNoTracking()
+            .OrderBy(e => e.RouteCode)
+            .ToListAsync(ct);
+    }
+
     public async Task<ProcessRoute?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.ProcessRoutes.FirstOrDefaultAsync(e => e.Id == id, ct);

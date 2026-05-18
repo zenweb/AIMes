@@ -1,6 +1,5 @@
 <template>
-  <MainLayout>
-    <div class="dashboard">
+  <div class="dashboard">
       <!-- 顶部指标卡片 -->
       <div class="kpi-row">
         <div class="kpi-card">
@@ -118,13 +117,11 @@
         </div>
       </div>
     </div>
-  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
-import MainLayout from '../layout/MainLayout.vue'
 import { getDashboard } from '../../api/dashboard'
 import type { DashboardData, KpiCard, EquipmentStatus, TodaySchedule, MaterialAlert, QualityStats } from '../../types/dashboard'
 
@@ -153,7 +150,9 @@ function applyDashboardData(d: DashboardData) {
 
 function connectSignalR() {
   connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/monitoring')
+    .withUrl('/hubs/monitoring', {
+      accessTokenFactory: () => localStorage.getItem('aimes_token') ?? '',
+    })
     .withAutomaticReconnect([0, 2000, 5000, 10000])
     .configureLogging(signalR.LogLevel.Warning)
     .build()
