@@ -227,7 +227,7 @@ npm run dev
 开发模式访问：
 
 - 前端: `http://localhost:5173/scheduling/`
-- 后端: `http://localhost:5000`
+- 后端: `http://localhost:5147`
 
 ## 登录用户
 
@@ -313,6 +313,8 @@ dotnet ef database update `
 | `Aimes__EnableSwagger` | Production 下显式启用 Swagger |
 | `Aimes__DisableHttpsRedirect` | Docker 演示场景关闭 HTTPS 重定向 |
 
+本地 `dotnet run` 默认读取 `src/backend/MES.Api/Properties/launchSettings.json`，HTTP 端口是 `5147`。前端 `npm run dev` 和 `npm run preview` 默认会把 `/api` 代理到 `http://localhost:5147`；如需连接 Docker Compose 暴露的 `5000`，可设置 `VITE_API_TARGET=http://localhost:5000` 后重启前端服务。
+
 ## 文档
 
 - [`CHANGELOG.md`](CHANGELOG.md): 面向用户的发布变更
@@ -325,4 +327,3 @@ dotnet ef database update `
 ## 许可证
 
 本项目使用 [Apache License 2.0](LICENSE)。
-

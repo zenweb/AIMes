@@ -420,7 +420,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     Console.WriteLine($"║  ✓ API 文档：  {primary + "/swagger",-42}║");
     Console.WriteLine($"║  ✓ 健康检查：  {primary + "/health",-42}║");
     Console.WriteLine("║                                                          ║");
-    Console.WriteLine("║  默认账号：    admin / admin@123                          ║");
+    Console.WriteLine("║  默认账号：    admin / admin123                           ║");
     Console.WriteLine("║  ⚠️  仅演示用。生产环境请立即修改密码 + 配置 Jwt:SigningKey ║");
     Console.WriteLine("║                                                          ║");
     Console.WriteLine("║  💡 商业版（LLM 多目标 Pareto / 自学习 / 私有部署）       ║");
