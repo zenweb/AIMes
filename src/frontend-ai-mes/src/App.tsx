@@ -21,6 +21,7 @@ import {
   UserRoundCog,
   Wrench,
 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 
 type Status = 'normal' | 'warning' | 'danger' | 'ai'
 
@@ -49,9 +50,9 @@ const commandFlow = [
 ] satisfies Array<{ label: string; value: string; status: Status }>
 
 const aiPlans = [
-  { name: '平衡交期', score: 93, late: '1 单', utilization: '86%', risk: '低', selected: true },
-  { name: '瓶颈优先', score: 89, late: '2 单', utilization: '91%', risk: '中', selected: false },
-  { name: '最小换型', score: 84, late: '3 单', utilization: '82%', risk: '低', selected: false },
+  { name: '平衡交期', score: 93, late: '1 单', utilization: '86%', risk: '低' },
+  { name: '瓶颈优先', score: 89, late: '2 单', utilization: '91%', risk: '中' },
+  { name: '最小换型', score: 84, late: '3 单', utilization: '82%', risk: '低' },
 ]
 
 const anomalies = [
@@ -67,6 +68,14 @@ const roleQueues = [
   { role: '设备工程师', count: 4, focus: '预测维护、停机恢复' },
   { role: '采购/仓储', count: 7, focus: '缺料预警、到货齐套' },
 ]
+
+const roleTasks: Record<string, string[]> = {
+  调度员: ['确认 WO-20260518-009 插单影响', '采纳或拒绝 AI 平衡交期方案', '释放 CNC-01 明日 2 小时缓冲'],
+  车间主管: ['确认 A 班人员负载', '处理 ASM-01 工序等待', '下发 B200 批次优先级调整'],
+  质检员: ['复测 B200 热处理批次', '确认 QC-01 首件检验结果', '登记 A100 外观抽检结论'],
+  设备工程师: ['检查 CNC-02 冷却回路', '确认 HT-01 维护窗口', '回写设备恢复时间'],
+  '采购/仓储': ['确认 MAT-A04 加急到货', '核对替代料 MAT-A04-B', '释放 A100 工单预占库存'],
+}
 
 function statusClass(status: Status) {
   return {
@@ -154,7 +163,13 @@ function MetricCard({ icon: Icon, label, value, note }: { icon: typeof Activity;
   )
 }
 
-function CommandFlow() {
+function CommandFlow({
+  selectedStep,
+  onSelectStep,
+}: {
+  selectedStep: string
+  onSelectStep: (step: string) => void
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -169,10 +184,15 @@ function CommandFlow() {
       <div className="mt-4 grid grid-cols-8 gap-2">
         {commandFlow.map((step, index) => (
           <div key={step.label} className="relative">
-            <div className={`rounded-md border px-3 py-3 ${statusClass(step.status)}`}>
+            <button
+              className={`w-full rounded-md border px-3 py-3 text-left transition ${statusClass(step.status)} ${
+                selectedStep === step.label ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+              }`}
+              onClick={() => onSelectStep(step.label)}
+            >
               <div className="text-xs">{step.label}</div>
               <div className="mt-1 text-lg font-semibold">{step.value}</div>
-            </div>
+            </button>
             {index < commandFlow.length - 1 ? (
               <div className="absolute right-[-9px] top-1/2 z-10 h-px w-4 bg-slate-300" />
             ) : null}
@@ -183,7 +203,19 @@ function CommandFlow() {
   )
 }
 
-function AiSchedulingPanel() {
+function AiSchedulingPanel({
+  selectedPlan,
+  adoptedPlan,
+  onSelectPlan,
+  onAdoptPlan,
+}: {
+  selectedPlan: string
+  adoptedPlan: string | null
+  onSelectPlan: (plan: string) => void
+  onAdoptPlan: (plan: string) => void
+}) {
+  const plan = aiPlans.find((item) => item.name === selectedPlan) ?? aiPlans[0]
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -197,31 +229,47 @@ function AiSchedulingPanel() {
         <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">3 个候选方案</span>
       </div>
       <div className="mt-4 space-y-3">
-        {aiPlans.map((plan) => (
-          <div
-            key={plan.name}
-            className={`rounded-md border p-3 ${plan.selected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'}`}
+        {aiPlans.map((item) => (
+          <button
+            key={item.name}
+            onClick={() => onSelectPlan(item.name)}
+            className={`w-full rounded-md border p-3 text-left transition ${
+              selectedPlan === item.name ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
           >
             <div className="flex items-center justify-between">
-              <div className="font-medium">{plan.name}</div>
-              <div className="text-xl font-semibold">{plan.score}</div>
+              <div className="font-medium">{item.name}</div>
+              <div className="text-xl font-semibold">{item.score}</div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-              <span>延期 {plan.late}</span>
-              <span>稼动 {plan.utilization}</span>
-              <span>风险 {plan.risk}</span>
+              <span>延期 {item.late}</span>
+              <span>稼动 {item.utilization}</span>
+              <span>风险 {item.risk}</span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
       <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-        解释：WO-20260518-009 受 MAT-A04 缺料影响，AI 建议优先下发 B200 批次并保留 CNC-02 维护窗口。
+        解释：当前选择“{plan.name}”，预计延期 {plan.late}，稼动率 {plan.utilization}。AI 建议保留 CNC-02 维护窗口并优先下发 B200 批次。
       </div>
+      <button
+        className="mt-3 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        onClick={() => onAdoptPlan(selectedPlan)}
+      >
+        采纳当前排产方案
+      </button>
+      {adoptedPlan ? <div className="mt-2 text-xs text-emerald-700">已采纳：{adoptedPlan}，等待下发确认。</div> : null}
     </section>
   )
 }
 
-function AnomalyLoop() {
+function AnomalyLoop({
+  decisions,
+  onDecision,
+}: {
+  decisions: Record<string, string>
+  onDecision: (title: string, decision: string) => void
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -238,7 +286,21 @@ function AnomalyLoop() {
             <div className="mt-2 text-sm text-slate-600">{item.action}</div>
             <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
               <span>负责人：{item.owner}</span>
-              <span>待采纳</span>
+              <span>{decisions[item.title] ?? '待采纳'}</span>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                onClick={() => onDecision(item.title, '已采纳')}
+              >
+                采纳建议
+              </button>
+              <button
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs hover:bg-slate-50"
+                onClick={() => onDecision(item.title, '已拒绝')}
+              >
+                拒绝并记录原因
+              </button>
             </div>
           </div>
         ))}
@@ -247,7 +309,13 @@ function AnomalyLoop() {
   )
 }
 
-function RoleWorkspace() {
+function RoleWorkspace({
+  activeRole,
+  onSelectRole,
+}: {
+  activeRole: string
+  onSelectRole: (role: string) => void
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -256,14 +324,30 @@ function RoleWorkspace() {
       </div>
       <div className="mt-4 grid grid-cols-5 gap-3">
         {roleQueues.map((queue) => (
-          <div key={queue.role} className="rounded-md border border-slate-200 p-3">
+          <button
+            key={queue.role}
+            className={`rounded-md border p-3 text-left transition ${
+              activeRole === queue.role ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+            }`}
+            onClick={() => onSelectRole(queue.role)}
+          >
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium">{queue.role}</div>
               <div className="rounded-md bg-slate-100 px-2 py-1 text-xs">{queue.count}</div>
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">{queue.focus}</p>
-          </div>
+          </button>
         ))}
+      </div>
+      <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+        <div className="text-sm font-semibold">{activeRole}待办</div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {(roleTasks[activeRole] ?? []).map((task) => (
+            <div key={task} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+              {task}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -304,6 +388,25 @@ function FactoryMap() {
 }
 
 export function App() {
+  const [selectedStep, setSelectedStep] = useState('AI 排产')
+  const [selectedPlan, setSelectedPlan] = useState('平衡交期')
+  const [adoptedPlan, setAdoptedPlan] = useState<string | null>(null)
+  const [anomalyDecisions, setAnomalyDecisions] = useState<Record<string, string>>({})
+  const [activeRole, setActiveRole] = useState('调度员')
+  const selectedStepHint = useMemo(() => {
+    const hints: Record<string, string> = {
+      订单: '当前 18 个订单中 4 个有物料或设备约束。',
+      'BOM 展开': 'BOM 已展开 18/18，A100 存在替代料建议。',
+      工艺路线: '1 个工单缺少最终检验节点。',
+      物料齐套: '4 个工单未齐套，MAT-A04 是主要瓶颈。',
+      产能校验: 'CNC 设备负载均衡，热处理炉接近上限。',
+      'AI 排产': '已有 3 个候选方案，可采纳后下发。',
+      下发执行: '11 个工单已下发，2 个等待主管确认。',
+      '质检/异常': '5 个异常会影响交付承诺。',
+    }
+    return hints[selectedStep] ?? ''
+  }, [selectedStep])
+
   return (
     <AppShell>
       <div className="mb-5 flex items-end justify-between">
@@ -325,15 +428,26 @@ export function App() {
       </div>
 
       <div className="mt-4">
-        <CommandFlow />
+        <CommandFlow selectedStep={selectedStep} onSelectStep={setSelectedStep} />
+        <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          当前聚焦：{selectedStep}。{selectedStepHint}
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-12 gap-4">
         <div className="col-span-4">
-          <AiSchedulingPanel />
+          <AiSchedulingPanel
+            selectedPlan={selectedPlan}
+            adoptedPlan={adoptedPlan}
+            onSelectPlan={setSelectedPlan}
+            onAdoptPlan={setAdoptedPlan}
+          />
         </div>
         <div className="col-span-4">
-          <AnomalyLoop />
+          <AnomalyLoop
+            decisions={anomalyDecisions}
+            onDecision={(title, decision) => setAnomalyDecisions((current) => ({ ...current, [title]: decision }))}
+          />
         </div>
         <div className="col-span-4">
           <FactoryMap />
@@ -341,7 +455,7 @@ export function App() {
       </div>
 
       <div className="mt-4">
-        <RoleWorkspace />
+        <RoleWorkspace activeRole={activeRole} onSelectRole={setActiveRole} />
       </div>
     </AppShell>
   )

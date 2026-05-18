@@ -29,3 +29,12 @@ npm run dev
 ```
 
 The current implementation is a static product prototype. API integration should happen after the workflow and layout are accepted.
+
+## Current Prototype Interactions
+
+- Select a production-chain node to focus the command center.
+- Select and adopt an AI scheduling plan.
+- Accept or reject AI anomaly recommendations.
+- Switch role workspaces and inspect role-specific task queues.
+
+This is still a prototype: it proves the operating model and layout, not backend persistence.
