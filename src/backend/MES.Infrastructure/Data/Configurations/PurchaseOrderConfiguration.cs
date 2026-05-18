@@ -12,11 +12,7 @@ public class PurchaseOrderConfiguration : IEntityTypeConfiguration<PurchaseOrder
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
         entity.Property(e => e.Id).HasColumnName("id");
-        entity.Property(e => e.Version)
-              .HasColumnName("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderConcurrencyToken();
         entity.Property(e => e.OrderNumber).HasColumnName("order_number").IsRequired().HasMaxLength(50);
         entity.Property(e => e.SupplierName).HasColumnName("supplier_name").IsRequired().HasMaxLength(200);
         entity.Property(e => e.SupplierContact).HasColumnName("supplier_contact").HasMaxLength(100);

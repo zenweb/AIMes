@@ -200,18 +200,30 @@ docker compose down -v
 
 ### 本地开发运行
 
-先启动依赖服务：
+默认开发配置使用本机 SQL Server 2016：
 
-```powershell
-cd C:\AIWorks\AIMes\v1
-docker compose up -d postgresql redis rabbitmq qdrant
-```
+| 项 | 值 |
+|----|----|
+| Provider | `SqlServer` |
+| Server | `localhost` |
+| Database | `mes_dev` |
+| Login | `sa / zen` |
 
 启动后端：
 
 ```powershell
 cd C:\AIWorks\AIMes\v1
 $env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run --project src/backend/MES.Api/MES.Api.csproj
+```
+
+如果要切回 Docker/PostgreSQL：
+
+```powershell
+cd C:\AIWorks\AIMes\v1
+docker compose up -d postgresql redis rabbitmq qdrant
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:Database__Provider = "PostgreSQL"
 $env:ConnectionStrings__DefaultConnection = "Host=localhost;Database=mes_dev;Username=postgres;Password=postgres"
 dotnet run --project src/backend/MES.Api/MES.Api.csproj
 ```
@@ -306,14 +318,18 @@ dotnet ef database update `
 | `ASPNETCORE_ENVIRONMENT` | `Development` 或 `Production` |
 | `ASPNETCORE_URLS` | API 监听地址，例如 `http://+:5000` |
 | `Jwt__SigningKey` | JWT 签名密钥，生产必须配置强随机值 |
-| `ConnectionStrings__DefaultConnection` | PostgreSQL 连接串 |
+| `Database__Provider` | 数据库提供方：`SqlServer` 或 `PostgreSQL` |
+| `ConnectionStrings__DefaultConnection` | SQL Server 或 PostgreSQL 连接串 |
 | `ConnectionStrings__Redis` | Redis 连接串 |
 | `ConnectionStrings__RabbitMQ` | RabbitMQ 连接串 |
+| `Messaging__Transport` | 消息总线：开发可用 `Disabled`，生产使用 RabbitMQ |
 | `AI__VectorStore__Provider` | 向量库 Provider，例如 `InMemory` 或 `Qdrant` |
 | `Aimes__EnableSwagger` | Production 下显式启用 Swagger |
 | `Aimes__DisableHttpsRedirect` | Docker 演示场景关闭 HTTPS 重定向 |
 
 本地 `dotnet run` 默认读取 `src/backend/MES.Api/Properties/launchSettings.json`，HTTP 端口是 `5147`。前端 `npm run dev` 和 `npm run preview` 默认会把 `/api` 代理到 `http://localhost:5147`；如需连接 Docker Compose 暴露的 `5000`，可设置 `VITE_API_TARGET=http://localhost:5000` 后重启前端服务。
+
+现有 EF 迁移文件按 PostgreSQL 生成。Development + SQL Server 路径使用 EF `EnsureCreated` 初始化本地演示库；正式迁移仍以 PostgreSQL 迁移为准。
 
 ## 文档
 

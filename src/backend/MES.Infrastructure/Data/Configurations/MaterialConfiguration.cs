@@ -11,11 +11,7 @@ public class MaterialConfiguration : IEntityTypeConfiguration<Material>
         entity.ToTable("materials");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id");
-        // PostgreSQL xmin 系统列做并发令牌（防止跨用户库存计算冲突，shadow property）
-        entity.Property<uint>("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderShadowConcurrencyToken();
         entity.Property(e => e.MaterialCode).HasColumnName("material_code").IsRequired().HasMaxLength(50);
         entity.Property(e => e.MaterialName).HasColumnName("material_name").IsRequired().HasMaxLength(200);
         entity.Property(e => e.MaterialType).HasColumnName("material_type").HasMaxLength(50);

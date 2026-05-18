@@ -12,6 +12,7 @@ public class BillOfMaterialConfiguration : IEntityTypeConfiguration<BillOfMateri
         entity.ToTable("bills_of_material");
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
+        entity.IgnoreAggregateVersionForDerivedStringVersion();
         entity.Property(e => e.Id).HasColumnName("id");
         entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken();
         entity.Property(e => e.BomCode).HasColumnName("bom_code").IsRequired().HasMaxLength(50);

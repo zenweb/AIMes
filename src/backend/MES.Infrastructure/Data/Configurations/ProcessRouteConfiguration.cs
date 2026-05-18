@@ -12,6 +12,7 @@ public class ProcessRouteConfiguration : IEntityTypeConfiguration<ProcessRoute>
         entity.ToTable("process_routes");
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
+        entity.IgnoreAggregateVersionForDerivedStringVersion();
         entity.Property(e => e.Id).HasColumnName("id");
         entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken();
         entity.Property(e => e.RouteCode).HasColumnName("route_code").IsRequired().HasMaxLength(50);

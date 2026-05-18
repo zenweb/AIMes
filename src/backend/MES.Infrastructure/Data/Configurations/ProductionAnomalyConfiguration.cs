@@ -13,11 +13,7 @@ public class ProductionAnomalyConfiguration : IEntityTypeConfiguration<Productio
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
         entity.Property(e => e.Id).HasColumnName("id");
-        entity.Property(e => e.Version)
-              .HasColumnName("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderConcurrencyToken();
         entity.OwnsOne(e => e.WorkOrderNumber, w => w.Property(x => x.Value).HasColumnName("work_order_number").IsRequired().HasMaxLength(50));
         entity.OwnsOne(e => e.OperationCode, o => o.Property(x => x.Value).HasColumnName("operation_code").IsRequired().HasMaxLength(50));
         entity.Property(e => e.EquipmentId).HasColumnName("equipment_id").HasMaxLength(50);

@@ -32,6 +32,9 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDatabaseServices(this IServiceCollection services, IConfiguration configuration)
     {
+        var provider = DatabaseProvider.Resolve(configuration["Database:Provider"]);
+        Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", provider);
+
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -42,16 +45,28 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddDbContext<MesDbContext>(options =>
+        {
+            if (DatabaseProvider.IsSqlServer(provider))
+            {
+                options.UseSqlServer(connectionString, sqlServerOptions =>
+                {
+                    sqlServerOptions.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(30),
+                        errorNumbersToAdd: null);
+                    sqlServerOptions.UseCompatibilityLevel(130);
+                });
+                return;
+            }
+
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
-                // 重启 retry-on-failure。要让事务和 retry 共存，所有手动事务必须走 IUnitOfWork.ExecuteAsync
-                // （它内部用 IExecutionStrategy.ExecuteAsync 包裹整个事务作为 retriable unit）。
-                // 直接 BeginTransactionAsync 在 retry 启用时会抛 InvalidOperationException —— 不要这么用。
                 npgsqlOptions.EnableRetryOnFailure(
                     maxRetryCount: 5,
                     maxRetryDelay: TimeSpan.FromSeconds(30),
                     errorCodesToAdd: null);
-            }));
+            });
+        });
 
         return services;
     }
@@ -264,10 +279,30 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddMessagingServices(this IServiceCollection services, IConfiguration configuration)
     {
+        if (string.Equals(
+                configuration["Messaging:Transport"],
+                "Disabled",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return services;
+        }
+
         services.AddMassTransit(x =>
         {
             x.AddConsumer<OperationReportedIntegrationEventConsumer>();
             x.AddConsumer<SchedulePlanCreatedIntegrationEventConsumer>();
+
+            if (string.Equals(
+                    configuration["Messaging:Transport"],
+                    "InMemory",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                x.UsingInMemory((context, cfg) =>
+                {
+                    cfg.ConfigureEndpoints(context);
+                });
+                return;
+            }
 
             x.UsingRabbitMq((context, cfg) =>
             {

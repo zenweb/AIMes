@@ -13,6 +13,9 @@ public class MesDbContextFactory : IDesignTimeDbContextFactory<MesDbContext>
     public MesDbContext CreateDbContext(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        var provider = DatabaseProvider.Resolve(builder.Configuration["Database:Provider"]);
+        Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", provider);
+
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -23,7 +26,15 @@ public class MesDbContextFactory : IDesignTimeDbContextFactory<MesDbContext>
         }
 
         var optionsBuilder = new DbContextOptionsBuilder<MesDbContext>();
-        optionsBuilder.UseNpgsql(connectionString);
+        if (DatabaseProvider.IsSqlServer(provider))
+        {
+            optionsBuilder.UseSqlServer(connectionString, sqlServerOptions => sqlServerOptions.UseCompatibilityLevel(130));
+        }
+        else
+        {
+            optionsBuilder.UseNpgsql(connectionString);
+        }
+
         return new MesDbContext(optionsBuilder.Options);
     }
 }

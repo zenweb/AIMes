@@ -12,10 +12,13 @@
 - 根路径 `/` 自动跳转到 `/scheduling/`，消除评估人猜路径摩擦
 - `Aimes:EnableSwagger` 配置：允许 Production 模式下显式启用 Swagger UI（开源演示场景）
 - `Aimes:DisableHttpsRedirect` 配置：允许在 docker-compose 等纯 HTTP 场景关闭 HTTPS 重定向
+- `Database:Provider` 配置：支持在本地开发环境使用 SQL Server 2016，并保留 PostgreSQL 作为默认/Docker 路径
+- `Messaging:Transport=Disabled` 开发配置：本地调试不再依赖 RabbitMQ/MassTransit License
 
 ### Fixed
 - `OnnxInferenceService.LoadModelAsync` 类型不匹配编译错误，改为 `async/await` 写法
 - `OnnxInferenceService.GetOrLoadModelAsync` 增加 `ct.ThrowIfCancellationRequested()`，让所有调用路径在阻塞模型加载前响应取消
+- 本地没有 PostgreSQL 时登录接口会卡在 Npgsql 连接失败；Development 默认改为 SQL Server `sa / zen`，并让 `admin / admin123` 种子账号可正常写入本地库
 
 ## [v0.1.0] - 2026-05-14
 

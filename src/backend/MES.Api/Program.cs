@@ -4,6 +4,7 @@ using MES.Api.Endpoints;
 using MES.Api.Extensions;
 using MES.Api.Middleware;
 using MES.Api.Services;
+using MES.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
@@ -192,9 +193,14 @@ if (!isDevelopment)
             "Production health checks require ConnectionStrings:DefaultConnection. " +
             "Set ConnectionStrings__DefaultConnection environment variable.");
     }
+    var healthDbProvider = DatabaseProvider.Resolve(builder.Configuration["Database:Provider"]);
     builder.Services.AddHealthChecks()
-        .AddNpgSql(healthDbConn, name: "postgresql", tags: new[] { "db", "sql" })
         .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
+    if (DatabaseProvider.IsPostgreSql(healthDbProvider))
+    {
+        builder.Services.AddHealthChecks()
+            .AddNpgSql(healthDbConn, name: "postgresql", tags: new[] { "db", "sql" });
+    }
 }
 else
 {
@@ -388,7 +394,15 @@ try
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<MES.Infrastructure.Data.MesDbContext>();
-    await dbContext.Database.MigrateAsync();
+    var databaseProvider = DatabaseProvider.Resolve(builder.Configuration["Database:Provider"]);
+    if (DatabaseProvider.IsSqlServer(databaseProvider) && app.Environment.IsDevelopment())
+    {
+        await dbContext.Database.EnsureCreatedAsync();
+    }
+    else
+    {
+        await dbContext.Database.MigrateAsync();
+    }
 }
 catch (Exception ex)
 {

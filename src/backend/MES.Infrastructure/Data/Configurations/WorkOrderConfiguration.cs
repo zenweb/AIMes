@@ -13,11 +13,7 @@ public class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.CustomFields);
         entity.Property(e => e.Id).HasColumnName("id");
-        // PostgreSQL xmin 系统列做并发令牌（shadow property，不污染 Domain）
-        entity.Property<uint>("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderShadowConcurrencyToken();
         entity.Property(e => e.OrderNumber).HasColumnName("order_number").IsRequired().HasMaxLength(50);
         entity.Property(e => e.ProductCode).HasColumnName("product_code").IsRequired().HasMaxLength(50);
         entity.Property(e => e.ProductName).HasColumnName("product_name").IsRequired().HasMaxLength(200);

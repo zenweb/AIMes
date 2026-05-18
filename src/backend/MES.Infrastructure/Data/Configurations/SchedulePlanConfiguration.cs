@@ -11,11 +11,7 @@ public class SchedulePlanConfiguration : IEntityTypeConfiguration<SchedulePlan>
         entity.ToTable("schedule_plans");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id");
-        // PostgreSQL xmin 系统列做并发令牌（shadow property）
-        entity.Property<uint>("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderShadowConcurrencyToken();
         entity.Property(e => e.PlanName).HasColumnName("plan_name").HasMaxLength(200);
         entity.Property(e => e.PlanStartDate).HasColumnName("plan_start_date");
         entity.Property(e => e.PlanEndDate).HasColumnName("plan_end_date");

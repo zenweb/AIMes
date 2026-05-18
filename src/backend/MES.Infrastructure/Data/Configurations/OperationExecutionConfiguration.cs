@@ -12,11 +12,7 @@ public class OperationExecutionConfiguration : IEntityTypeConfiguration<Operatio
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.DomainEvents);
         entity.Property(e => e.Id).HasColumnName("id");
-        entity.Property(e => e.Version)
-              .HasColumnName("xmin")
-              .HasColumnType("xid")
-              .ValueGeneratedOnAddOrUpdate()
-              .IsConcurrencyToken();
+        entity.UseProviderConcurrencyToken();
         entity.Property(e => e.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(50);
         entity.Property(e => e.OperationCode).HasColumnName("operation_code").IsRequired().HasMaxLength(50);
         entity.Property(e => e.OperationName).HasColumnName("operation_name").HasMaxLength(200);
