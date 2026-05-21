@@ -376,6 +376,35 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
   })
 
+  test('业务问答：生产完工后解释 OTD 复核影响', async ({ page }) => {
+    await page.goto('production', { waitUntil: 'commit' })
+    await page.waitForSelector('.production-board', { timeout: 30000 })
+    await page.locator('.wo-card').first().click()
+    await page.locator('.op-btn.complete').first().click()
+    await expect(page.getByText('完工报告')).toBeVisible()
+    await expect(page.locator('.dialog-confirm')).toBeEnabled()
+    await page.locator('.dialog-confirm').click()
+    await expect(page.locator('.execution-trace-panel').getByText(/完工复核已提交/)).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('生产完工对 OTD 有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('生产执行影响：WO-001 已进入 OTD 复盘。')).toBeVisible()
+    await expect(chat.getByText(/WO-001 CNC 精加工 完工回写/)).toBeVisible()
+    await expect(chat.getByText(/质检结果 Pass/)).toBeVisible()
+    await expect(chat.getByText(/OTD 状态：OTD 风险/)).toBeVisible()
+    await expect(chat.getByText(/生产复核：WO-001 CNC 精加工 完工复核/)).toBeVisible()
+    await expect(chat.getByText(/OTD 风险待复核/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-PROD-COMPLETE-OP-20 \/ TRACE-PROD-CLOSEOUT-OP-20/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开生产报工' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+  })
+
   test('业务问答：评估 CNC-001 故障 4 小时影响', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('如果 CNC-001 故障 4 小时会怎样？')

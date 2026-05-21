@@ -395,6 +395,27 @@ function latestEquipmentDowntimeEvidenceForCnc001(): OtdEvidenceChainItem | null
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
+function latestProductionExecutionEvidence(stage: '生产完工' | '生产复核'): OtdEvidenceChainItem | null {
+  return readOtdEvidenceChainRecords()
+    .filter(record => record.stage === stage)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
+function isProductionExecutionIntent(q: string) {
+  const subject = q.includes('生产完工')
+    || q.includes('生产复核')
+    || q.includes('生产执行')
+    || q.includes('生产报工')
+    || q.includes('完工')
+  const predicate = q.includes('otd')
+    || q.includes('影响')
+    || q.includes('排产')
+    || q.includes('复核')
+    || q.includes('证据')
+    || q.includes('回写')
+  return subject && predicate
+}
+
 function buildKittingDelayLines() {
   const evidence = latestKittingEvidenceForRushOrder()
   if (!evidence) {
@@ -543,6 +564,34 @@ function getBusinessAnalysisReply(question: string): string {
       `- 审计追踪：${review.auditId} / ${review.traceId}`,
       ...closureLines,
       '- 该复核包已同步到 AI 排产事件队列、系统治理、报表 OTD 证据链和审计回放。',
+    ].join('\n') + citationLine
+  }
+
+  if (isProductionExecutionIntent(q)) {
+    const completion = latestProductionExecutionEvidence('生产完工')
+    const review = latestProductionExecutionEvidence('生产复核')
+    if (!completion) {
+      return [
+        '**生产执行影响：当前还没有生产完工证据。**',
+        '',
+        '- 请先在生产报工页选择工单并提交完工报告。',
+        '- 完工后助手会读取生产完工、生产复核、质检结果、OTD 状态和追踪编号。',
+      ].join('\n') + citationLine
+    }
+    const reviewLine = review
+      ? `- 生产复核：${review.title}，状态 ${review.statusLabel}；${review.summary}`
+      : '- 生产复核：尚未读取到生产复核证据，请在排产页复核后续窗口和质量门。'
+    const traceLine = review
+      ? `${completion.traceId} / ${review.traceId}`
+      : completion.traceId
+    return [
+      `**生产执行影响：${completion.object} 已进入 OTD 复盘。**`,
+      '',
+      `- 完工证据：${completion.title}，${completion.summary}`,
+      `- OTD 状态：${completion.statusLabel}，来源 ${completion.source}。`,
+      reviewLine,
+      `- 追踪编号：${traceLine}`,
+      '- 处置建议：到 AI 排产复核后续工序窗口和质量门，到 OTD 报告核对证据链，生产报工保留现场完工记录。',
     ].join('\n') + citationLine
   }
 
@@ -821,8 +870,18 @@ function getExecutableActions(question: string): ChatAction[] {
     && (q.includes('故障') || q.includes('停机'))
   const qualityReworkIntent = (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
+  const productionExecutionIntent = isProductionExecutionIntent(q)
 
   if (q.includes('打开') || q.includes('进入') || q.includes('跳转')) {
+    if (q.includes('生产') || q.includes('报工') || q.includes('完工')) {
+      actions.push({
+        id: 'open-production',
+        label: '打开生产报工',
+        type: 'navigate',
+        targetRoute: '/production',
+        resultMessage: '已打开生产报工页面。',
+      })
+    }
     if (q.includes('排产')) {
       actions.push({
         id: 'open-scheduling',
@@ -882,6 +941,10 @@ function getExecutableActions(question: string): ChatAction[] {
 
   if (qualityReworkIntent) {
     actions.push(...qualityReworkActions())
+  }
+
+  if (productionExecutionIntent) {
+    actions.push(...productionExecutionActions())
   }
 
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
@@ -1015,6 +1078,32 @@ function equipmentDowntimeActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/scheduling',
       resultMessage: '已打开 AI 排产工作台，复核 CNC-001 停机后的换设备、加班和拆单建议。',
+    },
+  ]
+}
+
+function productionExecutionActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-production',
+      label: '打开生产报工',
+      type: 'navigate',
+      targetRoute: '/production',
+      resultMessage: '已打开生产报工页面，核对现场完工报告和执行追踪。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核生产完工后的后续窗口、质量门和承诺交期。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对生产完工和生产复核证据链。',
     },
   ]
 }

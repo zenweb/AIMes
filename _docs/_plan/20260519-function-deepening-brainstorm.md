@@ -527,6 +527,11 @@ OTD 改善复盘
   - 治理卡展示阶段、状态、标题、摘要、影响对象、来源和追踪编号，并提供 `查看生产报工`、`查看 AI 排产`、`查看 OTD 报告` 三个核对入口。
   - 已补 e2e：`Admin Agent 治理 › 生产完工执行证据进入 Agent 治理并可跳转生产排产和报表`，覆盖生产报工完工 -> Agent 治理生产执行卡 -> 生产/排产/报表跨页核对。
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "生产完工执行证据进入 Agent 治理并可跳转生产排产和报表"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：26 passed。
+- 2026-05-22 继续把生产执行证据接入 `AI 生产助手`：
+  - 助手新增 `生产完工 / 生产复核` 意图识别，直接读取统一 OTD 证据链中的最新完工与复核记录，回答完工回写、质检结果、OTD 状态、复核状态和追踪编号。
+  - 回答提供 `打开生产报工`、`打开 AI 排产`、`打开 OTD 报告` 三个处置入口，避免生产完工影响只能在生产页或治理页人工查。
+  - 已补 e2e：`AI 生产助手 (ChatPanel) › 业务问答：生产完工后解释 OTD 复核影响`，覆盖生产报工完工 -> 聊天问答 -> 三类跨页动作。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "生产完工后解释 OTD 复核影响"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：21 passed；`git diff --check`：passed。
 
 ---
 
