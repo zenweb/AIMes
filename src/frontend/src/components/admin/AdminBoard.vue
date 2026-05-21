@@ -688,6 +688,49 @@
           </div>
         </div>
 
+        <div class="production-execution-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>生产执行治理</h4>
+                <p>监管生产开工、完工、复核、质量门和扫码交接证据，确认现场执行是否真的回写到排产与 OTD 复盘。</p>
+              </div>
+              <strong>{{ productionExecutionEvidenceRecords.length ? productionExecutionEvidenceRecords.length + ' 条' : '0 条' }}</strong>
+            </div>
+            <div v-if="productionExecutionCards.length" class="production-execution-list">
+              <article v-for="record in productionExecutionCards" :key="record.id" class="production-execution-card">
+                <div class="action-topline">
+                  <span>{{ record.stage }}</span>
+                  <em :class="'policy-' + otdEvidenceStatusClass(record.status)">{{ record.statusLabel }}</em>
+                </div>
+                <strong>{{ record.title }}</strong>
+                <p>{{ record.summary }}</p>
+                <div class="policy-row">
+                  <span>影响对象</span>
+                  <code>{{ record.object }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>来源</span>
+                  <code>{{ record.source }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.traceId }}</code>
+                </div>
+                <div class="assistant-package-actions">
+                  <button type="button" class="btn-sm" @click="openProductionBoard">查看生产报工</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待生产执行证据</strong>
+              <span>生产报工提交开工、完工、质量门或扫码交接后，会在这里显示现场执行追踪和待复核状态。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="quality-policy-governance">
           <div class="policy-block">
             <div class="otd-governance-heading">
@@ -1406,6 +1449,13 @@ const kittingEvidenceRecords = computed(() =>
 const activeKittingEvidenceRecords = computed(() =>
   kittingEvidenceRecords.value.filter(record => record.status !== 'closed')
 )
+const productionExecutionStages = ['扫码执行', '生产开工', '扫码完工', '物料消耗', '质量门', '工序交接', '扫码返工', '交接冻结', '扫码异常', '生产完工', '生产复核']
+const productionExecutionEvidenceRecords = computed(() =>
+  otdEvidenceRecords.value.filter(record => productionExecutionStages.includes(record.stage))
+)
+const activeProductionExecutionEvidenceRecords = computed(() =>
+  productionExecutionEvidenceRecords.value.filter(record => record.status !== 'closed')
+)
 const qualityClosedPolicy = computed(() =>
   qualityKnowledgeReviewRecords.value.find(record => record.status === 'closed')
 )
@@ -1521,6 +1571,12 @@ const agentGovernanceMetrics = computed(() => [
   { label: '灰度决策', value: qualityGrayReleaseDecisionCards.value.length },
   { label: '灰度复核', value: qualityGrayReleaseOpenReviewIssueCount.value },
   { label: 'OTD 复盘证据', value: otdEvidenceRecords.value.length },
+  {
+    label: '生产执行治理',
+    value: productionExecutionEvidenceRecords.value.length
+      ? `${productionExecutionEvidenceRecords.value.length} 条 / ${activeProductionExecutionEvidenceRecords.value.length} 待复核`
+      : '待生成',
+  },
   { label: 'POC 复盘签署', value: pocReviewSignoff.value ? '已签署' : '待签署' },
   { label: 'POC 上线交付', value: pocRolloutPackage.value ? '行动包已生成' : '待生成' },
   { label: 'POC 试点运行', value: pocPilotRun.value ? '已闭环' : '待确认' },
@@ -1531,6 +1587,7 @@ const agentGovernanceMetrics = computed(() => [
   { label: '审计覆盖', value: '100%' },
 ])
 const otdEvidenceCards = computed(() => otdEvidenceRecords.value.slice(0, 8))
+const productionExecutionCards = computed(() => productionExecutionEvidenceRecords.value.slice(0, 6))
 
 const filteredUsers = computed(() => {
   if (!userSearch.value) return users.value
@@ -1649,6 +1706,10 @@ function openRiskBoard() {
 
 function openQualityBoard() {
   router.push('/quality')
+}
+
+function openProductionBoard() {
+  router.push('/production')
 }
 
 function openReportBoard() {
@@ -1952,6 +2013,11 @@ onMounted(async () => {
 .otd-evidence-card { padding: 11px; border: 1px solid #dbeafe; border-radius: 6px; background: #f8fbff; }
 .otd-evidence-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .otd-evidence-card p { min-height: 44px; margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.production-execution-governance { display: grid; grid-template-columns: 1fr; }
+.production-execution-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.production-execution-card { padding: 11px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f0fdf4; }
+.production-execution-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.production-execution-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .quality-policy-governance { display: grid; grid-template-columns: 1fr; }
 .quality-policy-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .quality-policy-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }

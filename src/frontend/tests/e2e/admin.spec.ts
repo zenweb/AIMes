@@ -791,6 +791,57 @@ test.describe('Admin Agent 治理', () => {
     await expect(page.locator('.quality-rework-report').getByText('WO-003 返工对 OTD 的影响')).toBeVisible()
   })
 
+  test('生产完工执行证据进入 Agent 治理并可跳转生产排产和报表', async ({ page }) => {
+    await page.goto('production', { waitUntil: 'commit' })
+    await page.waitForSelector('.production-board', { timeout: 30000 })
+    await page.locator('.wo-card').first().click()
+    await page.locator('.op-btn.complete').first().click()
+    await expect(page.getByText('完工报告')).toBeVisible()
+    await expect(page.locator('.dialog-confirm')).toBeEnabled()
+    await page.locator('.dialog-confirm').click()
+    await expect(page.locator('.execution-trace-panel').getByText(/完工复核已提交/)).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '生产执行治理' }).getByText('2 条 / 2 待复核')).toBeVisible()
+    const governance = panel.locator('.production-execution-governance')
+    await expect(governance.getByRole('heading', { name: '生产执行治理' })).toBeVisible()
+    const completionCard = governance.locator('.production-execution-card').filter({ hasText: '完工回写' })
+    await expect(completionCard.locator('.action-topline span').getByText('生产完工', { exact: true })).toBeVisible()
+    await expect(completionCard.getByText('OTD 风险')).toBeVisible()
+    await expect(completionCard.getByText(/质检结果 Pass/)).toBeVisible()
+    await expect(completionCard.locator('.policy-row').filter({ hasText: '来源' }).getByText('生产报工 / admin')).toBeVisible()
+    await expect(completionCard.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText(/TRACE-PROD-COMPLETE-/)).toBeVisible()
+    const reviewCard = governance.locator('.production-execution-card').filter({ hasText: '完工复核' })
+    await expect(reviewCard.locator('.action-topline span').getByText('生产复核', { exact: true })).toBeVisible()
+    await expect(reviewCard.getByText('OTD 风险待复核')).toBeVisible()
+
+    await completionCard.getByRole('button', { name: '查看生产报工' }).click()
+    await page.waitForURL(/\/scheduling\/production$/)
+    await expect(page.locator('.production-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const schedulingCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
+    await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await expect(page.locator('.schedule-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const reportCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
+    await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
+    await page.waitForURL(/\/scheduling\/report$/)
+    const reportEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '完工回写' })
+    await expect(reportEvidence.locator('.evidence-topline span').getByText('生产完工', { exact: true })).toBeVisible()
+    await expect(reportEvidence.getByText(/TRACE-PROD-COMPLETE-/)).toBeVisible()
+  })
+
   test('POC 复盘签署进入 Agent 治理与审计编号', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_poc_review_signoff', JSON.stringify({
