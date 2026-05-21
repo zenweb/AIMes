@@ -84,13 +84,16 @@ test.describe('Scanner 条码现场入口', () => {
 
     await page.goto('audit-logs')
     const auditPanel = page.locator('.audit-replay-panel')
+    await expect(auditPanel.locator('.metric-chip').filter({ hasText: '扫码执行回放' }).getByText('1')).toBeVisible()
     const auditCard = auditPanel.locator('.decision-card').filter({ hasText: '扫码执行：WO-RUSH-9001 工单扫码到站已确认' })
     await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-topline').getByText('扫码执行证据')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
     const detail = auditPanel.locator('.replay-detail')
     await expect(detail.getByText('TRACE-QR-WO-RUSH-9001-ARRIVAL', { exact: true })).toBeVisible()
-    await expect(detail.getByText(/条码扫描 \/ 现场工位/)).toBeVisible()
-    await expect(detail.getByText(/报表中心 CSV 与审计回放均可核对该记录/)).toBeVisible()
+    await expect(detail.getByText(/条码扫描读取 条码扫描 \/ 现场工位 \/ 管理员/)).toBeVisible()
+    await expect(detail.getByText(/同步给报表、审计回放和生产报工入口/)).toBeVisible()
+    await expect(detail.getByText(/核对扫码到站、报工入口、开工校验和后续工序是否连续/)).toBeVisible()
   })
 
   test('扫码工单带入生产报工并生成开工证据', async ({ page }) => {
