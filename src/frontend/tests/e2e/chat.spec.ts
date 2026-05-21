@@ -1,7 +1,25 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 test.describe('AI 生产助手 (ChatPanel)', () => {
   test.describe.configure({ timeout: 60000 })
+
+  async function closeRushKittingRisk(page: Page) {
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 30000 })
+    await page.locator('.kitting-panel').locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
+    await expect(page.locator('.kitting-panel').getByText('缺料事件已同步 AI 排产')).toBeVisible()
+
+    await page.goto('purchase', { waitUntil: 'commit' })
+    await page.waitForSelector('.po-board', { timeout: 30000 })
+    const purchasePanel = page.locator('.shortage-action-panel')
+    await purchasePanel.getByRole('button', { name: '生成采购加急单' }).click()
+    await expect(purchasePanel.getByText('已加急')).toBeVisible()
+    await purchasePanel.getByRole('button', { name: '模拟加急收货' }).click()
+    await expect(purchasePanel.getByText('风险下降')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+  }
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -284,21 +302,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
   })
 
   test('业务问答：采购收货闭合后解释缺料齐套状态', async ({ page }) => {
-    await page.goto('inventory', { waitUntil: 'commit' })
-    await page.waitForSelector('.inv-board', { timeout: 30000 })
-    await page.locator('.kitting-panel').locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
-    await expect(page.locator('.kitting-panel').getByText('缺料事件已同步 AI 排产')).toBeVisible()
-
-    await page.goto('purchase', { waitUntil: 'commit' })
-    await page.waitForSelector('.po-board', { timeout: 30000 })
-    const purchasePanel = page.locator('.shortage-action-panel')
-    await purchasePanel.getByRole('button', { name: '生成采购加急单' }).click()
-    await expect(purchasePanel.getByText('已加急')).toBeVisible()
-    await purchasePanel.getByRole('button', { name: '模拟加急收货' }).click()
-    await expect(purchasePanel.getByText('风险下降')).toBeVisible()
-
-    await page.goto('dashboard', { waitUntil: 'commit' })
-    await expect(page.locator('.chat-fab')).toBeVisible()
+    await closeRushKittingRisk(page)
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('为什么 WO-RUSH-9001 会延期？')
     await page.locator('.send-btn').click()
@@ -321,6 +325,21 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText(/WO-RUSH-9001.*急单插入/)).toBeVisible()
     await expect(chat.getByText(/WO-2026-0042.*CNC-001/)).toBeVisible()
     await expect(chat.getByText(/WO-003.*热处理硬度返工/)).toBeVisible()
+  })
+
+  test('业务问答：采购收货闭合后重排最危险工单', async ({ page }) => {
+    await closeRushKittingRisk(page)
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('今天最危险的 3 个工单是什么？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('今天最危险的 3 个工单：')).toBeVisible()
+    await expect(chat.getByText(/WO-2026-0042.*CNC-001/)).toBeVisible()
+    await expect(chat.getByText(/WO-003.*热处理硬度返工/)).toBeVisible()
+    await expect(chat.getByText(/WO-RUSH-9001.*采购收货已齐套.*采购证据 PO-RUSH-20260519/)).toBeVisible()
+    await expect(chat.getByText(/缺料风险从高风险降级为观察项/)).toBeVisible()
+    await expect(chat.getByText(/缺口清零，排产复核可释放冻结工序/)).toBeVisible()
   })
 
   test('业务问答：评估 CNC-001 故障 4 小时影响', async ({ page }) => {

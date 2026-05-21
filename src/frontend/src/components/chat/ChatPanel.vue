@@ -405,6 +405,36 @@ function buildKittingDelayLines() {
   ]
 }
 
+function buildTopRiskOrderLines() {
+  const kittingEvidence = latestKittingEvidenceForRushOrder()
+  const equipmentRisk = '1. `WO-2026-0042`：`CNC-001` 停机影响精加工窗口，预计延期 +4h，建议分流到 `CNC-003`。'
+  const qualityRisk = '2. `WO-003`：热处理硬度返工，`HT-01` 复验窗口受占用，建议执行 CAPA 验证并同步 OTD 复盘。'
+
+  if (kittingEvidence?.status === 'closed') {
+    const closureTrace = kittingEvidence.sourceTraceId ? `，采购证据 ${kittingEvidence.sourceTraceId}` : ''
+    return [
+      equipmentRisk,
+      qualityRisk,
+      `3. \`WO-RUSH-9001\`：\`M-AL-6061\` ${kittingEvidence.statusLabel}${closureTrace}，缺料风险从高风险降级为观察项，建议排产复核释放冻结工序。`,
+      '',
+      `齐套闭环依据：${kittingEvidence.summary}`,
+      '优先级判断依据：客户承诺交期、瓶颈设备占用、缺料缺口、质量返工对后续工序的连锁影响。',
+    ]
+  }
+
+  const kittingContext = kittingEvidence
+    ? `${kittingEvidence.statusLabel}，${kittingEvidence.summary}`
+    : '尚未生成库存齐套证据，需先在库存齐套生成缺料排产事件。'
+
+  return [
+    `1. \`WO-RUSH-9001\`：急单插入 + \`M-AL-6061\` 缺料，${kittingContext} 风险等级高，建议采购加急并生成重排建议。`,
+    equipmentRisk.replace('1.', '2.'),
+    qualityRisk.replace('2.', '3.'),
+    '',
+    '优先级判断依据：客户承诺交期、瓶颈设备占用、缺料缺口、质量返工对后续工序的连锁影响。',
+  ]
+}
+
 // ====== 演示数据 ======
 
 const demoReplies = [
@@ -705,11 +735,7 @@ function getBusinessAnalysisReply(question: string): string {
     return [
       '**今天最危险的 3 个工单：**',
       '',
-      '1. `WO-RUSH-9001`：急单插入 + `M-AL-6061` 缺料，风险等级高，建议采购加急并生成重排建议。',
-      '2. `WO-2026-0042`：`CNC-001` 停机影响精加工窗口，预计延期 +4h，建议分流到 `CNC-003`。',
-      '3. `WO-003`：热处理硬度返工，`HT-01` 复验窗口受占用，建议执行 CAPA 验证并同步 OTD 复盘。',
-      '',
-      '优先级判断依据：客户承诺交期、瓶颈设备占用、缺料缺口、质量返工对后续工序的连锁影响。',
+      ...buildTopRiskOrderLines(),
     ].join('\n') + citationLine
   }
 
