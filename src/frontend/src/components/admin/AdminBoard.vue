@@ -373,6 +373,50 @@
           </div>
         </div>
 
+        <div class="kitting-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>缺料齐套治理</h4>
+                <p>监管库存齐套缺口是否已经进入排产、采购和 BOM 约束复核，避免缺料证据只停留在库存页。</p>
+              </div>
+              <strong>{{ activeKittingEvidenceRecords.length }} 待处理 / {{ kittingEvidenceRecords.length }} 条</strong>
+            </div>
+            <div v-if="kittingEvidenceRecords.length" class="kitting-governance-list">
+              <article v-for="record in kittingEvidenceRecords" :key="record.id" class="kitting-governance-card">
+                <div class="action-topline">
+                  <span>{{ record.stage }}</span>
+                  <em :class="'policy-' + otdEvidenceStatusClass(record.status)">{{ record.statusLabel }}</em>
+                </div>
+                <strong>{{ record.title }}</strong>
+                <p>{{ record.summary }}</p>
+                <div class="policy-row">
+                  <span>影响对象</span>
+                  <code>{{ record.object }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>来源</span>
+                  <code>{{ record.source }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.traceId }}</code>
+                </div>
+                <div class="kitting-governance-actions">
+                  <button type="button" class="btn-sm" @click="openInventoryBoard">查看库存齐套</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button type="button" class="btn-sm" @click="openPurchaseBoard">查看采购协同</button>
+                  <button type="button" class="btn-sm" @click="openBomBoard">查看 BOM 约束</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待缺料齐套证据</strong>
+              <span>库存齐套生成缺料排产事件后，会在这里显示工单、物料、BOM 来源、追踪编号和跨页处置入口。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="poc-evidence-lane">
           <div class="policy-block">
             <h4>客户 POC 证据治理</h4>
@@ -1305,6 +1349,12 @@ const qualityGrayReleaseMonitorCards = computed<QualityKnowledgeGrayReleaseMonit
 const qualityGrayReleaseDecisionCards = computed(() => qualityGrayReleaseDecisionRecords.value)
 const latestOutsourcingCommitment = computed(() => outsourcingCommitmentPackages.value[0] ?? null)
 const latestAssistantRecoveryPackage = computed(() => assistantRecoveryPackages.value[0] ?? null)
+const kittingEvidenceRecords = computed(() =>
+  otdEvidenceRecords.value.filter(record => record.stage === '库存齐套')
+)
+const activeKittingEvidenceRecords = computed(() =>
+  kittingEvidenceRecords.value.filter(record => record.status !== 'closed')
+)
 const qualityClosedPolicy = computed(() =>
   qualityKnowledgeReviewRecords.value.find(record => record.status === 'closed')
 )
@@ -1403,6 +1453,12 @@ const agentGovernanceMetrics = computed(() => [
       : '待生成',
   },
   { label: '配置审批中', value: agentApprovals.value.filter(item => isApprovalOpen(item.status)).length },
+  {
+    label: '缺料齐套治理',
+    value: kittingEvidenceRecords.value.length
+      ? `${activeKittingEvidenceRecords.value.length} 待处理 / ${kittingEvidenceRecords.value.length} 条`
+      : '待生成',
+  },
   { label: '知识待治理', value: knowledgePendingDocuments.value.length },
   { label: '知识复核', value: knowledgeReviewRecords.value.length },
   { label: '质量策略规则', value: qualityKnowledgePolicyCards.value.length },
@@ -1521,6 +1577,14 @@ function openKnowledgeGovernance() {
 
 function openPurchaseBoard() {
   router.push('/purchase')
+}
+
+function openInventoryBoard() {
+  router.push('/inventory')
+}
+
+function openBomBoard() {
+  router.push('/bom')
 }
 
 function openSchedulingBoard() {
@@ -1784,6 +1848,12 @@ onMounted(async () => {
 .risk-sla-governance-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
 .risk-sla-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .risk-sla-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.kitting-governance { display: grid; grid-template-columns: 1fr; }
+.kitting-governance-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kitting-governance-card { padding: 11px; border: 1px solid #bfdbfe; border-radius: 6px; background: #f8fbff; }
+.kitting-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.kitting-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.kitting-governance-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .quality-mrb-governance { display: grid; grid-template-columns: 1fr; }
 .quality-mrb-governance-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
 .quality-mrb-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
@@ -1930,6 +2000,7 @@ onMounted(async () => {
   .assistant-action-list,
   .assistant-package-list,
   .outsourcing-governance-list,
+  .kitting-governance-list,
   .knowledge-pending-list,
   .knowledge-review-list,
   .quality-policy-list,

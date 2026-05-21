@@ -694,6 +694,57 @@ test.describe('Admin Agent 治理', () => {
     await expect(otdLane.getByText('TRACE-PROD-COMPLETE-OP-020')).toBeVisible()
   })
 
+  test('缺料齐套证据进入 Agent 治理并可跳转库存排产采购和 BOM', async ({ page }) => {
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 30000 })
+    const kittingPanel = page.locator('.kitting-panel')
+    await kittingPanel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
+    await expect(kittingPanel.getByText('缺料事件已同步 AI 排产')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('1 待处理 / 1 条')).toBeVisible()
+    const governance = panel.locator('.kitting-governance')
+    await expect(governance.getByRole('heading', { name: '缺料齐套治理' })).toBeVisible()
+    await expect(governance.getByText('1 待处理 / 1 条')).toBeVisible()
+    const card = governance.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await expect(card.getByText('待齐套')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '影响对象' }).getByText('WO-RUSH-9001', { exact: true })).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '来源' }).getByText('库存齐套 / BOM-A100 V1.0', { exact: true })).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText('TRACE-KIT-WO-RUSH-9001-M-AL-6061', { exact: true })).toBeVisible()
+
+    await card.getByRole('button', { name: '查看库存齐套' }).click()
+    await page.waitForURL(/\/scheduling\/inventory$/)
+    await expect(page.locator('.kitting-panel')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const schedulingCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await expect(page.locator('.schedule-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const purchaseCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await purchaseCard.getByRole('button', { name: '查看采购协同' }).click()
+    await page.waitForURL(/\/scheduling\/purchase$/)
+    await expect(page.locator('.po-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const bomCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await bomCard.getByRole('button', { name: '查看 BOM 约束' }).click()
+    await page.waitForURL(/\/scheduling\/bom$/)
+    await expect(page.locator('.bom-board')).toBeVisible()
+  })
+
   test('POC 复盘签署进入 Agent 治理与审计编号', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_poc_review_signoff', JSON.stringify({
