@@ -297,9 +297,10 @@ function mapKnowledgeGovernanceReviewToReplay(record: KnowledgeGovernanceReviewR
 
 function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isCommitmentPackage = record.stage === '客户承诺包'
+  const isKittingEvidence = record.stage === '库存齐套'
   return {
     id: `otd-${record.id}`,
-    type: isCommitmentPackage ? '客户承诺包' : 'OTD 证据链',
+    type: isCommitmentPackage ? '客户承诺包' : isKittingEvidence ? '库存齐套证据' : 'OTD 证据链',
     title: `${record.stage}：${record.title}`,
     summary: record.summary,
     object: record.object,
@@ -310,9 +311,13 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
     traceId: record.traceId,
     risk: isCommitmentPackage
       ? `当前状态：${record.statusLabel}。承诺包只能基于 KPI 钻取、责任动作和 OTD 证据链对外复盘。`
+      : isKittingEvidence
+        ? `当前状态：${record.statusLabel}。该齐套证据必须同时核对 BOM 版本、可用库存、在途量和排产时间窗，避免缺料工单被误排。`
       : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
+      : isKittingEvidence
+        ? '库存齐套、BOM 版本、在途量、缺口处置和排产复核已归档'
       : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
     steps: isCommitmentPackage
       ? [
@@ -321,6 +326,14 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
           `追踪编号 ${record.traceId} 写入统一 OTD 证据链。`,
           `AI 生产助手可读取该承诺包回答客户交付恢复口径，报表 CSV 可导出审计编号。`,
         ]
+      : isKittingEvidence
+        ? [
+            `库存齐套读取 ${record.source} 的 BOM 版本、库存可用量、在途量和排产时间窗。`,
+            `${record.stage} 阶段生成缺口证据：${record.title}。`,
+            `对象 ${record.object} 的齐套摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对调拨、替代料、采购加急和排产顺序调整是否闭环。`,
+          ]
       : [
           `${record.stage} 阶段生成证据：${record.title}。`,
           `对象 ${record.object} 来自 ${record.source}，证据摘要：${record.summary}`,
@@ -534,6 +547,7 @@ const metrics = computed(() => [
   { label: '质量灰度回放', value: replayItems.value.filter(item => item.type === '质量灰度').length },
   { label: '质量灰度发布', value: replayItems.value.filter(item => item.type === '质量灰度发布').length },
   { label: '客户承诺包', value: replayItems.value.filter(item => item.type === '客户承诺包').length },
+  { label: '库存齐套回放', value: replayItems.value.filter(item => item.type === '库存齐套证据').length },
   { label: 'OTD 证据回放', value: replayItems.value.filter(item => item.type === 'OTD 证据链').length },
   { label: 'POC 复盘签署', value: replayItems.value.filter(item => item.type === 'POC 签署').length },
   { label: '配置审批中', value: pendingApprovalCount.value },
