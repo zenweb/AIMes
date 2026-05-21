@@ -307,6 +307,10 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isSupplyRiskEvidence = record.stage === '供应风险'
   const isSupplierNetworkEvidence = record.stage === '供应网络'
   const isPurchaseCorrectionEvidence = record.stage === '采购整改'
+  const isLaborCapabilityEvidence = record.stage === '人员能力'
+  const isLaborAssignmentEvidence = record.stage === '人员替班' || record.stage === '人员复核' || record.stage === '人员放行'
+  const isLaborBlockEvidence = record.stage === '人员阻断'
+  const isLaborStartEvidence = record.stage === '生产开工'
   return {
     id: `otd-${record.id}`,
     type: isCommitmentPackage
@@ -331,7 +335,15 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
                         ? '供应网络证据'
                         : isPurchaseCorrectionEvidence
                           ? '采购整改证据'
-                          : 'OTD 证据链',
+                          : isLaborCapabilityEvidence
+                            ? '人员能力证据'
+                            : isLaborAssignmentEvidence
+                              ? '人员替班证据'
+                              : isLaborBlockEvidence
+                                ? '人员阻断证据'
+                                : isLaborStartEvidence
+                                  ? '人员开工证据'
+                                  : 'OTD 证据链',
     title: `${record.stage}：${record.title}`,
     summary: record.summary,
     object: record.object,
@@ -362,6 +374,14 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
                         ? `当前状态：${record.statusLabel}。该供应网络证据必须核对供应商绩效、准交率、SLA、报价/产能和违约复盘。`
                         : isPurchaseCorrectionEvidence
                           ? `当前状态：${record.statusLabel}。该采购整改证据必须核对来料异常、8D 承诺、备用批次、复检入库和排产复核。`
+                          : isLaborCapabilityEvidence
+                            ? `当前状态：${record.statusLabel}。该人员能力证据必须核对技能、资质有效期、排班窗口、可用工时和开工约束。`
+                            : isLaborAssignmentEvidence
+                              ? `当前状态：${record.statusLabel}。该替班证据必须核对临期资质、候选评分、替班人员、主管复核和放行窗口。`
+                              : isLaborBlockEvidence
+                                ? `当前状态：${record.statusLabel}。该人员阻断证据必须核对无有效候选、停工复核责任人、阻断工序和恢复条件。`
+                                : isLaborStartEvidence
+                                  ? `当前状态：${record.statusLabel}。该开工证据必须核对替班执行人、工位设备、工程复核和生产开工放行。`
       : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
@@ -385,6 +405,14 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
                         ? '供应商绩效、SLA 选优、违约复盘、二供观察和排产复核已归档'
                         : isPurchaseCorrectionEvidence
                           ? '来料异常、供应商 8D、备用批次、复检入库和排产复核已归档'
+                          : isLaborCapabilityEvidence
+                            ? '人员技能、资质、排班、可用工时和开工约束已归档'
+                            : isLaborAssignmentEvidence
+                              ? '临期资质、替班评分、主管复核、补证放行和排产复核已归档'
+                              : isLaborBlockEvidence
+                                ? '无有效候选、停工复核、阻断工序、责任人和恢复条件已归档'
+                                : isLaborStartEvidence
+                                  ? '替班执行、工位设备、工程复核、生产开工和 OTD 证据已归档'
       : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
     steps: isCommitmentPackage
       ? [
@@ -472,6 +500,38 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `对象 ${record.object} 的整改摘要：${record.summary}`,
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对隔离、复检、备用批次和排产复核是否闭环。`,
+          ]
+      : isLaborCapabilityEvidence
+        ? [
+            `人员管理读取 ${record.source} 的技能、资质有效期、排班窗口、可用工时和排班来源。`,
+            `${record.stage} 阶段生成能力证据：${record.title}。`,
+            `对象 ${record.object} 的能力摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产人员约束解释。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对该人员是否可进入开工、替班或停工复核。`,
+          ]
+      : isLaborAssignmentEvidence
+        ? [
+            `人员管理读取 ${record.source} 的临期资质、候选评分、替班人员、主管复核和补证放行状态。`,
+            `${record.stage} 阶段生成替班证据：${record.title}。`,
+            `对象 ${record.object} 的替班摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工和 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对替班人员、工程确认、复核状态和排产释放窗口。`,
+          ]
+      : isLaborBlockEvidence
+        ? [
+            `人员管理读取 ${record.source} 的技能缺口、证书临期、班组/班次、排班可用性和复核授权。`,
+            `${record.stage} 阶段生成阻断证据：${record.title}。`,
+            `对象 ${record.object} 的阻断摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工禁用和 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对停工复核责任人、阻断工序和重新放行条件。`,
+          ]
+      : isLaborStartEvidence
+        ? [
+            `生产报工读取 ${record.source} 的替班执行人、工位、设备和工程复核状态。`,
+            `${record.stage} 阶段生成开工证据：${record.title}。`,
+            `对象 ${record.object} 的开工摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表和审计回放。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对替班复核已执行且生产开工未绕过人员约束。`,
           ]
       : [
           `${record.stage} 阶段生成证据：${record.title}。`,
@@ -696,6 +756,10 @@ const metrics = computed(() => [
   { label: '供应风险回放', value: replayItems.value.filter(item => item.type === '供应风险证据').length },
   { label: '供应网络回放', value: replayItems.value.filter(item => item.type === '供应网络证据').length },
   { label: '采购整改回放', value: replayItems.value.filter(item => item.type === '采购整改证据').length },
+  { label: '人员能力回放', value: replayItems.value.filter(item => item.type === '人员能力证据').length },
+  { label: '人员替班回放', value: replayItems.value.filter(item => item.type === '人员替班证据').length },
+  { label: '人员阻断回放', value: replayItems.value.filter(item => item.type === '人员阻断证据').length },
+  { label: '人员开工回放', value: replayItems.value.filter(item => item.type === '人员开工证据').length },
   { label: 'OTD 证据回放', value: replayItems.value.filter(item => item.type === 'OTD 证据链').length },
   { label: 'POC 复盘签署', value: replayItems.value.filter(item => item.type === 'POC 签署').length },
   { label: '配置审批中', value: pendingApprovalCount.value },

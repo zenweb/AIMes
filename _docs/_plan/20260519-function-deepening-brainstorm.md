@@ -1391,6 +1391,11 @@ OTD 改善复盘
   - 顺手修复开工弹窗高度，替班校验信息增多后仍可在小视口点击确认开工。
   - 已补 e2e：`Employee 人员能力约束 › 按技能班组班次证书和排班可用性推荐替班候选`、`Employee 人员能力约束 › 排班请假人员不进入替班候选`、`Employee 人员能力约束 › 无有效替班候选时生成停工复核阻断`、`Employee 人员能力约束 › 停工复核经主管补证改派后重新放行生产与排程`、`Employee 人员能力约束 › 资质临期生成替班建议并进入报表与审计回放`、`Production 生产看板 › 热处理开工读取人员替班建议并写回 OTD 证据`、`Production 生产看板 › 热处理无有效替班候选时阻断确认开工`、`Scheduling 排产甘特图 › 人员替班证据释放排产人员约束`、`Scheduling 排产甘特图 › 人员无有效替班候选时排产保持停工复核事件`。
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/employee.spec.ts`：7 passed；`npm run test:e2e -- tests/e2e/employee.spec.ts --grep "重新放行"`：1 passed；`npm run test:e2e -- tests/e2e/production.spec.ts tests/e2e/scheduling.spec.ts --grep "异常上报后能在异常管理|人员替班证据释放排产人员约束"`：2 passed；`npm run test:e2e -- tests/e2e/employee.spec.ts tests/e2e/production.spec.ts tests/e2e/scheduling.spec.ts tests/e2e/report.spec.ts tests/e2e/audit.spec.ts`：60 passed。
+- 2026-05-21 继续把人员能力从“进入通用 OTD 证据链”推进到“可专属审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `人员能力证据`、`人员替班证据`、`人员阻断证据`、`人员开工证据` 四类专属回放，并增加 `人员能力回放`、`人员替班回放`、`人员阻断回放`、`人员开工回放` 指标。
+  - `人员能力` 回放要求核对技能、资质有效期、排班窗口、可用工时和开工约束；`人员替班 / 人员复核 / 人员放行` 回放要求核对临期资质、候选评分、替班人员、主管复核和放行窗口；`人员阻断` 回放要求核对无有效候选、停工复核责任人、阻断工序和恢复条件；`生产开工` 回放要求核对替班执行人、工位设备、工程复核和生产开工放行。
+  - e2e 已扩展 `Employee 人员能力约束` 全套 7 条用例，覆盖人员管理 -> 报表 OTD 证据链 / Agent 治理 -> 审计专属回放。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/employee.spec.ts`：7 passed。
 - 已推进 `RAG 知识治理复核闭环`：
   - 新增知识治理复核同步层，`CNC-01 主轴维护手册 V1.1` 过期且待索引时，可在 `文档上传` 的 RAG 治理面板执行“复核并重建索引”。
   - 复核后生成 `AUD-KG-REINDEX-20260520-001` / `TRACE-KG-CNC-MAINT-REINDEX`，升级为 `V1.2`、已索引、有效期 `2026-12-31`，并写入统一 OTD 证据链 `知识治理` 阶段。
