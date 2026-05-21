@@ -55,6 +55,74 @@
             <div v-if="selected.effectiveDate" class="meta-item"><label>生效日</label><span>{{ selected.effectiveDate }}</span></div>
           </div>
 
+          <section class="constraint-section" aria-label="BOM 排产约束源">
+            <div class="constraint-head">
+              <div>
+                <span class="eyebrow">工程数据约束</span>
+                <h4>BOM 排产约束源</h4>
+              </div>
+              <span class="constraint-status">{{ selected.status === 'Released' ? '可进入 Agent' : '待发布' }}</span>
+            </div>
+            <div class="constraint-grid">
+              <div v-for="rule in bomConstraintRules" :key="rule.title" class="constraint-card" :class="rule.level">
+                <span>{{ rule.type }}</span>
+                <strong>{{ rule.title }}</strong>
+                <p>{{ rule.detail }}</p>
+              </div>
+            </div>
+            <div v-if="selected.bomCode === 'BOM-A100'" class="alternate-approval" :class="{ approved: alternateApproval }">
+              <div>
+                <span class="eyebrow">替代料工程确认</span>
+                <h4>{{ alternateApproval ? 'M-AL-6061B 已工程放行' : 'M-AL-6061B 等待工程确认' }}</h4>
+                <p>{{ alternateApproval ? alternateApproval.summary : '确认后允许 Agent 把 M-AL-6061 缺料约束从高风险冻结降为可执行复核，并把审批证据写入 OTD 复盘。' }}</p>
+              </div>
+              <div class="approval-meta">
+                <strong>{{ alternateApproval ? alternateApproval.auditId : 'AUD-ENG-ALT-20260520-001' }}</strong>
+                <span>{{ alternateApproval ? alternateApproval.approvedBy : '工程师 / EMP-004' }}</span>
+                <button v-if="!alternateApproval" type="button" @click="approveAlternateMaterial">确认替代料放行</button>
+                <em v-else>已同步 OTD 证据链</em>
+              </div>
+            </div>
+            <div v-if="selected.bomCode === 'BOM-A100'" class="change-impact" :class="{ analyzed: engineeringChangeImpact }">
+              <div class="impact-head">
+                <div>
+                  <span class="eyebrow">工程变更影响分析</span>
+                  <h4>{{ engineeringChangeImpact ? engineeringChangeImpact.changeTitle : '替代料变更先算影响再进排产' }}</h4>
+                  <p>{{ engineeringChangeImpact ? engineeringChangeImpact.summary : '比较库存、质量参数、供应商批次、成本和 OTD 影响，生成可被 AI 排产、报表和审计共用的 ECN 证据。' }}</p>
+                </div>
+                <div class="impact-actions">
+                  <button v-if="!engineeringChangeImpact" type="button" @click="analyzeEngineeringChangeImpact">生成影响分析</button>
+                  <template v-else>
+                    <em>{{ engineeringChangeImpact.auditId }}</em>
+                    <button v-if="engineeringChangeImpact.decision === 'pending'" type="button" @click="approveEngineeringChange">批准 ECN 放行</button>
+                    <button v-if="engineeringChangeImpact.decision === 'pending'" class="secondary" type="button" @click="rejectEngineeringChange">驳回 ECN</button>
+                  </template>
+                </div>
+              </div>
+              <div class="impact-grid">
+                <div v-for="item in engineeringChangeImpactCards" :key="item.label" class="impact-card">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+              <div v-if="engineeringChangeImpact" class="impact-trace">
+                <span>{{ engineeringChangeImpact.changeId }}</span>
+                <code>{{ engineeringChangeImpact.traceId }}</code>
+                <strong>{{ engineeringChangeImpact.recommendedDecision }}</strong>
+              </div>
+              <div v-if="engineeringChangeImpact" class="impact-decision" :class="engineeringChangeImpact.decision">
+                <span>{{ engineeringChangeImpact.decisionLabel }}</span>
+                <strong>{{ engineeringChangeDecisionText }}</strong>
+                <em v-if="engineeringChangeImpact.decidedBy">{{ engineeringChangeImpact.decidedBy }} · {{ engineeringChangeImpact.decisionAuditId }}</em>
+              </div>
+            </div>
+            <div class="agent-bridge">
+              <span>排产引用</span>
+              <strong>{{ bomAgentBridge }}</strong>
+              <router-link to="/scheduling">查看 AI 排产解释</router-link>
+            </div>
+          </section>
+
           <!-- 爆炸树 -->
           <div v-if="explosion" class="explosion-section">
             <h4>物料展开 — 需求数量: {{ explodeQty }}</h4>
@@ -116,6 +184,16 @@
 import { ref, computed, onMounted } from 'vue'
 import type { BomSummary, BomDetail, BomExplosionResult, BomItem } from '../../types/bom'
 import { getBomList, getBomById, explodeBom } from '../../api/bom'
+import {
+  approveEngineeringChangeImpactAnalysis,
+  readAlternateMaterialApproval,
+  readEngineeringChangeImpactAnalysis,
+  rejectEngineeringChangeImpactAnalysis,
+  writeAlternateMaterialApproval,
+  writeEngineeringChangeImpactAnalysis,
+  type AlternateMaterialApproval,
+  type EngineeringChangeImpactAnalysis,
+} from '../../utils/engineering-change-sync'
 
 const loading = ref(false)
 const boms = ref<BomSummary[]>([])
@@ -141,9 +219,86 @@ function goToPage(p: number | string) {
   loadBoms()
 }
 const selected = ref<BomDetail | null>(null)
+const alternateApproval = ref<AlternateMaterialApproval | null>(null)
+const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null)
 const explosion = ref<BomExplosionResult | null>(null)
 const explodeQty = ref(1)
 const collapsed = ref<Record<string, boolean>>({})
+
+const bomConstraintCatalog: Record<string, { type: string, title: string, detail: string, level: string }[]> = {
+  'BOM-A100': [
+    { type: '关键物料', title: 'M-AL-6061 缺料会冻结 CNC 后段', detail: 'WO-RUSH-9001 需要 64 件，可用 45 件，缺口需采购加急或替代料释放。', level: 'critical' },
+    { type: '替代料', title: 'M-AL-6061B 需工程确认', detail: '确认后允许 Agent 把缺料约束从高风险降为可执行复核。', level: 'warning' },
+    { type: '生效版本', title: 'BOM-A100 V1.0 已发布', detail: '只有 Released 版本可被排产、库存齐套和采购协同共同引用。', level: 'ready' },
+  ],
+  'BOM-B200': [
+    { type: '关键物料', title: 'MAT-B02 花键套在途不足', detail: '3 天窗口内仍缺 20 个，Agent 需要先排不受该物料约束的工单。', level: 'warning' },
+    { type: '提前期', title: '轴坯提前期 7 天', detail: '粗车前置工序需预留采购和下料窗口，避免短交期工单强插。', level: 'info' },
+    { type: '生效版本', title: 'BOM-B200 V2.1 已发布', detail: '可作为传动轴总成 B 的库存齐套和成本测算依据。', level: 'ready' },
+  ],
+  'BOM-C300': [
+    { type: '版本状态', title: '草稿 BOM 不能直接排产', detail: '液压阀体 C 需要工程发布后，Agent 才能把阀体铸件和密封件约束纳入方案。', level: 'warning' },
+    { type: '长提前期', title: '阀体铸件提前期 10 天', detail: '未发布前只进入预警，不自动生成采购或重排动作。', level: 'info' },
+    { type: '质量约束', title: '压力测试物料批次需追溯', detail: '密封垫批次会影响最终压力测试和质量放行窗口。', level: 'info' },
+  ],
+}
+
+const bomConstraintRules = computed(() => {
+  if (!selected.value) return []
+  const rules = bomConstraintCatalog[selected.value.bomCode] ?? [
+    { type: '工程数据', title: `${selected.value.bomCode} 约束待建模`, detail: '需要补齐替代料、提前期和关键物料规则后进入排产解释。', level: 'info' },
+  ]
+  if (selected.value.bomCode !== 'BOM-A100' || !alternateApproval.value) return rules
+  return rules.map(rule => rule.title === 'M-AL-6061B 需工程确认'
+    ? {
+        ...rule,
+        title: 'M-AL-6061B 已工程确认',
+        detail: `${alternateApproval.value?.auditId} 已放行，Agent 可把缺料约束从冻结降为可执行复核。`,
+        level: 'ready',
+      }
+    : rule
+  )
+})
+
+const bomAgentBridge = computed(() => {
+  if (!selected.value) return ''
+  if (selected.value.bomCode === 'BOM-A100') {
+    if (engineeringChangeImpact.value?.decision === 'approved') return `${engineeringChangeImpact.value.decisionAuditId} 已批准 ${engineeringChangeImpact.value.changeId}，AI 排产可正式释放 WO-RUSH-9001 / WO-DEMO-1002 的替代料窗口。`
+    if (engineeringChangeImpact.value?.decision === 'rejected') return `${engineeringChangeImpact.value.decisionAuditId} 已驳回 ${engineeringChangeImpact.value.changeId}，AI 排产撤回模拟并保持 ${engineeringChangeImpact.value.sourceMaterialCode} 原物料策略。`
+    if (engineeringChangeImpact.value) return `${engineeringChangeImpact.value.auditId} 已完成 ${engineeringChangeImpact.value.changeId} 影响分析，AI 排产可按 ${engineeringChangeImpact.value.scheduleWindow} 生成审批前模拟复核。`
+    if (alternateApproval.value) return `${alternateApproval.value.auditId} 已确认 M-AL-6061B 可替代 M-AL-6061，AI 排产可释放 WO-RUSH-9001 / WO-DEMO-1002 的缺料冻结约束。`
+    return 'AI 排产使用 BOM-A100 V1.0 判断 M-AL-6061 缺口，并提示 M-AL-6061B 替代料评估。'
+  }
+  if (selected.value.bomCode === 'BOM-B200') return 'AI 排产使用 BOM-B200 V2.1 判断 MAT-B02 在途不足，并建议前置不缺料工单。'
+  return `${selected.value.bomCode} 当前仍需发布，暂不允许 Agent 自动采纳相关物料约束。`
+})
+
+const engineeringChangeImpactCards = computed(() => {
+  const impact = engineeringChangeImpact.value
+  if (!impact) {
+    return [
+      { label: '库存影响', value: '缺口 19 件 / 替代可用 28 件' },
+      { label: '质量影响', value: '首件材质复核 + OP-040 质量门' },
+      { label: 'OTD 影响', value: '预计 OTD +7% / 延期 -1 单' },
+    ]
+  }
+  return [
+    { label: '库存影响', value: impact.inventoryImpact },
+    { label: '质量影响', value: impact.qualityImpact },
+    { label: '供应影响', value: impact.supplierImpact },
+    { label: '成本影响', value: impact.costImpact },
+    { label: 'OTD 影响', value: impact.otdImpact },
+    { label: '排产窗口', value: impact.scheduleWindow },
+  ]
+})
+
+const engineeringChangeDecisionText = computed(() => {
+  const impact = engineeringChangeImpact.value
+  if (!impact) return ''
+  if (impact.decision === 'approved') return '已批准正式释放：WO-RUSH-9001 / WO-DEMO-1002 可转正式替代料排产，质量门和批次追溯保留。'
+  if (impact.decision === 'rejected') return '已驳回：审批前模拟撤回，保持原物料策略并等待采购/工程补证。'
+  return '待工程审批：AI 排产只能生成审批前模拟，不自动正式采纳。'
+})
 
 function toggleTree(key: string) {
   collapsed.value[key] = !collapsed.value[key]
@@ -181,6 +336,8 @@ function flatItems(items: BomItem[]): BomItem[] {
 }
 
 async function selectBom(b: BomSummary) {
+  alternateApproval.value = readAlternateMaterialApproval()
+  engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
   try {
     selected.value = await getBomById(b.id)
   } catch {
@@ -196,6 +353,30 @@ async function selectBom(b: BomSummary) {
     }
   }
   explosion.value = null
+}
+
+function approveAlternateMaterial() {
+  if (!selected.value) return
+  alternateApproval.value = writeAlternateMaterialApproval({
+    bomCode: selected.value.bomCode,
+    bomVersion: selected.value.version,
+  })
+}
+
+function analyzeEngineeringChangeImpact() {
+  if (!selected.value) return
+  engineeringChangeImpact.value = writeEngineeringChangeImpactAnalysis({
+    bomCode: selected.value.bomCode,
+    bomVersion: selected.value.version,
+  })
+}
+
+function approveEngineeringChange() {
+  engineeringChangeImpact.value = approveEngineeringChangeImpactAnalysis()
+}
+
+function rejectEngineeringChange() {
+  engineeringChangeImpact.value = rejectEngineeringChangeImpactAnalysis()
 }
 
 function handleExplode() {
@@ -256,7 +437,11 @@ async function loadBoms() {
   loading.value = false
 }
 
-onMounted(loadBoms)
+onMounted(() => {
+  alternateApproval.value = readAlternateMaterialApproval()
+  engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
+  loadBoms()
+})
 </script>
 
 <style scoped>
@@ -289,6 +474,58 @@ onMounted(loadBoms)
 .detail-meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px; }
 .meta-item label { display: block; font-size: 11px; color: #999; margin-bottom: 2px; }
 .meta-item span { font-size: 13px; }
+.constraint-section { border: 1px solid #e6edf5; background: #fbfdff; border-radius: 8px; padding: 14px; margin-bottom: 20px; }
+.constraint-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.eyebrow { display: block; font-size: 11px; color: #1677ff; font-weight: 700; margin-bottom: 3px; }
+.constraint-head h4 { margin: 0; font-size: 14px; }
+.constraint-status { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; border-radius: 4px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.constraint-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.constraint-card { border: 1px solid #edf1f5; background: #fff; border-radius: 6px; padding: 10px; min-height: 104px; }
+.constraint-card span { display: inline-block; color: #667085; font-size: 11px; margin-bottom: 6px; }
+.constraint-card strong { display: block; color: #1f2937; font-size: 13px; margin-bottom: 6px; }
+.constraint-card p { margin: 0; color: #667085; font-size: 12px; line-height: 1.5; }
+.constraint-card.critical { border-top: 3px solid #ff4d4f; }
+.constraint-card.warning { border-top: 3px solid #faad14; }
+.constraint-card.ready { border-top: 3px solid #52c41a; }
+.constraint-card.info { border-top: 3px solid #1890ff; }
+.alternate-approval { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 0.42fr); gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
+.alternate-approval.approved { border-color: #bbf7d0; background: #f0fdf4; }
+.alternate-approval h4, .alternate-approval p { margin: 0; }
+.alternate-approval h4 { color: #1f2937; font-size: 14px; }
+.alternate-approval p { margin-top: 4px; color: #667085; font-size: 12px; line-height: 1.5; }
+.approval-meta { display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 10px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff; }
+.alternate-approval.approved .approval-meta { border-color: #bbf7d0; }
+.approval-meta strong { color: #1f2937; font-size: 13px; }
+.approval-meta span, .approval-meta em { color: #667085; font-size: 12px; font-style: normal; }
+.approval-meta button { align-self: flex-start; padding: 6px 10px; border: 1px solid #16a34a; border-radius: 4px; background: #16a34a; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.change-impact { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff; }
+.change-impact.analyzed { border-color: #bbf7d0; background: #f0fdf4; }
+.impact-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.impact-head h4, .impact-head p { margin: 0; }
+.impact-head h4 { color: #1f2937; font-size: 14px; }
+.impact-head p { margin-top: 4px; color: #667085; font-size: 12px; line-height: 1.5; }
+.impact-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 6px; }
+.impact-actions button { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #2563eb; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.impact-actions button.secondary { border-color: #dc2626; background: #fff; color: #b91c1c; }
+.impact-actions em { flex: 0 0 auto; color: #15803d; font-size: 12px; font-style: normal; font-weight: 700; }
+.impact-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.impact-card { min-width: 0; padding: 8px; border: 1px solid rgba(255,255,255,0.7); border-radius: 6px; background: rgba(255,255,255,0.75); }
+.impact-card span { display: block; margin-bottom: 4px; color: #2563eb; font-size: 11px; font-weight: 700; }
+.impact-card strong { display: block; color: #1f2937; font-size: 12px; line-height: 1.45; }
+.impact-trace { display: grid; grid-template-columns: minmax(160px, 0.3fr) minmax(160px, 0.35fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #fff; color: #1f2937; font-size: 12px; }
+.impact-trace code { color: #2563eb; font-family: inherit; font-weight: 700; }
+.impact-decision { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(160px, 0.36fr); gap: 8px; align-items: center; padding: 8px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; color: #1f2937; font-size: 12px; }
+.impact-decision.approved { border-color: #bbf7d0; background: #f0fdf4; }
+.impact-decision.rejected { border-color: #fecaca; background: #fff1f2; }
+.impact-decision span { color: #b45309; font-weight: 700; }
+.impact-decision.approved span { color: #15803d; }
+.impact-decision.rejected span { color: #b91c1c; }
+.impact-decision strong { font-weight: 600; }
+.impact-decision em { color: #667085; font-size: 12px; font-style: normal; overflow-wrap: anywhere; }
+.agent-bridge { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; background: #eef6ff; border-radius: 6px; font-size: 12px; }
+.agent-bridge span { color: #1677ff; font-weight: 700; white-space: nowrap; }
+.agent-bridge strong { flex: 1; color: #1f2937; font-weight: 600; }
+.agent-bridge a { color: #1677ff; text-decoration: none; white-space: nowrap; }
 .explosion-section { margin-bottom: 20px; padding: 12px; background: #fafafa; border-radius: 6px; }
 .explosion-section h4 { font-size: 13px; margin: 0 0 8px; }
 .tree { padding-left: 8px; }
@@ -303,4 +540,12 @@ onMounted(loadBoms)
 .page-btn:disabled { color: #d9d9d9; cursor: not-allowed; }
 .page-ellipsis { width: 28px; text-align: center; color: #999; font-size: 12px; }
 .page-info { margin-left: auto; font-size: 12px; color: #999; }
+@media (max-width: 1100px) {
+  .constraint-grid { grid-template-columns: 1fr; }
+  .alternate-approval { grid-template-columns: 1fr; }
+  .impact-head { flex-direction: column; }
+  .impact-actions { align-items: flex-start; }
+  .impact-grid, .impact-trace, .impact-decision { grid-template-columns: 1fr; }
+  .agent-bridge { align-items: flex-start; flex-direction: column; }
+}
 </style>

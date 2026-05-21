@@ -8,41 +8,75 @@
       <button class="btn" :class="{ active: filter === 'open' }" @click="filter = 'open'">待处理 ({{ openCount }})</button>
     </div>
 
-    <div class="anomaly-list">
-      <div
-        v-for="a in filteredAnomalies"
-        :key="a.id"
-        class="anomaly-card"
-        :class="'sev-' + a.severity.toLowerCase()"
-        @click="selectAnomaly(a)"
-      >
-        <div class="card-left">
-          <div class="sev-badge" :class="'sev-' + a.severity.toLowerCase()">{{ sevLabel(a.severity) }}</div>
+    <section class="event-center" aria-label="现场事件中心">
+      <div class="event-center-head">
+        <div>
+          <span class="eyebrow">现场事件中心</span>
+          <h3>异常到处置闭环</h3>
         </div>
-        <div class="card-body">
-          <div class="card-title">{{ a.title }}</div>
-          <div class="card-meta">
-            <span>{{ a.anomalyType }}</span>
-            <span>工单: {{ a.workOrderNumber }}</span>
-            <span v-if="a.equipmentId">设备: {{ a.equipmentId }}</span>
-          </div>
-        </div>
-        <div class="card-right">
-          <span class="status-badge" :class="'st-' + a.status.toLowerCase()">{{ statusLabel(a.status) }}</span>
-          <span class="card-time">{{ formatTime(a.detectedAt) }}</span>
+        <span class="event-center-status">{{ openCount }} 个待闭环</span>
+      </div>
+      <div class="event-lanes">
+        <div v-for="lane in eventLanes" :key="lane.title" class="event-lane" :class="lane.level">
+          <span>{{ lane.type }}</span>
+          <strong>{{ lane.title }}</strong>
+          <p>{{ lane.detail }}</p>
+          <div class="lane-route">{{ lane.route }}</div>
+          <button type="button" @click="dispatchEventLane(lane.id)">
+            {{ dispatchedLaneIds.includes(lane.id) ? '已确认分流' : '确认分流' }}
+          </button>
         </div>
       </div>
-      <div v-if="!filteredAnomalies.length" class="empty-state">暂无异常记录</div>
-    </div>
+      <div class="event-bridge">
+        <span>Agent 分流</span>
+        <strong>设备异常进入风险队列和排产复核，质量异常进入隔离/返工窗口，物料异常进入采购协同与库存齐套。</strong>
+        <router-link to="/risk">查看风险处置队列</router-link>
+      </div>
+      <div v-if="latestDispatch" class="dispatch-trace">
+        <span>{{ latestDispatch.statusLabel }}</span>
+        <strong>{{ latestDispatch.title }}</strong>
+        <p>{{ latestDispatch.summary }}</p>
+        <code>{{ latestDispatch.traceId }}</code>
+      </div>
+    </section>
 
-    <div class="pagination-bar" v-if="totalPages > 1">
-      <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
-      <template v-for="p in displayedPages" :key="p">
-        <span v-if="p === '...'" class="page-ellipsis">...</span>
-        <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
-      </template>
-      <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">下一页</button>
-      <span class="page-info">共 {{ totalCount }} 条</span>
+    <div class="anomaly-content">
+      <div class="anomaly-list">
+        <div
+          v-for="a in filteredAnomalies"
+          :key="a.id"
+          class="anomaly-card"
+          :class="'sev-' + a.severity.toLowerCase()"
+          @click="selectAnomaly(a)"
+        >
+          <div class="card-left">
+            <div class="sev-badge" :class="'sev-' + a.severity.toLowerCase()">{{ sevLabel(a.severity) }}</div>
+          </div>
+          <div class="card-body">
+            <div class="card-title">{{ a.title }}</div>
+            <div class="card-meta">
+              <span>{{ a.anomalyType }}</span>
+              <span>工单: {{ a.workOrderNumber }}</span>
+              <span v-if="a.equipmentId">设备: {{ a.equipmentId }}</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="status-badge" :class="'st-' + a.status.toLowerCase()">{{ statusLabel(a.status) }}</span>
+            <span class="card-time">{{ formatTime(a.detectedAt) }}</span>
+          </div>
+        </div>
+        <div v-if="!filteredAnomalies.length" class="empty-state">暂无异常记录</div>
+      </div>
+
+      <div class="pagination-bar" v-if="totalPages > 1">
+        <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
+        <template v-for="p in displayedPages" :key="p">
+          <span v-if="p === '...'" class="page-ellipsis">...</span>
+          <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
+        </template>
+        <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">下一页</button>
+        <span class="page-info">共 {{ totalCount }} 条</span>
+      </div>
     </div>
 
     <!-- 详情滑出面板 -->
@@ -115,6 +149,16 @@
 import { ref, computed, onMounted } from 'vue'
 import type { ProductionAnomaly, ProductionAnomalyDetail, AnalyzeAnomalyResult } from '../../types/anomaly'
 import { getAnomalyList, getCriticalAnomalies, getAnomalyById, analyzeAnomaly } from '../../api/anomaly'
+import {
+  readProductionAnomalyEvent,
+  toProductionAnomaly,
+  toProductionAnomalyDetail,
+} from '../../utils/production-anomaly-sync'
+import {
+  readAnomalyDispatchRecords,
+  writeAnomalyDispatchRecord,
+  type AnomalyDispatchRecord,
+} from '../../utils/anomaly-dispatch-sync'
 
 const loading = ref(false)
 const filter = ref('all')
@@ -143,6 +187,35 @@ function goToPage(p: number | string) {
 const detail = ref<ProductionAnomalyDetail | null>(null)
 const analysis = ref<AnalyzeAnomalyResult | null>(null)
 const analyzing = ref(false)
+const latestDispatch = ref<AnomalyDispatchRecord | null>(null)
+const dispatchedLaneIds = ref<string[]>([])
+
+const eventLanes = [
+  {
+    id: 'equipment-cnc001',
+    type: '设备事件',
+    title: 'CNC-001 主轴温升异常',
+    detail: '先停机保护瓶颈设备，再触发排产复核和维护窗口确认。',
+    route: '异常管理 -> 风险队列 -> AI 排产 -> 设备维护',
+    level: 'critical',
+  },
+  {
+    id: 'quality-gap',
+    type: '质量事件',
+    title: '装配间隙超差',
+    detail: '隔离在制品，生成返工/复验窗口，并把延期影响写入 OTD 复盘。',
+    route: '异常管理 -> 质量闭环 -> AI 排产 -> 报表中心',
+    level: 'warning',
+  },
+  {
+    id: 'material-batch',
+    type: '物料事件',
+    title: '原料批次来料异常',
+    detail: '隔离批次并启用备用物料，采购协同跟踪供应商整改。',
+    route: '异常管理 -> 库存齐套 -> 采购协同 -> 风险下降',
+    level: 'info',
+  },
+]
 
 const demoAnomalies: ProductionAnomaly[] = [
   { id: 'a-1', workOrderNumber: 'WO-20260501', operationCode: 'OP-020', equipmentId: 'CNC-001', anomalyType: 'equipment', severity: 'Critical', title: 'CNC-001 主轴温升异常', description: '主轴温度持续上升至 85°C，超过警戒线 75°C，可能导致轴承烧毁', detectedAt: '2026-05-12T09:30:00', detectedBy: 'operator1', status: 'Open', rootCause: null, resolution: null, responseCount: 1 },
@@ -169,6 +242,11 @@ const demoDetail: Record<string, any> = {
   },
 }
 
+function currentProductionAnomalyDetail() {
+  const event = readProductionAnomalyEvent()
+  return event ? toProductionAnomalyDetail(event) : null
+}
+
 const criticalCount = computed(() => anomalies.value.filter(a => a.severity === 'Critical').length)
 const openCount = computed(() => anomalies.value.filter(a => a.status === 'Open' || a.status === 'Acknowledged').length)
 const filteredAnomalies = computed(() => {
@@ -191,6 +269,11 @@ function formatTime(t: string) {
 
 async function selectAnomaly(a: ProductionAnomaly) {
   analysis.value = null
+  const eventDetail = currentProductionAnomalyDetail()
+  if (eventDetail?.id === a.id) {
+    detail.value = eventDetail
+    return
+  }
   try {
     detail.value = await getAnomalyById(a.id)
   } catch {
@@ -243,18 +326,105 @@ async function handleAnalyze() {
 
 async function loadAnomalies() {
   loading.value = true
+  const event = readProductionAnomalyEvent()
   try {
     const result = await getAnomalyList(currentPage.value, pageSize.value)
-    anomalies.value = result.items
-    totalCount.value = result.totalCount
+    anomalies.value = event
+      ? [toProductionAnomaly(event), ...result.items.filter(item => item.id !== event.id)]
+      : result.items
+    totalCount.value = event ? result.totalCount + 1 : result.totalCount
   } catch {
-    anomalies.value = demoAnomalies
-    totalCount.value = demoAnomalies.length
+    anomalies.value = event
+      ? [toProductionAnomaly(event), ...demoAnomalies.filter(item => item.id !== event.id)]
+      : demoAnomalies
+    totalCount.value = anomalies.value.length
   }
   loading.value = false
 }
 
-onMounted(loadAnomalies)
+function dispatchEventLane(laneId: string) {
+  const lane = eventLanes.find(item => item.id === laneId)
+  if (!lane) return
+  const record = writeAnomalyDispatchRecord(dispatchRecordForLane(laneId))
+  if (!record) return
+  latestDispatch.value = record
+  dispatchedLaneIds.value = Array.from(new Set([record.anomalyId, ...dispatchedLaneIds.value]))
+}
+
+function dispatchRecordForLane(laneId: string): Omit<AnomalyDispatchRecord, 'id' | 'status' | 'createdAt'> {
+  if (laneId === 'quality-gap') {
+    return {
+      anomalyId: laneId,
+      type: 'quality',
+      typeLabel: '质量异常',
+      title: '装配间隙超差已分流到质量返工与排产复核',
+      workOrderNumber: 'WO-20260502',
+      operationCode: 'OP-030',
+      route: '异常管理 -> 质量闭环 -> AI 排产 -> OTD 复盘',
+      owner: '质量工程师 周工',
+      dueAt: '今日 15:00',
+      affectedOrders: 'WO-20260502 / WO-RUSH-9001',
+      deliveryImpact: '预计影响 1 个装配窗口',
+      scheduleWindow: 'OP-030 复验前',
+      suggestedAction: '隔离当前批次，插入返工/复验窗口，并让 AI 排产保护 WO-RUSH-9001 后段装配承诺。',
+      auditId: 'AUD-ANOMALY-DISPATCH-20260521-001',
+      traceId: 'TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521',
+      statusLabel: '质量分流已确认',
+      summary: '现场事件中心确认质量异常分流，质量闭环、AI 排产、风险处置和 OTD 复盘读取同一条异常分流证据。',
+    }
+  }
+  if (laneId === 'equipment-cnc001') {
+    return {
+      anomalyId: laneId,
+      type: 'equipment',
+      typeLabel: '设备异常',
+      title: 'CNC-001 主轴温升异常已分流到设备维护与排产复核',
+      workOrderNumber: 'WO-20260501',
+      operationCode: 'OP-020',
+      route: '异常管理 -> 风险队列 -> AI 排产 -> 设备维护',
+      owner: '设备主管 赵工',
+      dueAt: '今日 14:00',
+      affectedOrders: 'WO-20260501 / WO-2026-0042',
+      deliveryImpact: '预计停机 2h',
+      scheduleWindow: '今日夜班维护窗口',
+      suggestedAction: '停机保护 CNC-001，切换 CNC-003 分流，并提交调度员复核瓶颈设备保护策略。',
+      auditId: 'AUD-ANOMALY-DISPATCH-20260521-002',
+      traceId: 'TRACE-ANOMALY-DISPATCH-EQUIPMENT-CNC001-20260521',
+      statusLabel: '设备分流已确认',
+      summary: '现场事件中心确认设备异常分流，风险队列和 AI 排产按设备停机影响生成复核动作。',
+    }
+  }
+  return {
+    anomalyId: laneId,
+    type: 'material',
+    typeLabel: '物料异常',
+    title: '原料批次来料异常已分流到库存与采购协同',
+    workOrderNumber: 'WO-20260501',
+    operationCode: 'OP-040',
+    route: '异常管理 -> 库存齐套 -> 采购协同 -> 风险下降',
+    owner: '采购 王工',
+    dueAt: '今日 16:00',
+    affectedOrders: 'WO-20260501 / WO-DEMO-1002',
+    deliveryImpact: '预计影响 1 个物料批次窗口',
+    scheduleWindow: '来料复检前',
+    suggestedAction: '隔离 LH-202605 批次，启用备用批次，并要求采购协同追踪供应商整改承诺。',
+    auditId: 'AUD-ANOMALY-DISPATCH-20260521-003',
+    traceId: 'TRACE-ANOMALY-DISPATCH-MATERIAL-BATCH-20260521',
+    statusLabel: '物料分流已确认',
+    summary: '现场事件中心确认物料异常分流，库存齐套和采购协同按批次隔离结果回写风险状态。',
+  }
+}
+
+function applyStoredDispatchRecords() {
+  const records = readAnomalyDispatchRecords()
+  latestDispatch.value = records[0] ?? null
+  dispatchedLaneIds.value = records.map(record => record.anomalyId)
+}
+
+onMounted(() => {
+  applyStoredDispatchRecords()
+  loadAnomalies()
+})
 </script>
 
 <style scoped>
@@ -263,6 +433,31 @@ onMounted(loadAnomalies)
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .btn { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn.active { background: #1890ff; color: #fff; border-color: #1890ff; }
+.event-center { background: #fff; border: 1px solid #e6edf5; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.event-center-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.eyebrow { display: block; font-size: 11px; color: #1677ff; font-weight: 700; margin-bottom: 3px; }
+.event-center h3 { margin: 0; font-size: 14px; }
+.event-center-status { background: #fff7e6; border: 1px solid #ffd591; color: #d46b08; border-radius: 4px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.event-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.event-lane { border: 1px solid #edf1f5; border-radius: 6px; padding: 10px; min-height: 120px; }
+.event-lane span { display: block; color: #667085; font-size: 11px; margin-bottom: 6px; }
+.event-lane strong { display: block; color: #1f2937; font-size: 13px; margin-bottom: 6px; }
+.event-lane p { margin: 0 0 8px; color: #667085; font-size: 12px; line-height: 1.5; }
+.event-lane.critical { border-top: 3px solid #ff4d4f; }
+.event-lane.warning { border-top: 3px solid #faad14; }
+.event-lane.info { border-top: 3px solid #1890ff; }
+.lane-route { color: #1677ff; font-size: 11px; background: #eef6ff; border-radius: 4px; padding: 5px 6px; }
+.event-lane button { margin-top: 8px; min-height: 28px; padding: 0 10px; border: 1px solid #1677ff; border-radius: 4px; background: #fff; color: #1677ff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.event-bridge { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; background: #f6f9fc; border-radius: 6px; font-size: 12px; }
+.event-bridge span { color: #1677ff; font-weight: 700; white-space: nowrap; }
+.event-bridge strong { flex: 1; color: #1f2937; font-weight: 600; }
+.event-bridge a { color: #1677ff; text-decoration: none; white-space: nowrap; }
+.dispatch-trace { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 10px; padding: 10px 12px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f0fdf4; font-size: 12px; }
+.dispatch-trace span { padding: 2px 6px; border-radius: 4px; background: #dcfce7; color: #15803d; font-weight: 700; }
+.dispatch-trace strong { color: #111827; }
+.dispatch-trace p { grid-column: 1 / -1; margin: 0; color: #4b5563; line-height: 1.45; }
+.dispatch-trace code { color: #1677ff; font-size: 12px; }
+.anomaly-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .anomaly-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .anomaly-card { display: flex; gap: 12px; padding: 12px 16px; background: #fff; border-radius: 6px; cursor: pointer; border-left: 4px solid #d9d9d9; transition: box-shadow 0.15s; }
 .anomaly-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
@@ -326,4 +521,8 @@ onMounted(loadAnomalies)
 .page-btn:disabled { color: #d9d9d9; cursor: not-allowed; }
 .page-ellipsis { width: 28px; text-align: center; color: #999; font-size: 12px; }
 .page-info { margin-left: auto; font-size: 12px; color: #999; }
+@media (max-width: 1100px) {
+  .event-lanes { grid-template-columns: 1fr; }
+  .event-bridge { align-items: flex-start; flex-direction: column; }
+}
 </style>

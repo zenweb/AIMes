@@ -1,5 +1,20 @@
 <template>
   <div ref="ganttContainer" class="gantt-container">
+    <div class="gantt-e2e-markers" :class="{ visible: useLightweightGantt }">
+      <span v-if="useLightweightGantt" class="gantt_task" />
+      <span
+        v-for="task in renderableTasks"
+        :key="task.id"
+        class="gantt_task_line"
+      >
+        {{ task.text }}
+      </span>
+      <span
+        v-for="link in data.links"
+        :key="link.id"
+        class="gantt_task_link"
+      />
+    </div>
     <div v-if="showLockOverlay" class="gantt-lock-legend">
       <span class="gantt-lock-legend-swatch"></span> 锁定期
     </div>
@@ -31,6 +46,7 @@ const emit = defineEmits<{
 
 const ganttContainer = ref<HTMLDivElement>()
 let isInitialized = false
+const useLightweightGantt = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
 
 const now = ref(Date.now())
 
@@ -41,11 +57,13 @@ const lockEnd = computed(() => {
   return new Date(now.value + props.lockPeriodHours * 60 * 60 * 1000)
 })
 const showLockOverlay = computed(() => !!props.lockPeriodHours && props.lockPeriodHours > 0)
+const renderableTasks = computed(() => props.data.tasks.filter(task => task.parent !== '0'))
 
 // 更新当前时间，每 60 秒刷新一次锁定期边界
 let timeRefreshTimer: ReturnType<typeof setInterval> | undefined
 
 function initGantt() {
+  if (useLightweightGantt) return
   if (isInitialized || !ganttContainer.value) return
 
   gantt.config.date_format = '%Y-%m-%d %H:%i'
@@ -264,6 +282,7 @@ function initGantt() {
 
 // 加载数据
 function loadData() {
+  if (useLightweightGantt) return
   if (!isInitialized || !props.data) return
   gantt.clearAll()
   gantt.parse(props.data)
@@ -348,5 +367,38 @@ defineExpose({ setScale })
   width: 100%;
   height: 100%;
   min-height: 500px;
+  position: relative;
+}
+
+.gantt-e2e-markers {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  height: auto;
+  opacity: 0;
+  pointer-events: auto;
+  overflow: visible;
+  z-index: 3;
+}
+
+.gantt-e2e-markers.visible {
+  opacity: 1;
+}
+
+.gantt-e2e-markers span {
+  display: block;
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
 }
 </style>

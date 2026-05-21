@@ -1,0 +1,301 @@
+<template>
+  <section class="event-queue-panel" aria-label="事件触发 Agent">
+    <div class="queue-heading">
+      <div>
+        <span class="eyebrow">事件触发 Agent</span>
+        <h3>三类事件重排队列</h3>
+      </div>
+      <span class="queue-count">{{ events.length }} 个待评估事件</span>
+    </div>
+
+    <div class="event-grid">
+      <article
+        v-for="event in events"
+        :key="event.id"
+        class="event-card"
+        :class="[event.severity, { active: activeSuggestion?.eventId === event.id, resolved: event.resolved }]"
+      >
+        <div class="event-topline">
+          <span class="event-type">{{ event.typeLabel }}</span>
+          <span class="event-severity">{{ event.severityLabel }}</span>
+          <span v-if="event.resolved" class="event-resolved">已缓解</span>
+        </div>
+        <strong>{{ event.title }}</strong>
+        <p>{{ event.impact }}</p>
+        <ul v-if="event.evidence?.length" class="event-evidence">
+          <li v-for="item in event.evidence" :key="item">{{ item }}</li>
+        </ul>
+        <p v-if="event.resolutionNote" class="resolution-note">{{ event.resolutionNote }}</p>
+        <div class="event-meta">
+          <span>{{ event.affectedOrders }}</span>
+          <span>{{ event.window }}</span>
+        </div>
+        <button type="button" @click="$emit('generate', event)">
+          {{ event.resolved ? '复核排产影响' : '生成重排建议' }}
+        </button>
+      </article>
+    </div>
+
+    <div class="agent-suggestion" :class="{ empty: !activeSuggestion }">
+      <template v-if="activeSuggestion">
+        <span class="record-label">当前 Agent 建议</span>
+        <strong>{{ activeSuggestion.title }}</strong>
+        <p>{{ activeSuggestion.action }}</p>
+        <div class="suggestion-metrics">
+          <span>OTD {{ activeSuggestion.otdImpact }}</span>
+          <span>延期 {{ activeSuggestion.delayImpact }}</span>
+          <span>换线 {{ activeSuggestion.changeoverImpact }}</span>
+        </div>
+        <button class="adopt-suggestion" type="button" @click="$emit('adopt', activeSuggestion)">
+          采纳此建议
+        </button>
+      </template>
+      <template v-else>
+        <span class="record-label">当前 Agent 建议</span>
+        <strong>等待事件评估</strong>
+        <p>选择任一事件生成重排建议。</p>
+      </template>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+export type ScheduleEventType = 'material' | 'equipment' | 'rush' | 'quality' | 'labor' | 'route' | 'anomaly' | 'monitoring' | 'engineering' | 'pilot' | 'risk' | 'production'
+export type ScheduleEventSeverity = 'critical' | 'warning'
+
+export interface ScheduleEventItem {
+  id: string
+  type: ScheduleEventType
+  typeLabel: string
+  severity: ScheduleEventSeverity
+  severityLabel: string
+  title: string
+  impact: string
+  affectedOrders: string
+  window: string
+  evidence?: string[]
+  resolved?: boolean
+  resolutionNote?: string
+}
+
+export interface ScheduleAgentSuggestion {
+  eventId: string
+  title: string
+  action: string
+  otdImpact: string
+  delayImpact: string
+  changeoverImpact: string
+}
+
+defineProps<{
+  events: ScheduleEventItem[]
+  activeSuggestion: ScheduleAgentSuggestion | null
+}>()
+
+defineEmits<{
+  generate: [event: ScheduleEventItem]
+  adopt: [suggestion: ScheduleAgentSuggestion]
+}>()
+</script>
+
+<style scoped>
+.event-queue-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.8fr);
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.queue-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+h3,
+p {
+  margin: 0;
+}
+
+h3 {
+  color: #111827;
+  font-size: 16px;
+}
+
+.queue-count {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.event-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.event-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.event-card.critical {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.event-card.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.event-card.resolved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.event-card.active {
+  border-color: #60a5fa;
+  box-shadow: inset 0 0 0 1px #60a5fa;
+}
+
+.event-topline,
+.event-meta,
+.suggestion-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-type,
+.event-severity,
+.event-resolved,
+.event-meta span,
+.suggestion-metrics span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.75);
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.event-resolved {
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+}
+
+.event-card strong,
+.agent-suggestion strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.event-card p,
+.agent-suggestion p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-evidence {
+  margin: 0;
+  padding-left: 16px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-card .resolution-note {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.event-card button {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 5px 10px;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.2s, color 0.2s;
+}
+
+.event-card button:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+.agent-suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.adopt-suggestion {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid #1d4ed8;
+  border-radius: 4px;
+  background: #1d4ed8;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.2s;
+}
+
+.adopt-suggestion:hover {
+  background: #1e40af;
+}
+
+.agent-suggestion.empty {
+  border-color: #e5e7eb;
+  background: #fafafa;
+}
+
+.record-label {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 1180px) {
+  .event-queue-panel,
+  .event-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

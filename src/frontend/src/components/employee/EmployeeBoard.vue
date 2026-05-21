@@ -28,6 +28,8 @@
       <button class="btn btn-add" @click="showCreate = true">+ 新增</button>
     </div>
 
+    <SkillMatrixPanel :employees="employees" />
+
     <div class="emp-grid">
       <div v-for="e in paginatedEmployees" :key="e.id" class="emp-card" :class="{ inactive: !e.isActive }" @click="editTarget = e">
         <div class="card-avatar">{{ e.name[0] }}</div>
@@ -36,7 +38,8 @@
           <div class="card-meta">
             <span class="tag role">{{ roleLabel(e.role) }}</span>
             <span v-if="e.team" class="tag team">{{ e.team }}</span>
-            <span v-if="e.shift" class="tag shift">{{ e.shift === 'Day' ? '白班' : '夜班' }}</span>
+            <span v-if="e.shift" class="tag shift">{{ e.shift === 'Night' ? '夜班' : e.shift === 'Rotating' ? '倒班' : '白班' }}</span>
+            <span v-if="e.availability" class="tag availability">{{ e.availability.statusLabel }}</span>
           </div>
           <div class="card-info">{{ e.employeeNumber }} · {{ e.phone || '-' }}</div>
         </div>
@@ -134,6 +137,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import type { Employee, CreateEmployeeRequest, UpdateEmployeeRequest } from '../../types/employee'
 import { getEmployeeList, createEmployee, updateEmployee, deactivateEmployee } from '../../api/employee'
 import { exportToCsv } from '../../utils/export'
+import SkillMatrixPanel from './SkillMatrixPanel.vue'
 
 const employees = ref<Employee[]>([])
 const search = ref('')
@@ -224,12 +228,13 @@ onMounted(async () => {
   try { employees.value = (await getEmployeeList()).items }
   catch {
     employees.value = [
-      { id: 'emp1', employeeNumber: 'EMP-001', name: '张三', role: 'Operator', team: '甲班', shift: 'Day', phone: '13800138001', email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
-      { id: 'emp2', employeeNumber: 'EMP-002', name: '李四', role: 'Operator', team: '甲班', shift: 'Day', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
-      { id: 'emp3', employeeNumber: 'EMP-003', name: '王五', role: 'Operator', team: '乙班', shift: 'Night', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
-      { id: 'emp4', employeeNumber: 'EMP-004', name: '赵六', role: 'Engineer', team: '技术组', shift: 'Day', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
-      { id: 'emp5', employeeNumber: 'EMP-005', name: '钱七', role: 'QC', team: '质检组', shift: 'Day', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
-      { id: 'emp6', employeeNumber: 'EMP-006', name: '孙八', role: 'Lead', team: '甲班', shift: 'Day', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp1', employeeNumber: 'EMP-001', name: '张三', role: 'Operator', team: '甲班', shift: 'Day', phone: '13800138001', email: null, skills: ['CNC 精加工', '首件自检'], certifications: [{ name: 'CNC-2 级', expiresAt: '2026-12-31', status: 'valid' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '白班排班', window: '2026-05-20 08:00-17:00', capacityHours: 8, source: '班组排班 SCH-LABOR-20260520-D' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp2', employeeNumber: 'EMP-002', name: '李四', role: 'Operator', team: '甲班', shift: 'Day', phone: null, email: null, skills: ['装配', '扭矩复检'], certifications: [{ name: '装配资质', expiresAt: '2026-11-30', status: 'valid' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '白班排班', window: '2026-05-20 08:00-17:00', capacityHours: 8, source: '班组排班 SCH-LABOR-20260520-D' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp3', employeeNumber: 'EMP-003', name: '王五', role: 'Operator', team: '乙班', shift: 'Night', phone: null, email: null, skills: ['热处理', '炉温曲线确认'], certifications: [{ name: '热处理上岗证', expiresAt: '2026-05-25', status: 'expiring' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '夜班排班', window: '2026-05-20 20:00-2026-05-21 08:00', capacityHours: 8, source: '班组排班 SCH-LABOR-20260520-N' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp4', employeeNumber: 'EMP-004', name: '赵六', role: 'Engineer', team: '技术组', shift: 'Day', phone: null, email: null, skills: ['工艺变更', '替代料确认'], certifications: [{ name: '工程放行', expiresAt: '2027-01-31', status: 'valid' }], availability: { date: '2026-05-20', status: 'on_call', statusLabel: '待命窗口', window: '2026-05-20 09:00-21:00', capacityHours: 4, source: '工程值班 SCH-ENG-20260520-A' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp5', employeeNumber: 'EMP-005', name: '钱七', role: 'QC', team: '质检组', shift: 'Day', phone: null, email: null, skills: ['SPC 判异', '终检放行'], certifications: [{ name: '质量检验员', expiresAt: '2026-10-31', status: 'valid' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '白班排班', window: '2026-05-20 08:00-17:00', capacityHours: 8, source: '质量排班 SCH-QA-20260520-D' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp6', employeeNumber: 'EMP-006', name: '孙八', role: 'Lead', team: '甲班', shift: 'Day', phone: null, email: null, skills: ['热处理', '派工确认', '异常升级'], certifications: [{ name: '热处理上岗证', expiresAt: '2026-09-30', status: 'valid' }, { name: '班组长授权', expiresAt: '2026-09-30', status: 'valid' }], availability: { date: '2026-05-20', status: 'overtime', statusLabel: '加班窗口', window: '2026-05-20 18:00-22:00', capacityHours: 4, source: '排班计划 SCH-LABOR-20260520-A' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
+      { id: 'emp9', employeeNumber: 'EMP-009', name: '高十一', role: 'Operator', team: '乙班', shift: 'Night', phone: null, email: null, skills: ['热处理', '炉温曲线确认', '首件复核'], certifications: [{ name: '热处理上岗证', expiresAt: '2026-12-31', status: 'valid' }], availability: { date: '2026-05-20', status: 'leave', statusLabel: '请假不可用', window: '2026-05-20 全天', capacityHours: 0, source: '请假单 LEAVE-20260520-009' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
       { id: 'emp7', employeeNumber: 'EMP-007', name: '周九', role: 'Admin', team: null, shift: 'Day', phone: null, email: null, isActive: true, createdAt: '2026-01-01T00:00:00' },
       { id: 'emp8', employeeNumber: 'EMP-008', name: '吴十', role: 'Operator', team: '乙班', shift: 'Night', phone: null, email: null, isActive: false, createdAt: '2026-01-01T00:00:00' },
     ]
@@ -258,6 +263,7 @@ onMounted(async () => {
 .tag.role { background: #e6f7ff; color: #1890ff; }
 .tag.team { background: #fff7e6; color: #fa8c16; }
 .tag.shift { background: #f6ffed; color: #52c41a; }
+.tag.availability { background: #eef2ff; color: #1d4ed8; }
 .card-info { font-size: 12px; color: #999; }
 .inactive-badge { font-size: 11px; color: #ff4d4f; font-weight: 600; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 1100; display: flex; align-items: center; justify-content: center; }

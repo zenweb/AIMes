@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="theme-color" content="#070B1F" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="format-detection" content="telephone=no" />
+<title>AIMes V1 · 让 MES 从「记账」升级为「会预测的助手」</title>
+<meta name="description" content="开源版 AIMes V1：以 AI 排产排程为核心的智能 MES，规则引擎 + 多目标优化 + LLM 混合精调，每个决策都可追溯。" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#070B1F;
+    --bg2:#0A0E27;
+    --bg3:#0E1432;
+    --panel:rgba(255,255,255,0.04);
+    --panel-2:rgba(255,255,255,0.07);
+    --border:rgba(255,255,255,0.10);
+    --border-strong:rgba(255,255,255,0.18);
+    --text:#E8EBF5;
+    --text-2:#A4ADC7;
+    --text-3:#6B7494;
+    --c-blue:#4F8DFF;
+    --c-cyan:#00E5C7;
+    --c-amber:#FFB547;
+    --c-pink:#FF6B9D;
+    --c-purple:#A78BFA;
+    --c-green:#4ADE80;
+    --grad-1:linear-gradient(135deg,#4F8DFF 0%,#A78BFA 100%);
+    --grad-2:linear-gradient(135deg,#00E5C7 0%,#4F8DFF 100%);
+    --grad-3:linear-gradient(135deg,#FFB547 0%,#FF6B9D 100%);
+    --safe-t:env(safe-area-inset-top,0);
+    --safe-b:env(safe-area-inset-bottom,0);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  html{scroll-behavior:smooth;font-size:16px}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Inter","Noto Sans SC",system-ui,-apple-system,Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    line-height:1.55;
+    overflow-x:hidden;
+  }
+  /* 全局背景光晕 */
+  body::before{content:"";position:fixed;inset:0;z-index:-1;background:
+    radial-gradient(800px 500px at 10% -10%, rgba(79,141,255,0.18), transparent 60%),
+    radial-gradient(700px 500px at 100% 30%, rgba(0,229,199,0.14), transparent 60%),
+    radial-gradient(600px 400px at 50% 110%, rgba(167,139,250,0.10), transparent 60%);}
+  body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,0.025) 1px,transparent 1px);
+    background-size:36px 36px;
+    mask-image:radial-gradient(ellipse at 50% 30%,#000 30%,transparent 80%);}
+
+  /* ============ 顶部导航 ============ */
+  .topnav{position:fixed;top:0;left:0;right:0;z-index:50;padding:calc(10px + var(--safe-t)) 16px 10px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,rgba(7,11,31,0.95) 0%,rgba(7,11,31,0.6) 70%,transparent 100%);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .brand{display:flex;align-items:center;gap:8px;color:var(--text)}
+  .brand .logo{width:24px;height:24px;border-radius:7px;background:var(--grad-1);position:relative;box-shadow:0 0 14px rgba(79,141,255,.5)}
+  .brand .logo::after{content:"";position:absolute;inset:5px;border-radius:3px;background:rgba(255,255,255,.85)}
+  .brand .nm{font-size:14px;font-weight:700;letter-spacing:.02em}
+  .brand .ver{font-size:10px;font-weight:600;color:var(--c-cyan);background:rgba(0,229,199,.1);padding:2px 6px;border-radius:6px;margin-left:6px;border:1px solid rgba(0,229,199,.3)}
+  .menu-btn{width:38px;height:38px;border-radius:10px;background:var(--panel);border:1px solid var(--border);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .menu-btn span{display:block;width:16px;height:1.5px;background:var(--text);margin:2px 0;transition:all .3s}
+  .menu-btn.open span:nth-child(1){transform:translateY(3.5px) rotate(45deg)}
+  .menu-btn.open span:nth-child(2){opacity:0}
+  .menu-btn.open span:nth-child(3){transform:translateY(-3.5px) rotate(-45deg)}
+
+  /* 抽屉菜单 */
+  .drawer{position:fixed;top:0;right:-100%;width:min(82vw,320px);height:100vh;background:var(--bg2);border-left:1px solid var(--border);z-index:60;padding:calc(70px + var(--safe-t)) 24px 24px;transition:right .35s cubic-bezier(.2,.7,.2,1);overflow-y:auto}
+  .drawer.open{right:0}
+  .drawer .lab{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.16em;margin-bottom:14px}
+  .drawer a{display:block;padding:14px 0;font-size:15px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border);transition:color .2s}
+  .drawer a:active{color:var(--c-cyan)}
+  .drawer a .num{display:inline-block;width:28px;font-family:JetBrains Mono;font-size:11px;color:var(--c-cyan);font-weight:600}
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:55;opacity:0;visibility:hidden;transition:all .3s}
+  .mask.open{opacity:1;visibility:visible}
+
+  /* 顶部进度条 */
+  .progress{position:fixed;top:calc(56px + var(--safe-t));left:0;right:0;height:2px;background:rgba(255,255,255,.04);z-index:49}
+  .progress::after{content:"";display:block;width:var(--p,0%);height:100%;background:var(--grad-2);box-shadow:0 0 8px var(--c-cyan);transition:width .15s linear}
+
+  /* ============ 通用 section ============ */
+  section{padding:64px 20px;position:relative;scroll-margin-top:60px}
+  .eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--c-cyan);font-weight:700;margin-bottom:14px}
+  .eyebrow::before{content:"";width:24px;height:1px;background:var(--c-cyan);box-shadow:0 0 6px var(--c-cyan)}
+  h1,h2,h3,h4{margin:0;font-weight:800;letter-spacing:-.01em;line-height:1.15}
+  h2{font-size:30px;line-height:1.2}
+  h3{font-size:22px}
+  h4{font-size:16px}
+  p{color:var(--text-2);margin:0;font-size:15px}
+  .lead{font-size:15px;color:var(--text-2);line-height:1.7;margin-top:16px}
+  .gradient{background:var(--grad-1);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .gradient.cy{background:var(--grad-2);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .gradient.am{background:var(--grad-3);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:11px;letter-spacing:.05em;font-weight:700;border:1px solid var(--border-strong);background:var(--panel-2);color:var(--text-2)}
+  .pill.cy{color:var(--c-cyan);border-color:rgba(0,229,199,.35);background:rgba(0,229,199,.06)}
+  .pill.bl{color:var(--c-blue);border-color:rgba(79,141,255,.35);background:rgba(79,141,255,.06)}
+  .pill.am{color:var(--c-amber);border-color:rgba(255,181,71,.35);background:rgba(255,181,71,.06)}
+  .pill.pk{color:var(--c-pink);border-color:rgba(255,107,157,.35);background:rgba(255,107,157,.06)}
+  .pill.gn{color:var(--c-green);border-color:rgba(74,222,128,.35);background:rgba(74,222,128,.06)}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:18px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);position:relative;overflow:hidden}
+  .stack{display:flex;flex-direction:column;gap:14px}
+
+  /* 揭示动画 */
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ============ Hero ============ */
+  .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding-top:calc(80px + var(--safe-t));padding-bottom:60px;position:relative}
+  .hero .tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
+  .hero h1{font-size:clamp(40px,11vw,68px);font-weight:900;line-height:1.02;letter-spacing:-.02em}
+  .hero h1 .small{display:block;font-size:clamp(20px,5.5vw,32px);font-weight:700;color:var(--text-2);margin-top:14px;letter-spacing:0}
+  .hero .lead{font-size:clamp(14px,4vw,17px);max-width:560px}
+  .hero .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:36px}
+  .hero .stat{padding:16px 14px;background:var(--panel);border:1px solid var(--border);border-radius:14px;text-align:center}
+  .hero .stat .v{font-size:clamp(22px,7vw,32px);font-weight:900;line-height:1;background:var(--grad-2);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .stat .k{font-size:11px;color:var(--text-3);margin-top:6px;letter-spacing:.06em}
+  .hero .scroll-hint{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);color:var(--text-3);font-size:11px;letter-spacing:.18em;display:flex;flex-direction:column;align-items:center;gap:6px;animation:bob 2s ease-in-out infinite}
+  .hero .scroll-hint::after{content:"";width:1px;height:18px;background:var(--text-3)}
+  @keyframes bob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+  .hero .glow{position:absolute;border-radius:50%;filter:blur(60px);opacity:.5;pointer-events:none;z-index:-1}
+  .hero .g1{width:280px;height:280px;background:#4F8DFF;top:10%;right:-80px}
+  .hero .g2{width:220px;height:220px;background:#00E5C7;bottom:0;left:-60px;opacity:.35}
+
+  /* ============ Pain ============ */
+  .pain-list{display:flex;flex-direction:column;gap:12px;margin-top:30px}
+  .pain-item{padding:18px 18px;background:var(--panel);border:1px solid var(--border);border-radius:16px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;position:relative;overflow:hidden}
+  .pain-item::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-pink);box-shadow:0 0 8px var(--c-pink)}
+  .pain-item .ic{width:48px;height:48px;border-radius:12px;background:rgba(255,107,157,.1);color:var(--c-pink);display:flex;align-items:center;justify-content:center;font-size:22px}
+  .pain-item .num{font-size:28px;font-weight:900;background:var(--grad-3);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+  .pain-item .lbl{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-top:4px;font-weight:700}
+  .pain-item .desc{font-size:13px;color:var(--text-2);margin-top:6px;line-height:1.5}
+  .quote{margin-top:24px;padding:18px;background:var(--panel);border:1px solid var(--border);border-radius:14px}
+  .quote .who{font-size:11px;color:var(--text-3);margin-top:8px}
+  .quote .txt{font-size:14px;color:var(--text);font-style:italic;line-height:1.6}
+
+  /* ============ 三柱 ============ */
+  .three-stack{display:flex;flex-direction:column;gap:14px;margin-top:30px}
+  .three-stack .col{padding:24px 20px;background:var(--panel);border:1px solid var(--border);border-radius:18px;position:relative;overflow:hidden}
+  .three-stack .col::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--c-blue)}
+  .three-stack .col.b::before{background:var(--c-cyan)}
+  .three-stack .col.c::before{background:var(--c-amber)}
+  .three-stack .col .ic{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px;background:rgba(79,141,255,.12);color:var(--c-blue)}
+  .three-stack .col.b .ic{background:rgba(0,229,199,.12);color:var(--c-cyan)}
+  .three-stack .col.c .ic{background:rgba(255,181,71,.12);color:var(--c-amber)}
+  .three-stack .col h3{font-size:20px;color:var(--text);margin-bottom:8px}
+  .three-stack .col p{font-size:14px;color:var(--text-2);line-height:1.6}
+  .three-stack .col .feats{margin-top:14px;display:flex;flex-direction:column;gap:7px}
+  .three-stack .col .feats div{font-size:13px;color:var(--text-2);display:flex;gap:8px;align-items:flex-start;line-height:1.4}
+  .three-stack .col .feats div::before{content:"▸";color:var(--c-cyan);font-size:11px;margin-top:3px;flex-shrink:0}
+
+  /* ============ 雷达图 ============ */
+  .chart-card{padding:18px;margin-top:24px;background:var(--panel);border:1px solid var(--border);border-radius:16px}
+  .chart-card .ch-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .chart-card .ch-foot{font-size:11px;color:var(--text-3);margin-top:6px;text-align:center}
+  .echart{width:100%;height:300px}
+
+  .kpi-row{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+  .kpi-row .row{display:grid;grid-template-columns:38px 1fr auto;gap:12px;padding:14px 16px;background:var(--panel);border:1px solid var(--border);border-radius:12px;align-items:center}
+  .kpi-row .row .ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+  .kpi-row .row .ic.bl{background:rgba(79,141,255,.15);color:var(--c-blue)}
+  .kpi-row .row .ic.cy{background:rgba(0,229,199,.15);color:var(--c-cyan)}
+  .kpi-row .row .ic.am{background:rgba(255,181,71,.15);color:var(--c-amber)}
+  .kpi-row .row .ic.pk{background:rgba(255,107,157,.15);color:var(--c-pink)}
+  .kpi-row .row .ic.gn{background:rgba(74,222,128,.15);color:var(--c-green)}
+  .kpi-row .row .nm{font-size:13px;color:var(--text);font-weight:700}
+  .kpi-row .row .sub{font-size:11px;color:var(--text-3);margin-top:2px}
+  .kpi-row .row .v{font-size:18px;font-weight:800}
+
+  /* ============ 排程引擎流水线 ============ */
+  .pipe{display:flex;flex-direction:column;gap:10px;margin-top:24px;position:relative}
+  .pipe::before{content:"";position:absolute;left:24px;top:30px;bottom:30px;width:1px;background:linear-gradient(180deg,var(--c-cyan),var(--c-blue),var(--c-purple),var(--c-amber));opacity:.6}
+  .pipe .step{padding:16px 16px 16px 60px;background:var(--panel);border:1px solid var(--border);border-radius:14px;position:relative}
+  .pipe .step::before{content:"";position:absolute;left:14px;top:50%;transform:translateY(-50%);width:20px;height:20px;border-radius:50%;background:var(--bg2);border:2px solid var(--c-cyan);box-shadow:0 0 12px var(--c-cyan);z-index:2}
+  .pipe .step .n{font-family:JetBrains Mono;font-size:10px;color:var(--c-cyan);font-weight:700;letter-spacing:.1em}
+  .pipe .step h4{font-size:16px;color:var(--text);margin:4px 0 4px;font-weight:700}
+  .pipe .step p{font-size:12px;color:var(--text-2);line-height:1.5}
+  .pipe .step .tags{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .pipe .step .tags span{font-family:JetBrains Mono;font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.04);color:var(--text-2);border:1px solid var(--border)}
+
+  /* ============ 多目标 ============ */
+  .obj-list{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+  .obj-card{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:14px}
+  .obj-card .head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .obj-card .badge{font-family:JetBrains Mono;font-size:11px;font-weight:700;padding:5px 9px;border-radius:7px}
+  .obj-card .badge.a{background:rgba(255,107,157,.12);color:var(--c-pink)}
+  .obj-card .badge.b{background:rgba(0,229,199,.12);color:var(--c-cyan)}
+  .obj-card .badge.c{background:rgba(255,181,71,.12);color:var(--c-amber)}
+  .obj-card .badge.d{background:rgba(167,139,250,.12);color:var(--c-purple)}
+  .obj-card h4{font-size:15px;color:var(--text);margin-top:10px;font-weight:700}
+  .obj-card p{font-size:13px;color:var(--text-2);margin-top:5px;line-height:1.55}
+  .obj-card .formula{font-family:JetBrains Mono;font-size:11px;color:var(--text-3);background:rgba(0,0,0,.25);padding:6px 10px;border-radius:6px;border:1px solid var(--border);margin-top:10px;overflow-x:auto;white-space:nowrap}
+
+  /* ============ 模块 Bento ============ */
+  .bento{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:24px}
+  .bento .b{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;min-height:128px}
+  .bento .b.full{grid-column:span 2;min-height:auto}
+  .bento .b .h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .bento .b .ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
+  .bento .b .ttl{font-size:13px;color:var(--text);font-weight:700}
+  .bento .b .dsc{font-size:11px;color:var(--text-3);line-height:1.55;margin-top:auto}
+  .bento .b .big{font-size:30px;font-weight:900;background:var(--grad-1);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1;margin:8px 0}
+  .bento .b1 .ic{background:rgba(79,141,255,.18);color:var(--c-blue)}
+  .bento .b2 .ic{background:rgba(0,229,199,.18);color:var(--c-cyan)}
+  .bento .b3 .ic{background:rgba(255,181,71,.18);color:var(--c-amber)}
+  .bento .b4 .ic{background:rgba(255,107,157,.18);color:var(--c-pink)}
+  .bento .b5 .ic{background:rgba(167,139,250,.18);color:var(--c-purple)}
+  .bento .b6 .ic{background:rgba(74,222,128,.18);color:var(--c-green)}
+  .bento .b7 .ic{background:rgba(79,141,255,.18);color:var(--c-blue)}
+  .bento .b8 .ic{background:rgba(0,229,199,.18);color:var(--c-cyan)}
+  .bento .b9 .ic{background:rgba(255,181,71,.18);color:var(--c-amber)}
+
+  /* ============ 架构 ============ */
+  .arch{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+  .arch .layer{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:14px;border-left-width:3px}
+  .arch .layer.l1{border-left-color:var(--c-blue)}
+  .arch .layer.l2{border-left-color:var(--c-cyan)}
+  .arch .layer.l3{border-left-color:var(--c-purple)}
+  .arch .layer.l4{border-left-color:var(--c-amber)}
+  .arch .layer .lab{font-family:JetBrains Mono;font-size:10px;color:var(--text-3);letter-spacing:.12em;font-weight:700}
+  .arch .layer h4{font-size:14px;color:var(--text);margin:4px 0 10px;font-weight:700}
+  .arch .layer .items{display:flex;flex-wrap:wrap;gap:6px}
+  .arch .layer .items span{font-size:11px;padding:5px 10px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:7px;font-weight:600}
+
+  /* ============ Trace ============ */
+  .trace-box{padding:18px;background:var(--panel);border:1px solid var(--border);border-radius:16px;margin-top:24px}
+  .trace-box .tt{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+  .trace-box .tid{font-family:JetBrains Mono;font-size:10px;color:var(--text-3)}
+  .trace-rows{display:flex;flex-direction:column;gap:8px}
+  .trace-rows .r{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center}
+  .trace-rows .r .k{font-family:JetBrains Mono;font-size:10px;color:var(--c-cyan);text-align:right;font-weight:700}
+  .trace-rows .r .v{font-family:JetBrains Mono;font-size:11px;background:rgba(0,0,0,.25);padding:7px 9px;border-radius:7px;border:1px solid var(--border);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trace-rows .r .v.hl{color:var(--c-amber)}
+  .trace-rows .r .v.gn{color:var(--c-green)}
+
+  /* ============ 性能 ============ */
+  .perf-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+  .perf-stat{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:12px}
+  .perf-stat .v{font-size:28px;font-weight:900;line-height:1}
+  .perf-stat .v.bl{color:var(--c-blue)} .perf-stat .v.cy{color:var(--c-cyan)} .perf-stat .v.am{color:var(--c-amber)} .perf-stat .v.pk{color:var(--c-pink)}
+  .perf-stat .l{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-top:6px;font-weight:700}
+  .perf-stat .d{font-size:11px;color:var(--text-2);margin-top:8px;line-height:1.5}
+
+  /* ============ vs 对比 ============ */
+  .vs-tabs{display:flex;gap:8px;margin-top:24px;background:var(--panel);padding:6px;border-radius:14px;border:1px solid var(--border)}
+  .vs-tabs button{flex:1;padding:10px;background:transparent;border:none;color:var(--text-2);font-weight:700;font-size:13px;border-radius:10px;cursor:pointer;font-family:inherit;transition:all .25s}
+  .vs-tabs button.active{background:var(--panel-2);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+  .vs-tabs button.active.os{color:var(--c-cyan)}
+  .vs-tabs button.active.cm{color:var(--c-amber)}
+  .vs-panel{margin-top:14px;padding:18px;background:var(--panel);border:1px solid var(--border);border-radius:16px}
+  .vs-panel.os{border-color:rgba(0,229,199,.25)}
+  .vs-panel.cm{border-color:rgba(255,181,71,.25);display:none}
+  .vs-panel .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .vs-panel .nm{font-size:20px;font-weight:800}
+  .vs-panel .sub{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+  .vs-panel .feats{display:flex;flex-direction:column;gap:8px}
+  .vs-panel .feat{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:9px 12px;background:rgba(255,255,255,.025);border-radius:9px;align-items:center;font-size:12px;border:1px solid rgba(255,255,255,.04)}
+  .vs-panel .feat .lab{color:var(--text)}
+  .vs-panel .feat .val{font-family:JetBrains Mono;font-size:10px;color:var(--text-3)}
+  .vs-panel .feat .ck{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#fff}
+  .vs-panel .feat .ck.y{background:var(--c-cyan)} .vs-panel .feat .ck.n{background:#475569} .vs-panel .feat .ck.p{background:var(--c-amber)}
+
+  /* ============ 路线图 ============ */
+  .roadmap{display:flex;flex-direction:column;gap:14px;margin-top:24px;position:relative;padding-left:22px}
+  .roadmap::before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:linear-gradient(180deg,var(--c-cyan),var(--c-blue),var(--c-purple))}
+  .road-item{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:14px;position:relative}
+  .road-item::before{content:"";position:absolute;left:-19px;top:18px;width:14px;height:14px;border-radius:50%;background:var(--bg2);border:3px solid var(--c-cyan);box-shadow:0 0 12px var(--c-cyan)}
+  .road-item.now::before{background:var(--c-amber);border-color:var(--c-amber);box-shadow:0 0 16px var(--c-amber);animation:pulse 1.6s ease-in-out infinite}
+  .road-item.future::before{background:var(--bg2);border-color:var(--c-purple);box-shadow:0 0 12px var(--c-purple)}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+  .road-item .ver{font-family:JetBrains Mono;font-size:11px;color:var(--c-cyan);font-weight:700}
+  .road-item.now .ver{color:var(--c-amber)}
+  .road-item.future .ver{color:var(--c-purple)}
+  .road-item h4{font-size:16px;color:var(--text);margin:5px 0 6px;font-weight:700}
+  .road-item p{font-size:12px;color:var(--text-2);line-height:1.55}
+  .road-item .dt{font-size:11px;color:var(--text-3);margin-top:8px;font-family:JetBrains Mono}
+
+  /* ============ Quickstart ============ */
+  .qs-steps{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+  .qs-step{padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:14px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:start}
+  .qs-step .n{width:32px;height:32px;border-radius:9px;background:var(--grad-1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:14px}
+  .qs-step h4{font-size:14px;color:var(--text);font-weight:700;margin-bottom:5px}
+  .qs-step p{font-size:12px;color:var(--text-2);line-height:1.55}
+  .terminal{margin-top:16px;background:#000814;border:1px solid var(--border);border-radius:14px;overflow:hidden;font-family:JetBrains Mono}
+  .terminal .bar{padding:9px 12px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px}
+  .terminal .bar .d{width:10px;height:10px;border-radius:50%}
+  .terminal .bar .d.r{background:#FF5F56} .terminal .bar .d.y{background:#FFBD2E} .terminal .bar .d.g{background:#27C93F}
+  .terminal .bar .t{margin-left:8px;font-size:10px;color:var(--text-3)}
+  .terminal .body{padding:14px;font-size:11px;line-height:1.7;color:var(--text-2);overflow-x:auto;white-space:nowrap}
+  .terminal .pr{color:var(--c-green)}
+  .terminal .arg{color:var(--c-amber)}
+  .terminal .ok{color:var(--c-cyan)}
+  .terminal .ln{display:block}
+  .copy-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:12px;font-weight:700;background:var(--panel-2);border:1px solid var(--border-strong);color:var(--text);border-radius:9px;cursor:pointer;font-family:inherit;margin-top:10px}
+  .copy-btn:active{background:rgba(0,229,199,.12);border-color:var(--c-cyan);color:var(--c-cyan)}
+
+  /* ============ CTA ============ */
+  .cta-section{padding-bottom:120px}
+  .cta-actions{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+  .cta-btn{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:14px;background:var(--panel);border:1px solid var(--border-strong);text-decoration:none;color:inherit;transition:all .25s}
+  .cta-btn:active{transform:scale(.98)}
+  .cta-btn .ic{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex-shrink:0}
+  .cta-btn .t{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+  .cta-btn .v{font-size:14px;color:var(--text);font-weight:700;margin-top:2px;font-family:JetBrains Mono;word-break:break-all}
+  .cta-btn.p{background:var(--grad-1);border-color:transparent}
+  .cta-btn.p .ic{background:rgba(255,255,255,.18);color:#fff}
+  .cta-btn.p .t{color:rgba(255,255,255,.78)}
+  .cta-btn.p .v{color:#fff}
+  .cta-btn.cy .ic{background:rgba(0,229,199,.15);color:var(--c-cyan)}
+  .cta-btn.am .ic{background:rgba(255,181,71,.15);color:var(--c-amber)}
+
+  /* ============ 浮动 CTA ============ */
+  .float-cta{position:fixed;bottom:calc(16px + var(--safe-b));left:16px;right:16px;z-index:40;padding:14px 18px;background:var(--grad-1);color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:space-between;font-weight:700;text-decoration:none;box-shadow:0 12px 30px rgba(79,141,255,.4);transform:translateY(120px);opacity:0;transition:all .35s cubic-bezier(.2,.7,.2,1)}
+  .float-cta.show{transform:translateY(0);opacity:1}
+  .float-cta .l{display:flex;flex-direction:column;gap:2px}
+  .float-cta .l .a{font-size:11px;opacity:.85;letter-spacing:.04em;text-transform:uppercase}
+  .float-cta .l .b{font-size:14px}
+  .float-cta .ar{font-size:18px}
+
+  /* ============ 底部 ============ */
+  footer{padding:24px 20px calc(140px + var(--safe-b));text-align:center;color:var(--text-3);font-size:11px;border-top:1px solid var(--border)}
+  footer .gd{font-weight:700;letter-spacing:.1em;margin-bottom:6px;font-size:13px;background:var(--grad-2);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* ============ 平板/桌面响应式 ============ */
+  @media (min-width: 768px) {
+    section{padding:80px 40px;max-width:920px;margin:0 auto}
+    h2{font-size:38px}
+    .hero{padding-left:40px;padding-right:40px;max-width:920px;margin:0 auto}
+    .pain-list,.three-stack{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+    .three-stack .col:nth-child(3){grid-column:span 2}
+    .bento{grid-template-columns:repeat(3,1fr)}
+    .bento .b.full{grid-column:span 3}
+    .perf-stats{grid-template-columns:repeat(4,1fr)}
+    .echart{height:340px}
+    .roadmap{padding-left:30px}
+  }
+  @media (min-width: 1024px) {
+    section{max-width:1100px;padding:96px 60px}
+    h2{font-size:44px}
+    .hero h1{font-size:84px}
+    .three-stack{grid-template-columns:repeat(3,1fr)}
+    .three-stack .col:nth-child(3){grid-column:auto}
+  }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<nav class="topnav">
+  <div class="brand">
+    <span class="logo"></span>
+    <span class="nm">AIMes</span>
+    <span class="ver">v0.1.0</span>
+  </div>
+  <button class="menu-btn" id="menuBtn" aria-label="菜单"><span></span><span></span><span></span></button>
+</nav>
+<div class="progress" id="progress"></div>
+
+<!-- 抽屉 -->
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="lab">目录</div>
+  <a href="#hero"><span class="num">01</span>封面</a>
+  <a href="#pain"><span class="num">02</span>痛点诊断</a>
+  <a href="#position"><span class="num">03</span>产品定位</a>
+  <a href="#overview"><span class="num">04</span>能力总览</a>
+  <a href="#scheduler"><span class="num">05</span>排程引擎</a>
+  <a href="#objectives"><span class="num">06</span>多目标优化</a>
+  <a href="#modules"><span class="num">07</span>业务模块</a>
+  <a href="#arch"><span class="num">08</span>技术架构</a>
+  <a href="#trace"><span class="num">09</span>决策可追溯</a>
+  <a href="#quality"><span class="num">10</span>质量与性能</a>
+  <a href="#vs"><span class="num">11</span>开源 vs 商业</a>
+  <a href="#roadmap"><span class="num">12</span>产品路线</a>
+  <a href="#quickstart"><span class="num">13</span>快速启动</a>
+  <a href="#cta"><span class="num">14</span>立即开始</a>
+</aside>
+
+<!-- ============ 1. Hero ============ -->
+<section class="hero" id="hero">
+  <div class="glow g1"></div>
+  <div class="glow g2"></div>
+  <div class="reveal">
+    <div class="tags">
+      <span class="pill cy">● V0.1.0 首发</span>
+      <span class="pill bl">Apache 2.0</span>
+      <span class="pill am">.NET 10 · Vue 3</span>
+    </div>
+    <h1>AIMes<span class="small">让 MES 从「记账」<br/>升级为<span class="gradient cy">「会预测的助手」</span></span></h1>
+    <p class="lead">以 AI 排产排程为核心的开源 MES——规则引擎 + 多目标优化 + LLM 混合精调，每一次决策都可追溯，开箱即用。</p>
+    <div class="stats">
+      <div class="stat"><div class="v">5min</div><div class="k">一键启动</div></div>
+      <div class="stat"><div class="v">13+</div><div class="k">业务模块</div></div>
+      <div class="stat"><div class="v">197</div><div class="k">测试覆盖</div></div>
+    </div>
+  </div>
+  <div class="scroll-hint">SCROLL</div>
+</section>
+
+<!-- ============ 2. 痛点 ============ -->
+<section id="pain">
+  <div class="reveal">
+    <div class="eyebrow">PROBLEM · 工厂日常</div>
+    <h2>产线管理员每天都在<span class="gradient am">「救火」</span>，传统 MES 只会<span style="color:var(--text-3)">「记账」</span>。</h2>
+    <p class="lead">现有 MES 只记录「发生了什么」，从不告诉你「即将发生什么」。系统被忍受，而不被依赖。</p>
+  </div>
+  <div class="pain-list">
+    <div class="pain-item reveal"><div class="ic">⚠</div><div><div class="num">07:23</div><div class="lbl">早班开工</div><div class="desc">设备故障未预警，工单延期，连锁反应已开始。</div></div></div>
+    <div class="pain-item reveal"><div class="ic">📋</div><div><div class="num">2.5h</div><div class="lbl">每日 Excel 排产</div><div class="desc">手工排产靠经验，多目标无法兼顾，换型成本高。</div></div></div>
+    <div class="pain-item reveal"><div class="ic">🔌</div><div><div class="num">38%</div><div class="lbl">采集机不可用率</div><div class="desc">边缘设备宕机频繁，数据采集断断续续。</div></div></div>
+    <div class="pain-item reveal"><div class="ic">🚨</div><div><div class="num">14+</div><div class="lbl">每日异常巡检</div><div class="desc">人工巡检发现问题，等出问题再补救，永远滞后。</div></div></div>
+  </div>
+  <div class="quote reveal">
+    <span class="pill pk">用户原话</span>
+    <div class="txt" style="margin-top:10px">"系统记了一堆，可它从没在出事之前提醒我一句。"</div>
+    <div class="who">— 某汽配厂产线总管</div>
+  </div>
+</section>
+
+<!-- ============ 3. 三柱定位 ============ -->
+<section id="position">
+  <div class="reveal">
+    <div class="eyebrow">PRODUCT · 三柱定位</div>
+    <h2>不只是 MES，更是<br/><span class="gradient cy">产线管理员的 AI 副驾</span></h2>
+    <p class="lead">从被动记账到主动预测——三个维度，重新定义「智能」。</p>
+  </div>
+  <div class="three-stack">
+    <div class="col a reveal">
+      <div class="ic">🧠</div>
+      <h3>AI 预测</h3>
+      <p>不止排产排程，还要预测设备故障、物料齐套、产能瓶颈。</p>
+      <div class="feats">
+        <div>规则引擎 EDD / SPT / WSPT</div>
+        <div>多目标 Pareto 优化</div>
+        <div>LLM 混合精调</div>
+        <div>风险预警 4 大类</div>
+      </div>
+    </div>
+    <div class="col b reveal">
+      <div class="ic">🔍</div>
+      <h3>决策可追溯</h3>
+      <p>每一次 AI 决策都有 prompt hash + context + 输入输出链路。</p>
+      <div class="feats">
+        <div>AiDecisionTrace 全链路</div>
+        <div>Model / Prompt 哈希</div>
+        <div>采纳反馈反哺</div>
+        <div>审计日志 + JSON Diff</div>
+      </div>
+    </div>
+    <div class="col c reveal">
+      <div class="ic">🚀</div>
+      <h3>开箱即用</h3>
+      <p>Docker Compose 一键启动，5 分钟看到带演示数据的甘特图。</p>
+      <div class="feats">
+        <div>5 容器一键拉起</div>
+        <div>13+ 业务看板内置降级</div>
+        <div>JWT + 4 角色权限</div>
+        <div>API 文档 / 健康检查</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. 能力总览 ============ -->
+<section id="overview">
+  <div class="reveal">
+    <div class="eyebrow">CAPABILITY · 能力总览</div>
+    <h2>六维能力雷达 ·<br/><span class="gradient cy">开源版同样硬核</span></h2>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill bl">vs 传统 MES</span>
+      <span style="font-size:11px;color:var(--text-3)">0–10 分</span>
+    </div>
+    <div id="chart-radar" class="echart"></div>
+  </div>
+  <div class="kpi-row">
+    <div class="row reveal"><div class="ic bl">★</div><div><div class="nm">AI 排程引擎</div><div class="sub">规则 + 优化 + LLM 三段式</div></div><div class="v" style="color:var(--c-blue)">9.2</div></div>
+    <div class="row reveal"><div class="ic cy">◆</div><div><div class="nm">决策可追溯</div><div class="sub">每个决策可回溯至 prompt</div></div><div class="v" style="color:var(--c-cyan)">9.5</div></div>
+    <div class="row reveal"><div class="ic am">▲</div><div><div class="nm">实时预警</div><div class="sub">SignalR 6 类通知 + Toast</div></div><div class="v" style="color:var(--c-amber)">8.8</div></div>
+    <div class="row reveal"><div class="ic pk">●</div><div><div class="nm">开箱体验</div><div class="sub">5 min 一键启动 + 演示数据</div></div><div class="v" style="color:var(--c-pink)">9.0</div></div>
+    <div class="row reveal"><div class="ic gn">✓</div><div><div class="nm">测试与质量</div><div class="sub">197 测试 · CI 阻断</div></div><div class="v" style="color:var(--c-green)">9.3</div></div>
+  </div>
+</section>
+
+<!-- ============ 5. 排程引擎 ============ -->
+<section id="scheduler">
+  <div class="reveal">
+    <div class="eyebrow">SCHEDULING · 核心引擎</div>
+    <h2>三段式架构 ·<br/><span class="gradient">规则保底，AI 增益</span></h2>
+    <p class="lead">确定性规则引擎产出可行解，LLM 在其上做局部精调，硬约束验证强制兜底——快、稳、可解释。</p>
+  </div>
+  <div class="pipe">
+    <div class="step reveal">
+      <div class="n">STEP 01</div>
+      <h4>规则引擎</h4>
+      <p>EDD / SPT / WSPT + 最小负载分配 + 瓶颈优先 + 换线感知</p>
+      <div class="tags"><span>EDD</span><span>SPT</span><span>WSPT</span><span>MinLoad</span></div>
+    </div>
+    <div class="step reveal">
+      <div class="n">STEP 02</div>
+      <h4>约束验证</h4>
+      <p>容量 / 物料 / 工艺 / 锁定周期 / 设备能力多重校验</p>
+      <div class="tags"><span>Capacity</span><span>Material</span><span>Lock</span></div>
+    </div>
+    <div class="step reveal">
+      <div class="n">STEP 03</div>
+      <h4>LLM 精调</h4>
+      <p>设备选择与顺序的局部优化，输出受约束再验证</p>
+      <div class="tags"><span>v2.1.0-hybrid</span><span>SemanticKernel</span></div>
+    </div>
+    <div class="step reveal">
+      <div class="n">STEP 04</div>
+      <h4>失败回退</h4>
+      <p>违反硬约束自动降级到规则引擎方案，所有决策写 Trace</p>
+      <div class="tags"><span>Fallback</span><span>Trace</span></div>
+    </div>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill bl">规则引擎 vs 人工排产</span>
+      <span style="font-size:11px;color:var(--text-3)">越高越好</span>
+    </div>
+    <div id="chart-cmp" class="echart"></div>
+  </div>
+</section>
+
+<!-- ============ 6. 多目标 ============ -->
+<section id="objectives">
+  <div class="reveal">
+    <div class="eyebrow">OPTIMIZATION · 多目标</div>
+    <h2>四个目标函数 ·<br/><span class="gradient am">一个均衡模式</span></h2>
+    <p class="lead">交期、利用率、换型、平衡四目标，可独立运行，可字典序组合，工厂可按场景切换。</p>
+  </div>
+  <div class="obj-list">
+    <div class="obj-card reveal">
+      <div class="head"><span class="badge a">DueDate</span></div>
+      <h4>交期优先</h4><p>最小化逾期时间加权和，适合订单交付压力大场景。</p>
+      <div class="formula">min Σ max(0, End−Due) · Weight</div>
+    </div>
+    <div class="obj-card reveal">
+      <div class="head"><span class="badge b">Utilization</span></div>
+      <h4>利用率优先</h4><p>最大化瓶颈设备繁忙占比，适合产能受限场景。</p>
+      <div class="formula">max Σ Busy / Total</div>
+    </div>
+    <div class="obj-card reveal">
+      <div class="head"><span class="badge c">Changeover</span></div>
+      <h4>换型成本最小</h4><p>最小化产品换型时间总和，适合多品种小批量。</p>
+      <div class="formula">min Σ Changeover(p → q)</div>
+    </div>
+    <div class="obj-card reveal">
+      <div class="head"><span class="badge d">Balanced</span> <span class="pill cy">默认</span></div>
+      <h4>均衡模式</h4><p>字典序：先满足交期 ≥ 95%，再优化利用率，再压缩换型。</p>
+      <div class="formula">Lex: Due → Util → Co</div>
+    </div>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill am">四目标权衡 · 雷达</span>
+      <span style="font-size:11px;color:var(--text-3)">归一化得分</span>
+    </div>
+    <div id="chart-obj" class="echart"></div>
+  </div>
+</section>
+
+<!-- ============ 7. 业务模块 ============ -->
+<section id="modules">
+  <div class="reveal">
+    <div class="eyebrow">MODULES · 业务版图</div>
+    <h2>13+ 业务模块 ·<br/><span class="gradient cy">全模块演示降级</span></h2>
+    <p class="lead">从排程到知识库，所有看板内置「后端不可用 → 演示数据」分支，零数据也能跑出全貌。</p>
+  </div>
+  <div class="bento">
+    <div class="b b1 full reveal">
+      <div class="h"><div class="ic">⚡</div><div class="ttl">AI 排程引擎</div></div>
+      <div class="big">3 段式</div>
+      <div class="dsc">EDD / SPT / WSPT + 最小负载 · 重排器支持插单 / 故障 / 锁定 · v2.1.0-hybrid 混合架构 · 4 目标函数任选</div>
+    </div>
+    <div class="b b2 reveal"><div class="h"><div class="ic">📊</div><div class="ttl">质量 SPC</div></div><div class="dsc">SPC 图 + 运行规则告警 + 不良品分级</div></div>
+    <div class="b b3 reveal"><div class="h"><div class="ic">🛠</div><div class="ttl">设备管理</div></div><div class="dsc">状态跟踪 + 维护记录 + 设备健康分</div></div>
+    <div class="b b4 reveal"><div class="h"><div class="ic">🚨</div><div class="ttl">风险预警</div></div><div class="dsc">工单延期 / 设备故障 / 物料齐套 / 产能瓶颈</div></div>
+    <div class="b b5 reveal"><div class="h"><div class="ic">📦</div><div class="ttl">BOM / 工艺</div></div><div class="dsc">多级 BOM + 工艺路线 + 变更管理</div></div>
+    <div class="b b6 reveal"><div class="h"><div class="ic">📚</div><div class="ttl">知识库 RAG</div></div><div class="dsc">文档上传 + 关键字检索 + 演示 RAG</div></div>
+    <div class="b b7 reveal"><div class="h"><div class="ic">📋</div><div class="ttl">异常 / 库存 / 采购</div></div><div class="dsc">上报分级响应 · 出入库 · 采购订单</div></div>
+    <div class="b b8 reveal"><div class="h"><div class="ic">🧾</div><div class="ttl">审计日志</div></div><div class="dsc">操作追踪 + JSON Diff + IP / UA</div></div>
+    <div class="b b9 reveal"><div class="h"><div class="ic">🏷</div><div class="ttl">条码打印</div></div><div class="dsc">QR 码批量打印 + 筛选搜索</div></div>
+  </div>
+</section>
+
+<!-- ============ 8. 架构 ============ -->
+<section id="arch">
+  <div class="reveal">
+    <div class="eyebrow">ARCHITECTURE · 技术架构</div>
+    <h2>现代化技术栈 ·<br/><span class="gradient">.NET 10 + Vue 3</span></h2>
+  </div>
+  <div class="arch">
+    <div class="layer l1 reveal">
+      <div class="lab">PRESENTATION</div>
+      <h4>表现层 · 前端 SPA</h4>
+      <div class="items"><span>Vue 3 SPA</span><span>dhtmlx-gantt</span><span>SignalR Toast</span><span>Vite + TS</span></div>
+    </div>
+    <div class="layer l2 reveal">
+      <div class="lab">API LAYER</div>
+      <h4>接口层 · 极简 API</h4>
+      <div class="items"><span>ASP.NET Core 极简 API</span><span>JWT + 4 角色</span><span>Rate Limit</span><span>Swagger</span></div>
+    </div>
+    <div class="layer l3 reveal">
+      <div class="lab">DOMAIN · MES.AI</div>
+      <h4>领域层 · AI Agents</h4>
+      <div class="items"><span>SchedulingAgent</span><span>QualityAgent</span><span>KnowledgeAgent</span><span>DecisionTrace</span></div>
+    </div>
+    <div class="layer l4 reveal">
+      <div class="lab">INFRASTRUCTURE</div>
+      <h4>基础设施层</h4>
+      <div class="items"><span>PostgreSQL 16</span><span>Redis 7</span><span>RabbitMQ</span><span>Qdrant 1.13</span><span>Serilog + OTLP</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 9. Trace ============ -->
+<section id="trace">
+  <div class="reveal">
+    <div class="eyebrow">EXPLAINABILITY · 决策可追溯</div>
+    <h2>每个 AI 决策 ·<br/><span class="gradient cy">都有完整指纹</span></h2>
+    <p class="lead">从模型版本到上下文哈希，从输入摘要到业务键，AiDecisionTrace 一行不漏，事后随时回溯。</p>
+  </div>
+  <div class="trace-box reveal">
+    <div class="tt">
+      <span class="pill cy">Trace 示例</span>
+      <span class="tid">trace_id · 0x7f3a2c91</span>
+    </div>
+    <div class="trace-rows">
+      <div class="r"><span class="k">Model</span><span class="v">deterministic-v1</span></div>
+      <div class="r"><span class="k">PromptHash</span><span class="v hl">sha256:9c2f...e81b</span></div>
+      <div class="r"><span class="k">ContextHash</span><span class="v">sha256:4a17...d3f0</span></div>
+      <div class="r"><span class="k">InputSummary</span><span class="v">orders=42 · obj=balanced</span></div>
+      <div class="r"><span class="k">OutputSummary</span><span class="v">due=97% · util=84%</span></div>
+      <div class="r"><span class="k">BizKey</span><span class="v">W01 · 2026-05-18</span></div>
+      <div class="r"><span class="k">Adopted</span><span class="v gn">YES · by lead_001</span></div>
+    </div>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill bl">采纳反馈分布 · 7 天</span>
+      <span style="font-size:11px;color:var(--text-3)">反哺规则权重</span>
+    </div>
+    <div id="chart-trace" class="echart"></div>
+  </div>
+</section>
+
+<!-- ============ 10. 质量 ============ -->
+<section id="quality">
+  <div class="reveal">
+    <div class="eyebrow">QUALITY · 工程质量</div>
+    <h2>197 测试 ·<br/><span class="gradient">性能基准 · 安全基线</span></h2>
+    <p class="lead">从单元到 E2E，从压测到安全，每一层都有红线兜底。</p>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill cy">测试覆盖分布</span>
+      <span style="font-size:11px;color:var(--text-3)">合计 197</span>
+    </div>
+    <div id="chart-tests" class="echart"></div>
+  </div>
+  <div class="chart-card reveal">
+    <div class="ch-head">
+      <span class="pill am">排程性能</span>
+      <span style="font-size:11px;color:var(--text-3)">订单数 vs 耗时(ms)</span>
+    </div>
+    <div id="chart-perf" class="echart"></div>
+  </div>
+  <div class="perf-stats">
+    <div class="perf-stat reveal"><div class="v bl">152</div><div class="l">单元测试</div><div class="d">域逻辑 + 规则引擎</div></div>
+    <div class="perf-stat reveal"><div class="v cy">45</div><div class="l">集成测试</div><div class="d">WebApplicationFactory</div></div>
+    <div class="perf-stat reveal"><div class="v am">E2E</div><div class="l">Playwright</div><div class="d">黄金路径覆盖</div></div>
+    <div class="perf-stat reveal"><div class="v pk">JWT</div><div class="l">安全基线</div><div class="d">Refresh + 速率限制</div></div>
+  </div>
+</section>
+
+<!-- ============ 11. vs ============ -->
+<section id="vs">
+  <div class="reveal">
+    <div class="eyebrow">EDITIONS · 开源 & 商业</div>
+    <h2>开源版给你 80% ·<br/><span class="gradient am">商业版给你最后一公里</span></h2>
+    <p class="lead">开源版功能边界已冻结，未来版本只增不减；商业版增量在 LLM 多目标 / 视觉质检 / K8s / SLA。</p>
+  </div>
+  <div class="vs-tabs">
+    <button class="active os" data-vs="os">开源版</button>
+    <button class="cm" data-vs="cm">商业版</button>
+  </div>
+  <div class="vs-panel os" data-panel="os">
+    <div class="head">
+      <div><div class="nm gradient cy">开源版</div><div class="sub">Apache 2.0 · Docker · GitHub Issues</div></div>
+      <span class="pill cy">你正在看</span>
+    </div>
+    <div class="feats">
+      <div class="feat"><div class="ck y">✓</div><div class="lab">规则引擎 (EDD/SPT/WSPT)</div><div class="val">deterministic-v1</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">重排器 (插单/故障/锁定)</div><div class="val">Rescheduler</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">多目标 4 函数 (单目标)</div><div class="val">Due/Util/Co/Bal</div></div>
+      <div class="feat"><div class="ck p">○</div><div class="lab">LLM 混合精调</div><div class="val">接口占位</div></div>
+      <div class="feat"><div class="ck p">○</div><div class="lab">ONNX 视觉质检</div><div class="val">LLM 兜底</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">关键字检索 / 演示 RAG</div><div class="val">demo</div></div>
+      <div class="feat"><div class="ck n">−</div><div class="lab">Pareto Top-3 / 自学习</div><div class="val">商业版</div></div>
+      <div class="feat"><div class="ck n">−</div><div class="lab">K8s / 多租户 / SLA</div><div class="val">商业版</div></div>
+    </div>
+  </div>
+  <div class="vs-panel cm" data-panel="cm">
+    <div class="head">
+      <div><div class="nm gradient am">商业版</div><div class="sub">商业许可 · K8s/多租户 · 1 工作日响应</div></div>
+      <span class="pill am">联系我们</span>
+    </div>
+    <div class="feats">
+      <div class="feat"><div class="ck y">✓</div><div class="lab">规则引擎 (全部继承)</div><div class="val">同开源 +</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">LLM 多目标 Pareto Top-3</div><div class="val">完整精调</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">历史数据自学习</div><div class="val">采纳反哺</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">多车间协同排程</div><div class="val">Cross-Workshop</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">ONNX 真实模型 + AB</div><div class="val">多模型版本</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">Qdrant 工业级 RAG</div><div class="val">完整 Agent 编排</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">边缘协议 / BI 数据管道</div><div class="val">Modbus / OPC UA</div></div>
+      <div class="feat"><div class="ck y">✓</div><div class="lab">K8s/多租户 + SLA</div><div class="val">企业支持</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 12. 路线图 ============ -->
+<section id="roadmap">
+  <div class="reveal">
+    <div class="eyebrow">ROADMAP · 演进路线</div>
+    <h2>从规则到自学习 ·<br/><span class="gradient">V1 → V4 长期愿景</span></h2>
+    <p class="lead">Phase 1 已落地，Phase 2 切片正在路上。开源版功能边界冻结，未来版本只增不减。</p>
+  </div>
+  <div class="roadmap">
+    <div class="road-item reveal">
+      <div class="ver">v0.1.0 — DONE</div>
+      <h4>P1 · 开源首发</h4>
+      <p>规则引擎 + 13+ 模块 + 决策追溯 + Docker Compose 一键启动</p>
+      <div class="dt">2026.05.14</div>
+    </div>
+    <div class="road-item now reveal">
+      <div class="ver">v0.2.x — NOW</div>
+      <h4>P2 · DX 与稳定性</h4>
+      <p>启动横幅 + 路径自动跳转 + Production Swagger 配置 · 文档与故障排查</p>
+      <div class="dt">2026.05 · 进行中</div>
+    </div>
+    <div class="road-item future reveal">
+      <div class="ver">v0.3 — NEXT</div>
+      <h4>P3 · LLM 精调下沉</h4>
+      <p>混合架构能力增强 + 边缘协议适配实验 + 知识库向量基础</p>
+      <div class="dt">2026 H2</div>
+    </div>
+    <div class="road-item future reveal">
+      <div class="ver">v4.0 — VISION</div>
+      <h4>P4 · 插件化平台</h4>
+      <p>插件架构 · 多车间协同 · 自学习反哺 · 工业 Agent 生态</p>
+      <div class="dt">2027+</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 13. Quickstart ============ -->
+<section id="quickstart">
+  <div class="reveal">
+    <div class="eyebrow">QUICKSTART · 5 分钟启动</div>
+    <h2>三步上车 ·<br/><span class="gradient cy">看到带数据的甘特</span></h2>
+    <p class="lead">需要：Docker Desktop ≥ 4.20 · 8GB RAM · 20GB 磁盘空间。</p>
+  </div>
+  <div class="qs-steps">
+    <div class="qs-step reveal"><div class="n">1</div><div><h4>克隆并启动</h4><p>一条命令拉起 5 个容器（API · Postgres · Redis · RabbitMQ · Qdrant）。首次拉镜像约 3-5 分钟。</p></div></div>
+    <div class="qs-step reveal"><div class="n">2</div><div><h4>等待 healthy</h4><p>看到所有容器 healthy 后，浏览器打开 http://localhost:5000，自动跳转到登录页。</p></div></div>
+    <div class="qs-step reveal"><div class="n">3</div><div><h4>登录 · 看到甘特</h4><p>用 admin / admin@123 登录，立即看到带演示数据的排程甘特图。</p></div></div>
+  </div>
+  <div class="terminal reveal">
+    <div class="bar"><span class="d r"></span><span class="d y"></span><span class="d g"></span><span class="t">~/aimes — bash</span></div>
+    <div class="body" id="qs-cmd">
+      <span class="ln"><span class="pr">$ </span>git clone <span class="arg">https://github.com/YOUR_ORG/aimes.git</span></span>
+      <span class="ln"><span class="pr">$ </span>cd <span class="arg">aimes/v1</span></span>
+      <span class="ln"><span class="pr">$ </span>docker compose <span class="arg">up -d</span></span>
+      <span class="ln">&nbsp;</span>
+      <span class="ln">[+] Running 5/5</span>
+      <span class="ln"> ✔ aimes-postgres   <span class="ok">Healthy</span></span>
+      <span class="ln"> ✔ aimes-redis      <span class="ok">Healthy</span></span>
+      <span class="ln"> ✔ aimes-rabbitmq   <span class="ok">Healthy</span></span>
+      <span class="ln"> ✔ aimes-qdrant     <span class="ok">Healthy</span></span>
+      <span class="ln"> ✔ aimes-api        <span class="ok">Healthy</span></span>
+      <span class="ln">&nbsp;</span>
+      <span class="ln"> Login   → <span class="ok">http://localhost:5000</span></span>
+      <span class="ln"> Swagger → <span class="ok">http://localhost:5000/swagger</span></span>
+      <span class="ln"> 默认账号 admin / admin@123</span>
+    </div>
+  </div>
+  <button class="copy-btn" id="copyBtn">📋 复制启动命令</button>
+</section>
+
+<!-- ============ 14. CTA ============ -->
+<section id="cta" class="cta-section">
+  <div class="reveal">
+    <div class="eyebrow">START · 立即开始</div>
+    <h2>让 MES 从此<br/><span class="gradient cy">「会预测」</span></h2>
+    <p class="lead">开源版给工厂一个能用、能信、能扩的起点。商业版给你最后一公里——LLM 多目标、自学习、多租户、SLA。</p>
+  </div>
+  <div class="cta-actions">
+    <a class="cta-btn p reveal" href="#"><div class="ic">⚡</div><div><div class="t">开源仓库</div><div class="v">github.com/YOUR_ORG/aimes</div></div></a>
+    <a class="cta-btn cy reveal" href="#"><div class="ic">✉</div><div><div class="t">商业版咨询</div><div class="v">zenweb@163.com</div></div></a>
+    <a class="cta-btn am reveal" href="#"><div class="ic">📖</div><div><div class="t">完整文档 / Quickstart</div><div class="v">_docs/quickstart.md</div></div></a>
+  </div>
+</section>
+
+<!-- 浮动 CTA -->
+<a class="float-cta" id="floatCta" href="#cta">
+  <div class="l"><span class="a">5 分钟启动</span><span class="b">立即使用 AIMes V1</span></div>
+  <span class="ar">→</span>
+</a>
+
+<!-- 底部 -->
+<footer>
+  <div class="gd">Thank you · 感谢观看</div>
+  <div>© 2026 中山市中盈互联网科技有限公司 · Apache License 2.0</div>
+  <div style="margin-top:6px">v0.1.0 · 2026.05 · 开源宣传册</div>
+</footer>
+
+<script>
+  // ====== 抽屉菜单 ======
+  const menuBtn = document.getElementById('menuBtn');
+  const drawer = document.getElementById('drawer');
+  const mask = document.getElementById('mask');
+  function toggleMenu(open){
+    const o = open ?? !drawer.classList.contains('open');
+    drawer.classList.toggle('open', o);
+    mask.classList.toggle('open', o);
+    menuBtn.classList.toggle('open', o);
+    document.body.style.overflow = o ? 'hidden' : '';
+  }
+  menuBtn.addEventListener('click', () => toggleMenu());
+  mask.addEventListener('click', () => toggleMenu(false));
+  drawer.querySelectorAll('a').forEach(a => a.addEventListener('click', () => toggleMenu(false)));
+
+  // ====== 进度条 ======
+  const progress = document.getElementById('progress');
+  function updateProgress(){
+    const h = document.documentElement;
+    const max = h.scrollHeight - h.clientHeight;
+    const p = max > 0 ? (h.scrollTop / max * 100) : 0;
+    progress.style.setProperty('--p', p + '%');
+  }
+  window.addEventListener('scroll', updateProgress, {passive:true});
+  updateProgress();
+
+  // ====== 浮动 CTA ======
+  const floatCta = document.getElementById('floatCta');
+  function checkFloat(){
+    const cta = document.getElementById('cta');
+    const ctaTop = cta.getBoundingClientRect().top;
+    // 滚动超过 hero 后显示，进入 cta 区域后隐藏
+    const show = window.scrollY > window.innerHeight * 0.6 && ctaTop > window.innerHeight * 0.4;
+    floatCta.classList.toggle('show', show);
+  }
+  window.addEventListener('scroll', checkFloat, {passive:true});
+
+  // ====== 揭示动画 (IntersectionObserver) ======
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, {threshold: 0.12, rootMargin: '0px 0px -40px 0px'});
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // ====== vs Tabs ======
+  document.querySelectorAll('.vs-tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.vs;
+      document.querySelectorAll('.vs-tabs button').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.vs-panel').forEach(p => {
+        p.style.display = (p.dataset.panel === v) ? '' : 'none';
+      });
+    });
+  });
+  document.querySelector('.vs-panel.cm').style.display = 'none';
+
+  // ====== 复制命令 ======
+  const copyBtn = document.getElementById('copyBtn');
+  copyBtn.addEventListener('click', async () => {
+    const cmd = 'git clone https://github.com/YOUR_ORG/aimes.git\ncd aimes/v1\ndocker compose up -d';
+    try {
+      await navigator.clipboard.writeText(cmd);
+      copyBtn.textContent = '✓ 已复制';
+      setTimeout(() => copyBtn.textContent = '📋 复制启动命令', 2000);
+    } catch (err) {
+      copyBtn.textContent = '复制失败';
+    }
+  });
+
+  // ====== 图表 (lazy 初始化) ======
+  const baseTextColor = '#A4ADC7';
+  const baseAxisColor = 'rgba(255,255,255,0.08)';
+  const charts = {};
+
+  function makeRadar(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'item',backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'}},
+      legend:{data:['AIMes V1','传统 MES'],textStyle:{color:baseTextColor,fontSize:11},bottom:0},
+      radar:{
+        indicator:[{name:'AI 排程',max:10},{name:'实时预警',max:10},{name:'决策可解释',max:10},
+                   {name:'部署体验',max:10},{name:'扩展性',max:10},{name:'测试覆盖',max:10}],
+        shape:'polygon',center:['50%','46%'],radius:'60%',
+        axisName:{color:'#E8EBF5',fontSize:10,fontWeight:600},
+        splitLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}},
+        splitArea:{areaStyle:{color:['rgba(255,255,255,0.015)','rgba(255,255,255,0.04)']}},
+        axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}}
+      },
+      series:[{type:'radar',data:[
+        {value:[9.2,8.8,9.5,9.0,8.5,9.3],name:'AIMes V1',areaStyle:{color:'rgba(0,229,199,0.22)'},lineStyle:{color:'#00E5C7',width:2.5},itemStyle:{color:'#00E5C7'}},
+        {value:[3.5,4.2,3.0,5.5,4.5,4.0],name:'传统 MES',areaStyle:{color:'rgba(255,107,157,0.10)'},lineStyle:{color:'#FF6B9D',width:1.8,type:'dashed'},itemStyle:{color:'#FF6B9D'}}
+      ]}]
+    };
+  }
+
+  function makeCmp(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'axis',backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'}},
+      legend:{data:['规则引擎','人工排产'],textStyle:{color:baseTextColor,fontSize:11},bottom:0},
+      grid:{left:35,right:10,top:20,bottom:38},
+      xAxis:{type:'category',data:['交期','利用率','换型(↓)','耗时(↓)','可解释'],
+        axisLabel:{color:baseTextColor,fontSize:10,interval:0},axisLine:{lineStyle:{color:baseAxisColor}},axisTick:{show:false}},
+      yAxis:{type:'value',max:100,axisLabel:{color:baseTextColor,fontSize:9},splitLine:{lineStyle:{color:baseAxisColor}},axisLine:{show:false},axisTick:{show:false}},
+      series:[
+        {name:'规则引擎',type:'bar',barWidth:14,itemStyle:{borderRadius:[4,4,0,0],color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#00E5C7'},{offset:1,color:'#4F8DFF'}]}},data:[97,88,82,95,98]},
+        {name:'人工排产',type:'bar',barWidth:14,itemStyle:{borderRadius:[4,4,0,0],color:'rgba(255,107,157,0.55)'},data:[78,62,48,30,40]}
+      ]
+    };
+  }
+
+  function makeObj(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'item',backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'}},
+      legend:{data:['DueDate','Utilization','Changeover','Balanced'],textStyle:{color:baseTextColor,fontSize:10},bottom:0,itemGap:10},
+      radar:{
+        indicator:[{name:'交期',max:100},{name:'利用率',max:100},{name:'换型',max:100},{name:'稳定',max:100},{name:'速度',max:100}],
+        shape:'polygon',center:['50%','46%'],radius:'58%',
+        axisName:{color:'#E8EBF5',fontSize:10,fontWeight:600},
+        splitLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}},
+        splitArea:{areaStyle:{color:['rgba(255,255,255,0.015)','rgba(255,255,255,0.04)']}},
+        axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}}
+      },
+      series:[{type:'radar',data:[
+        {value:[98,72,55,80,96],name:'DueDate',areaStyle:{color:'rgba(255,107,157,0.16)'},lineStyle:{color:'#FF6B9D',width:1.6},itemStyle:{color:'#FF6B9D'}},
+        {value:[78,96,65,82,90],name:'Utilization',areaStyle:{color:'rgba(0,229,199,0.16)'},lineStyle:{color:'#00E5C7',width:1.6},itemStyle:{color:'#00E5C7'}},
+        {value:[72,80,98,78,88],name:'Changeover',areaStyle:{color:'rgba(255,181,71,0.16)'},lineStyle:{color:'#FFB547',width:1.6},itemStyle:{color:'#FFB547'}},
+        {value:[95,90,85,95,85],name:'Balanced',areaStyle:{color:'rgba(167,139,250,0.22)'},lineStyle:{color:'#A78BFA',width:2.2},itemStyle:{color:'#A78BFA'}}
+      ]}]
+    };
+  }
+
+  function makeTrace(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'axis',axisPointer:{type:'shadow'},backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'}},
+      legend:{data:['采纳','调整后采纳','拒绝'],textStyle:{color:baseTextColor,fontSize:10},bottom:0},
+      grid:{left:30,right:10,top:20,bottom:38},
+      xAxis:{type:'category',data:['12','13','14','15','16','17','18'],axisLabel:{color:baseTextColor,fontSize:10},axisLine:{lineStyle:{color:baseAxisColor}},axisTick:{show:false}},
+      yAxis:{type:'value',axisLabel:{color:baseTextColor,fontSize:9},splitLine:{lineStyle:{color:baseAxisColor}},axisLine:{show:false},axisTick:{show:false}},
+      series:[
+        {name:'采纳',type:'bar',stack:'a',barWidth:18,itemStyle:{color:'#00E5C7'},data:[14,16,18,15,20,22,24]},
+        {name:'调整后采纳',type:'bar',stack:'a',itemStyle:{color:'#4F8DFF'},data:[5,4,3,6,4,3,2]},
+        {name:'拒绝',type:'bar',stack:'a',itemStyle:{color:'rgba(255,107,157,0.7)',borderRadius:[4,4,0,0]},data:[3,2,2,1,1,1,1]}
+      ]
+    };
+  }
+
+  function makeTests(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'item',backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'},formatter:'{b}: <b>{c}</b> ({d}%)'},
+      legend:{orient:'horizontal',bottom:0,textStyle:{color:baseTextColor,fontSize:10},itemGap:10},
+      series:[{
+        type:'pie',radius:['48%','75%'],center:['50%','42%'],
+        avoidLabelOverlap:true,
+        itemStyle:{borderColor:'#0A0E27',borderWidth:2,borderRadius:5},
+        label:{show:true,color:'#E8EBF5',fontSize:10,formatter:'{b}\n{c}'},
+        labelLine:{lineStyle:{color:'rgba(255,255,255,0.2)'},length:8,length2:8},
+        data:[
+          {value:152,name:'单元',itemStyle:{color:'#4F8DFF'}},
+          {value:45,name:'集成',itemStyle:{color:'#00E5C7'}},
+          {value:12,name:'E2E',itemStyle:{color:'#FFB547'}},
+          {value:8,name:'Bench',itemStyle:{color:'#A78BFA'}}
+        ]
+      }]
+    };
+  }
+
+  function makePerf(){
+    return {
+      backgroundColor:'transparent',
+      tooltip:{trigger:'axis',backgroundColor:'rgba(10,14,39,0.95)',borderColor:'rgba(255,255,255,0.1)',textStyle:{color:'#E8EBF5'}},
+      legend:{data:['规则引擎','规则+LLM精调'],textStyle:{color:baseTextColor,fontSize:10},bottom:0},
+      grid:{left:42,right:10,top:20,bottom:38},
+      xAxis:{type:'category',data:['10','30','50','100','200','500','1000'],axisLabel:{color:baseTextColor,fontSize:10},axisLine:{lineStyle:{color:baseAxisColor}},axisTick:{show:false}},
+      yAxis:{type:'value',axisLabel:{color:baseTextColor,fontSize:9},splitLine:{lineStyle:{color:baseAxisColor}},axisLine:{show:false},axisTick:{show:false}},
+      series:[
+        {name:'规则引擎',type:'line',smooth:true,symbolSize:6,
+          lineStyle:{width:2.5,color:'#00E5C7'},
+          itemStyle:{color:'#00E5C7'},
+          areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(0,229,199,0.35)'},{offset:1,color:'rgba(0,229,199,0)'}]}},
+          data:[8,18,28,55,118,310,680]},
+        {name:'规则+LLM精调',type:'line',smooth:true,symbolSize:6,
+          lineStyle:{width:2.5,color:'#A78BFA',type:'dashed'},
+          itemStyle:{color:'#A78BFA'},
+          data:[120,160,210,290,460,820,1500]}
+      ]
+    };
+  }
+
+  const chartFactories = {
+    'chart-radar': makeRadar,
+    'chart-cmp': makeCmp,
+    'chart-obj': makeObj,
+    'chart-trace': makeTrace,
+    'chart-tests': makeTests,
+    'chart-perf': makePerf
+  };
+
+  // 用 IntersectionObserver 懒加载图表
+  const chartIo = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting && !charts[e.target.id]) {
+        const c = echarts.init(e.target, null, {renderer:'canvas'});
+        c.setOption(chartFactories[e.target.id]());
+        charts[e.target.id] = c;
+        chartIo.unobserve(e.target);
+      }
+    });
+  }, {threshold: 0.15});
+  Object.keys(chartFactories).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) chartIo.observe(el);
+  });
+
+  // resize
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => Object.values(charts).forEach(c => c.resize()), 200);
+  });
+</script>
+
+</body>
+</html>

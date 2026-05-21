@@ -77,6 +77,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../stores/auth'
 import { useNotifications } from '../../stores/notifications'
 import { navItems } from './nav-items'
@@ -85,6 +86,7 @@ import ToastContainer from '../notifications/ToastContainer.vue'
 import './MainLayout.css'
 
 const route = useRoute()
+const router = useRouter()
 const { user, isLoggedIn, logout } = useAuth()
 const { toasts, connected, connect, disconnect } = useNotifications()
 const chatVisible = ref(false)
@@ -115,7 +117,7 @@ watch(darkMode, (val) => {
 function handleLogout() {
   disconnect()
   logout()
-  navigateTo('/login')
+  router.push('/login')
 }
 
 onMounted(() => {

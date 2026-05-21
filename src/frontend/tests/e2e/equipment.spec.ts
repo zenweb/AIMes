@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+test.describe.configure({ timeout: 90000 })
+
 test.describe('Equipment 设备管理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -30,8 +32,75 @@ test.describe('Equipment 设备管理', () => {
     await expect(page.locator('.eq-grid')).toBeVisible()
   })
 
+  test('展示设备不可用对排产的影响分析', async ({ page }) => {
+    const panel = page.locator('.equipment-impact-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('CNC-001 不可用影响分析')).toBeVisible()
+    await expect(panel.getByText('预计停机 4h')).toBeVisible()
+    await expect(panel.getByText('WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001')).toBeVisible()
+    await expect(panel.getByText('CNC-002 / CNC-003')).toBeVisible()
+    await expect(panel.getByText('今日夜班 22:00-02:00')).toBeVisible()
+    await expect(panel.getByText(/减少换线/)).toBeVisible()
+    await expect(panel.getByText(/优先关键订单/)).toBeVisible()
+    await expect(panel.getByText(/推荐预防维护窗口/)).toBeVisible()
+  })
+
+  test('标记设备故障后回写 AI 排产事件队列', async ({ page }) => {
+    const panel = page.locator('.equipment-impact-panel')
+    await panel.getByRole('button', { name: '标记故障并同步排产' }).click()
+    await expect(panel.getByText('设备故障已同步 AI 排产')).toBeVisible()
+    await expect(panel.getByText(/CNC-001 预计停机 4h/)).toBeVisible()
+
+    await page.goto('scheduling')
+    await page.waitForSelector('.schedule-board', { timeout: 20000 })
+    const eventPanel = page.locator('.event-queue-panel')
+    await expect(eventPanel.getByText('CNC-001 停机影响')).toBeVisible({ timeout: 10000 })
+    const eventCard = eventPanel.locator('.event-card').filter({ hasText: 'CNC-001 停机影响' })
+    await expect(eventCard.getByText(/CNC-002 \/ CNC-003/)).toBeVisible()
+    await expect(eventCard.getByText(/WO-RUSH-9001/)).toBeVisible()
+    await eventCard.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(eventPanel.getByText('设备维护窗口重排建议')).toBeVisible()
+    await expect(eventPanel.getByText(/换设备到 CNC-002/)).toBeVisible()
+    await expect(eventPanel.getByText(/低优先级工单延后/)).toBeVisible()
+    await expect(eventPanel.getByText(/夜班加班/)).toBeVisible()
+    await expect(eventPanel.getByText(/拆单分流到 CNC-003/)).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const equipmentEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'CNC-001 停机窗口已同步重排' })
+    await expect(equipmentEvidence.locator('.evidence-topline span').getByText('设备维护', { exact: true })).toBeVisible()
+    await expect(equipmentEvidence.getByText('TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+  })
+
+  test('生成客户真实设备故障样例并回写排产事件', async ({ page }) => {
+    const panel = page.locator('.equipment-impact-panel')
+    const customerPanel = panel.locator('.customer-fault-panel')
+    await expect(customerPanel.getByRole('heading', { name: '客户真实设备故障数据' })).toBeVisible()
+    await expect(customerPanel.getByText('待生成故障样例批次')).toBeVisible()
+
+    await customerPanel.getByRole('button', { name: '生成客户设备故障样例' }).click()
+
+    await expect(customerPanel.getByText('IMP-POC-EQ-FAULT-20260520-001')).toBeVisible()
+    await expect(customerPanel.locator('.fault-metrics strong').getByText('12 条')).toBeVisible()
+    await expect(customerPanel.getByText('4h 停机样例已映射')).toBeVisible()
+    await expect(panel.getByText('客户设备故障样例已接入')).toBeVisible()
+
+    await page.goto('scheduling')
+    await page.waitForSelector('.schedule-board', { timeout: 20000 })
+    const eventCard = page.locator('.event-queue-panel .event-card').filter({ hasText: 'CNC-001 停机影响' })
+    await expect(eventCard).toBeVisible()
+    await expect(eventCard.getByText(/客户真实故障样例|CNC-002 \/ CNC-003/)).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const customerFaultEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '客户真实设备故障样例已映射' })
+    await expect(customerFaultEvidence.getByText('设备实证')).toBeVisible()
+    await expect(customerFaultEvidence.getByText('IMP-POC-EQ-FAULT-20260520-001')).toBeVisible()
+  })
+
   test('设备卡片渲染', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
+    await expect(eqCards.first()).toBeVisible()
     const count = await eqCards.count()
     expect(count).toBeGreaterThan(0)
   })
@@ -49,10 +118,10 @@ test.describe('Equipment 设备管理', () => {
     const badges = page.locator('.eq-badge')
     const count = await badges.count()
     expect(count).toBeGreaterThan(0)
-    // 利用率 badge 有颜色分类 (high/normal/low)
+    // 利用率 badge 有颜色分类 (high/mid/low)
     for (let i = 0; i < Math.min(count, 5); i++) {
       const classNames = await badges.nth(i).getAttribute('class')
-      expect(classNames).toMatch(/(high|normal|low)/)
+      expect(classNames).toMatch(/(high|mid|low)/)
     }
   })
 
@@ -129,10 +198,10 @@ test.describe('Equipment 设备管理', () => {
 
     const tabs = page.locator('.detail-tabs button')
     const tabCount = await tabs.count()
-    expect(tabCount).toBe(4) // 概览/健康状态/维护记录/故障诊断
+    expect(tabCount).toBe(4) // 概览/健康监控/维护记录/故障诊断
 
     // 切换到每个 tab
-    const tabLabels = ['健康状态', '维护记录', '故障诊断']
+    const tabLabels = ['健康监控', '维护记录', '故障诊断']
     for (const label of tabLabels) {
       await page.locator('.detail-tabs button', { hasText: label }).click()
       await expect(page.locator('.detail-tabs button.active')).toHaveText(label)
@@ -173,7 +242,7 @@ test.describe('Equipment 设备管理', () => {
 
   test('空筛选结果显示空状态', async ({ page }) => {
     // 拦截设备列表 API 返回空
-    await page.route('**/api/v1/equipment/list*', (route) => {
+    await page.route('**/api/v1/equipment*', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -188,6 +257,7 @@ test.describe('Equipment 设备管理', () => {
 
   test('设备利用率进度条', async ({ page }) => {
     const bars = page.locator('.eq-bar')
+    await expect(bars.first()).toBeVisible()
     const count = await bars.count()
     expect(count).toBeGreaterThan(0)
 

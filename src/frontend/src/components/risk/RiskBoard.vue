@@ -43,6 +43,8 @@
         </div>
       </div>
 
+      <RiskActionQueuePanel />
+
       <!-- 风险分类面板 -->
       <div class="risk-grid">
         <!-- 工单准时风险 -->
@@ -158,6 +160,7 @@ import type {
   MaterialRiskDto,
   BottleneckRiskDto,
 } from '../../types/risk'
+import RiskActionQueuePanel from './RiskActionQueuePanel.vue'
 
 const loading = ref(true)
 const error = ref('')

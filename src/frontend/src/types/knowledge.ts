@@ -45,5 +45,35 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: KnowledgeSourceDto[]
+  actions?: ChatAction[]
+  actionPackages?: ChatActionPackage[]
   timestamp: Date
+}
+
+export interface ChatAction {
+  id: string
+  label: string
+  type: 'navigate' | 'schedule_suggestion' | 'export_report' | 'create_anomaly_card' | 'delivery_recovery_package'
+  targetRoute?: string
+  resultMessage: string
+  auditCode?: string
+  requiredRole?: string
+}
+
+export interface ChatActionPackage {
+  id: string
+  title: string
+  auditCode: string
+  traceId: string
+  statusLabel: string
+  workOrders: string
+  otdImpact: string
+  owner: string
+  dueAt: string
+  steps: Array<{
+    module: string
+    owner: string
+    action: string
+    evidence: string
+  }>
 }

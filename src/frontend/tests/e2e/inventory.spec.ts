@@ -1,0 +1,60 @@
+import { test, expect } from '@playwright/test'
+
+test.describe('Inventory 缺料齐套闭环', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+    })
+    await page.goto('inventory')
+    await page.waitForSelector('.inv-board', { timeout: 20000 })
+    await page.evaluate(() => localStorage.removeItem('aimes_shortage_kitting_event'))
+  })
+
+  test('按工单展示 BOM、可用量、在途量、缺口和处置建议', async ({ page }) => {
+    const panel = page.locator('.kitting-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('工单齐套闭环')).toBeVisible()
+    const rushCard = panel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001 / 急单阀体组件' })
+    await expect(rushCard).toBeVisible()
+    await expect(rushCard.getByText('BOM-A100 V1.0')).toBeVisible()
+    await expect(rushCard.getByRole('cell', { name: 'M-AL-6061', exact: true })).toBeVisible()
+    await expect(rushCard.getByText('64件')).toBeVisible()
+    await expect(rushCard.getByText('45件')).toBeVisible()
+    await expect(rushCard.getByText('20件')).toBeVisible()
+    await expect(rushCard.getByText('19件')).toBeVisible()
+    await expect(rushCard.getByText(/调拨：从 A-03 库调 8 件/)).toBeVisible()
+    await expect(rushCard.getByText(/替代料：M-AL-6061B 工程确认/)).toBeVisible()
+    await expect(rushCard.getByText(/采购加急：今日 18:00 前补 20 件/)).toBeVisible()
+    await expect(rushCard.getByText(/调整排产顺序：先做不缺料工序/)).toBeVisible()
+  })
+
+  test('按排产时间窗预测缺料并回写 AI 排产事件队列', async ({ page }) => {
+    const panel = page.locator('.kitting-panel')
+    const timeWindow = panel.locator('.time-window')
+    await expect(timeWindow.getByText('今天缺')).toBeVisible()
+    await expect(timeWindow.getByText('3 天后缺')).toBeVisible()
+    await expect(timeWindow.getByText('7 天内')).toBeVisible()
+
+    await panel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
+    await expect(panel.getByText('缺料事件已同步 AI 排产')).toBeVisible()
+    await expect(panel.getByText(/M-AL-6061 缺 19件/)).toBeVisible()
+
+    await page.goto('scheduling')
+    const eventPanel = page.locator('.event-queue-panel')
+    const eventCard = eventPanel.locator('.event-card').filter({ hasText: 'M-AL-6061 工单齐套缺口' })
+    await expect(eventCard.getByText('缺料事件')).toBeVisible()
+    await expect(eventCard.locator('.event-meta').getByText('WO-RUSH-9001', { exact: true })).toBeVisible()
+    await expect(eventCard.getByText(/缺口 19/)).toBeVisible()
+    await eventCard.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(eventPanel.getByText('缺料约束重排建议')).toBeVisible()
+    await expect(eventPanel.getByText(/引用 BOM 替代料规则触发采购加急或替代料评估/)).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    const kittingEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await expect(kittingEvidence.locator('.evidence-topline span').getByText('库存齐套', { exact: true })).toBeVisible()
+    await expect(kittingEvidence.locator('code').getByText('TRACE-KIT-WO-RUSH-9001-M-AL-6061', { exact: true })).toBeVisible()
+  })
+})

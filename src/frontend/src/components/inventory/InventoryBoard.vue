@@ -13,6 +13,8 @@
       <div class="kpi-card"><label>今日操作</label><span class="num">{{ dashboard.todayTransactions }}</span></div>
     </div>
 
+    <KittingClosurePanel />
+
     <div class="board-body">
       <!-- 左侧列表 -->
       <div class="list-panel">
@@ -158,6 +160,7 @@ import { ref, computed, onMounted } from 'vue'
 import type { InventoryItem, StockTransaction, InventoryDashboard } from '../../types/inventory'
 import { getInventoryDashboard, getInventoryList, getStockTransactions, stockIn, stockOut, transferStock, adjustStock } from '../../api/inventory'
 import { exportToCsv } from '../../utils/export'
+import KittingClosurePanel from './KittingClosurePanel.vue'
 
 const dashboard = ref<InventoryDashboard | null>(null)
 const items = ref<InventoryItem[]>([])

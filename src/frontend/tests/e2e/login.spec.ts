@@ -24,10 +24,11 @@ test.describe('Login 登录页', () => {
     await page.goto('login')
 
     await expect(page.getByText('演示账号')).toBeVisible()
-    await expect(page.getByText('admin')).toBeVisible()
-    await expect(page.getByText('operator')).toBeVisible()
-    await expect(page.getByText('engineer')).toBeVisible()
-    await expect(page.getByText('lead')).toBeVisible()
+    const hints = page.locator('.login-hints')
+    await expect(hints.getByText('admin', { exact: true })).toBeVisible()
+    await expect(hints.getByText('operator', { exact: true })).toBeVisible()
+    await expect(hints.getByText('engineer', { exact: true })).toBeVisible()
+    await expect(hints.getByText('lead', { exact: true })).toBeVisible()
   })
 
   test('空表单登录按钮禁用', async ({ page }) => {

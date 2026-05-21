@@ -32,6 +32,128 @@
         </div>
       </div>
 
+      <section class="command-center" aria-label="AI MES 指挥中心">
+        <div class="command-header">
+          <div>
+            <span class="command-eyebrow">今日主线</span>
+            <h2>AI MES 指挥中心</h2>
+            <p>从风险识别到 OTD 复盘，按 5 分钟演示路径推进现场闭环。</p>
+          </div>
+          <div class="otd-summary">
+            <span>OTD 改善</span>
+            <strong>82% → 96%</strong>
+            <em>+14%</em>
+          </div>
+        </div>
+
+        <div class="command-grid">
+          <router-link
+            v-for="item in commandSteps"
+            :key="item.id"
+            class="command-card"
+            :to="item.route"
+          >
+            <span class="step-index">{{ item.index }}</span>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.detail }}</p>
+            </div>
+            <span class="step-action">{{ item.action }}</span>
+          </router-link>
+        </div>
+
+        <div class="command-bottom">
+          <div class="blocker-list">
+            <h3>当前阻塞</h3>
+            <div v-for="blocker in commandBlockers" :key="blocker.id" class="blocker-item" :class="blocker.level">
+              <span>{{ blocker.type }}</span>
+              <strong>{{ blocker.title }}</strong>
+              <em>{{ blocker.owner }} · {{ blocker.due }}</em>
+            </div>
+          </div>
+          <div class="next-action">
+            <span>下一步建议</span>
+            <strong>先处理 M-AL-6061 缺料，再采纳急单加班插入方案。</strong>
+            <router-link to="/scheduling">进入 AI 排产</router-link>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="pocHypercareAcceptance" class="hypercare-command" aria-label="POC Hypercare 上线验收">
+        <div class="hypercare-main">
+          <span class="command-eyebrow">正式上线验收</span>
+          <h2>{{ pocHypercareAcceptance.title }}</h2>
+          <p>{{ pocHypercareAcceptance.summary }}</p>
+          <div class="hypercare-actions">
+            <router-link to="/monitoring">查看现场监控</router-link>
+            <router-link to="/report">打开验收报告</router-link>
+          </div>
+        </div>
+        <div class="hypercare-metrics">
+          <div>
+            <span>状态</span>
+            <strong>{{ pocHypercareAcceptance.statusLabel }}</strong>
+          </div>
+          <div>
+            <span>OTD</span>
+            <strong>{{ pocHypercareAcceptance.actualOtd }}</strong>
+          </div>
+          <div>
+            <span>OEE</span>
+            <strong>{{ pocHypercareAcceptance.currentOee }}</strong>
+          </div>
+          <div>
+            <span>P1/P2 未关闭</span>
+            <strong>{{ pocHypercareAcceptance.unresolvedP1P2 }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo-runbook" aria-label="5 分钟 Demo 录制运行手册">
+        <div class="runbook-header">
+          <div>
+            <span class="command-eyebrow">售前录制</span>
+            <h2>5 分钟 Demo 录制运行手册</h2>
+            <p>从首页到报表，每一步都绑定镜头、证据和讲解话术，录制后可直接进入 POC 复盘。</p>
+          </div>
+          <div class="recording-summary">
+            <span>{{ demoRehearsalEvidence ? '彩排状态' : '总时长' }}</span>
+            <strong>{{ demoRehearsalEvidence ? '已确认' : '05:00' }}</strong>
+            <em>{{ demoRehearsalEvidence ? demoRehearsalEvidence.traceId : '5 个镜头 · 7 个验收证据' }}</em>
+          </div>
+        </div>
+
+        <div class="runbook-grid">
+          <router-link
+            v-for="step in demoRunbook"
+            :key="step.id"
+            class="runbook-card"
+            :to="step.route"
+          >
+            <div class="runbook-time">{{ step.time }}</div>
+            <div class="runbook-body">
+              <strong>{{ step.title }}</strong>
+              <p>{{ step.script }}</p>
+              <div class="evidence-tags">
+                <span v-for="evidence in step.evidence" :key="evidence">{{ evidence }}</span>
+              </div>
+            </div>
+            <em>{{ step.capture }}</em>
+          </router-link>
+        </div>
+
+        <div class="runbook-rehearsal" :class="{ confirmed: demoRehearsalEvidence }">
+          <div>
+            <span class="command-eyebrow">彩排证据</span>
+            <strong>{{ demoRehearsalEvidence ? '5 分钟 Demo 彩排已确认' : '确认 5 分钟 Demo 彩排' }}</strong>
+            <p>{{ demoRehearsalEvidence ? demoRehearsalEvidence.summary : '完成一次从生产概览到报表中心的售前演示彩排，并把镜头、证据、POC 口径写入 OTD 复盘证据链。' }}</p>
+          </div>
+          <button type="button" @click="handleConfirmDemoRehearsal">
+            {{ demoRehearsalEvidence ? '刷新彩排证据' : '确认彩排并写入证据链' }}
+          </button>
+        </div>
+      </section>
+
       <div class="widgets-grid">
         <!-- 设备状态 -->
         <div class="widget">
@@ -78,14 +200,20 @@
         <div class="widget">
           <div class="widget-header">
             <h3>物料预警</h3>
+            <span v-if="shortageResolution" class="sync-badge">风险下降</span>
           </div>
           <div class="widget-body">
+            <div v-if="shortageResolution" class="risk-sync-card">
+              <strong>{{ shortageResolution.materialCode }} 缺料已缓解</strong>
+              <span>{{ shortageResolution.message }}</span>
+              <em>{{ shortageResolution.affectedOrders }} · {{ shortageResolution.resolvedAt }}</em>
+            </div>
             <div v-for="mat in materialAlerts" :key="mat.code" class="alert-item" :class="mat.level">
-              <span class="alert-icon">{{ mat.level === 'critical' ? '🔴' : '🟡' }}</span>
+              <span class="alert-icon">{{ alertIcon(mat.level) }}</span>
               <span class="alert-name">{{ mat.name }}</span>
               <span class="alert-qty">{{ mat.available }}/{{ mat.min }}</span>
             </div>
-            <div v-if="materialAlerts.length === 0" class="empty-state">所有物料库存充足</div>
+            <div v-if="materialAlerts.length === 0 && !shortageResolution" class="empty-state">所有物料库存充足</div>
           </div>
         </div>
 
@@ -124,6 +252,9 @@ import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { getDashboard } from '../../api/dashboard'
 import type { DashboardData, KpiCard, EquipmentStatus, TodaySchedule, MaterialAlert, QualityStats } from '../../types/dashboard'
+import { readShortageRiskResolution, type ShortageRiskResolution } from '../../utils/shortage-risk-sync'
+import { readOtdEvidenceChainRecords, upsertOtdEvidenceChainRecord, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
+import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 
 const kpi = reactive<KpiCard>({ scheduleAdherence: 0, qualityPassRate: 0, equipmentUtilization: 0, activeOrders: 0 })
 const statusCounts = reactive({ running: 0, idle: 0, down: 0, maintenance: 0 })
@@ -132,7 +263,128 @@ const qualityStats = reactive<QualityStats>({ totalInspections: 0, passed: 0, de
 const equipment = ref<EquipmentStatus[]>([])
 const todayTasks = ref<TodaySchedule[]>([])
 const materialAlerts = ref<MaterialAlert[]>([])
+const shortageResolution = ref<ShortageRiskResolution | null>(null)
+const demoRehearsalEvidence = ref<OtdEvidenceChainItem | null>(null)
+const pocHypercareAcceptance = ref<PocHypercareAcceptanceRecord | null>(null)
 let connection: signalR.HubConnection | null = null
+
+const commandSteps = [
+  {
+    id: 'risk',
+    index: '01',
+    title: '风险识别',
+    detail: '急单、缺料、设备故障进入风险处置队列。',
+    action: '查看风险',
+    route: '/risk',
+  },
+  {
+    id: 'schedule',
+    index: '02',
+    title: 'Agent 重排',
+    detail: '生成基线与 Agent 方案，解释 OTD 改善来源。',
+    action: '生成方案',
+    route: '/scheduling',
+  },
+  {
+    id: 'purchase',
+    index: '03',
+    title: '采购协同',
+    detail: '缺料生成加急采购，收货后风险下降。',
+    action: '处理缺料',
+    route: '/purchase',
+  },
+  {
+    id: 'production',
+    index: '04',
+    title: '生产执行',
+    detail: '开工校验 SOP、人员、设备、物料并回写排产。',
+    action: '进入报工',
+    route: '/production',
+  },
+  {
+    id: 'report',
+    index: '05',
+    title: 'OTD 复盘',
+    detail: '输出 30 单演示数据和 POC 验收证据。',
+    action: '查看报告',
+    route: '/report',
+  },
+]
+
+const commandBlockers = [
+  {
+    id: 'mat-al6061',
+    type: '缺料',
+    title: 'M-AL-6061 缺 12 件',
+    owner: '采购',
+    due: '今日 16:00',
+    level: 'critical',
+  },
+  {
+    id: 'cnc-001',
+    type: '设备',
+    title: 'CNC-001 夜班维护窗口',
+    owner: '设备主管',
+    due: '22:00 前确认',
+    level: 'warning',
+  },
+  {
+    id: 'rush-9001',
+    type: '急单',
+    title: 'WO-RUSH-9001 加班插入',
+    owner: '调度员',
+    due: '锁定期后',
+    level: 'info',
+  },
+]
+
+const demoRunbook = [
+  {
+    id: 'opening',
+    time: '00:00-00:45',
+    title: '开场：老板问题',
+    script: '先展示 OTD 82% -> 96%，说明今天只讲“为什么交期会提高”。',
+    evidence: ['OTD +14%', '当前阻塞', '主线入口'],
+    capture: '录制首页指挥中心',
+    route: '/dashboard',
+  },
+  {
+    id: 'risk',
+    time: '00:45-01:35',
+    title: '风险：三类事件进入队列',
+    script: '点进风险预警，展示急单、缺料、设备故障已经变成有负责人和截止时间的处置卡。',
+    evidence: ['风险处置队列', '负责人', '截止时间'],
+    capture: '录制风险卡与留痕',
+    route: '/risk',
+  },
+  {
+    id: 'agent',
+    time: '01:35-02:45',
+    title: 'Agent：生成重排建议',
+    script: '进入 AI 排产，展示调度员工作台、事件队列、推荐解释和采纳反馈。',
+    evidence: ['基线 vs Agent', '三类事件', '采纳原因'],
+    capture: '录制重排建议和解释',
+    route: '/scheduling',
+  },
+  {
+    id: 'execution',
+    time: '02:45-03:45',
+    title: '执行：采购与生产回写',
+    script: '展示采购加急收货后风险下降，再回到生产报工说明开工校验和异常回写。',
+    evidence: ['采购收货', '风险下降', '开工校验'],
+    capture: '录制采购与生产联动',
+    route: '/purchase',
+  },
+  {
+    id: 'report',
+    time: '03:45-05:00',
+    title: '复盘：POC 评分和缺口',
+    script: '打开报表中心，导出 OTD 改善报告，最后展示 POC 97/100 和仍需客户补齐的数据。',
+    evidence: ['30 单样本', 'POC 97/100', '补齐缺口'],
+    capture: '录制报表与 CSV 导出',
+    route: '/report',
+  },
+]
 
 function applyDashboardData(d: DashboardData) {
   Object.assign(kpi, d.kpi)
@@ -141,11 +393,47 @@ function applyDashboardData(d: DashboardData) {
   equipment.value = d.equipment
   todayTasks.value = d.todaySchedule
   materialAlerts.value = d.materialAlerts
+  applyShortageRiskResolution()
 
   statusCounts.running = d.equipment.filter(e => e.status === 'running').length
   statusCounts.idle = d.equipment.filter(e => e.status === 'idle').length
   statusCounts.down = d.equipment.filter(e => e.status === 'fault' || e.status === 'offline').length
   statusCounts.maintenance = d.equipment.filter(e => e.status === 'maintenance').length
+}
+
+function applyShortageRiskResolution() {
+  shortageResolution.value = readShortageRiskResolution()
+}
+
+function applyDemoRehearsalEvidence() {
+  demoRehearsalEvidence.value = readOtdEvidenceChainRecords().find(record =>
+    record.id === 'demo-rehearsal-20260521'
+  ) ?? null
+}
+
+function applyPocHypercareAcceptance() {
+  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
+}
+
+function handleConfirmDemoRehearsal() {
+  demoRehearsalEvidence.value = upsertOtdEvidenceChainRecord({
+    id: 'demo-rehearsal-20260521',
+    stage: '演示彩排',
+    title: '5 分钟 Demo 彩排已确认',
+    summary: '已完成生产概览、风险预警、AI 排产、采购协同、生产执行和报表中心 5 段镜头彩排；OTD +14%、30 单样本、POC 评分和补齐缺口均可核对。',
+    object: '00:00-05:00 可销售 Demo 路径',
+    source: '生产概览 / 5 分钟 Demo 录制运行手册',
+    traceId: 'TRACE-DEMO-RUNBOOK-20260521-REHEARSAL',
+    status: 'closed',
+    statusLabel: '彩排已确认',
+    createdAt: new Date().toISOString(),
+  }).find(record => record.id === 'demo-rehearsal-20260521') ?? null
+}
+
+function alertIcon(level: string) {
+  if (level === 'critical') return '🔴'
+  if (level === 'healthy') return '🟢'
+  return '🟡'
 }
 
 function connectSignalR() {
@@ -173,10 +461,14 @@ function connectSignalR() {
 }
 
 onMounted(async () => {
+  applyDemoRehearsalEvidence()
+  applyPocHypercareAcceptance()
   try {
     const data = await getDashboard()
     applyDashboardData(data)
-  } catch { /* use empty state */ }
+  } catch {
+    applyShortageRiskResolution()
+  }
 
   connectSignalR()
 })
@@ -238,6 +530,464 @@ onBeforeUnmount(() => {
 .kpi-label {
   font-size: 13px;
   color: #888;
+}
+
+.command-center {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.command-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.command-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.command-header h2,
+.command-header p,
+.blocker-list h3,
+.next-action strong {
+  margin: 0;
+}
+
+.command-header h2 {
+  color: #111827;
+  font-size: 20px;
+}
+
+.command-header p {
+  margin-top: 4px;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.otd-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.otd-summary span,
+.otd-summary em {
+  font-size: 12px;
+  font-style: normal;
+}
+
+.otd-summary strong {
+  color: #14532d;
+  font-size: 22px;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.command-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 116px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: inherit;
+  text-decoration: none;
+}
+
+.command-card:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.step-index {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.command-card strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+}
+
+.command-card p {
+  margin: 5px 0 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.step-action {
+  grid-column: 2;
+  align-self: end;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.command-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
+  gap: 12px;
+}
+
+.blocker-list {
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.blocker-list h3 {
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.blocker-item {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid #edf2f7;
+  font-size: 12px;
+}
+
+.blocker-item span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.blocker-item strong {
+  color: #111827;
+}
+
+.blocker-item em {
+  color: #6b7280;
+  font-style: normal;
+}
+
+.blocker-item.critical span {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.blocker-item.warning span {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.blocker-item.info span {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.next-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.next-action span {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.next-action strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.next-action a {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.hypercare-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+}
+
+.hypercare-main h2,
+.hypercare-main p {
+  margin: 0;
+}
+
+.hypercare-main h2 {
+  color: #064e3b;
+  font-size: 18px;
+}
+
+.hypercare-main p {
+  margin-top: 5px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hypercare-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.hypercare-actions a {
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: #047857;
+  color: #fff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hypercare-actions a + a {
+  border: 1px solid #047857;
+  background: #fff;
+  color: #047857;
+}
+
+.hypercare-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hypercare-metrics div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.hypercare-metrics span {
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hypercare-metrics strong {
+  color: #111827;
+  font-size: 18px;
+}
+
+.demo-runbook {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fffaf5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.runbook-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.runbook-header h2,
+.runbook-header p {
+  margin: 0;
+}
+
+.runbook-header h2 {
+  color: #111827;
+  font-size: 18px;
+}
+
+.runbook-header p {
+  margin-top: 4px;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.recording-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+}
+
+.recording-summary span,
+.recording-summary em {
+  font-size: 12px;
+  font-style: normal;
+}
+
+.recording-summary strong {
+  color: #111827;
+  font-size: 22px;
+}
+
+.runbook-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.runbook-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 190px;
+  padding: 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.runbook-card:hover {
+  border-color: #fb923c;
+  background: #fff7ed;
+}
+
+.runbook-time {
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.runbook-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.runbook-body strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.runbook-body p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evidence-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: auto;
+}
+
+.evidence-tags span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ffedd5;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.runbook-card em {
+  color: #2563eb;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.runbook-rehearsal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.runbook-rehearsal.confirmed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.runbook-rehearsal strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+}
+
+.runbook-rehearsal p {
+  margin: 4px 0 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.runbook-rehearsal button {
+  padding: 7px 11px;
+  border: 1px solid #ea580c;
+  border-radius: 4px;
+  background: #ea580c;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.runbook-rehearsal.confirmed button {
+  border-color: #16a34a;
+  background: #16a34a;
 }
 
 /* Widgets */
@@ -367,9 +1117,42 @@ onBeforeUnmount(() => {
 }
 .alert-item.critical { background: #fff2f0; }
 .alert-item.warning { background: #fffbe6; }
+.alert-item.healthy { background: #f6ffed; }
 .alert-icon { font-size: 14px; }
 .alert-name { flex: 1; font-weight: 500; }
 .alert-qty { color: #666; font-size: 12px; }
+
+.sync-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-sync-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 12px;
+}
+
+.risk-sync-card strong {
+  color: #14532d;
+  font-size: 13px;
+}
+
+.risk-sync-card em {
+  color: #15803d;
+  font-style: normal;
+}
 
 /* Quality */
 .quality-chart {
@@ -405,5 +1188,23 @@ onBeforeUnmount(() => {
   color: #ccc;
   padding: 24px;
   font-size: 14px;
+}
+
+@media (max-width: 1180px) {
+  .command-grid,
+  .command-bottom,
+  .hypercare-command {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .command-header {
+    flex-direction: column;
+  }
+
+  .blocker-item {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

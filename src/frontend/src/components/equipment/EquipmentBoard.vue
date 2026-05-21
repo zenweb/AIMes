@@ -32,6 +32,8 @@
         </div>
       </div>
 
+      <EquipmentScheduleImpactPanel />
+
       <!-- 设备列表 -->
       <div class="card">
         <div class="card-header">
@@ -217,6 +219,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { getEquipmentList, getEquipmentStatistics, getHealthReport, getMaintenanceHistory, diagnose } from '../../api/equipment'
 import type { EquipmentDto, EquipmentStatisticsDto, EquipmentHealthDto, DiagnosticReportDto, MaintenanceRecordDto } from '../../types/equipment'
 import { formatDate } from '../../utils/date'
+import EquipmentScheduleImpactPanel from './EquipmentScheduleImpactPanel.vue'
 
 const stats = reactive<EquipmentStatisticsDto>({
   totalCount: 0, runningCount: 0, idleCount: 0,

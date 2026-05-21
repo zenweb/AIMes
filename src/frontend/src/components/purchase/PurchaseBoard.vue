@@ -5,6 +5,152 @@
       <button class="btn btn-export" @click="handleExport" v-if="orders.length">导出 CSV</button>
     </div>
 
+    <ShortageActionPanel
+      :shortage="shortageAction"
+      :trace="shortageTrace"
+      :has-expedite-order="Boolean(expediteOrderId)"
+      @expedite="handleExpediteShortage"
+      @alternate="handleAlternateMaterial"
+      @receive="handleReceiveExpedite"
+    />
+
+    <section class="supply-risk-panel" aria-label="供应风险控制塔">
+      <div class="supply-risk-heading">
+        <div>
+          <span class="eyebrow">供应风险控制塔</span>
+          <h3>供应延期、替代供应商与排产复核</h3>
+        </div>
+        <span class="risk-badge" :class="supplyRiskStatusClass">{{ supplyRiskStatusText }}</span>
+      </div>
+
+      <div class="supply-risk-grid">
+        <article class="supply-risk-card danger">
+          <span>延期风险</span>
+          <strong>{{ supplyRisk.purchaseOrderNumber }}</strong>
+          <em>{{ supplyRisk.supplierName }} / {{ supplyRisk.delayDays }} 天</em>
+        </article>
+        <article class="supply-risk-card">
+          <span>影响对象</span>
+          <strong>{{ supplyRisk.materialCode }}</strong>
+          <em>{{ supplyRisk.affectedOrders }}</em>
+        </article>
+        <article class="supply-risk-card alternate">
+          <span>替代供应商</span>
+          <strong>{{ supplyRisk.alternateSupplierName }}</strong>
+          <em>{{ supplyRisk.alternatePromiseDate }} 可到料</em>
+        </article>
+        <article class="supply-risk-card">
+          <span>承诺窗口</span>
+          <strong>{{ supplyRisk.originalDeliveryDate }} -> {{ supplyRisk.promisedDeliveryDate }}</strong>
+          <em>锁定期后排产需复核</em>
+        </article>
+      </div>
+
+      <div class="supply-risk-actions">
+        <button type="button" class="btn supply-escalate" @click="handleEscalateSupplyRisk">升级供应风险</button>
+        <button type="button" class="btn supply-commit" @click="handleCommitAlternateSupplier">锁定替代供应商</button>
+        <button
+          v-if="supplyRiskDecision === 'alternate_committed'"
+          type="button"
+          class="btn supply-receive"
+          @click="handleReceiveAlternateSupplier"
+        >
+          确认替代到货
+        </button>
+      </div>
+
+      <div class="supply-risk-trace" :class="{ empty: !supplyRiskTrace }">
+        <template v-if="supplyRiskTrace">
+          <span>供应联动</span>
+          <strong>{{ supplyRiskTrace.title }}</strong>
+          <p>{{ supplyRiskTrace.detail }}</p>
+          <code>{{ supplyRiskTrace.traceId }}</code>
+        </template>
+        <template v-else>
+          <span>供应联动</span>
+          <strong>等待供应风险动作</strong>
+          <p>供应延期尚未进入 Agent 排产复核。</p>
+        </template>
+      </div>
+    </section>
+
+    <section class="supplier-network-panel" aria-label="供应网络治理">
+      <div class="supplier-network-heading">
+        <div>
+          <span class="eyebrow">供应网络治理</span>
+          <h3>供应商绩效、交付 SLA 与多承诺比较</h3>
+        </div>
+        <span class="risk-badge" :class="supplierNetworkDecision ? 'mitigated' : 'ordered'">
+          {{ supplierNetworkDecision ? '已选优' : '待决策' }}
+        </span>
+      </div>
+
+      <div class="supplier-network-grid">
+        <article
+          v-for="candidate in supplierNetworkCandidates"
+          :key="candidate.supplierName"
+          class="supplier-candidate-card"
+          :class="{ selected: supplierNetworkDecision?.selectedSupplierName === candidate.supplierName }"
+        >
+          <div class="candidate-topline">
+            <strong>{{ candidate.supplierName }}</strong>
+            <span>{{ supplierSlaStatusText(candidate.slaStatus) }}</span>
+          </div>
+          <div class="candidate-metrics">
+            <span>绩效 {{ candidate.performanceScore }}</span>
+            <span>准交 {{ candidate.onTimeRate }}%</span>
+            <span>不良 {{ candidate.defectRate }}%</span>
+            <span>{{ candidate.slaLeadTimeHours }}h SLA</span>
+          </div>
+          <p>{{ candidate.promiseDate }} 可供 {{ candidate.capacityQuantity }} 件，报价 ¥{{ candidate.quotedPrice }}</p>
+          <em>{{ candidate.riskNote }}</em>
+        </article>
+      </div>
+
+      <div class="supplier-network-actions">
+        <button type="button" class="btn supplier-network-commit" @click="handleSupplierNetworkDecision">
+          选优供应商并生成 SLA 决策
+        </button>
+      </div>
+
+      <div v-if="supplierNetworkDecision" class="supplier-network-trace">
+        <span>网络决策</span>
+        <strong>{{ supplierNetworkDecision.statusLabel }}</strong>
+        <p>{{ supplierNetworkDecision.message }}</p>
+        <code>{{ supplierNetworkDecision.traceId }}</code>
+      </div>
+    </section>
+
+    <section v-if="materialDispatch" class="material-supplier-panel" aria-label="异常分流供应商整改">
+      <div class="material-supplier-heading">
+        <div>
+          <span class="eyebrow">异常分流接入</span>
+          <h3>来料异常供应商整改与替代承诺</h3>
+        </div>
+        <span class="risk-badge ordered">待整改</span>
+      </div>
+      <div class="material-supplier-body">
+        <article>
+          <span>异常来源</span>
+          <strong>{{ materialDispatch.title }}</strong>
+          <em>{{ materialDispatch.traceId }}</em>
+        </article>
+        <article>
+          <span>影响工单</span>
+          <strong>{{ materialDispatch.affectedOrders }}</strong>
+          <em>{{ materialDispatch.scheduleWindow }}</em>
+        </article>
+        <article>
+          <span>采购动作</span>
+          <strong>供应商 8D + 备用批次</strong>
+          <em>{{ materialDispatch.owner }}</em>
+        </article>
+      </div>
+      <button type="button" class="btn material-corrective" @click="handleMaterialSupplierCorrection">
+        锁定供应商整改承诺
+      </button>
+    </section>
+
     <div class="board-body">
       <!-- 左侧列表 -->
       <div class="list-panel">
@@ -154,6 +300,25 @@ import type { PurchaseOrderSummary, PurchaseOrderDetail, CreatePurchaseOrderRequ
 import { getPurchaseList, getPurchaseById, createPurchaseOrder, submitPurchaseOrder, confirmPurchaseOrder, receivePurchaseOrder, cancelPurchaseOrder } from '../../api/purchase'
 import { exportToCsv } from '../../utils/export'
 import { formatDate } from '../../utils/date'
+import ShortageActionPanel, {
+  type ShortageAction,
+  type ShortageTrace,
+} from './ShortageActionPanel.vue'
+import {
+  readSupplierNetworkDecision,
+  readSupplyRiskEscalation,
+  writeShortageRiskResolution,
+  writeSupplierNetworkDecision,
+  writeSupplyRiskEscalation,
+  type SupplierNetworkCandidate,
+  type SupplierNetworkDecision,
+} from '../../utils/shortage-risk-sync'
+import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
+import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import {
+  closeAssistantRecoveryPurchaseAction,
+  readAssistantRecoveryPackages,
+} from '../../utils/assistant-action-package-sync'
 
 const orders = ref<PurchaseOrderSummary[]>([])
 const currentPage = ref(1)
@@ -188,6 +353,104 @@ const form = ref<CreatePurchaseOrderRequest>({
   orderNumber: '', supplierName: '', supplierContact: '', expectedDeliveryDate: '', remark: '', createdBy: 'operator1',
   items: [],
 })
+const expediteOrderId = ref('')
+const shortageTrace = ref<ShortageTrace | null>(null)
+type SupplyRiskDecision = 'open' | 'escalated' | 'alternate_committed' | 'alternate_received'
+
+const supplyRiskDecision = ref<SupplyRiskDecision>('open')
+const supplyRiskTrace = ref<{ title: string; detail: string; traceId: string } | null>(null)
+const supplierNetworkDecision = ref<SupplierNetworkDecision | null>(readSupplierNetworkDecision())
+const materialDispatch = ref<AnomalyDispatchRecord | null>(readAnomalyDispatchRecordByType('material'))
+const shortageAction = ref<ShortageAction>({
+  materialCode: 'M-AL-6061',
+  materialName: '铝合金 6061',
+  shortageQuantity: 12,
+  availableQuantity: 0,
+  unit: '件',
+  affectedOrders: 'WO-RUSH-9001 / WO-DEMO-1002',
+  scheduleWindow: '锁定期后 24 小时',
+  recommendation: '采购加急或替代料',
+  supplierName: '华东铝材快供',
+  alternateMaterialCode: 'M-AL-6061B',
+  alternateMaterialName: '铝合金 6061B',
+  status: 'open',
+})
+const supplyRisk = {
+  purchaseOrderNumber: 'PO-20260502',
+  materialCode: 'MAT-B02',
+  materialName: '花键套',
+  supplierName: '南方钢材集团',
+  originalDeliveryDate: '2026-05-25',
+  promisedDeliveryDate: '2026-05-28',
+  delayDays: 3,
+  affectedOrders: 'WO-DEMO-1002 / WO-DEMO-1005',
+  alternateSupplierName: '华东快供二厂',
+  alternatePromiseDate: '2026-05-24',
+  alternateReceivedQuantity: 180,
+  unit: '件',
+}
+const supplyRiskStatusText = computed(() => {
+  if (supplyRiskDecision.value === 'alternate_received') return '替代已到货'
+  if (supplyRiskDecision.value === 'alternate_committed') return '替代已锁定'
+  if (supplyRiskDecision.value === 'escalated') return '已升级'
+  return '待识别'
+})
+const supplyRiskStatusClass = computed(() => {
+  if (supplyRiskDecision.value === 'alternate_received') return 'mitigated'
+  if (supplyRiskDecision.value === 'alternate_committed') return 'mitigated'
+  if (supplyRiskDecision.value === 'escalated') return 'ordered'
+  return 'open'
+})
+const supplierNetworkCandidates: SupplierNetworkCandidate[] = [
+  {
+    supplierName: '华东快供二厂',
+    promiseDate: '2026-05-24 10:00',
+    quotedPrice: 118,
+    capacityQuantity: 180,
+    onTimeRate: 96,
+    defectRate: 0.8,
+    performanceScore: 92,
+    slaLeadTimeHours: 24,
+    slaStatus: 'healthy',
+    riskNote: '本周已有稳定到货批次，适合锁定恢复交期。',
+  },
+  {
+    supplierName: '北方精密协作厂',
+    promiseDate: '2026-05-25 16:00',
+    quotedPrice: 112,
+    capacityQuantity: 220,
+    onTimeRate: 88,
+    defectRate: 1.6,
+    performanceScore: 81,
+    slaLeadTimeHours: 36,
+    slaStatus: 'watch',
+    riskNote: '价格更低但准交波动，需要保留二供观察。',
+  },
+  {
+    supplierName: '南方钢材集团',
+    promiseDate: '2026-05-28 18:00',
+    quotedPrice: 109,
+    capacityQuantity: 300,
+    onTimeRate: 73,
+    defectRate: 2.8,
+    performanceScore: 64,
+    slaLeadTimeHours: 96,
+    slaStatus: 'breached',
+    riskNote: '原供应商已触发延期，SLA 违约需进入绩效扣分。',
+  },
+]
+const preferredSupplier = supplierNetworkCandidates.reduce((best, candidate) =>
+  candidate.performanceScore > best.performanceScore ? candidate : best
+)
+
+function supplierSlaStatusText(status: SupplierNetworkCandidate['slaStatus']) {
+  const map = {
+    breached: 'SLA 违约',
+    watch: 'SLA 观察',
+    healthy: 'SLA 健康',
+  }
+  return map[status]
+}
 
 const demoOrders: PurchaseOrderSummary[] = [
   { id: 'po1', orderNumber: 'PO-20260501', supplierName: '华东轴承有限公司', status: 'Confirmed', orderDate: '2026-05-01T00:00:00', expectedDeliveryDate: '2026-05-20', totalAmount: 45000, itemCount: 3, createdBy: 'admin', createdAt: '2026-05-01T00:00:00' },
@@ -287,6 +550,363 @@ async function handleCancel() {
   await refreshList()
 }
 
+async function handleExpediteShortage() {
+  const orderNumber = `PO-RUSH-${new Date().getFullYear()}0519`
+  const request: CreatePurchaseOrderRequest = {
+    orderNumber,
+    supplierName: shortageAction.value.supplierName,
+    supplierContact: '应急采购专员',
+    expectedDeliveryDate: '2026-05-20',
+    remark: `由缺料事件自动生成：${shortageAction.value.affectedOrders}`,
+    createdBy: 'scheduler-agent',
+    items: [
+      {
+        materialCode: shortageAction.value.materialCode,
+        materialName: shortageAction.value.materialName,
+        unit: shortageAction.value.unit,
+        quantity: shortageAction.value.shortageQuantity,
+        unitPrice: 128,
+        expectedDate: '2026-05-20',
+        remark: '排产缺料加急',
+      },
+    ],
+  }
+
+  let detail: PurchaseOrderDetail
+  try {
+    detail = await createPurchaseOrder(request)
+  } catch {
+    detail = {
+      id: 'po-rush-al6061',
+      orderNumber,
+      supplierName: request.supplierName,
+      supplierContact: request.supplierContact ?? null,
+      status: 'Confirmed',
+      orderDate: new Date().toISOString(),
+      expectedDeliveryDate: request.expectedDeliveryDate ?? null,
+      completedDate: null,
+      totalAmount: request.items[0].quantity * request.items[0].unitPrice,
+      remark: request.remark ?? null,
+      createdBy: request.createdBy,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: request.items.map((item, index) => ({
+        id: `rush-line-${index}`,
+        materialCode: item.materialCode,
+        materialName: item.materialName,
+        unit: item.unit,
+        quantity: item.quantity,
+        receivedQuantity: 0,
+        unitPrice: item.unitPrice,
+        totalPrice: item.quantity * item.unitPrice,
+        expectedDate: item.expectedDate ?? null,
+        remark: item.remark ?? null,
+      })),
+    }
+  }
+
+  expediteOrderId.value = detail.id
+  shortageAction.value.status = 'ordered'
+  selected.value = detail
+  orders.value = [
+    {
+      id: detail.id,
+      orderNumber: detail.orderNumber,
+      supplierName: detail.supplierName,
+      status: detail.status,
+      orderDate: detail.orderDate,
+      expectedDeliveryDate: detail.expectedDeliveryDate,
+      totalAmount: detail.totalAmount,
+      itemCount: detail.items.length,
+      createdBy: detail.createdBy,
+      createdAt: detail.createdAt,
+    },
+    ...orders.value.filter(order => order.id !== detail.id),
+  ]
+  totalCount.value = Math.max(totalCount.value, orders.value.length)
+  shortageTrace.value = {
+    title: '已生成采购加急单',
+    detail: `${detail.orderNumber} 已锁定 ${shortageAction.value.shortageQuantity} ${shortageAction.value.unit} ${shortageAction.value.materialCode}，预计 2026-05-20 到料。`,
+  }
+}
+
+function handleAlternateMaterial() {
+  shortageTrace.value = {
+    title: '已生成替代料建议',
+    detail: `${shortageAction.value.alternateMaterialCode} 可替代 ${shortageAction.value.materialCode}，建议工程确认后释放 WO-RUSH-9001 排产约束。`,
+  }
+}
+
+function buildSupplyRiskRecord(decision: Exclude<SupplyRiskDecision, 'open'>) {
+  const auditId = decision === 'alternate_received'
+    ? 'AUD-PUR-SUPPLY-ALT-RECEIPT-20260521-001'
+    : decision === 'alternate_committed'
+    ? 'AUD-PUR-SUPPLY-ALT-20260521-001'
+    : 'AUD-PUR-SUPPLY-RISK-20260521-001'
+  const traceId = decision === 'alternate_received'
+    ? 'TRACE-PUR-MAT-B02-ALT-SUPPLIER-RECEIVED'
+    : decision === 'alternate_committed'
+    ? 'TRACE-PUR-MAT-B02-ALT-SUPPLIER-COMMITTED'
+    : 'TRACE-PUR-MAT-B02-SUPPLY-RISK-ESCALATED'
+  const statusLabel = decision === 'alternate_received'
+    ? '替代已到货'
+    : decision === 'alternate_committed'
+      ? '替代已锁定'
+      : '已升级'
+  const message = decision === 'alternate_received'
+    ? `${supplyRisk.alternateSupplierName} 已按 ${supplyRisk.alternatePromiseDate} 承诺到货，${supplyRisk.affectedOrders} 的 ${supplyRisk.materialCode} 供应风险关闭，可释放排产复核。`
+    : decision === 'alternate_committed'
+      ? `${supplyRisk.alternateSupplierName} 已承诺 ${supplyRisk.alternatePromiseDate} 到料，${supplyRisk.affectedOrders} 可从供应延期转为排产复核。`
+      : `${supplyRisk.supplierName} 将 ${supplyRisk.materialCode} 从 ${supplyRisk.originalDeliveryDate} 推迟到 ${supplyRisk.promisedDeliveryDate}，${supplyRisk.affectedOrders} 需进入供应风险复核。`
+
+  return {
+    ...supplyRisk,
+    decision,
+    statusLabel,
+    auditId,
+    traceId,
+    message,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function handleEscalateSupplyRisk() {
+  const record = buildSupplyRiskRecord('escalated')
+  supplyRiskDecision.value = 'escalated'
+  supplyRiskTrace.value = {
+    title: '供应延期已升级',
+    detail: record.message,
+    traceId: record.traceId,
+  }
+  writeSupplyRiskEscalation(record)
+  upsertOtdEvidenceChainRecord({
+    id: `supply-risk-${record.materialCode}`,
+    stage: '供应风险',
+    title: `${record.materialCode} 供应延期已升级`,
+    summary: `${record.purchaseOrderNumber} 原计划 ${record.originalDeliveryDate} 到料，供应商承诺延后到 ${record.promisedDeliveryDate}；${record.affectedOrders} 需排产复核。`,
+    object: record.affectedOrders,
+    source: `采购协同 / ${record.supplierName}`,
+    traceId: record.traceId,
+    status: 'active',
+    statusLabel: record.statusLabel,
+    createdAt: record.createdAt,
+  })
+}
+
+function handleCommitAlternateSupplier() {
+  const record = buildSupplyRiskRecord('alternate_committed')
+  supplyRiskDecision.value = 'alternate_committed'
+  supplyRiskTrace.value = {
+    title: '替代供应商已锁定',
+    detail: record.message,
+    traceId: record.traceId,
+  }
+  writeSupplyRiskEscalation(record)
+  upsertOtdEvidenceChainRecord({
+    id: `supply-risk-${record.materialCode}`,
+    stage: '供应风险',
+    title: `${record.materialCode} 替代供应商已锁定`,
+    summary: `${record.alternateSupplierName} 承诺 ${record.alternatePromiseDate} 到料，早于原供应商延后承诺 ${record.promisedDeliveryDate}；${record.affectedOrders} 可恢复排产复核。`,
+    object: record.affectedOrders,
+    source: `采购协同 / ${record.alternateSupplierName}`,
+    traceId: record.traceId,
+    status: 'closed',
+    statusLabel: record.statusLabel,
+    createdAt: record.createdAt,
+  })
+}
+
+function handleReceiveAlternateSupplier() {
+  const record = {
+    ...buildSupplyRiskRecord('alternate_received'),
+    receivedAt: '2026-05-24T10:00:00',
+    receivedQuantity: supplyRisk.alternateReceivedQuantity,
+    receiptAuditId: 'AUD-PUR-SUPPLY-ALT-RECEIPT-20260521-001',
+    receiptTraceId: 'TRACE-PUR-MAT-B02-ALT-SUPPLIER-RECEIVED',
+    receiptMessage: `${supplyRisk.alternateSupplierName} 已按 ${supplyRisk.alternatePromiseDate} 承诺到货 ${supplyRisk.alternateReceivedQuantity} ${supplyRisk.unit}，${supplyRisk.affectedOrders} 的 ${supplyRisk.materialCode} 供应风险关闭。`,
+  }
+  supplyRiskDecision.value = 'alternate_received'
+  supplyRiskTrace.value = {
+    title: '替代到货已确认',
+    detail: record.receiptMessage,
+    traceId: record.receiptTraceId,
+  }
+  writeSupplyRiskEscalation(record)
+  upsertOtdEvidenceChainRecord({
+    id: `supply-risk-${record.materialCode}`,
+    stage: '供应到货',
+    title: `${record.materialCode} 替代供应商到货已确认`,
+    summary: `${record.alternateSupplierName} 已按 ${record.alternatePromiseDate} 承诺到货 ${record.receivedQuantity} ${supplyRisk.unit}，${record.affectedOrders} 的供应风险关闭，AI 排产可释放复核。`,
+    object: record.affectedOrders,
+    source: `采购协同 / ${record.alternateSupplierName}`,
+    traceId: record.receiptTraceId,
+    status: 'closed',
+    statusLabel: record.statusLabel,
+    createdAt: record.createdAt,
+  })
+}
+
+function handleSupplierNetworkDecision() {
+  const createdAt = new Date().toISOString()
+  const record: SupplierNetworkDecision = {
+    materialCode: supplyRisk.materialCode,
+    materialName: supplyRisk.materialName,
+    affectedOrders: supplyRisk.affectedOrders,
+    selectedSupplierName: preferredSupplier.supplierName,
+    selectedPromiseDate: preferredSupplier.promiseDate,
+    selectedPerformanceScore: preferredSupplier.performanceScore,
+    selectedOnTimeRate: preferredSupplier.onTimeRate,
+    selectedQuotedPrice: preferredSupplier.quotedPrice,
+    selectedCapacityQuantity: preferredSupplier.capacityQuantity,
+    candidates: supplierNetworkCandidates,
+    statusLabel: '供应网络已选优',
+    auditId: 'AUD-PUR-SUPPLIER-NETWORK-20260521-001',
+    traceId: 'TRACE-PUR-MAT-B02-SUPPLIER-NETWORK-SLA',
+    message: `${preferredSupplier.supplierName} 以绩效 ${preferredSupplier.performanceScore}、准交 ${preferredSupplier.onTimeRate}% 和 ${preferredSupplier.slaLeadTimeHours}h SLA 成为 ${supplyRisk.materialCode} 首选恢复供应商；${supplyRisk.supplierName} 标记 SLA 违约，北方精密协作厂保留二供观察。`,
+    createdAt,
+  }
+  supplierNetworkDecision.value = record
+  writeSupplierNetworkDecision(record)
+  upsertOtdEvidenceChainRecord({
+    id: `supplier-network-${record.materialCode}`,
+    stage: '供应网络',
+    title: `${record.materialCode} 供应商绩效与 SLA 选优已确认`,
+    summary: `${record.selectedSupplierName} 凭绩效 ${record.selectedPerformanceScore}、准交 ${record.selectedOnTimeRate}% 和 ${preferredSupplier.slaLeadTimeHours}h SLA 被选为恢复供应商；原供应商延期进入 SLA 违约复盘。`,
+    object: record.affectedOrders,
+    source: '采购协同 / 供应网络治理',
+    traceId: record.traceId,
+    status: 'closed',
+    statusLabel: record.statusLabel,
+    createdAt,
+  })
+}
+
+function handleMaterialSupplierCorrection() {
+  if (!materialDispatch.value) return
+  const dispatch = materialDispatch.value
+  const createdAt = new Date().toISOString()
+  supplyRiskDecision.value = 'alternate_committed'
+  supplyRiskTrace.value = {
+    title: '来料异常整改承诺已锁定',
+    detail: `${dispatch.traceId} 已要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，${dispatch.affectedOrders} 转入采购与排产联合复核。`,
+    traceId: dispatch.traceId,
+  }
+  writeSupplyRiskEscalation({
+    purchaseOrderNumber: 'PO-MAT-BATCH-20260521',
+    materialCode: 'LH-202605',
+    materialName: '原料批次 LH-202605',
+    supplierName: '原料批次供应商',
+    originalDeliveryDate: '2026-05-21',
+    promisedDeliveryDate: '2026-05-22',
+    delayDays: 1,
+    affectedOrders: dispatch.affectedOrders,
+    alternateSupplierName: '备用批次 LH-202604B',
+    alternatePromiseDate: '2026-05-21 16:00',
+    decision: 'alternate_committed',
+    statusLabel: '整改已锁定',
+    auditId: dispatch.auditId,
+    traceId: dispatch.traceId,
+    message: `${dispatch.title} 已锁定供应商整改与备用批次复检承诺，${dispatch.affectedOrders} 转入排产复核。`,
+    createdAt,
+  })
+  upsertOtdEvidenceChainRecord({
+    id: `purchase-material-correction-${dispatch.anomalyId}`,
+    stage: '采购整改',
+    title: `${dispatch.title}供应商整改承诺已锁定`,
+    summary: `${dispatch.traceId} 要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，采购协同与库存齐套共同回写风险状态。`,
+    object: dispatch.affectedOrders,
+    source: `采购协同 / ${dispatch.owner}`,
+    traceId: dispatch.traceId,
+    status: 'active',
+    statusLabel: '整改已锁定',
+    createdAt,
+  })
+}
+
+function applyStoredSupplyRiskEscalation() {
+  const record = readSupplyRiskEscalation()
+  if (!record) return
+
+  supplyRiskDecision.value = record.decision
+  supplyRiskTrace.value = {
+    title: record.decision === 'alternate_received'
+      ? '替代到货已确认'
+      : record.decision === 'alternate_committed'
+        ? '替代供应商已锁定'
+        : '供应延期已升级',
+    detail: record.receiptMessage ?? record.message,
+    traceId: record.receiptTraceId ?? record.traceId,
+  }
+}
+
+async function handleReceiveExpedite() {
+  if (!selected.value || !expediteOrderId.value) return
+  const materialCode = shortageAction.value.materialCode
+  try {
+    selected.value = await receivePurchaseOrder(expediteOrderId.value, {
+      materialCode,
+      quantity: shortageAction.value.shortageQuantity,
+    })
+  } catch {
+    selected.value = {
+      ...selected.value,
+      status: 'Completed',
+      completedDate: new Date().toISOString(),
+      items: selected.value.items.map(item =>
+        item.materialCode === materialCode
+          ? { ...item, receivedQuantity: item.quantity }
+          : item
+      ),
+    }
+  }
+  shortageAction.value.status = 'mitigated'
+  shortageAction.value.availableQuantity += shortageAction.value.shortageQuantity
+  shortageAction.value.shortageQuantity = 0
+  orders.value = orders.value.map(order =>
+    order.id === selected.value?.id
+      ? { ...order, status: selected.value.status }
+      : order
+  )
+  shortageTrace.value = {
+    title: '采购收货已回写风险',
+    detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
+  }
+  const assistantRecoveryPackage = readAssistantRecoveryPackages()
+    .find(record => record.workOrders.includes('WO-RUSH-9001') && record.purchaseActionStatus !== 'closed')
+  const assistantPurchaseClosure = assistantRecoveryPackage
+    ? closeAssistantRecoveryPurchaseAction(assistantRecoveryPackage.id, '采购 王工', selected.value.orderNumber)
+    : null
+  if (assistantPurchaseClosure?.purchaseActionSummary) {
+    shortageTrace.value = {
+      title: '采购收货已回写风险',
+      detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。${assistantPurchaseClosure.purchaseActionSummary}`,
+    }
+  }
+  writeShortageRiskResolution({
+    materialCode,
+    materialName: shortageAction.value.materialName,
+    affectedOrders: shortageAction.value.affectedOrders,
+    sourceOrderNumber: selected.value.orderNumber,
+    receivedQuantity: shortageAction.value.availableQuantity,
+    unit: shortageAction.value.unit,
+    availableQuantity: shortageAction.value.availableQuantity,
+    resolvedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+    message: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
+  })
+  upsertOtdEvidenceChainRecord({
+    id: `purchase-receipt-${selected.value.orderNumber}`,
+    stage: '采购回写',
+    title: `${materialCode} 加急采购收货已释放缺料风险`,
+    summary: `${selected.value.orderNumber} 收货完成，${shortageAction.value.affectedOrders} 的齐套缺口清零，排产复核可恢复执行。`,
+    object: shortageAction.value.affectedOrders,
+    source: `采购协同 / ${selected.value.supplierName}`,
+    traceId: selected.value.orderNumber,
+    status: 'closed',
+    statusLabel: '已收货',
+    createdAt: new Date().toISOString(),
+  })
+}
+
 async function refreshList() {
   try {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
@@ -298,6 +918,7 @@ async function refreshList() {
 function fmtAmt(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }
 
 onMounted(async () => {
+  applyStoredSupplyRiskEscalation()
   try {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
     orders.value = result.items
@@ -381,4 +1002,314 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 .page-btn:disabled { color: #d9d9d9; cursor: not-allowed; }
 .page-ellipsis { width: 28px; text-align: center; color: #999; font-size: 12px; }
 .page-info { margin-left: auto; font-size: 12px; color: #999; }
+
+.supply-risk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.supplier-network-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #f0f9ff;
+}
+
+.supply-risk-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.supplier-network-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.supply-risk-heading h3,
+.supplier-network-heading h3,
+.supply-risk-trace p {
+  margin: 0;
+}
+
+.supply-risk-heading h3,
+.supplier-network-heading h3 {
+  color: #111827;
+  font-size: 16px;
+}
+
+.risk-badge {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-badge.open {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.risk-badge.ordered {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.risk-badge.mitigated {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.supply-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.supplier-network-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.supply-risk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 66px;
+  padding: 8px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.supplier-candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 118px;
+  padding: 10px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.supplier-candidate-card.selected {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  box-shadow: inset 0 0 0 1px #22c55e;
+}
+
+.candidate-topline,
+.candidate-metrics,
+.supplier-network-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.candidate-topline {
+  justify-content: space-between;
+}
+
+.candidate-topline span,
+.candidate-metrics span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.supplier-candidate-card p,
+.supplier-candidate-card em,
+.supplier-network-trace p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.supply-risk-card.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.supply-risk-card.alternate {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.supply-risk-card span,
+.supply-risk-card em,
+.supply-risk-trace span,
+.supply-risk-trace p {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.supply-risk-card strong {
+  color: #111827;
+  font-size: 15px;
+}
+
+.supply-risk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.supply-escalate {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+
+.supply-commit {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.supply-receive {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.supplier-network-commit {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #fff;
+}
+
+.supply-risk-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #f0fdf4;
+}
+
+.supplier-network-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.supply-risk-trace.empty {
+  border-color: #e5e7eb;
+  background: #fff;
+}
+
+.supply-risk-trace strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.supply-risk-trace code,
+.supplier-network-trace code {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.material-supplier-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.material-supplier-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.material-supplier-heading h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+}
+
+.material-supplier-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.material-supplier-body article {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 72px;
+  padding: 9px 10px;
+  border: 1px solid #fef3c7;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.material-supplier-body span,
+.material-supplier-body em {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.material-supplier-body strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.material-corrective {
+  align-self: flex-start;
+  background: #b45309;
+  border-color: #b45309;
+  color: #fff;
+}
+
+@media (max-width: 1100px) {
+  .supply-risk-grid,
+  .supplier-network-grid,
+  .material-supplier-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>

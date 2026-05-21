@@ -32,6 +32,111 @@
         </div>
       </div>
 
+      <QualityReworkImpactPanel
+        :event="qualityReworkEvent"
+        :sync-message="reworkSyncMessage"
+        @create="handleCreateReworkEvent"
+      />
+
+      <QualityMrbDispositionPanel
+        :preview="qualityMrbPreview"
+        :record="qualityMrbDisposition"
+        :sync-message="mrbSyncMessage"
+        @create="handleCreateMrbDisposition"
+        @close="handleCloseMrbDisposition"
+      />
+
+      <QualityCapaTaskPanel
+        :quality-knowledge-sample="qualityKnowledgeSample"
+        :quality-knowledge-reuse-draft="qualityKnowledgeReuseDraft"
+      />
+
+      <section v-if="barcodeQualityGateRecords.length" class="barcode-quality-gate-panel" aria-label="扫码质量门回放">
+        <div class="panel-heading">
+          <div>
+            <span>扫码质量门</span>
+            <h3>首件巡检与工序交接</h3>
+          </div>
+          <em>{{ barcodeQualityGateRecords.length }} 条证据</em>
+        </div>
+        <div v-if="barcodeFrozenGate" class="barcode-release-banner" :class="{ released: !!barcodeReleaseRecord }">
+          <div>
+            <strong>{{ barcodeReleaseRecord ? '返工复验已放行' : '返工复验待放行' }}</strong>
+            <p>{{ barcodeReleaseRecord ? '标签已解冻，OP-20 接收和排产窗口已恢复。' : '当前存在扫码返工冻结，需复验通过后释放 OP-20 接收并更新流转卡标签。' }}</p>
+          </div>
+          <button v-if="!barcodeReleaseRecord" type="button" @click="releaseBarcodeReworkGate">复验通过并释放交接</button>
+        </div>
+        <p v-if="barcodeReleaseMessage" class="barcode-release-message">{{ barcodeReleaseMessage }}</p>
+        <div class="barcode-quality-grid">
+          <article v-for="record in barcodeQualityGateRecords" :key="record.id" class="barcode-quality-card" :class="record.status">
+            <div class="quality-card-topline">
+              <span>{{ record.stage }}</span>
+              <em>{{ record.statusLabel }}</em>
+            </div>
+            <h4>{{ record.title }}</h4>
+            <p>{{ record.summary }}</p>
+            <div class="quality-card-meta">
+              <code>{{ record.traceId }}</code>
+              <span>{{ record.object }}</span>
+            </div>
+          </article>
+        </div>
+        <div class="barcode-knowledge-sample-panel">
+          <div>
+            <span>质量知识复用</span>
+            <h4>扫码返工样本沉淀为 CAPA 推荐</h4>
+            <p>把 `WO-RUSH-9001 / OP-10` 的隔离、返工成本、复验释放和排产回写合成可复用质量样本，供同类批次、同类设备和同类缺陷复盘。</p>
+          </div>
+          <div class="sample-dimensions">
+            <span>同类批次 AL-202605</span>
+            <span>CNC-002 精加工</span>
+            <span>首件尺寸偏差</span>
+            <span>OP-20 释放复核</span>
+          </div>
+          <button v-if="!qualityKnowledgeSample" type="button" @click="publishBarcodeQualityKnowledgeSample">
+            沉淀为 CAPA 知识样本
+          </button>
+          <div v-else class="sample-synced">
+            <strong>{{ qualityKnowledgeSample.auditId }}</strong>
+            <code>{{ qualityKnowledgeSample.traceId }}</code>
+            <span v-for="target in qualityKnowledgeSample.reuseTargets" :key="target">{{ target }}</span>
+          </div>
+          <div v-if="qualityKnowledgeSample" class="reuse-draft-card" :class="{ synced: !!qualityKnowledgeReuseDraft }">
+            <div class="reuse-draft-heading">
+              <div>
+                <span>同类缺陷自动匹配</span>
+                <h4>{{ qualityKnowledgeReuseDraft ? `${qualityKnowledgeReuseDraft.targetWorkOrderId} 处置草案` : 'WO-DEMO-1012 命中扫码返工样本' }}</h4>
+                <p>{{ qualityKnowledgeReuseDraft ? qualityKnowledgeReuseDraft.summary : '同设备、同工序、同 AL 批次族和同类首件尺寸偏差命中后，可生成待复核处置草案并计算复用效果。' }}</p>
+              </div>
+              <strong>{{ qualityKnowledgeReuseDraft ? `${qualityKnowledgeReuseDraft.effectScore} 分` : '92%' }}</strong>
+            </div>
+            <div class="reuse-match-grid">
+              <span
+                v-for="dimension in qualityKnowledgeReuseDraft?.matchDimensions ?? previewReuseDimensions"
+                :key="dimension.label"
+              >
+                {{ dimension.label }}：{{ dimension.target }}
+              </span>
+            </div>
+            <button v-if="!qualityKnowledgeReuseDraft" type="button" @click="generateQualityKnowledgeReuseDraft">
+              生成同类缺陷处置草案
+            </button>
+            <div v-else class="reuse-draft-result">
+              <strong>{{ qualityKnowledgeReuseDraft.auditId }}</strong>
+              <code>{{ qualityKnowledgeReuseDraft.traceId }}</code>
+              <ul>
+                <li v-for="action in qualityKnowledgeReuseDraft.dispositionDraft" :key="action">{{ action }}</li>
+              </ul>
+              <div class="reuse-effect-metrics">
+                <span v-for="metric in qualityKnowledgeReuseDraft.effectMetrics" :key="metric.label">
+                  {{ metric.label }} {{ metric.value }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="board-grid">
         <!-- SPC 趋势图 -->
         <div class="card spc-card">
@@ -189,6 +294,37 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import http from '../../api/http'
 import { getInspections, getQualityStatistics, analyzeRootCause, analyzeSpcTrend } from '../../api/quality'
 import type { InspectionDto, QualityStatisticsDto, RootCauseAnalysisDto, SpcAnalysisDto, AnomalyDto } from '../../types/quality'
+import QualityReworkImpactPanel from './QualityReworkImpactPanel.vue'
+import QualityCapaTaskPanel from './QualityCapaTaskPanel.vue'
+import QualityMrbDispositionPanel from './QualityMrbDispositionPanel.vue'
+import {
+  buildQualityReworkImpact,
+  selectQualityReworkInspection,
+  writeQualityReworkImpact,
+  type QualityReworkImpact,
+} from '../../utils/quality-rework-sync'
+import {
+  buildQualityMrbDispositionRecord,
+  closeQualityMrbDispositionRecord,
+  readQualityMrbDispositionRecord,
+  writeQualityMrbDispositionRecord,
+  type QualityMrbDispositionRecord,
+} from '../../utils/quality-mrb-disposition-sync'
+import {
+  readOtdEvidenceChainRecords,
+  upsertOtdEvidenceChainRecord,
+  type OtdEvidenceChainItem,
+} from '../../utils/otd-evidence-chain-sync'
+import {
+  createBarcodeQualityReuseDraft,
+  createBarcodeQualityKnowledgeSample,
+  readLatestQualityKnowledgeReuseDraft,
+  readLatestQualityKnowledgeSample,
+  writeQualityKnowledgeReuseDraft,
+  writeQualityKnowledgeSample,
+  type QualityKnowledgeReuseDraftRecord,
+  type QualityKnowledgeSampleRecord,
+} from '../../utils/quality-knowledge-sample-sync'
 
 const stats = reactive<QualityStatisticsDto>({
   totalInspections: 0, passedCount: 0, failedCount: 0,
@@ -200,6 +336,36 @@ const anomalies = ref<AnomalyDto[]>([])
 const resultFilter = ref('')
 const analysisMap = reactive<Record<string, RootCauseAnalysisDto>>({})
 const currentAnalysis = ref<RootCauseAnalysisDto | null>(null)
+const reworkSyncMessage = ref('')
+const mrbSyncMessage = ref('')
+const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
+const barcodeReleaseMessage = ref('')
+const qualityKnowledgeSample = ref<QualityKnowledgeSampleRecord | null>(readLatestQualityKnowledgeSample())
+const qualityKnowledgeReuseDraft = ref<QualityKnowledgeReuseDraftRecord | null>(readLatestQualityKnowledgeReuseDraft())
+const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(readQualityMrbDispositionRecord())
+const qualityMrbPreview = ref<QualityMrbDispositionRecord>(qualityMrbDisposition.value ?? buildQualityMrbDispositionRecord('2026-05-21T09:30:00.000Z'))
+const qualityReworkEvent = ref<QualityReworkImpact>({
+  inspectionId: 'INS-003',
+  workOrderId: 'WO-003',
+  productCode: 'PRD-003',
+  processName: '热处理',
+  equipmentCode: 'HT-01',
+  materialBatchCode: 'MAT-AL6061-B03',
+  batchCode: 'WO-003-HT',
+  inspectionPoint: '终检',
+  defectQuantity: 2,
+  reworkHours: 6,
+  otdImpact: 'WO-003 延期 +1 单风险',
+  recommendedAction: '建议插入热处理返工窗口，锁定质检复验时间，并把 WO-DEMO-1007 的热处理批次合并，降低二次换线。',
+  rootCause: '硬度不足 / 热处理参数漂移',
+  evidence: [
+    '终检 检验结果 返工',
+    'HT-01 关联工序 热处理',
+    '物料批次 MAT-AL6061-B03',
+    '批次号 WO-003-HT',
+  ],
+  createdAt: '2026-05-20T10:00:00',
+})
 
 // SPC
 const spcParam = ref('surface_roughness')
@@ -213,6 +379,31 @@ const filteredInspections = computed(() => {
   return inspections.value.filter(i => i.result === resultFilter.value)
 })
 
+const barcodeQualityGateRecords = computed(() =>
+  otdEvidenceRecords.value.filter(record =>
+    record.traceId.startsWith('TRACE-QR-')
+    && ['质量门', '工序交接', '扫码返工', '交接冻结', '质量CAPA', '质量隔离', '返工成本', '标签状态', '质量复验', '交接释放', '排产回写'].includes(record.stage)
+  )
+)
+const barcodeFrozenGate = computed(() =>
+  barcodeQualityGateRecords.value.find(record =>
+    record.traceId === 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK'
+    && record.stage === '扫码返工'
+  ) ?? null
+)
+const barcodeReleaseRecord = computed(() =>
+  barcodeQualityGateRecords.value.find(record =>
+    record.traceId === 'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20'
+    && record.stage === '交接释放'
+  ) ?? null
+)
+const previewReuseDimensions = [
+  { label: '工序', target: 'CNC 精加工' },
+  { label: '设备', target: 'CNC-002' },
+  { label: '材料族', target: 'AL-202605-B' },
+  { label: '缺陷模式', target: '首件尺寸偏差' },
+]
+
 const spcPoints = computed(() => spcData.value.map(p => `${p.x},${p.y}`).join(' '))
 const uclY = computed(() => pad + 20)
 const lclY = computed(() => chartH - pad + 10)
@@ -220,6 +411,183 @@ const clY = computed(() => (uclY.value + lclY.value) / 2)
 
 function formatTime(t: string) {
   return new Date(t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function handleCreateReworkEvent(event: QualityReworkImpact) {
+  const impact = {
+    ...event,
+    createdAt: new Date().toISOString(),
+  }
+  writeQualityReworkImpact(impact)
+  qualityReworkEvent.value = impact
+  reworkSyncMessage.value = '返工排产事件已生成：排产工作台将出现质量返工触发器，报表中心会纳入 OTD 复盘。'
+}
+
+function refreshQualityMrbDisposition() {
+  qualityMrbDisposition.value = readQualityMrbDispositionRecord()
+  qualityMrbPreview.value = qualityMrbDisposition.value ?? buildQualityMrbDispositionRecord('2026-05-21T09:30:00.000Z')
+}
+
+function handleCreateMrbDisposition() {
+  const record = writeQualityMrbDispositionRecord(buildQualityMrbDispositionRecord(new Date().toISOString()))
+  qualityMrbDisposition.value = record
+  qualityMrbPreview.value = record
+  refreshOtdEvidenceRecords()
+  mrbSyncMessage.value = 'MRB 报废补料决策已生成：排产工作台将出现 WO-004 报废补料重排事件，报表、治理和审计回放将读取同一追踪号。'
+}
+
+function handleCloseMrbDisposition() {
+  const record = closeQualityMrbDispositionRecord('生产经理')
+  if (!record) return
+  qualityMrbDisposition.value = record
+  qualityMrbPreview.value = record
+  refreshOtdEvidenceRecords()
+  mrbSyncMessage.value = 'MRB 处置闭环已确认：隔离、补料 ETA、排产重建和客户说明均已回写，排产事件转为复核状态。'
+}
+
+function syncQualityReworkFromInspections() {
+  const target = selectQualityReworkInspection(inspections.value)
+  if (!target) return
+  const impact = buildQualityReworkImpact(target)
+  writeQualityReworkImpact(impact)
+  qualityReworkEvent.value = impact
+  reworkSyncMessage.value = `检验结果 ${target.result === 'fail' ? '不合格' : '返工'} 已自动生成返工排产事件。`
+}
+
+function refreshOtdEvidenceRecords() {
+  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+}
+
+function refreshQualityKnowledgeSample() {
+  qualityKnowledgeSample.value = readLatestQualityKnowledgeSample()
+}
+
+function refreshQualityKnowledgeReuseDraft() {
+  qualityKnowledgeReuseDraft.value = readLatestQualityKnowledgeReuseDraft()
+}
+
+function publishBarcodeQualityKnowledgeSample() {
+  const record = writeQualityKnowledgeSample(createBarcodeQualityKnowledgeSample(new Date().toISOString()))
+  qualityKnowledgeSample.value = record
+  refreshOtdEvidenceRecords()
+  barcodeReleaseMessage.value = '扫码质量样本已沉淀：CAPA 推荐、知识库引用和审计回放将复用同一条质量知识证据。'
+}
+
+function generateQualityKnowledgeReuseDraft() {
+  if (!qualityKnowledgeSample.value) return
+  const draft = writeQualityKnowledgeReuseDraft(createBarcodeQualityReuseDraft(qualityKnowledgeSample.value, new Date().toISOString()))
+  qualityKnowledgeReuseDraft.value = draft
+  refreshOtdEvidenceRecords()
+  barcodeReleaseMessage.value = `同类缺陷处置草案已生成：${draft.targetWorkOrderId} 命中 ${draft.matchScore}%，复用效果评分 ${draft.effectScore} 分，等待质量工程师复核。`
+}
+
+function closeExistingBarcodeFreezeRecord(id: string, traceId: string, stage: string, title: string, statusLabel: string) {
+  const current = otdEvidenceRecords.value.find(record => record.id === id || record.traceId === traceId)
+  if (!current) return
+  upsertOtdEvidenceChainRecord({
+    ...current,
+    stage,
+    title,
+    status: 'closed',
+    statusLabel,
+    createdAt: new Date().toISOString(),
+  })
+}
+
+function releaseBarcodeReworkGate() {
+  closeExistingBarcodeFreezeRecord(
+    'barcode-rework-WO-RUSH-9001-OP-10',
+    'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+    '扫码返工',
+    'WO-RUSH-9001 CNC 精加工 扫码返工复验通过',
+    '返工复验已通过'
+  )
+  closeExistingBarcodeFreezeRecord(
+    'barcode-hold-WO-RUSH-9001-OP-10-OP-20',
+    'TRACE-QR-WO-RUSH-9001-OP-10-HOLD-OP-20',
+    '交接冻结',
+    'WO-RUSH-9001 OP-10 到 OP-20 冻结已释放',
+    '交接冻结已释放'
+  )
+  closeExistingBarcodeFreezeRecord(
+    'barcode-capa-WO-RUSH-9001-OP-10',
+    'TRACE-QR-WO-RUSH-9001-OP-10-CAPA',
+    '质量CAPA',
+    'WO-RUSH-9001 CNC 精加工 扫码 CAPA 已验证',
+    'CAPA 已验证'
+  )
+  closeExistingBarcodeFreezeRecord(
+    'barcode-isolation-WO-RUSH-9001-OP-10',
+    'TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION',
+    '质量隔离',
+    'WO-RUSH-9001 CNC 精加工 AL-202605 隔离批次复验释放',
+    '隔离已解除'
+  )
+  closeExistingBarcodeFreezeRecord(
+    'barcode-rework-cost-WO-RUSH-9001-OP-10',
+    'TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST',
+    '返工成本',
+    'WO-RUSH-9001 CNC 精加工 返工工时成本已结算',
+    '成本已归档'
+  )
+  closeExistingBarcodeFreezeRecord(
+    'barcode-label-hold-WO-RUSH-9001-OP-10',
+    'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD',
+    '标签状态',
+    'WO-RUSH-9001 流转卡标签冻结已解除',
+    '冻结标签已解除'
+  )
+  const createdAt = new Date().toISOString()
+  upsertOtdEvidenceChainRecord({
+    id: 'barcode-recheck-WO-RUSH-9001-OP-10',
+    stage: '质量复验',
+    title: 'WO-RUSH-9001 CNC 精加工 返工复验放行',
+    summary: '扫码返工证据 TRACE-QR-WO-RUSH-9001-OP-10-REWORK 已完成复验：返工后首件尺寸和 Ra 粗糙度复检合格，允许释放下道接收。',
+    object: 'WO-RUSH-9001 / OP-10',
+    source: '质量闭环 / 复验放行 / 质量工程师 周工',
+    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RECHECK',
+    status: 'closed',
+    statusLabel: '复验已放行',
+    createdAt,
+  })
+  upsertOtdEvidenceChainRecord({
+    id: 'barcode-release-WO-RUSH-9001-OP-10-OP-20',
+    stage: '交接释放',
+    title: 'WO-RUSH-9001 OP-20 接收已释放',
+    summary: '质量复验放行后解除 OP-10 到 OP-20 的交接冻结，OP-20 装配复检可接收 30 件并按更新后的排产窗口开工。',
+    object: 'WO-RUSH-9001',
+    source: '质量闭环 / 工序交接 / OP-20',
+    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20',
+    status: 'ready',
+    statusLabel: 'OP-20 可接收',
+    createdAt,
+  })
+  upsertOtdEvidenceChainRecord({
+    id: 'barcode-schedule-release-WO-RUSH-9001-OP-20',
+    stage: '排产回写',
+    title: 'WO-RUSH-9001 OP-20 接收窗口已恢复',
+    summary: '质量冻结解除后，AI 排产可重新安排 OP-20 装配复检窗口，保留返工复验耗时并更新 OTD 复盘口径。',
+    object: 'WO-RUSH-9001 / OP-20',
+    source: '质量闭环 / AI 排产',
+    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
+    status: 'ready',
+    statusLabel: '后段可排',
+    createdAt,
+  })
+  upsertOtdEvidenceChainRecord({
+    id: 'barcode-label-release-WO-RUSH-9001-OP-10',
+    stage: '标签状态',
+    title: 'WO-RUSH-9001 流转卡标签已解冻',
+    summary: '实物流转卡标签状态已从质量冻结更新为复验放行，现场扫码可继续进入 OP-20 接收确认。',
+    object: 'WO-RUSH-9001',
+    source: '条码 / QR 打印 / 质量复验',
+    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
+    status: 'closed',
+    statusLabel: '质量冻结已解除',
+    createdAt,
+  })
+  refreshOtdEvidenceRecords()
+  barcodeReleaseMessage.value = '返工复验已放行：OP-20 接收、排产窗口和流转卡标签状态均已更新。'
 }
 
 async function showAnalysis(id: string) {
@@ -292,6 +660,11 @@ async function loadSpc() {
 }
 
 onMounted(async () => {
+  refreshOtdEvidenceRecords()
+  refreshQualityKnowledgeSample()
+  refreshQualityKnowledgeReuseDraft()
+  refreshQualityMrbDisposition()
+
   // 加载统计数据
   try {
     const s = await getQualityStatistics()
@@ -315,6 +688,7 @@ onMounted(async () => {
       { id: 'INS-005', workOrderId: 'WO-005', productCode: 'PRD-004', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 40, qualifiedQuantity: 40, defectQuantity: 0, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-12T11:00:00', passRate: 100 },
     ]
   }
+  syncQualityReworkFromInspections()
 
   // 异常数据
   try {
@@ -364,6 +738,330 @@ onMounted(async () => {
 .kpi-body { display: flex; flex-direction: column; }
 .kpi-value { font-size: 28px; font-weight: 700; line-height: 1.2; }
 .kpi-label { font-size: 13px; color: #888; }
+
+.barcode-quality-gate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.panel-heading,
+.quality-card-topline,
+.quality-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-heading span {
+  display: block;
+  margin-bottom: 3px;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.panel-heading h3,
+.barcode-quality-card h4,
+.barcode-quality-card p {
+  margin: 0;
+}
+
+.panel-heading h3 {
+  color: #111827;
+  font-size: 16px;
+}
+
+.panel-heading em,
+.quality-card-topline span,
+.quality-card-topline em,
+.quality-card-meta span {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.barcode-release-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff7ed;
+}
+
+.barcode-release-banner.released {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.barcode-release-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #9a3412;
+  font-size: 14px;
+}
+
+.barcode-release-banner.released strong {
+  color: #047857;
+}
+
+.barcode-release-banner p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.barcode-release-banner button {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid #16a34a;
+  border-radius: 4px;
+  background: #16a34a;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.barcode-release-banner button:hover {
+  background: #15803d;
+  border-color: #15803d;
+}
+
+.barcode-release-message {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  background: #fff;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.barcode-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.barcode-quality-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.barcode-quality-card.ready {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.barcode-quality-card.active {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.barcode-quality-card h4 {
+  color: #111827;
+  font-size: 14px;
+}
+
+.barcode-quality-card p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quality-card-meta code {
+  color: #1d4ed8;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.barcode-knowledge-sample-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.barcode-knowledge-sample-panel span {
+  display: block;
+  margin-bottom: 3px;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.barcode-knowledge-sample-panel h4,
+.barcode-knowledge-sample-panel p {
+  margin: 0;
+}
+
+.barcode-knowledge-sample-panel h4 {
+  color: #111827;
+  font-size: 14px;
+}
+
+.barcode-knowledge-sample-panel p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sample-dimensions,
+.sample-synced {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sample-dimensions span,
+.sample-synced span {
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.barcode-knowledge-sample-panel button {
+  grid-column: 1 / -1;
+  width: fit-content;
+  padding: 7px 12px;
+  border: 1px solid #0284c7;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.barcode-knowledge-sample-panel button:hover {
+  background: #0369a1;
+  border-color: #0369a1;
+}
+
+.sample-synced {
+  align-content: flex-start;
+}
+
+.sample-synced strong,
+.sample-synced code {
+  width: 100%;
+  color: #111827;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.sample-synced code {
+  color: #1d4ed8;
+}
+
+.reuse-draft-card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  background: #fbfaff;
+}
+
+.reuse-draft-card.synced {
+  border-color: #86efac;
+  background: #f7fef9;
+}
+
+.reuse-draft-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reuse-draft-heading strong {
+  flex: 0 0 auto;
+  color: #7c3aed;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.reuse-draft-card.synced .reuse-draft-heading strong {
+  color: #047857;
+}
+
+.reuse-match-grid,
+.reuse-effect-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reuse-match-grid span,
+.reuse-effect-metrics span {
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.reuse-draft-card.synced .reuse-match-grid span,
+.reuse-draft-card.synced .reuse-effect-metrics span {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.reuse-draft-result {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.reuse-draft-result strong,
+.reuse-draft-result code {
+  color: #111827;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.reuse-draft-result code {
+  color: #1d4ed8;
+}
+
+.reuse-draft-result ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 /* Cards */
 .board-grid {
@@ -553,5 +1251,7 @@ onMounted(async () => {
 /* 响应式 */
 @media (max-width: 900px) {
   .board-grid { grid-template-columns: 1fr; }
+  .barcode-release-banner { align-items: flex-start; flex-direction: column; }
+  .barcode-knowledge-sample-panel { grid-template-columns: 1fr; }
 }
 </style>

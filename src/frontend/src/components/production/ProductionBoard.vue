@@ -97,10 +97,13 @@
 
         <!-- 右侧详情 + 操作 -->
         <div class="wo-detail-panel">
-          <div v-if="!selectedWo" class="detail-empty">
-            <div class="empty-icon">📋</div>
-            <p>选择工单或扫码开始</p>
-          </div>
+          <template v-if="!selectedWo">
+            <div class="detail-empty">
+              <div class="empty-icon">📋</div>
+              <p>选择工单或扫码开始</p>
+            </div>
+            <ProductionExecutionTracePanel v-if="executionTraces.length" :traces="executionTraces" />
+          </template>
 
           <template v-else>
             <!-- 工单头部信息 -->
@@ -329,6 +332,7 @@ import {
   readBarcodeScanEvidenceRecords,
   type BarcodeScanEvidenceRecord,
 } from '../../utils/barcode-scan-evidence-sync'
+import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 
 const router = useRouter()
 const route = useRoute()
@@ -912,6 +916,29 @@ function writeBarcodeAnomalyEvidence(op: OperationInfoDto, context: BarcodeProdu
   return anomalyTraceId
 }
 
+function writeProductionCloseoutReviewEvidence(op: OperationInfoDto, onTime: boolean) {
+  const createdAt = new Date().toISOString()
+  const traceId = `TRACE-PROD-CLOSEOUT-${op.operationCode}`
+  upsertOtdEvidenceChainRecord({
+    id: `production-closeout-${op.operationId}`,
+    stage: '生产复核',
+    title: `${op.workOrderNumber} ${op.operationName} 完工复核`,
+    summary: `${op.workOrderNumber} 完工后已写入生产完工、质量联动和 OTD 证据链，建议排产页复核 ${op.operationCode} 后续窗口、质量门和已承诺交期。`,
+    object: op.workOrderNumber,
+    source: `生产报工 / ${user.value?.username ?? 'operator'}`,
+    traceId,
+    status: onTime ? 'closed' : 'active',
+    statusLabel: onTime ? '完工复核已提交' : 'OTD 风险待复核',
+    createdAt,
+  })
+  return {
+    traceId,
+    title: `${op.workOrderNumber} ${op.operationName} 完工复核`,
+    summary: `${op.workOrderNumber} 完工后已写入生产完工、质量联动和 OTD 证据链，建议排产页复核 ${op.operationCode} 后续窗口、质量门和已承诺交期。`,
+    createdAt,
+  }
+}
+
 function operationConstraints(op: OperationInfoDto) {
   if (isHeatTreatmentOperation(op)) {
     const block = readLaborQualificationBlockForOperation(op.workOrderNumber, op.operationCode, op.operationName)
@@ -1317,12 +1344,20 @@ async function confirmComplete() {
   const barcodeNonconformanceEvidence = barcodeContext && barcodeQualityGateEvidence && !barcodeQualityGateEvidence.passed
     ? writeBarcodeNonconformanceEvidence(dialog.op, barcodeContext, nextBarcodeOperation)
     : null
+  const productionCloseoutReviewEvidence = writeProductionCloseoutReviewEvidence(dialog.op, onTime)
   prependTrace({
     type: 'schedule',
     typeLabel: '排产回写',
     title: `${dialog.op.workOrderNumber} 完工进度已回写`,
-    detail: `${dialog.op.operationName} 完成 ${dialog.quantity} 件，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%。${barcodeCompletionEvidence ? `扫码完工 ${barcodeCompletionEvidence.completeTraceId} 与物料批次 ${barcodeCompletionEvidence.materialTraceId} 已进入 OTD 复盘。` : ''}${barcodeHandoffEvidence ? `下道 ${barcodeHandoffEvidence.nextOperationCode} ${barcodeHandoffEvidence.nextOperationName} 已生成交接证据 ${barcodeHandoffEvidence.handoffTraceId}。` : ''}${barcodeNonconformanceEvidence ? `质量门未放行，下道 ${barcodeNonconformanceEvidence.nextOperationCode} 已冻结，返工证据 ${barcodeNonconformanceEvidence.reworkTraceId}、隔离证据 ${barcodeNonconformanceEvidence.isolationTraceId}、成本证据 ${barcodeNonconformanceEvidence.costTraceId} 和标签状态 ${barcodeNonconformanceEvidence.labelTraceId} 已归档。` : ''}`,
-    tags: ['进度回写', onTime ? 'OTD 达成' : 'OTD 风险', ...(barcodeCompletionEvidence ? ['扫码完工', '批次追溯'] : []), ...(barcodeHandoffEvidence ? ['工序交接'] : []), ...(barcodeNonconformanceEvidence ? ['交接冻结', '返工分流', '质量隔离', '返工成本'] : [])],
+    detail: `${dialog.op.operationName} 完成 ${dialog.quantity} 件，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%。${barcodeCompletionEvidence ? `扫码完工 ${barcodeCompletionEvidence.completeTraceId} 与物料批次 ${barcodeCompletionEvidence.materialTraceId} 已进入 OTD 复盘。` : ''}${barcodeHandoffEvidence ? `下道 ${barcodeHandoffEvidence.nextOperationCode} ${barcodeHandoffEvidence.nextOperationName} 已生成交接证据 ${barcodeHandoffEvidence.handoffTraceId}。` : ''}${productionCloseoutReviewEvidence ? ` 生产复核 ${productionCloseoutReviewEvidence.traceId} 已写入 OTD 证据链，提醒排产页复核后续窗口。` : ''}${barcodeNonconformanceEvidence ? `质量门未放行，下道 ${barcodeNonconformanceEvidence.nextOperationCode} 已冻结，返工证据 ${barcodeNonconformanceEvidence.reworkTraceId}、隔离证据 ${barcodeNonconformanceEvidence.isolationTraceId}、成本证据 ${barcodeNonconformanceEvidence.costTraceId} 和标签状态 ${barcodeNonconformanceEvidence.labelTraceId} 已归档。` : ''}`,
+    tags: ['进度回写', onTime ? 'OTD 达成' : 'OTD 风险', ...(barcodeCompletionEvidence ? ['扫码完工', '批次追溯'] : []), ...(barcodeHandoffEvidence ? ['工序交接'] : []), ...(productionCloseoutReviewEvidence ? ['生产复核', 'OTD 复盘'] : []), ...(barcodeNonconformanceEvidence ? ['交接冻结', '返工分流', '质量隔离', '返工成本'] : [])],
+  })
+  prependTrace({
+    type: 'schedule',
+    typeLabel: '生产复核',
+    title: `${dialog.op.workOrderNumber} 完工复核已提交`,
+    detail: `${productionCloseoutReviewEvidence.summary}${onTime ? ' OTD 达成已锁定。' : ' 当前完工存在 OTD 风险，排产页需复核后续窗口。'}`,
+    tags: ['生产完工', onTime ? 'OTD 达成' : 'OTD 风险', '生产复核', '排产复核'],
   })
   prependTrace({
     type: 'quality',
@@ -1335,7 +1370,7 @@ async function confirmComplete() {
     id: `production-completion-${dialog.op.operationId}`,
     stage: '生产完工',
     title: `${dialog.op.workOrderNumber} ${dialog.op.operationName} 完工回写`,
-    summary: `${dialog.quantity} 件完工，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%，质检结果 ${dialog.inspectionResult}。`,
+    summary: `${dialog.quantity} 件完工，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%，质检结果 ${dialog.inspectionResult}。${productionCloseoutReviewEvidence.traceId} 已写入生产复核。`,
     object: dialog.op.workOrderNumber,
     source: `生产报工 / ${user.value?.username ?? 'operator'}`,
     traceId: `TRACE-PROD-COMPLETE-${dialog.op.operationCode}`,
@@ -1464,6 +1499,7 @@ async function applyBarcodeRouteContext() {
 
 onMounted(async () => {
   await loadWorkOrders()
+  applyPocPilotRunTrace()
   await applyBarcodeRouteContext()
 })
 
@@ -1487,6 +1523,23 @@ function loadDemoData() {
       executionTraces.value = []
     }
   }
+
+function applyPocPilotRunTrace() {
+  const pilotRun = readPocPilotRunRecord()
+  if (!pilotRun) return
+  executionTraces.value = [
+    {
+      id: `poc-pilot-${pilotRun.batchId}`,
+      type: 'schedule' as const,
+      typeLabel: 'POC 试点',
+      title: pilotRun.title,
+      detail: `${pilotRun.batchId} 已完成 ${pilotRun.sampleSize} 单真实工单运行，OTD ${pilotRun.actualOtd}；${pilotRun.checkpoints.map(checkpoint => `${checkpoint.module} ${checkpoint.evidence}`).join(' / ')}。`,
+      tags: ['真实工单', '排产采纳', '执行回写', '审计复盘'],
+      createdAt: new Date(pilotRun.createdAt).toLocaleString('zh-CN', { hour12: false }),
+    },
+    ...executionTraces.value.filter(trace => trace.id !== `poc-pilot-${pilotRun.batchId}`),
+  ].slice(0, 5)
+}
 </script>
 
 <style scoped>

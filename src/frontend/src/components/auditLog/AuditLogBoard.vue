@@ -4,6 +4,8 @@
       <h2 class="page-title">审计日志</h2>
     </div>
 
+    <AuditDecisionReplayPanel />
+
     <div class="toolbar">
       <select v-model="actionFilter" class="filter-select">
         <option value="">全部操作</option>
@@ -71,6 +73,7 @@
 import { ref, watch, onMounted } from 'vue'
 import type { AuditLog, AuditLogDetail } from '../../types/auditLog'
 import { getAuditLogs, getAuditLogDetail } from '../../api/auditLog'
+import AuditDecisionReplayPanel from './AuditDecisionReplayPanel.vue'
 
 const logs = ref<AuditLog[]>([])
 const detail = ref<AuditLogDetail | null>(null)

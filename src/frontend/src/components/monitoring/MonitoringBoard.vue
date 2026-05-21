@@ -39,6 +39,98 @@
         </div>
       </div>
 
+      <section class="shopfloor-situation" aria-label="现场态势图">
+        <div class="situation-header">
+          <div>
+            <span class="situation-eyebrow">现场态势图</span>
+            <h3>事件流驱动排产响应</h3>
+          </div>
+          <div class="situation-score">
+            <span>OTD 风险</span>
+            <strong>中</strong>
+          </div>
+        </div>
+
+        <div class="situation-flow">
+          <div
+            v-for="event in situationEvents"
+            :key="event.id"
+            class="situation-card"
+            :class="event.level"
+          >
+            <div class="situation-topline">
+              <span>{{ event.time }}</span>
+              <strong>{{ event.source }}</strong>
+            </div>
+            <h4>{{ event.title }}</h4>
+            <p>{{ event.impact }}</p>
+            <div class="situation-meta">
+              <span>{{ event.workOrder }}</span>
+              <span>{{ event.owner }}</span>
+              <span>{{ event.action }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="situation-response">
+          <div>
+            <span>Agent 建议</span>
+            <strong>锁定 CNC-001 当前任务，把 WO-RUSH-9001 插入锁定期后第一个 CNC 空窗。</strong>
+          </div>
+          <div class="situation-actions">
+            <button type="button" @click="syncSituationEvidence">同步态势证据</button>
+            <button type="button" class="escalate-btn" @click="escalateSituationResponse">升级为跨模块处置包</button>
+            <router-link to="/scheduling">查看重排建议</router-link>
+          </div>
+        </div>
+
+        <div class="situation-sync-note">
+          <strong>{{ situationSyncTitle }}</strong>
+          <span>{{ situationSyncMessage }}</span>
+        </div>
+
+        <div v-if="activeSituationEscalation" class="situation-escalation-card" aria-label="现场态势升级处置包">
+          <div>
+            <span>{{ activeSituationEscalation.statusLabel }}</span>
+            <strong>{{ activeSituationEscalation.title }}</strong>
+            <p>{{ activeSituationEscalation.summary }}</p>
+          </div>
+          <div class="escalation-meta">
+            <span>负责人：{{ activeSituationEscalation.owner }}</span>
+            <span>截止：{{ activeSituationEscalation.dueAt }}</span>
+            <span>影响：{{ activeSituationEscalation.workOrders }}</span>
+            <code>{{ activeSituationEscalation.auditId }} / {{ activeSituationEscalation.traceId }}</code>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="pocHypercareAcceptance" class="hypercare-watch" aria-label="POC Hypercare 稳定运行监控">
+        <div class="hypercare-watch-header">
+          <div>
+            <span class="situation-eyebrow">POC Hypercare</span>
+            <h3>上线后稳定运行监控</h3>
+            <p>{{ pocHypercareAcceptance.acceptanceGate }}</p>
+          </div>
+          <div class="hypercare-watch-state">
+            <span>{{ pocHypercareAcceptance.statusLabel }}</span>
+            <strong>{{ pocHypercareAcceptance.actualOtd }}</strong>
+            <em>{{ pocHypercareAcceptance.auditId }}</em>
+          </div>
+        </div>
+        <div class="hypercare-watch-grid">
+          <article v-for="monitor in pocHypercareAcceptance.monitors" :key="monitor.evidence" class="hypercare-watch-card" :class="monitor.status">
+            <span>{{ monitor.label }}</span>
+            <strong>{{ monitor.current }}</strong>
+            <p>目标 {{ monitor.target }}</p>
+            <code>{{ monitor.evidence }}</code>
+          </article>
+        </div>
+        <div class="hypercare-watch-actions">
+          <span>负责人：{{ pocHypercareAcceptance.owner }}</span>
+          <code>{{ pocHypercareAcceptance.traceId }}</code>
+        </div>
+      </section>
+
       <!-- 设备详情抽屉 -->
       <Teleport to="body">
         <div v-if="selectedEq" class="drawer-overlay" @click.self="selectedEq = null">
@@ -136,6 +228,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
+import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
+import {
+  readMonitoringSituationEscalations,
+  writeMonitoringSituationEscalation,
+  type MonitoringSituationEscalation,
+} from '../../utils/monitoring-situation-escalation-sync'
+import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 
 interface EquipmentMetric {
   id: string
@@ -167,6 +266,20 @@ interface EventItem {
   text: string
 }
 
+type SituationLevel = 'critical' | 'warning' | 'info'
+
+interface SituationEvent {
+  id: string
+  time: string
+  source: string
+  title: string
+  impact: string
+  workOrder: string
+  owner: string
+  action: string
+  level: SituationLevel
+}
+
 const connected = ref(false)
 const lastUpdate = ref('')
 const equipment = ref<EquipmentMetric[]>([])
@@ -176,6 +289,89 @@ const selectedEq = ref<EquipmentMetric | null>(null)
 const eventFilter = ref('all')
 let connection: signalR.HubConnection | null = null
 let demoInterval: ReturnType<typeof setInterval> | null = null
+const useDemoMonitoring = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+const situationSyncTitle = ref('等待同步')
+const situationSyncMessage = ref('同步后，现场事件会进入 OTD 复盘证据链，并可在审计回放中核对来源、对象和追踪编号。')
+const activeSituationEscalation = ref<MonitoringSituationEscalation | null>(null)
+const pocHypercareAcceptance = ref<PocHypercareAcceptanceRecord | null>(null)
+
+const situationEvents: SituationEvent[] = [
+  {
+    id: 'sf-cnc-load',
+    time: '08:42',
+    source: 'CNC-001',
+    title: '瓶颈负载超过 90%',
+    impact: '影响 WO-RUSH-9001 与 WO-DEMO-1002 的 CNC 精加工窗口，预计延期风险 +4h。',
+    workOrder: '影响 2 单',
+    owner: '调度员',
+    action: '生成重排',
+    level: 'critical',
+  },
+  {
+    id: 'sf-material',
+    time: '08:46',
+    source: 'M-AL-6061',
+    title: '齐套缺口仍需复核',
+    impact: '采购加急到料前，Agent 建议冻结急单后段并评估替代料 M-AL-6061B。',
+    workOrder: 'WO-RUSH-9001',
+    owner: '采购',
+    action: '加急收货',
+    level: 'warning',
+  },
+  {
+    id: 'sf-quality',
+    time: '08:51',
+    source: 'INS-003',
+    title: '热处理返工占用窗口',
+    impact: '返工任务需插入复验窗口，OTD 复盘需记录质量事件对排产的影响。',
+    workOrder: 'WO-003',
+    owner: '质量',
+    action: '复验排程',
+    level: 'info',
+  },
+]
+
+function syncSituationEvidence() {
+  const createdAt = new Date().toISOString()
+  for (const event of situationEvents) {
+    upsertOtdEvidenceChainRecord({
+      id: `monitoring-${event.id}`,
+      stage: '现场态势',
+      title: event.title,
+      summary: `${event.impact} 责任人：${event.owner}；响应动作：${event.action}。`,
+      object: event.workOrder,
+      source: `实时监控 / ${event.source}`,
+      traceId: `TRACE-SF-${event.id.toUpperCase()}`,
+      status: event.level === 'info' ? 'ready' : 'active',
+      statusLabel: event.level === 'info' ? '已纳入复盘' : '待处置',
+      createdAt,
+    })
+  }
+  situationSyncTitle.value = '现场态势证据已同步 OTD 复盘'
+  situationSyncMessage.value = `${situationEvents.length} 条现场事件已写入统一证据链，可在报表中心与审计日志核对。`
+}
+
+function escalateSituationResponse() {
+  const sourceEvent = situationEvents[0]
+  const record = writeMonitoringSituationEscalation({
+    sourceEventId: sourceEvent.id,
+    source: sourceEvent.source,
+    eventTitle: sourceEvent.title,
+    eventImpact: sourceEvent.impact,
+    workOrders: 'WO-RUSH-9001 / WO-DEMO-1002',
+    owner: sourceEvent.owner,
+    action: sourceEvent.action,
+    relatedEvents: situationEvents.map(event => ({
+      source: event.source,
+      title: event.title,
+      impact: event.impact,
+      owner: event.owner,
+    })),
+  })
+  activeSituationEscalation.value = record
+  situationSyncTitle.value = '现场态势已升级为跨模块处置包'
+  situationSyncMessage.value = `${record.auditId} 已写入风险队列、AI 排产事件队列和统一 OTD 证据链。`
+}
 
 const filteredEvents = computed(() => {
   if (eventFilter.value === 'all') return events.value
@@ -221,6 +417,13 @@ function addEvent(type: string, text: string) {
 }
 
 function connectSignalR() {
+  if (useDemoMonitoring) {
+    connected.value = true
+    loadDemoData()
+    addEvent('info', '实时监控演示数据已加载')
+    return
+  }
+
   connection = new signalR.HubConnectionBuilder()
     .withUrl('/hubs/monitoring', {
       accessTokenFactory: () => localStorage.getItem('aimes_token') ?? '',
@@ -266,6 +469,8 @@ function connectSignalR() {
 }
 
 function loadDemoData() {
+  if (demoInterval) clearInterval(demoInterval)
+
   const names = ['CNC-001 加工中心', 'CNC-002 加工中心', '注塑机-1号', '注塑机-2号', '装配线-1号', '装配线-2号', '热处理炉', '检测仪']
   const codes = ['CNC-001', 'CNC-002', 'INJ-001', 'INJ-002', 'ASM-001', 'ASM-002', 'HT-001', 'INS-001']
   const statuses = ['running', 'running', 'running', 'maintenance', 'running', 'idle', 'idle', 'running']
@@ -292,6 +497,7 @@ function loadDemoData() {
     yieldRate: 96.2,
     energyUsage: 185.4,
   }
+  lastUpdate.value = new Date().toLocaleTimeString('zh-CN')
 
   demoInterval = setInterval(() => {
     equipment.value = equipment.value.map(eq => ({
@@ -304,6 +510,17 @@ function loadDemoData() {
 }
 
 onMounted(() => {
+  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
+  const latestEscalation = readMonitoringSituationEscalations()[0]
+  if (latestEscalation) {
+    activeSituationEscalation.value = latestEscalation
+    situationSyncTitle.value = latestEscalation.status === 'closed'
+      ? '现场态势处置包已闭环'
+      : '现场态势处置包待跨模块处置'
+    situationSyncMessage.value = latestEscalation.status === 'closed'
+      ? `${latestEscalation.traceId} 已由风险队列关闭，现场态势保留已闭环留痕。`
+      : `${latestEscalation.auditId} 已写入风险队列、AI 排产和统一 OTD 证据链。`
+  }
   connectSignalR()
 })
 
@@ -334,6 +551,374 @@ onBeforeUnmount(() => {
 .kpi-label { font-size: 13px; color: #888; }
 .kpi-value { font-size: 28px; font-weight: 700; color: #333; }
 .kpi-value small { font-size: 14px; color: #999; font-weight: 400; }
+
+.shopfloor-situation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.situation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.situation-eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.situation-header h3,
+.situation-card h4,
+.situation-card p,
+.situation-response strong {
+  margin: 0;
+}
+
+.situation-header h3 {
+  color: #111827;
+  font-size: 16px;
+}
+
+.situation-score {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+}
+
+.situation-score strong {
+  font-size: 16px;
+}
+
+.situation-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.situation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 132px;
+  padding: 11px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #fafafa;
+}
+
+.situation-card.critical {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.situation-card.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.situation-card.info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.situation-topline,
+.situation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.situation-topline span,
+.situation-meta span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.situation-topline strong {
+  color: #111827;
+  font-size: 12px;
+}
+
+.situation-card h4 {
+  color: #111827;
+  font-size: 14px;
+}
+
+.situation-card p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.situation-response {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.situation-response div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.situation-response .situation-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.situation-response span {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.situation-response strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.situation-response a,
+.situation-response button {
+  padding: 6px 10px;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.situation-response button {
+  border-color: #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+}
+
+.situation-response button.escalate-btn {
+  border-color: #b45309;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.situation-sync-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.situation-sync-note strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.situation-sync-note span {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.situation-escalation-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.55fr);
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff7ed;
+}
+
+.situation-escalation-card div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.situation-escalation-card span {
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.situation-escalation-card strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.situation-escalation-card p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.situation-escalation-card code {
+  color: #1d4ed8;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hypercare-watch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+}
+
+.hypercare-watch-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.hypercare-watch-header h3,
+.hypercare-watch-header p {
+  margin: 0;
+}
+
+.hypercare-watch-header h3 {
+  color: #064e3b;
+  font-size: 16px;
+}
+
+.hypercare-watch-header p {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hypercare-watch-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.hypercare-watch-state span,
+.hypercare-watch-state em {
+  color: #047857;
+  font-size: 12px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.hypercare-watch-state strong {
+  color: #064e3b;
+  font-size: 24px;
+}
+
+.hypercare-watch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hypercare-watch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 118px;
+  padding: 10px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.hypercare-watch-card.watch {
+  border-color: #fed7aa;
+  background: #fffaf5;
+}
+
+.hypercare-watch-card span {
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hypercare-watch-card.watch span {
+  color: #c2410c;
+}
+
+.hypercare-watch-card strong {
+  color: #111827;
+  font-size: 16px;
+}
+
+.hypercare-watch-card p {
+  flex: 1;
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hypercare-watch-card code,
+.hypercare-watch-actions code {
+  color: #047857;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hypercare-watch-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.hypercare-watch-actions span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
 
 .monitoring-columns { display: flex; gap: 16px; flex: 1; min-height: 0; }
 .col-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
@@ -414,4 +999,48 @@ onBeforeUnmount(() => {
 .status-tag.status-maintenance { background: #e6f7ff; color: #1890ff; }
 .status-tag.status-fault { background: #fff2f0; color: #ff4d4f; }
 .status-tag.status-offline { background: #f5f5f5; color: #999; }
+
+@media (max-width: 1180px) {
+  .kpi-row,
+  .situation-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitoring-columns {
+    flex-direction: column;
+  }
+
+  .col-side {
+    width: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .kpi-row,
+  .situation-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .situation-header,
+  .situation-response,
+  .situation-escalation-card {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .hypercare-watch-header,
+  .hypercare-watch-actions {
+    flex-direction: column;
+  }
+
+  .hypercare-watch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .situation-response .situation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 </style>

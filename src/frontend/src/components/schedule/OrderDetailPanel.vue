@@ -66,6 +66,28 @@
           {{ order.progressPercentage }}%
         </span>
       </div>
+
+      <section class="schedule-explain-panel" aria-label="任务级排产解释">
+        <div class="explain-heading">
+          <span class="eyebrow">一键解释这个排产</span>
+          <h4>{{ explanation.workOrderNumber }} 为什么排在这里</h4>
+        </div>
+        <div class="explain-grid">
+          <div v-for="item in explanation.items" :key="item.label" class="explain-card">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+            <p>{{ item.detail }}</p>
+          </div>
+        </div>
+        <div class="explain-summary">
+          <strong>Agent 推荐理由</strong>
+          <p>{{ explanation.reason }}</p>
+          <strong>风险提示</strong>
+          <p>{{ explanation.risk }}</p>
+          <strong>可替代方案</strong>
+          <p>{{ explanation.alternative }}</p>
+        </div>
+      </section>
     </div>
 
     <div v-else class="panel-body empty">
@@ -79,11 +101,24 @@ import { computed } from 'vue'
 import type { WorkOrderDto } from '../../types/scheduling'
 import { formatDateTime } from '../../utils/date'
 
+export interface ScheduleTaskExplanation {
+  workOrderNumber: string
+  reason: string
+  risk: string
+  alternative: string
+  items: Array<{
+    label: string
+    value: string
+    detail: string
+  }>
+}
+
 const props = defineProps<{
   visible: boolean
   loading: boolean
   error?: string
   order: WorkOrderDto | null
+  explanation?: ScheduleTaskExplanation | null
 }>()
 
 defineEmits<{
@@ -100,6 +135,24 @@ const statusText = computed(() => {
     scheduled: '已排产',
   }
   return map[props.order?.status ?? ''] ?? props.order?.status ?? ''
+})
+
+const explanation = computed<ScheduleTaskExplanation>(() => {
+  if (props.explanation) return props.explanation
+  const orderNumber = props.order?.orderNumber ?? '-'
+  return {
+    workOrderNumber: orderNumber,
+    reason: '基于交期、设备能力、前置工序和锁定期保护生成当前排产位置。',
+    risk: '未检测到额外风险；如物料或设备状态变化，需要重新评估。',
+    alternative: '可在锁定期后尝试换设备或加班插入，并记录人工调整原因。',
+    items: [
+      { label: '交期', value: props.order?.plannedEndDate ? formatDateTime(props.order.plannedEndDate) : '-', detail: '按承诺交期倒排，优先保护临近交付订单。' },
+      { label: '设备', value: props.order?.routeCode || '标准工艺设备', detail: '匹配当前工艺路线的设备能力。' },
+      { label: '前置工序', value: '已满足', detail: '前序完成后才允许进入当前工序窗口。' },
+      { label: '缺料', value: '未阻塞', detail: '当前排产假设关键物料可齐套。' },
+      { label: '瓶颈', value: '需关注', detail: '若命中瓶颈设备，Agent 会优先保护连续加工窗口。' },
+    ],
+  }
 })
 </script>
 
@@ -228,5 +281,76 @@ const statusText = computed(() => {
   background: #1890ff;
   border-radius: 4px;
   transition: width 0.3s;
+}
+
+.schedule-explain-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.explain-heading {
+  margin-bottom: 10px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.explain-heading h4 {
+  margin: 0;
+  color: #111827;
+  font-size: 14px;
+}
+
+.explain-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.explain-card {
+  padding: 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.explain-card span,
+.explain-summary strong {
+  display: block;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.explain-card strong {
+  display: block;
+  margin: 3px 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.explain-card p,
+.explain-summary p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.explain-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #dbeafe;
 }
 </style>

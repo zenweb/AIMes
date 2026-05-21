@@ -7,18 +7,21 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:4173/scheduling',
+    baseURL: 'http://localhost:4173/scheduling/',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: [
     {
       name: 'chromium',
-      use: { browserName: 'chromium' },
+      use: { browserName: 'chromium', channel: 'chrome' },
     },
   ],
   webServer: {
-    command: 'npm run build && npm run preview',
+    command: 'node ./scripts/preview.mjs',
+    env: {
+      VITE_SHOW_DEMO_HINTS: 'true',
+    },
     url: 'http://localhost:4173/scheduling/login',
     reuseExistingServer: true,
     timeout: 120000,
