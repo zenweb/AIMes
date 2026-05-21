@@ -355,8 +355,9 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await page.locator('.send-btn').click()
 
     const chat = page.locator('.chat-panel')
-    await expect(chat.getByText('故障假设：CNC-001 停机 4 小时。')).toBeVisible()
+    await expect(chat.getByText('设备停机影响：CNC-001 4 小时场景。')).toBeVisible()
     await expect(chat.getByText(/WO-2026-0042 \/ WO-RUSH-9001 \/ WO-DEMO-1001/)).toBeVisible()
+    await expect(chat.getByText(/尚未读取到设备停机证据/)).toBeVisible()
     await expect(chat.getByText(/CNC-003.*换线增加约 25 分钟/)).toBeVisible()
     await expect(chat.getByText(/设备故障分流/)).toBeVisible()
     await expect(chat.getByText(/排产锁定期策略 8h/)).toBeVisible()
@@ -367,5 +368,27 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page).toHaveURL(/\/scheduling\/equipment$/)
     await expect(page.locator('.equipment-board')).toBeVisible()
     await expect(chat.getByText(/核对 CNC-001 停机诊断和瓶颈保护策略/)).toBeVisible()
+  })
+
+  test('业务问答：设备停机证据生成后解释 CNC-001 影响', async ({ page }) => {
+    await page.goto('equipment', { waitUntil: 'commit' })
+    await page.waitForSelector('.equipment-board', { timeout: 20000 })
+    const panel = page.locator('.equipment-impact-panel')
+    await panel.getByRole('button', { name: '标记故障并同步排产' }).click()
+    await expect(panel.getByText('设备故障已同步 AI 排产')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('如果 CNC-001 故障 4 小时会怎样？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('设备停机影响：CNC-001 4 小时场景。')).toBeVisible()
+    await expect(chat.getByText(/4h 停机影响 WO-2026-0042 \/ WO-RUSH-9001 \/ WO-DEMO-1001/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-EQ-DOWNTIME-CNC-001/)).toBeVisible()
+    await expect(chat.getByText(/待维护/)).toBeVisible()
+    await expect(chat.getByText(/设备维护 \/ 瓶颈保护/)).toBeVisible()
+    await expect(chat.getByText(/尚未读取到设备停机证据/)).not.toBeVisible()
   })
 })

@@ -384,6 +384,16 @@ function latestKittingEvidenceForRushOrder(): OtdEvidenceChainItem | null {
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
+function latestEquipmentDowntimeEvidenceForCnc001(): OtdEvidenceChainItem | null {
+  return readOtdEvidenceChainRecords()
+    .filter(record =>
+      record.stage === '设备维护'
+      && record.title.includes('CNC-001')
+      && record.traceId.includes('TRACE-EQ-DOWNTIME-CNC-001')
+    )
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
 function buildKittingDelayLines() {
   const evidence = latestKittingEvidenceForRushOrder()
   if (!evidence) {
@@ -402,6 +412,22 @@ function buildKittingDelayLines() {
   return [
     `- 主因：\`${evidence.object}\` 仍存在 \`M-AL-6061\` 齐套风险，当前状态 ${evidence.statusLabel}。`,
     `- 齐套证据：${evidence.summary}`,
+  ]
+}
+
+function buildEquipmentDowntimeLines() {
+  const evidence = latestEquipmentDowntimeEvidenceForCnc001()
+  if (!evidence) {
+    return [
+      '- 直接影响：`WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001` 的 CNC 精加工窗口被压缩。',
+      '- 停机证据：尚未读取到设备停机证据，请先在设备维护点击“标记故障并同步排产”。',
+      '- 交期影响：若不重排，急单预计新增延期 +4h，低优先级工单至少后移 1 个班次。',
+    ]
+  }
+  return [
+    `- 直接影响：${evidence.summary}`,
+    `- 停机证据：${evidence.traceId} / ${evidence.statusLabel} / ${evidence.source}。`,
+    `- 影响对象：${evidence.object}。`,
   ]
 }
 
@@ -740,11 +766,11 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if ((q.includes('cnc-01') || q.includes('cnc-001') || q.includes('cnc')) && (q.includes('故障') || q.includes('停机')) && (q.includes('4') || q.includes('四'))) {
+    const downtimeLines = buildEquipmentDowntimeLines()
     return [
-      '**故障假设：CNC-001 停机 4 小时。**',
+      '**设备停机影响：CNC-001 4 小时场景。**',
       '',
-      '- 直接影响：`WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001` 的 CNC 精加工窗口被压缩。',
-      '- 交期影响：若不重排，急单预计新增延期 +4h，低优先级工单至少后移 1 个班次。',
+      ...downtimeLines,
       '- 可替代设备：`CNC-002` 可承接标准件；`CNC-003` 可拆单分流，但换线增加约 25 分钟。',
       '- Agent 推荐：把维护窗口放入 22:00-02:00 夜班，保护锁定期内任务不动，锁定期后生成换设备 + 加班组合方案。',
       '- 审计要求：调度员采纳后需要填写“设备故障分流”原因，进入 AI 决策回放。',
