@@ -246,6 +246,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { readAssistantCitationTraces } from '../../utils/knowledge-citations'
+import type {
+  KnowledgeGovernanceSourceDocument,
+  KnowledgeIndexStatus,
+} from '../../utils/knowledge-governance-sync'
 import {
   isQualityKnowledgeGrayRepublishEvidence,
   type QualityKnowledgeGrayReleaseDecisionRecord,
@@ -253,19 +257,7 @@ import {
   type QualityKnowledgeRetrainingVersionRecord,
 } from '../../utils/quality-knowledge-sample-sync'
 
-export type KnowledgeIndexStatus = 'indexed' | 'pending' | 'failed'
-
-export interface KnowledgeGovernanceDocument {
-  id: string
-  title: string
-  category: string
-  version: string
-  summary: string
-  indexStatus: KnowledgeIndexStatus
-  validUntil: string
-  freshnessStatus: '有效' | '即将过期' | '已过期'
-  references: string[]
-}
+export type KnowledgeGovernanceDocument = KnowledgeGovernanceSourceDocument
 
 const props = defineProps<{
   documents: KnowledgeGovernanceDocument[]

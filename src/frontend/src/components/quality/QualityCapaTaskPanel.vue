@@ -20,6 +20,33 @@
       <p>{{ primaryCause.evidence }}</p>
     </div>
 
+    <div
+      v-if="assistantRecoveryPackage"
+      class="assistant-quality-closure-card"
+      :class="{ closed: assistantRecoveryPackage.qualityActionStatus === 'closed' }"
+    >
+      <div>
+        <span>助手执行包质量责任</span>
+        <strong>{{ assistantRecoveryPackage.title }}</strong>
+        <p>{{ assistantRecoveryPackage.qualityActionSummary ?? '质量闭环需确认替代料首件检验与 OP-20 装配扭矩复核窗口，回写后排产和风险队列会读取同一责任动作结果。' }}</p>
+        <div class="assistant-quality-meta">
+          <code>{{ assistantRecoveryPackage.auditCode }}</code>
+          <code>{{ assistantRecoveryPackage.qualityActionTraceId ?? 'TRACE-QA-RECOVERY-FIRST-ARTICLE' }}</code>
+        </div>
+      </div>
+      <button
+        v-if="assistantRecoveryPackage.qualityActionStatus !== 'closed'"
+        type="button"
+        @click="closeAssistantQualityAction"
+      >
+        确认首件复核闭环
+      </button>
+      <div v-else class="assistant-quality-result">
+        <span>{{ assistantRecoveryPackage.qualityActionAuditCode }}</span>
+        <strong>{{ assistantRecoveryPackage.firstArticleRecord }}</strong>
+      </div>
+    </div>
+
     <div v-if="props.qualityKnowledgeSample" class="sample-reuse-card">
       <div>
         <span>扫码质量样本</span>
@@ -278,6 +305,11 @@ import { computed, onMounted, ref } from 'vue'
 import type { RootCauseItemDto } from '../../types/quality'
 import { writeQualityCapaClosure } from '../../utils/quality-capa-sync'
 import {
+  closeAssistantRecoveryQualityAction,
+  readAssistantRecoveryPackages,
+  type AssistantRecoveryPackage,
+} from '../../utils/assistant-action-package-sync'
+import {
   acceptQualityKnowledgeRecommendation,
   buildQualityKnowledgeReuseRanking,
   closeLowScoreQualityKnowledgeReviewQueueRecord,
@@ -364,6 +396,7 @@ const reuseClosure = ref<QualityKnowledgeReuseClosureRecord | null>(readLatestQu
 const reviewQueue = ref<QualityKnowledgeReviewQueueRecord | null>(readLatestQualityKnowledgeReviewQueueRecord())
 const recommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>(readQualityKnowledgeRecommendationFeedbackRecords())
 const grayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>(readQualityKnowledgeGrayReleaseDecisionRecords())
+const assistantRecoveryPackages = ref<AssistantRecoveryPackage[]>(readAssistantRecoveryPackages())
 
 const openCount = computed(() =>
   tasks.value.filter(task => task.status !== 'verified').length
@@ -391,6 +424,9 @@ const latestGrayReleaseDecision = computed(() =>
     record.targetWorkOrderId === 'WO-DEMO-1018'
     && record.operationCode === 'OP-20'
   ) ?? null
+)
+const assistantRecoveryPackage = computed(() =>
+  assistantRecoveryPackages.value.find(record => record.workOrders.includes('WO-RUSH-9001')) ?? null
 )
 
 function statusText(status: CapaStatus) {
@@ -472,11 +508,21 @@ function acceptPublishedRecommendation(item: QualityKnowledgeReuseRankingItem) {
   records.value.unshift(`${feedback.auditId} 已回写推荐采纳：${feedback.traceId}，下一轮训练 ${feedback.nextTrainingTraceId}。`)
 }
 
+function closeAssistantQualityAction() {
+  if (!assistantRecoveryPackage.value) return
+  const updated = closeAssistantRecoveryQualityAction(assistantRecoveryPackage.value.id)
+  if (!updated) return
+  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
+  latestClosureMessage.value = updated.qualityActionSummary ?? '交期恢复执行包质量责任动作已闭合。'
+  records.value.unshift(`${updated.qualityActionAuditCode} 已回写助手执行包质量责任动作：${updated.qualityActionTraceId}`)
+}
+
 onMounted(() => {
   reuseClosure.value = readLatestQualityKnowledgeReuseClosure()
   reviewQueue.value = readLatestQualityKnowledgeReviewQueueRecord()
   recommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
   grayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
+  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
 })
 </script>
 
@@ -543,7 +589,8 @@ h3 {
 .root-cause-strip p,
 .task-card,
 .capa-trace,
-.sample-reuse-card {
+.sample-reuse-card,
+.assistant-quality-closure-card {
   padding: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
@@ -566,6 +613,83 @@ h3 {
   margin-top: 4px;
   color: #111827;
   font-size: 16px;
+}
+
+.assistant-quality-closure-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 10px;
+  align-items: center;
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.assistant-quality-closure-card.closed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.assistant-quality-closure-card span {
+  display: block;
+  margin-bottom: 4px;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.assistant-quality-closure-card strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.assistant-quality-closure-card p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assistant-quality-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.assistant-quality-meta code,
+.assistant-quality-result span,
+.assistant-quality-result strong {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ffedd5;
+  color: #9a3412;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.assistant-quality-closure-card button {
+  padding: 7px 10px;
+  border: 1px solid #ea580c;
+  border-radius: 4px;
+  background: #ea580c;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.assistant-quality-result {
+  display: grid;
+  gap: 5px;
+  min-width: 220px;
+}
+
+.assistant-quality-result span,
+.assistant-quality-result strong {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .sample-reuse-card {

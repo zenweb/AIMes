@@ -40,6 +40,13 @@ export interface AssistantRecoveryPackage {
   purchaseActionClosedAt?: string
   purchaseActionClosedBy?: string
   purchaseOrderNumber?: string
+  qualityActionStatus?: 'pending' | 'closed'
+  qualityActionAuditCode?: string
+  qualityActionTraceId?: string
+  qualityActionSummary?: string
+  qualityActionClosedAt?: string
+  qualityActionClosedBy?: string
+  firstArticleRecord?: string
   closureAuditCode?: string
   closureTraceId?: string
   closureSummary?: string
@@ -214,6 +221,63 @@ export function closeAssistantRecoveryPurchaseAction(
     traceId: purchaseActionTraceId,
     status: 'closed',
     statusLabel: '采购动作已闭合',
+    createdAt: closedAt,
+  })
+
+  return updated
+}
+
+export function closeAssistantRecoveryQualityAction(
+  id: string,
+  actor = '质量工程师 周工',
+  firstArticleRecord = 'FAI-WO-RUSH-9001-OP20-20260521',
+): AssistantRecoveryPackage | null {
+  if (!canUseStorage()) return null
+  const current = readRawAssistantRecoveryPackages().find(item => item.id === id)
+  if (!current) return null
+  if (current.qualityActionStatus === 'closed') return current
+
+  const closedAt = new Date().toISOString()
+  const qualityActionAuditCode = 'AUD-CHAT-RECOVERY-QUALITY-CLOSURE-20260521-001'
+  const qualityActionTraceId = 'TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521'
+  const qualityActionSummary = `${actor} 已确认 ${firstArticleRecord} 首件检验合格，OP-20 装配扭矩复核窗口保留，交期恢复执行包中的质量闭环责任动作已闭合。`
+  const updated: AssistantRecoveryPackage = {
+    ...current,
+    status: current.status ?? 'active',
+    statusLabel: current.status === 'closed' ? current.statusLabel : '质量动作已闭合',
+    qualityActionStatus: 'closed',
+    qualityActionAuditCode,
+    qualityActionTraceId,
+    qualityActionSummary,
+    qualityActionClosedAt: closedAt,
+    qualityActionClosedBy: actor,
+    firstArticleRecord,
+    dispatchSteps: current.dispatchSteps.map(step =>
+      step.module === '质量闭环'
+        ? {
+            ...step,
+            status: 'closed',
+            result: `${firstArticleRecord} 首件合格，OP-20 扭矩复核窗口已保留。`,
+            closedAt,
+            evidence: qualityActionTraceId,
+          }
+        : step,
+    ),
+  }
+
+  const next = [updated, ...readRawAssistantRecoveryPackages().filter(item => item.id !== id)].slice(0, MAX_PACKAGES)
+  window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(next))
+
+  upsertOtdEvidenceChainRecord({
+    id: `assistant-recovery-quality-${updated.id}`,
+    stage: '助手质量回写',
+    title: `${updated.title}质量动作已闭合`,
+    summary: `${qualityActionSummary} 原执行包预计 OTD 改善 ${updated.otdImpact}，延期风险 ${updated.delayImpact}。`,
+    object: updated.workOrders,
+    source: `质量闭环 / ${actor}`,
+    traceId: qualityActionTraceId,
+    status: 'closed',
+    statusLabel: '质量动作已闭合',
     createdAt: closedAt,
   })
 

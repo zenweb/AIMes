@@ -379,6 +379,229 @@ test.describe('Admin Agent 治理', () => {
     await expect(page.locator('.audit-replay-panel')).toBeVisible()
   })
 
+  test('AI 助手动作审计进入 Agent 治理清单', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_assistant_action_audits', JSON.stringify([
+        {
+          id: 'AUD-CHAT-RECOVERY-PACKAGE-20260521-001-1',
+          actionId: 'create-delivery-recovery-package',
+          label: '生成交期恢复执行包',
+          type: 'delivery_recovery_package',
+          actor: 'admin',
+          role: 'Admin',
+          targetRoute: '/scheduling',
+          auditCode: 'AUD-CHAT-RECOVERY-PACKAGE-20260521-001',
+          traceId: 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521',
+          resultMessage: '已生成 WO-RUSH-9001 交期恢复执行包，包含排产、风险、采购和质量四个责任动作。',
+          permitted: true,
+          createdAt: '2026-05-22T09:00:00.000Z',
+        },
+        {
+          id: 'AUD-CHAT-ANOMALY-20260520-1',
+          actionId: 'create-anomaly-card',
+          label: '创建异常处置卡',
+          type: 'create_anomaly_card',
+          actor: 'operator1',
+          role: 'Operator',
+          targetRoute: '/anomaly',
+          auditCode: 'AUD-CHAT-ANOMALY-20260520',
+          resultMessage: '已创建 WO-RUSH-9001 CNC 精加工现场异常处置卡，并打开异常管理现场事件中心。',
+          permitted: false,
+          createdAt: '2026-05-22T09:05:00.000Z',
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '助手动作审计' }).getByText('2')).toBeVisible()
+    await expect(panel.locator('.agent-metric').filter({ hasText: '助手拒绝动作' }).getByText('1')).toBeVisible()
+    await expect(panel.getByRole('heading', { name: 'AI 助手动作治理' })).toBeVisible()
+    const recoveryCard = panel.locator('.assistant-action-card').filter({ hasText: '生成交期恢复执行包' })
+    await expect(recoveryCard.getByText('交期恢复包')).toBeVisible()
+    await expect(recoveryCard.getByText('已执行')).toBeVisible()
+    await expect(recoveryCard.getByText('admin / Admin')).toBeVisible()
+    await expect(recoveryCard.getByText('/scheduling')).toBeVisible()
+    await expect(recoveryCard.getByText('AUD-CHAT-RECOVERY-PACKAGE-20260521-001')).toBeVisible()
+    await expect(recoveryCard.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521')).toBeVisible()
+    const rejectedCard = panel.locator('.assistant-action-card').filter({ hasText: '创建异常处置卡' })
+    await expect(rejectedCard.locator('.action-topline span').getByText('异常处置', { exact: true })).toBeVisible()
+    await expect(rejectedCard.getByText('已拒绝')).toBeVisible()
+    await expect(rejectedCard.getByText('operator1 / Operator')).toBeVisible()
+    await expect(rejectedCard.getByText('AUD-CHAT-ANOMALY-20260520')).toBeVisible()
+  })
+
+  test('外协承诺包进入 Agent 治理并可跳转到采购与排产', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
+        {
+          id: 'outsourcing-commitment-product-flange',
+          sourceKpiId: 'product-flange',
+          dimensionLabel: '产品族',
+          targetName: '法兰盘 DN100',
+          title: '法兰盘 DN100 外协承诺包',
+          auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
+          traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
+          actor: 'report.agent',
+          baselineOtd: 68,
+          agentOtd: 73,
+          lift: 5,
+          delayedReduced: 0,
+          statusLabel: '外协承诺待到货',
+          commitment: '法兰盘 DN100 外协承诺口径：华东精密外协厂将按 2026-05-23 交付，当前仍保留厂内延期口径。',
+          owner: '采购 / 计划联合确认',
+          dueAt: '2026-05-23',
+          summary: '外协等待未闭环转为外协承诺口径，保留 TRACE-KPI-PRODUCT-FLANGE-OTD-20260521 作为原始 KPI 证据。',
+          actions: [
+            {
+              module: '外协协同',
+              owner: '采购 / 计划',
+              action: '向 华东精密外协厂 锁定 法兰盘 DN100 的外协承诺日期 2026-05-23',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-20260521',
+            },
+          ],
+          partnerName: '华东精密外协厂',
+          promiseDate: '2026-05-23',
+          affectedOrders: 'WO-DEMO-1013',
+          sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
+          createdAt: '2026-05-22T09:00:00.000Z',
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '外协承诺包' }).getByText('1 条 / 外协承诺待到货')).toBeVisible()
+    const outsourcingCard = panel.locator('.outsourcing-governance-card').filter({ hasText: '法兰盘 DN100 外协承诺包' })
+    await expect(outsourcingCard).toBeVisible()
+    await expect(outsourcingCard.getByText('华东精密外协厂 / 2026-05-23')).toBeVisible()
+    await expect(outsourcingCard.getByText('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001')).toBeVisible()
+    await expect(outsourcingCard.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
+    await outsourcingCard.getByRole('button', { name: '查看采购协同' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/purchase$/)
+    await page.goBack()
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await outsourcingCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
+  })
+
+  test('交期恢复执行包进入 Agent 治理并可跳转到排产风险采购与质量', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_assistant_recovery_packages', JSON.stringify([
+        {
+          id: 'wo-rush-9001-delivery-recovery',
+          title: 'WO-RUSH-9001 交期恢复执行包',
+          auditCode: 'AUD-CHAT-RECOVERY-PACKAGE-20260521-001',
+          traceId: 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521',
+          actor: 'admin',
+          role: 'Admin',
+          workOrders: 'WO-RUSH-9001 / WO-DEMO-1002 / WO-2026-0042',
+          priority: 'critical',
+          owner: '生产经理审批',
+          dueAt: '今日 15:30',
+          scheduleWindow: '锁定期后第一个 CNC 空窗 + 夜班加班',
+          scheduleAction: '保护 8h 锁定期，释放 M-AL-6061B 替代料复核，把 WO-RUSH-9001 插入 CNC-003 夜班窗口，并后移低优先级标准件。',
+          riskImpact: '急单、缺料和 CNC-001 维护窗口叠加，若不处置会让 30 单样本从 96% 回落到 82% OTD。',
+          riskSuggestion: '风险队列转生产经理审批，采购确认替代批次，调度员采纳锁定期后插入方案，质量保留首件复核。',
+          otdImpact: '+14%',
+          delayImpact: '-4 单延期风险',
+          changeoverImpact: '+20min 可控',
+          status: 'active',
+          statusLabel: '质量动作已闭合',
+          purchaseActionStatus: 'closed',
+          purchaseActionAuditCode: 'AUD-CHAT-RECOVERY-PURCHASE-CLOSURE-20260521-001',
+          purchaseActionTraceId: 'TRACE-CHAT-RECOVERY-PURCHASE-M-AL-6061-RECEIVED-20260521',
+          purchaseActionSummary: '采购 王工 已确认 PO-RUSH-20260519 加急收货，M-AL-6061 齐套缺口清零，交期恢复执行包中的采购协同责任动作已闭合。',
+          qualityActionStatus: 'closed',
+          qualityActionAuditCode: 'AUD-CHAT-RECOVERY-QUALITY-CLOSURE-20260521-001',
+          qualityActionTraceId: 'TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521',
+          qualityActionSummary: '质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格，OP-20 装配扭矩复核窗口保留，交期恢复执行包中的质量闭环责任动作已闭合。',
+          firstArticleRecord: 'FAI-WO-RUSH-9001-OP20-20260521',
+          closureAuditCode: 'AUD-CHAT-RECOVERY-PACKAGE-CLOSURE-20260521-001',
+          closureTraceId: 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521',
+          closureSummary: '调度员 李工 已确认排产、风险、采购和质量四个责任动作完成交接，WO-RUSH-9001 恢复方案进入 OTD 复盘闭环。',
+          closedAt: '2026-05-22T09:20:00.000Z',
+          closedBy: '调度员 李工',
+          summary: 'AI 生产助手把最高风险工单、缺料、设备维护和质量复核合并成一张可执行动作包，要求排产、采购、风险和质量同时回写证据。',
+          dispatchSteps: [
+            {
+              module: 'AI 排产',
+              owner: '调度员 李工',
+              action: '生成锁定期后插入 + CNC-003 分流 + 夜班加班建议',
+              evidence: 'TRACE-SCH-RECOVERY-WO-RUSH-9001',
+              status: 'closed',
+              result: '建议已采纳',
+              closedAt: '2026-05-22T09:18:00.000Z',
+            },
+            {
+              module: '风险预警',
+              owner: '生产经理审批',
+              action: '把急单、缺料、设备维护窗口升级为跨部门处置项',
+              evidence: 'TRACE-RISK-RECOVERY-WO-RUSH-9001',
+              status: 'closed',
+              result: '风险已关闭',
+              closedAt: '2026-05-22T09:18:10.000Z',
+            },
+            {
+              module: '采购协同',
+              owner: '采购 王工',
+              action: '确认 M-AL-6061B 替代批次和到料承诺',
+              evidence: 'TRACE-PO-RECOVERY-M-AL-6061B',
+              status: 'closed',
+              result: '到料闭合',
+              closedAt: '2026-05-22T09:18:20.000Z',
+            },
+            {
+              module: '质量闭环',
+              owner: '质量工程师 周工',
+              action: '保留替代料首件检验与 OP-20 装配扭矩复核窗口',
+              evidence: 'TRACE-QA-RECOVERY-FIRST-ARTICLE',
+              status: 'closed',
+              result: '首件合格',
+              closedAt: '2026-05-22T09:18:30.000Z',
+            },
+          ],
+          createdAt: '2026-05-22T09:00:00.000Z',
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '交期恢复包' }).getByText('1 条 / 质量动作已闭合')).toBeVisible()
+    const recoveryCard = panel.locator('.assistant-package-card').filter({ hasText: 'WO-RUSH-9001 交期恢复执行包' })
+    await expect(recoveryCard).toBeVisible()
+    await expect(recoveryCard.getByText('生产经理审批')).toBeVisible()
+    await expect(recoveryCard.getByText('AUD-CHAT-RECOVERY-PACKAGE-20260521-001')).toBeVisible()
+    await expect(recoveryCard.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')).toBeVisible()
+    await expect(recoveryCard.getByText('采购责任动作')).toBeVisible()
+    await expect(recoveryCard.getByText('质量责任动作')).toBeVisible()
+    await recoveryCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
+    await page.goBack()
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await recoveryCard.getByRole('button', { name: '查看风险预警' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/risk$/)
+    await page.goBack()
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await recoveryCard.getByRole('button', { name: '查看采购协同' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/purchase$/)
+    await page.goBack()
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await recoveryCard.getByRole('button', { name: '查看质量闭环' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/quality$/)
+  })
+
   test('客户 POC 证据进入 Agent 治理批次与审计编号', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_customer_order_import', JSON.stringify({
@@ -534,6 +757,30 @@ test.describe('Admin Agent 治理', () => {
     await expect(knowledgeCard.getByText('V1.1 -> V1.2')).toBeVisible()
     await expect(knowledgeCard.getByText('AUD-KG-REINDEX-20260520-001')).toBeVisible()
     await expect(knowledgeCard.getByText('AI 生产助手 / 设备维护 / 风险预警 / AI 排产')).toBeVisible()
+  })
+
+  test('知识待治理提醒可从 Agent 治理跳转到文档治理', async ({ page }) => {
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '知识待治理' }).getByText('2')).toBeVisible()
+    const governanceLane = panel.locator('.knowledge-governance-lane')
+    await expect(governanceLane.getByText('2 待治理 / 0 已复核')).toBeVisible()
+    const maintenanceCard = governanceLane.locator('.knowledge-pending-card').filter({ hasText: 'CNC-01 主轴维护手册' })
+    await expect(maintenanceCard.getByText('已过期')).toBeVisible()
+    await expect(maintenanceCard.getByText('待索引')).toBeVisible()
+    await expect(maintenanceCard.getByText('设备维护 / 风险预警 / AI 排产')).toBeVisible()
+    await expect(maintenanceCard.getByText(/复核有效期并重建 RAG 索引/)).toBeVisible()
+    const torqueCard = governanceLane.locator('.knowledge-pending-card').filter({ hasText: '装配扭矩检验规范' })
+    await expect(torqueCard.getByText('即将过期')).toBeVisible()
+    await expect(torqueCard.getByText('已索引')).toBeVisible()
+    await expect(torqueCard.getByText(/到期前复核检验窗口和复验规则/)).toBeVisible()
+
+    await governanceLane.getByRole('button', { name: '打开文档治理' }).click()
+    await page.waitForURL(/\/scheduling\/knowledge\/documents$/)
+    await expect(page.locator('.upload-page')).toBeVisible()
+    await expect(page.locator('.knowledge-governance-panel')).toBeVisible()
+    await expect(page.locator('.knowledge-governance-panel').getByRole('heading', { name: 'CNC-01 主轴维护手册' })).toBeVisible()
   })
 
   test('质量知识低分复核规则进入 Agent 策略治理', async ({ page }) => {

@@ -115,9 +115,9 @@ test.describe('Audit 审计决策回放', () => {
 
     const detail = panel.locator('.replay-detail')
     await expect(detail.getByText('TRACE-PROD-COMPLETE-OP-020', { exact: true })).toBeVisible()
-    await expect(detail.getByText(/生产完工 阶段生成证据/)).toBeVisible()
-    await expect(detail.getByText(/报表中心 CSV 与审计回放均可核对该记录/)).toBeVisible()
-    await expect(detail.getByText(/OTD 复盘证据链已归档/)).toBeVisible()
+    await expect(detail.getByText(/生产完工 阶段生成执行证据/)).toBeVisible()
+    await expect(detail.getByText(/当前状态为 OTD 达成，审计回放要求核对排产页复核、质量门放行和承诺交期是否仍成立/)).toBeVisible()
+    await expect(detail.getByText(/留痕状态：生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档/)).toBeVisible()
   })
 
   test('回放关键配置审批通过链路', async ({ page }) => {

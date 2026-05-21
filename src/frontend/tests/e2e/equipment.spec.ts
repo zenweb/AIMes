@@ -130,6 +130,7 @@ test.describe('Equipment 设备管理', () => {
 
   test('利用率颜色标记', async ({ page }) => {
     const badges = page.locator('.eq-badge')
+    await expect(badges.first()).toBeVisible()
     const count = await badges.count()
     expect(count).toBeGreaterThan(0)
     // 利用率 badge 有颜色分类 (high/mid/low)

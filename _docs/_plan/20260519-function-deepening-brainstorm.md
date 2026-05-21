@@ -98,6 +98,21 @@ OTD 改善复盘
   - 产品族维度：对比 `阀体组件` 已恢复与 `法兰盘 DN100` 外协等待未闭环，避免把外部约束误计入厂内改善。
   - 时间窗口维度：区分未来 24 小时短窗和本周交付窗口，支持 POC 对外复盘口径。
 - CSV 导出新增 `OTD KPI多维钻取` 行，把每个维度的基线/Agent OTD、提升、延期减少、主因、下一步动作和追踪号带出。
+- 继续把产品族维度里的外协等待从“静态解释”推进到“外协承诺动作”：
+  - `法兰盘 DN100` 可生成 `外协承诺包`，固化 `华东精密外协厂`、承诺到货日 `2026-05-23`、影响工单 `WO-DEMO-1013`、审计编号 `AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001` 和追踪号 `TRACE-OUTSOURCING-FLANGE-20260521`。
+  - 外协承诺包同步写入统一 `OTD 复盘证据链` 的 `外协承诺` 阶段，并保留原始 KPI 追踪 `TRACE-KPI-PRODUCT-FLANGE-OTD-20260521`，明确厂外等待不能被误计为厂内恢复。
+  - `AI 排产` 事件队列读取同一承诺包，生成 `法兰盘 DN100 外协承诺已锁定` 事件和 `外协承诺后的排产复核建议`，提示等待到货确认后再释放排产。
+  - `审计日志` 新增 `外协承诺包` 回放，串联 KPI 钻取、外协承诺、计划复核和厂外等待口径。
+  - `采购协同` 可读取同一承诺包并执行 `确认外协到货`，生成 `AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001 / TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521`，把 `法兰盘 DN100` 推进到统一 OTD 证据链 `外协到货` 阶段。
+  - 外协到货后 `AI 排产` 把事件改为 `已到货 / 已缓解`，建议切换为关闭 `WO-DEMO-1013` 厂外等待口径和复核排产释放；`审计日志` 用 `采购收货证据` 回放 KPI 钻取、外协承诺、采购确认和排产释放复核。
+  - `AI 排产` 采纳外协到货后的释放建议会生成 `AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001 / TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521`，把事件推进为 `已释放`，关闭 `WO-DEMO-1013` 厂外等待口径，并写入统一 OTD 证据链 `外协排产释放` 阶段。
+  - `审计日志` 新增 `外协释放回放`，串联外协承诺、采购到货、排产采纳、厂外等待口径关闭和 OTD 归档，避免外协释放只停留在排产页反馈。
+  - `报表中心` 会读取外协排产释放记录，把顶部 OTD 改善复盘、产品族 KPI 钻取和 `30 单样本节选` 中的 `WO-DEMO-1013` 从 `仍延期 / 外协等待` 动态更新为 `外协已释放 / 已恢复`，让经营结果口径跟随执行闭环变化。
+- 2026-05-22 继续把外协承诺从业务页推进到系统治理：
+  - `系统管理 / Agent 治理` 顶部指标新增 `外协承诺包`，直接读取 `aimes_outsourcing_commitment_packages`，把外协厂、到货、排产释放和审计追踪统一放进治理面。
+  - 外协治理卡提供 `查看采购协同` 和 `查看 AI 排产` 跳转，避免外协承诺只停留在报表或采购页。
+  - 已补 e2e：`Admin Agent 治理 › 外协承诺包进入 Agent 治理并可跳转到采购与排产`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`git diff --check`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts -g "外协承诺包进入 Agent 治理并可跳转到采购与排产"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：22 passed。
 - 继续把 KPI 钻取从“解释结果”推进到“客户承诺动作”：
   - 钻取详情新增 `生成客户交付恢复承诺包`，默认可把 `华东新能源` 的基线 `76%`、Agent `94%`、提升 `+18%`、延期减少 `3 单` 转成客户可复盘口径。
   - 承诺包写入 `aimes_otd_kpi_commitment_packages`，包含承诺内容、责任人、截止时间、客户成功/排产/采购工程质量三类责任动作、审计编号和追踪编号。
@@ -127,12 +142,18 @@ OTD 改善复盘
   - `Report 报表中心 › OTD 经营复盘支持按证据钻取解释和跳转`
   - `Report 报表中心 › OTD KPI 支持按客户、产线、产品族和时间窗口钻取`
   - `Report 报表中心 › OTD KPI 可生成客户交付恢复承诺包并进入助手与审计`
+  - `Report 报表中心 › OTD KPI 产品族外协等待可生成外协承诺包并进入排产与审计`
+  - `Purchase 采购协同 › 报表生成的外协承诺可在采购确认到货并释放排产复核`
   - `Report 报表中心 › POC 复盘签署后生成上线交付行动包并进入助手治理审计` 已扩展覆盖上线交付包 -> 试点运行确认 -> Hypercare 上线验收 -> CSV -> AI 助手 -> 生产概览 -> 实时监控 -> Agent 治理 -> AI 排产 -> 生产报工 -> 审计回放。
 - 验证通过：
   - `npx vue-tsc --noEmit -p tsconfig.json`：passed。
+  - `npm run test:e2e -- tests/e2e/purchase.spec.ts -g "报表生成的外协承诺可在采购确认到货并释放排产复核"`：passed。
+  - `npm run test:e2e -- tests/e2e/purchase.spec.ts`：5 passed。
+  - `npm run test:e2e -- tests/e2e/report.spec.ts -g "OTD KPI 产品族外协等待可生成外协承诺包并进入排产与审计"`：passed。
+  - `npm run test:e2e`：219 passed。
   - `npm run test:e2e -- tests/e2e/report.spec.ts tests/e2e/chat.spec.ts tests/e2e/audit.spec.ts`：41 passed。
   - `npm run test:e2e -- tests/e2e/report.spec.ts -g "POC 复盘签署后生成上线交付行动包"`：passed。
-  - `npm run test:e2e -- tests/e2e/report.spec.ts`：16 passed。
+  - `npm run test:e2e -- tests/e2e/report.spec.ts`：17 passed。
 
 ---
 
@@ -463,6 +484,10 @@ OTD 改善复盘
   - `审计日志` 的统一 OTD 证据映射新增 `生产完工证据` 类型，专门回放完工数量、工单进度、质量结果、后续工序窗口和 OTD 承诺。
   - `WO-001 / OP-20` 完工后生成 `TRACE-PROD-COMPLETE-OP-20` 与 `TRACE-PROD-CLOSEOUT-OP-20`，审计页显示 `生产完工回放` 指标，并要求核对排产页复核、质量门放行和承诺交期是否仍成立。
   - e2e 已扩展 `Production 生产看板 › 完工后生成排产与质量回写记录`，覆盖生产报工 -> AI 排产 -> 报表 OTD 证据链 -> 审计回放。
+- 2026-05-21 继续把生产复核从“和生产完工共用回放类型”推进到“可专属审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `生产复核证据` 类型，专门回放完工回写、排产页复核、质量门放行和承诺交期。
+  - `TRACE-PROD-CLOSEOUT-*` 继续写入 OTD 证据链，但审计页新增 `生产复核回放` 指标，避免和 `生产完工回放` 混在一起。
+  - e2e 已扩展 `Production 生产看板 › 完工后生成排产与质量回写记录`，覆盖生产完工回放与生产复核回放的分离展示。
 
 ---
 
@@ -504,6 +529,12 @@ OTD 改善复盘
   - `Scheduling 排产甘特图 › 展示调度员 Agent 工作台`
 - 验证通过：
   - `npm run test:e2e -- tests/e2e/quality.spec.ts tests/e2e/audit.spec.ts tests/e2e/report.spec.ts tests/e2e/scheduling.spec.ts -g "质量返工|质量根因分析|展示 AI 建议|展示 OTD|展示调度员 Agent 工作台"`：5 passed。
+- 2026-05-21 继续把扫码返工复验从“OTD 证据链兜底回放”推进到“质量释放专属回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `质量复验释放证据` 类型，只按明确的释放追踪号归类，避免把普通 `标签状态` 或冻结留痕误计为释放回放。
+  - `TRACE-QR-WO-RUSH-9001-OP-10-RECHECK / RELEASE-OP-20 / SCHEDULE-RELEASE / LABEL-RELEASE` 会在审计页统一计入 `质量复验释放回放`，并分别回放复验结论、OP-20 接收释放、排产窗口恢复和流转卡标签解冻。
+  - `TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD` 仍保留为通用 `OTD 证据链`，用于区分质量冻结和复验释放两类状态。
+  - e2e 已新增 `Quality 质量闭环 › 扫码返工复验放行进入审计回放和 OTD 复盘`，并同步更新 `Scanner 条码现场入口 › 扫码工单质检不合格冻结交接并更新标签状态` 的审计断言。
+  - 验证通过：`npm run test:e2e`：217 passed。构建仍保留既有 `fs.Stats` 和 `@microsoft/signalr` Rollup 注释警告。
 
 ---
 
@@ -695,6 +726,19 @@ OTD 改善复盘
   - `AI 排产` 的交接面板与 `风险预警` 执行包卡会同步显示 `采购责任动作：采购 王工 已确认 PO-RUSH-20260519 加急收货`，让排产、采购和风险读到同一条闭环事实。
   - `OTD` 证据链新增采购责任动作闭合记录，`审计日志` 可继续从同一执行包追到采购回写与闭环状态。
   - 已补 e2e 覆盖：`AI 生产助手 (ChatPanel) › 可执行动作：生成交期恢复执行包并跨模块追溯`、`Purchase 采购协同 › 缺料事件生成采购加急单并回写风险下降`。
+- 2026-05-22 继续把交期恢复执行包从“采购责任动作闭合”推进到“质量责任动作闭合”：
+  - `质量闭环` 读取 `aimes_assistant_recovery_packages`，新增 `助手执行包质量责任` 卡，质量工程师可确认 `FAI-WO-RUSH-9001-OP20-20260521` 首件检验合格和 OP-20 装配扭矩复核窗口保留。
+  - 确认后生成 `AUD-CHAT-RECOVERY-QUALITY-CLOSURE-20260521-001 / TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521`，把执行包中的 `质量闭环` dispatch step 标记为已闭合。
+  - `AI 排产` 的交接面板、复核建议与 `风险预警` 执行包卡同步显示 `质量责任动作：质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格`。
+  - `OTD` 证据链新增 `助手质量回写` 阶段，`审计日志` 新增 `助手质量责任证据` 回放，要求核对首件检验、OP-20 扭矩复核窗口、执行包追踪和排产释放条件。
+  - 已扩展 e2e：`AI 生产助手 (ChatPanel) › 可执行动作：生成交期恢复执行包并跨模块追溯`，覆盖助手生成执行包 -> 排产交接闭环 -> 采购回写 -> 质量首件复核 -> 排产/风险/报表/审计读取同一质量责任动作。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`git diff --check`：passed；`npm run test:e2e -- tests/e2e/chat.spec.ts -g "生成交期恢复执行包并跨模块追溯"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：16 passed；`npm run test:e2e -- tests/e2e/quality.spec.ts`：11 passed。一次并行跑 `quality.spec.ts` 曾因 Windows `.nuxt` 构建目录清理 `EPERM` 失败，顺序重跑通过。
+- 2026-05-22 继续把交期恢复执行包从“业务闭环”推进到“系统治理待办”：
+  - `系统管理 / Agent 治理` 新增 `交期恢复执行包治理`，直接读取 `aimes_assistant_recovery_packages`，把 `WO-RUSH-9001` 的排产、风险、采购、质量四类责任动作、采购/质量闭环、审计编号和追踪编号放进治理面。
+  - 治理卡提供 `查看 AI 排产`、`查看风险预警`、`查看采购协同` 和 `查看质量闭环` 跨页入口，避免助手执行包只在业务页闭环而没有系统治理核对点。
+  - 顶部指标新增 `交期恢复包`，可以直接看见执行包数量与最新状态。
+  - 已补 e2e：`Admin Agent 治理 › 交期恢复执行包进入 Agent 治理并可跳转到排产风险采购与质量`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`git diff --check`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts -g "交期恢复执行包进入 Agent 治理并可跳转到排产风险采购与质量"`：1 passed。
 
 ---
 
@@ -1149,6 +1193,12 @@ OTD 改善复盘
 - 治理页新增“AI 助手引用链”，展示业务问答命中的引用文档、回答意图、可引用/需复核状态和阻断来源。
 - 已把过期/待索引来源从静态阻断推进到可处置闭环：`CNC-01 主轴维护手册 V1.1` 可点击“复核并重建索引”，生成 `AUD-KG-REINDEX-20260520-001` / `TRACE-KG-CNC-MAINT-REINDEX`，升级为 `V1.2` 已索引且有效期至 `2026-12-31`。
 - `AI 生产助手` 的引用链会读取同一复核记录，`CNC-001` 停机影响问答会把原“待索引且已过期”的阻断来源升级为可正式引用的治理复核来源；复核动作同时写入统一 OTD 证据链的 `知识治理` 阶段。
+- 2026-05-22 继续把 RAG 治理从单页处置推进到系统治理待办：
+  - `knowledge-governance-sync.ts` 下沉默认治理文档、索引状态、有效期状态、责任人和处置建议，`文档上传` 与 `系统管理 / Agent 治理` 复用同一来源，避免两页口径分叉。
+  - `系统管理 / Agent 治理` 顶部指标新增 `知识待治理`，知识来源治理区展示 `2 待治理 / 0 已复核`，把 `装配扭矩检验规范` 即将过期和 `CNC-01 主轴维护手册` 待索引/已过期作为治理卡显示。
+  - 待治理卡展示索引状态、有效期、责任人、引用范围和处置建议，并提供 `打开文档治理`，可直接跳转到 `文档上传 / RAG 数据治理` 执行复核或索引重建。
+  - 已补 e2e：`Admin Agent 治理 › 知识待治理提醒可从 Agent 治理跳转到文档治理`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "知识"`：3 passed；`npm run test:e2e -- tests/e2e/knowledge.spec.ts --grep "展示分类|过期待索引|引用链"`：4 passed。
 - 已补 e2e 覆盖：
   - `Knowledge 文档治理 › 展示分类、版本、索引状态、引用追踪和过期提醒`
   - `Knowledge 文档治理 › 展示 AI 助手业务问答的引用链和阻断来源`
@@ -1423,6 +1473,7 @@ OTD 改善复盘
   - 复核后生成 `AUD-KG-REINDEX-20260520-001` / `TRACE-KG-CNC-MAINT-REINDEX`，升级为 `V1.2`、已索引、有效期 `2026-12-31`，并写入统一 OTD 证据链 `知识治理` 阶段。
   - `AI 生产助手` 引用链读取同一复核记录，`CNC-001` 停机 4 小时影响问答会把原“待索引且已过期”的阻断来源升级为可正式引用来源。
   - `系统管理` 的 Agent 治理页新增“知识来源治理”清单，读取同一复核记录，展示版本升级、有效期、引用范围和审计编号。
+  - 2026-05-22 继续把未复核知识前置为 Agent 治理待办，新增 `知识待治理` 指标、`装配扭矩检验规范` 即将过期卡、`CNC-01 主轴维护手册` 待索引/已过期卡和 `打开文档治理` 跨页处置入口。
   - `审计日志` 的 AI 决策回放新增 `知识治理` 专属卡片，可回放过期/待索引识别、复核人、索引重建、引用范围更新和追踪编号。
   - 已补 e2e：`Knowledge 文档治理 › 过期待索引文档复核后成为 AI 助手可引用来源`、`Admin Agent 治理 › 知识治理复核进入 Agent 治理来源清单`、`Audit 审计决策回放 › 回放知识治理复核与索引重建链路`。
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/knowledge.spec.ts`：5 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts tests/e2e/audit.spec.ts --grep "知识治理"`：2 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts tests/e2e/audit.spec.ts`：14 passed；`npm run test:e2e -- tests/e2e/knowledge.spec.ts tests/e2e/chat.spec.ts tests/e2e/report.spec.ts tests/e2e/audit.spec.ts`：33 passed。

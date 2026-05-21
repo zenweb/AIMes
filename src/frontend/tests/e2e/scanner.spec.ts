@@ -392,7 +392,7 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(releaseAuditCard).toBeVisible()
     await releaseAuditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(page.locator('.replay-detail').getByText('TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20', { exact: true })).toBeVisible()
-    await expect(page.locator('.replay-detail').getByText(/OP-20 装配复检可接收 30 件/)).toBeVisible()
+    await expect(page.locator('.replay-detail').getByText(/已解冻 OP-20 接收并恢复下道交接/)).toBeVisible()
 
     await page.goto('scheduling')
     const eventPanel = page.locator('.event-queue-panel')

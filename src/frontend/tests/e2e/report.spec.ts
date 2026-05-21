@@ -166,6 +166,56 @@ test.describe('Report 报表中心', () => {
     await expect(replay.getByText(/KPI 钻取、客户承诺、责任动作和报表导出已归档/)).toBeVisible()
   })
 
+  test('OTD KPI 产品族外协等待可生成外协承诺包并进入排产与审计', async ({ page }) => {
+    const panel = page.locator('.otd-kpi-drilldown-panel')
+    const detail = panel.locator('.kpi-drilldown-detail')
+
+    await panel.getByRole('tab', { name: '产品族' }).click()
+    await panel.getByRole('button', { name: /法兰盘 DN100/ }).click()
+    await expect(detail.getByRole('heading', { name: '法兰盘 DN100 OTD 差异解释' })).toBeVisible()
+    await panel.getByRole('button', { name: '生成外协承诺包' }).click()
+    await expect(detail.getByText('法兰盘 DN100 外协承诺包')).toBeVisible()
+    await expect(detail.getByText('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001')).toBeVisible()
+    await expect(detail.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
+
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    await expect(evidenceChain.getByText('法兰盘 DN100 外协承诺包')).toBeVisible()
+    await expect(evidenceChain.getByText('TRACE-OUTSOURCING-FLANGE-20260521', { exact: true })).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.waitForSelector('.schedule-board', { timeout: 60000 })
+    await page.waitForSelector('.event-queue-panel .event-card', { timeout: 60000 })
+    const eventQueue = page.locator('.event-queue-panel')
+    await eventQueue.scrollIntoViewIfNeeded()
+    const outsourcingEvent = eventQueue.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协承诺已锁定' })
+    await expect(outsourcingEvent.locator('.event-type').getByText('外协承诺', { exact: true })).toBeVisible()
+    await expect(outsourcingEvent.locator('.event-severity').getByText('待到货', { exact: true })).toBeVisible()
+    await expect(outsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
+    await outsourcingEvent.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(page.locator('.agent-suggestion').getByText('外协承诺后的排产复核建议')).toBeVisible()
+    await expect(page.locator('.agent-suggestion').getByText(/不将其计入厂内已恢复订单/)).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 60000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const outsourcingCard = auditPanel.locator('.decision-card').filter({ hasText: '外协承诺包：法兰盘 DN100 外协承诺包' })
+    await expect(outsourcingCard).toBeVisible()
+    await outsourcingCard.getByRole('button', { name: '回放决策链' }).click()
+    const replay = auditPanel.locator('.replay-detail')
+    await expect(replay.getByText(/外协承诺、计划复核和厂外等待口径已归档/)).toBeVisible()
+    await expect(replay.getByText(/不能把厂外等待误判为厂内恢复/)).toBeVisible()
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    await page.getByRole('button', { name: 'CSV' }).click()
+    const download = await downloadPromise
+    const csv = await readFile((await download.path())!, 'utf8')
+    expect(csv).toContain('外协承诺包')
+    expect(csv).toContain('法兰盘 DN100 外协承诺包')
+    expect(csv).toContain('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001 / TRACE-OUTSOURCING-FLANGE-20260521')
+  })
+
   test('展示 5 分钟 demo 路径与样本工单', async ({ page }) => {
     const panel = page.locator('.otd-report-section')
 

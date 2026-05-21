@@ -20,6 +20,10 @@
           <strong>采购责任动作：{{ activePackage.purchaseActionSummary }}</strong>
           <code>{{ activePackage.purchaseActionAuditCode }} / {{ activePackage.purchaseActionTraceId }}</code>
         </div>
+        <div v-if="activePackage.qualityActionSummary" class="quality-closure-summary">
+          <strong>质量责任动作：{{ activePackage.qualityActionSummary }}</strong>
+          <code>{{ activePackage.qualityActionAuditCode }} / {{ activePackage.qualityActionTraceId }}</code>
+        </div>
       </div>
       <div class="metric-strip">
         <span>OTD {{ activePackage.otdImpact }}</span>
@@ -89,6 +93,10 @@
           <li v-if="activePackage.purchaseActionSummary">
             <strong>采购动作</strong>
             <span>{{ activePackage.purchaseActionSummary }}</span>
+          </li>
+          <li v-if="activePackage.qualityActionSummary">
+            <strong>质量动作</strong>
+            <span>{{ activePackage.qualityActionSummary }}</span>
           </li>
         </ul>
         <div v-if="activePackage.closureSummary" class="closure-summary">
@@ -360,7 +368,8 @@ h4 {
   word-break: break-all;
 }
 
-.purchase-closure-summary {
+.purchase-closure-summary,
+.quality-closure-summary {
   display: grid;
   gap: 5px;
   margin-top: 10px;
@@ -370,16 +379,28 @@ h4 {
   background: #eff6ff;
 }
 
-.purchase-closure-summary strong {
+.purchase-closure-summary strong,
+.quality-closure-summary strong {
   color: #1d4ed8;
   font-size: 12px;
   line-height: 1.45;
 }
 
-.purchase-closure-summary code {
+.purchase-closure-summary code,
+.quality-closure-summary code {
   color: #1d4ed8;
   font-size: 11px;
   word-break: break-all;
+}
+
+.quality-closure-summary {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.quality-closure-summary strong,
+.quality-closure-summary code {
+  color: #166534;
 }
 
 .close-handoff {

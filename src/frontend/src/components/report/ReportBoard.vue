@@ -381,13 +381,19 @@
               </ul>
             </div>
             <button type="button" class="kpi-commitment-btn" @click="handleGenerateOtdKpiCommitment">
-              生成客户交付恢复承诺包
+              {{ selectedOtdKpiCommitmentButtonLabel }}
             </button>
             <div v-if="activeOtdKpiCommitment" class="kpi-commitment-card">
               <span>{{ activeOtdKpiCommitment.statusLabel }}</span>
               <strong>{{ activeOtdKpiCommitment.title }}</strong>
               <p>{{ activeOtdKpiCommitment.commitment }}</p>
               <code>{{ activeOtdKpiCommitment.auditId }} / {{ activeOtdKpiCommitment.traceId }}</code>
+            </div>
+            <div v-if="activeOutsourcingCommitment" class="kpi-commitment-card">
+              <span>{{ activeOutsourcingCommitment.statusLabel }}</span>
+              <strong>{{ activeOutsourcingCommitment.title }}</strong>
+              <p>{{ activeOutsourcingCommitment.commitment }}</p>
+              <code>{{ activeOutsourcingCommitment.auditId }} / {{ activeOutsourcingCommitment.traceId }}</code>
             </div>
           </article>
         </div>
@@ -880,6 +886,7 @@ import { readScheduleFeedbackSnapshot, type ScheduleFeedbackSnapshot } from '../
 import { readRiskActionTraces, type RiskActionTrace } from '../../utils/risk-action-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readOtdKpiCommitmentPackages, writeOtdKpiCommitmentPackage, type OtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
+import { readOutsourcingCommitmentPackages, writeOutsourcingCommitmentPackage, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import {
   buildQualityKnowledgeRecommendationExperimentCandidateRecords,
   buildQualityKnowledgeGrayReleaseMonitorRecords,
@@ -912,6 +919,7 @@ const scheduleFeedback = ref<ScheduleFeedbackSnapshot | null>(null)
 const riskActionTraces = ref<RiskActionTrace[]>([])
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const otdKpiCommitmentPackages = ref<OtdKpiCommitmentPackage[]>([])
+const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
 const qualityGrayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>([])
@@ -941,7 +949,40 @@ interface OtdKpiDrilldownItem {
 function fmtPct(v: number | undefined) { return v != null ? (v * 100).toFixed(1) + '%' : '-' }
 function pctPoint(v: number | undefined) { return v != null ? (v * 100).toFixed(0) + '%' : '-' }
 
-const otdReport = computed(() => r.value?.otdImprovement ?? demoOtdReport)
+const releasedFlangeOutsourcing = computed(() =>
+  outsourcingCommitmentPackages.value.find(item => item.sourceKpiId === 'product-flange' && item.scheduleReleaseTraceId) ?? null
+)
+const otdReport = computed<OtdImprovementReport>(() => {
+  const base = r.value?.otdImprovement ?? demoOtdReport
+  const released = releasedFlangeOutsourcing.value
+  if (!released) return base
+
+  return {
+    ...base,
+    agentOtd: Math.max(base.agentOtd, 0.97),
+    otdLift: Math.max(base.otdLift, 0.15),
+    agentDelayedOrders: Math.min(base.agentDelayedOrders, 0),
+    delayedOrdersReduced: Math.max(base.delayedOrdersReduced, 5),
+    decisionTraceCount: Math.max(base.decisionTraceCount, 10),
+    headline: `${base.headline} ${released.targetName} 外协到货和 AI 排产释放已关闭厂外等待口径，最后 1 单延期进入恢复复盘。`,
+    reasons: [
+      ...base.reasons,
+      {
+        label: '外协排产释放',
+        contribution: `${released.scheduleReleaseTraceId} 关闭 ${released.affectedOrders} 厂外等待口径，法兰盘 DN100 从延期样本转为已恢复。`,
+      },
+    ],
+    sampleOrders: base.sampleOrders.map(order => order.orderNumber === released.affectedOrders
+      ? {
+          ...order,
+          agentStatus: 'recovered',
+          risk: '外协到货已释放',
+          action: '关闭厂外等待并释放排产',
+        }
+      : order
+    ),
+  }
+})
 const customerPocEvidenceReady = computed(() => !!customerOrderImport.value && !!customerEquipmentFault.value)
 const qualityGrayReleaseMonitorRecords = computed<QualityKnowledgeGrayReleaseMonitorRecord[]>(() =>
   buildQualityKnowledgeGrayReleaseMonitorRecords(qualityRetrainingVersionRecords.value, qualityRecommendationFeedbackRecords.value)
@@ -1098,8 +1139,27 @@ const otdKpiDrilldownItems: OtdKpiDrilldownItem[] = [
     traceId: 'TRACE-KPI-TIME-WEEK-OTD-20260521',
   },
 ]
+const enhancedOtdKpiDrilldownItems = computed<OtdKpiDrilldownItem[]>(() => {
+  const released = releasedFlangeOutsourcing.value
+  if (!released) return otdKpiDrilldownItems
+
+  return otdKpiDrilldownItems.map(item => item.id === 'product-flange'
+    ? {
+        ...item,
+        agentOtd: 90,
+        lift: 22,
+        delayedReduced: 1,
+        status: 'recovered',
+        statusLabel: '外协已释放',
+        driver: '外协到货 + AI 排产释放',
+        explanation: `${released.targetName} 已完成外协到货和 AI 排产采纳释放，${released.affectedOrders} 厂外等待口径已关闭，当前可以计入已恢复订单并进入 OTD 复盘。`,
+        nextActions: ['复核后续工序承诺窗口', '客户成功同步恢复口径', '审计回放外协排产释放证据'],
+      }
+    : item
+  )
+})
 const filteredOtdKpiDrilldownItems = computed(() =>
-  otdKpiDrilldownItems.filter(item => item.dimension === activeOtdKpiDimension.value)
+  enhancedOtdKpiDrilldownItems.value.filter(item => item.dimension === activeOtdKpiDimension.value)
 )
 const selectedOtdKpiDrilldown = computed(() =>
   filteredOtdKpiDrilldownItems.value.find(item => item.id === activeOtdKpiDrilldownId.value)
@@ -1107,13 +1167,20 @@ const selectedOtdKpiDrilldown = computed(() =>
   ?? null
 )
 const otdKpiDrilldownSummary = computed(() => {
-  const recovered = otdKpiDrilldownItems.filter(item => item.status === 'recovered').length
-  const atRisk = otdKpiDrilldownItems.filter(item => item.status === 'at_risk').length
-  const averageLift = Math.round(otdKpiDrilldownItems.reduce((sum, item) => sum + item.lift, 0) / Math.max(otdKpiDrilldownItems.length, 1))
+  const items = enhancedOtdKpiDrilldownItems.value
+  const recovered = items.filter(item => item.status === 'recovered').length
+  const atRisk = items.filter(item => item.status === 'at_risk').length
+  const averageLift = Math.round(items.reduce((sum, item) => sum + item.lift, 0) / Math.max(items.length, 1))
   return { recovered, atRisk, averageLift }
 })
 const activeOtdKpiCommitment = computed(() =>
   otdKpiCommitmentPackages.value.find(item => item.sourceKpiId === selectedOtdKpiDrilldown.value?.id) ?? null
+)
+const activeOutsourcingCommitment = computed(() =>
+  outsourcingCommitmentPackages.value.find(item => item.sourceKpiId === selectedOtdKpiDrilldown.value?.id) ?? null
+)
+const selectedOtdKpiCommitmentButtonLabel = computed(() =>
+  selectedOtdKpiDrilldown.value?.id === 'product-flange' ? '生成外协承诺包' : '生成客户交付恢复承诺包'
 )
 const qualityGrayReleaseDecisionSummary = computed(() => ({
   expanded: qualityGrayReleaseDecisionRecords.value.filter(record => record.decision === 'expanded').length,
@@ -1506,7 +1573,7 @@ function handleExportCsv() {
   for (const reason of otd.reasons) {
     rows.push(['OTD改善原因', reason.label, reason.contribution])
   }
-  for (const drilldown of otdKpiDrilldownItems) {
+  for (const drilldown of enhancedOtdKpiDrilldownItems.value) {
     rows.push(['OTD KPI多维钻取', `${drilldown.dimensionLabel} / ${drilldown.name}`, `基线 ${drilldown.baselineOtd}% / Agent ${drilldown.agentOtd}% / 提升 +${drilldown.lift}% / 延期减少 ${drilldown.delayedReduced} 单 / ${drilldown.statusLabel}`])
     rows.push(['OTD KPI多维钻取', `${drilldown.name} 主因`, `${drilldown.driver} / ${drilldown.traceId}`])
     rows.push(['OTD KPI多维钻取', `${drilldown.name} 下一步`, drilldown.nextActions.join(' / ')])
@@ -1514,6 +1581,10 @@ function handleExportCsv() {
   for (const commitment of otdKpiCommitmentPackages.value) {
     rows.push(['客户交付恢复承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
     rows.push(['客户交付恢复承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
+  }
+  for (const commitment of outsourcingCommitmentPackages.value) {
+    rows.push(['外协承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
+    rows.push(['外协承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
   }
   for (const drilldown of otdDrilldownItems.value) {
     rows.push(['OTD经营钻取', `${drilldown.stage} / ${drilldown.businessQuestion}`, `${drilldown.effectLabel} / ${drilldown.owner} / ${drilldown.routeLabel} / ${drilldown.nextAction}`])
@@ -1668,6 +1739,28 @@ function currentActor() {
 function handleGenerateOtdKpiCommitment() {
   const item = selectedOtdKpiDrilldown.value
   if (!item) return
+  if (item.id === 'product-flange') {
+    const record = writeOutsourcingCommitmentPackage({
+      sourceKpiId: item.id,
+      dimensionLabel: item.dimensionLabel,
+      targetName: item.name,
+      baselineOtd: item.baselineOtd,
+      agentOtd: item.agentOtd,
+      lift: item.lift,
+      delayedReduced: item.delayedReduced,
+      statusLabel: item.statusLabel,
+      driver: item.driver,
+      nextActions: item.nextActions,
+      sourceTraceId: item.traceId,
+      actor: currentActor(),
+      partnerName: '华东精密外协厂',
+      promiseDate: '2026-05-23',
+      affectedOrders: 'WO-DEMO-1013',
+    })
+    outsourcingCommitmentPackages.value = [record, ...outsourcingCommitmentPackages.value.filter(entry => entry.id !== record.id)]
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+    return
+  }
   const record = writeOtdKpiCommitmentPackage({
     sourceKpiId: item.id,
     dimensionLabel: item.dimensionLabel,
@@ -1715,6 +1808,7 @@ onMounted(async () => {
   riskActionTraces.value = readRiskActionTraces()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
   otdKpiCommitmentPackages.value = readOtdKpiCommitmentPackages()
+  outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   qualityRecommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
   qualityRetrainingVersionRecords.value = readQualityKnowledgeRetrainingVersionRecords()
   qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()

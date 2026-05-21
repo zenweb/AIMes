@@ -169,6 +169,100 @@ test.describe('Quality 质量闭环', () => {
     await expect(page.locator('.event-queue-panel').getByText('MRB 处置闭环后的排产复核建议')).toBeVisible()
   })
 
+  test('扫码返工复验放行进入审计回放和 OTD 复盘', async ({ page }) => {
+    await page.addInitScript(() => {
+      const createdAt = '2026-05-21T10:00:00.000Z'
+      if (localStorage.getItem('aimes_otd_evidence_chain')) return
+      localStorage.setItem('aimes_otd_evidence_chain', JSON.stringify([
+        {
+          id: 'barcode-rework-WO-RUSH-9001-OP-10',
+          stage: '扫码返工',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+          summary: '扫码首件巡检不合格，冻结 OP-20 接收。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+          status: 'active',
+          statusLabel: '返工待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-hold-WO-RUSH-9001-OP-10-OP-20',
+          stage: '交接冻结',
+          title: 'WO-RUSH-9001 OP-10 到 OP-20 交接冻结',
+          summary: '质量冻结期间下道接收暂不可用。',
+          object: 'WO-RUSH-9001 / OP-10 / OP-20',
+          source: '质量闭环 / 工序交接',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-HOLD-OP-20',
+          status: 'active',
+          statusLabel: '交接冻结中',
+          createdAt,
+        },
+        {
+          id: 'barcode-capa-WO-RUSH-9001-OP-10',
+          stage: '质量CAPA',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码 CAPA 处置',
+          summary: '复验前需要核对返工、隔离和标签冻结。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '质量闭环 / CAPA',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-CAPA',
+          status: 'active',
+          statusLabel: 'CAPA 待验证',
+          createdAt,
+        },
+        {
+          id: 'barcode-label-hold-WO-RUSH-9001-OP-10',
+          stage: '标签状态',
+          title: 'WO-RUSH-9001 流转卡标签冻结',
+          summary: '实物流转卡标签状态已从可交接更新为质量冻结。',
+          object: 'WO-RUSH-9001',
+          source: '条码 / QR 打印 / 质量冻结',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD',
+          status: 'active',
+          statusLabel: '质量冻结中',
+          createdAt,
+        },
+      ]))
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const releasePanel = page.locator('.barcode-quality-gate-panel')
+    await expect(releasePanel.getByText('返工复验待放行')).toBeVisible()
+    await releasePanel.getByRole('button', { name: '复验通过并释放交接' }).click()
+    await expect(releasePanel.getByText('返工复验已放行', { exact: true })).toBeVisible()
+    await expect(releasePanel.getByText('返工复验已放行：OP-20 接收、排产窗口和流转卡标签状态均已更新。')).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.audit-replay-panel', { timeout: 60000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    await expect(auditPanel.locator('.metric-chip').filter({ hasText: '质量复验释放回放' }).getByText('4')).toBeVisible()
+
+    const holdLabelCard = auditPanel.locator('.decision-card').filter({ hasText: '标签状态：WO-RUSH-9001 流转卡标签冻结' })
+    await expect(holdLabelCard.locator('.decision-topline').getByText('OTD 证据链')).toBeVisible()
+
+    const recheckCard = auditPanel.locator('.decision-card').filter({ hasText: '质量复验：WO-RUSH-9001 CNC 精加工 返工复验放行' })
+    await expect(recheckCard).toBeVisible()
+    await expect(recheckCard.locator('.decision-topline').getByText('质量复验释放证据')).toBeVisible()
+    await recheckCard.getByRole('button', { name: '回放决策链' }).click()
+    const detail = auditPanel.locator('.replay-detail')
+    await expect(detail.getByText('TRACE-QR-WO-RUSH-9001-OP-10-RECHECK', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/质量闭环读取 质量闭环 \/ 复验放行 \/ 质量工程师 周工/)).toBeVisible()
+    await expect(detail.locator('li').filter({ hasText: '交接释放、排产回写和标签状态' })).toBeVisible()
+
+    const releaseCard = auditPanel.locator('.decision-card').filter({ hasText: '交接释放：WO-RUSH-9001 OP-20 接收已释放' })
+    await expect(releaseCard.locator('.decision-topline').getByText('质量复验释放证据')).toBeVisible()
+    await releaseCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(detail.getByText('TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/OP-20 接收并恢复下道交接/)).toBeVisible()
+
+    const scheduleCard = auditPanel.locator('.decision-card').filter({ hasText: '排产回写：WO-RUSH-9001 OP-20 接收窗口已恢复' })
+    await expect(scheduleCard.locator('.decision-topline').getByText('质量复验释放证据')).toBeVisible()
+    const labelCard = auditPanel.locator('.decision-card').filter({ hasText: '标签状态：WO-RUSH-9001 流转卡标签已解冻' })
+    await expect(labelCard.locator('.decision-topline').getByText('质量复验释放证据')).toBeVisible()
+  })
+
   test('扫码返工样本沉淀为 CAPA 知识并被助手复用', async ({ page }) => {
     await page.addInitScript(() => {
       const createdAt = '2026-05-21T10:00:00.000Z'

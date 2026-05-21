@@ -101,7 +101,10 @@
             <h3>Agent 策略与权限治理</h3>
             <p>把可执行 Agent 动作、角色权限、审计编号和关键配置审批放在同一个管理面。</p>
           </div>
-          <button type="button" class="btn btn-add" @click="openAuditLogs">查看审计回放</button>
+          <div class="agent-heading-actions">
+            <button type="button" class="btn btn-add" @click="openKnowledgeGovernance">打开文档治理</button>
+            <button type="button" class="btn btn-add" @click="openAuditLogs">查看审计回放</button>
+          </div>
         </div>
 
         <div class="agent-metrics">
@@ -128,6 +131,166 @@
               <code>{{ action.auditId }}</code>
             </div>
           </article>
+        </div>
+
+        <div class="assistant-action-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>AI 助手动作治理</h4>
+                <p>监管 AI 生产助手最近执行或拒绝的动作，核对执行人、角色、权限结果、目标页面和审计编号。</p>
+              </div>
+              <strong>{{ assistantActionAudits.length }} 条</strong>
+            </div>
+            <div v-if="assistantActionAudits.length" class="assistant-action-list">
+              <article v-for="record in assistantActionAudits" :key="record.id" class="assistant-action-card">
+                <div class="action-topline">
+                  <span>{{ assistantActionTypeLabel(record.type) }}</span>
+                  <em :class="'policy-' + assistantActionStatusClass(record.permitted)">{{ record.permitted ? '已执行' : '已拒绝' }}</em>
+                </div>
+                <strong>{{ record.label }}</strong>
+                <p>{{ record.resultMessage }}</p>
+                <div class="policy-row">
+                  <span>执行人</span>
+                  <code>{{ record.actor }} / {{ record.role }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>目标页面</span>
+                  <code>{{ record.targetRoute || '无跳转' }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审计编号</span>
+                  <code>{{ record.auditCode }}</code>
+                </div>
+                <div v-if="record.traceId" class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.traceId }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>执行时间</span>
+                  <code>{{ formatTime(record.createdAt) }}</code>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待 AI 助手动作</strong>
+              <span>从 AI 生产助手执行页面跳转、导出、异常处置卡或交期恢复执行包后，这里会显示权限结果和审计编号。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="assistant-package-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>交期恢复执行包治理</h4>
+                <p>监管 AI 生产助手生成的交期恢复执行包，核对排产、风险、采购和质量责任动作是否闭合并进入 OTD 证据链。</p>
+              </div>
+              <strong>{{ assistantRecoveryPackages.length }} 条</strong>
+            </div>
+            <div v-if="assistantRecoveryPackages.length" class="assistant-package-list">
+              <article v-for="record in assistantRecoveryPackages" :key="record.id" class="assistant-package-card">
+                <div class="action-topline">
+                  <span>{{ record.owner }}</span>
+                  <em :class="'policy-' + assistantPackageStatusClass(record)">{{ record.statusLabel }}</em>
+                </div>
+                <strong>{{ record.title }}</strong>
+                <p>{{ record.summary }}</p>
+                <div class="policy-row">
+                  <span>影响工单</span>
+                  <code>{{ record.workOrders }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审计编号</span>
+                  <code>{{ record.auditCode }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.closureTraceId ?? record.traceId }}</code>
+                </div>
+                <div v-if="record.purchaseActionSummary" class="assistant-package-closure">
+                  <span>采购责任动作</span>
+                  <strong>{{ record.purchaseActionSummary }}</strong>
+                  <code>{{ record.purchaseActionTraceId }}</code>
+                </div>
+                <div v-if="record.qualityActionSummary" class="assistant-package-closure quality">
+                  <span>质量责任动作</span>
+                  <strong>{{ record.qualityActionSummary }}</strong>
+                  <code>{{ record.qualityActionTraceId }}</code>
+                </div>
+                <div class="assistant-package-steps">
+                  <span>责任动作</span>
+                  <ul>
+                    <li v-for="step in record.dispatchSteps" :key="step.evidence">
+                      <b>{{ step.module }}</b>
+                      <em>{{ step.status === 'closed' ? '已闭合' : step.owner }}</em>
+                      <code>{{ step.evidence }}</code>
+                    </li>
+                  </ul>
+                </div>
+                <div class="assistant-package-actions">
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button type="button" class="btn-sm" @click="openRiskBoard">查看风险预警</button>
+                  <button type="button" class="btn-sm" @click="openPurchaseBoard">查看采购协同</button>
+                  <button type="button" class="btn-sm" @click="openQualityBoard">查看质量闭环</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待交期恢复执行包</strong>
+              <span>AI 生产助手生成交期恢复执行包后，会在这里显示排产、风险、采购和质量责任动作的闭环状态。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="outsourcing-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>外协承诺治理</h4>
+                <p>监管产品族外协承诺、到货确认和排产释放，确保厂外等待口径不被误计为厂内恢复。</p>
+              </div>
+              <strong>{{ outsourcingCommitmentPackages.length }} 条</strong>
+            </div>
+            <div v-if="outsourcingCommitmentPackages.length" class="outsourcing-governance-list">
+              <article v-for="record in outsourcingCommitmentPackages" :key="record.id" class="outsourcing-governance-card">
+                <div class="action-topline">
+                  <span>{{ record.dimensionLabel }}</span>
+                  <em :class="'policy-' + outsourcingCommitmentStatusClass(record)">{{ record.statusLabel }}</em>
+                </div>
+                <strong>{{ record.title }}</strong>
+                <p>{{ record.summary }}</p>
+                <div class="policy-row">
+                  <span>外协对象</span>
+                  <code>{{ record.targetName }} / {{ record.affectedOrders }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>外协厂</span>
+                  <code>{{ record.partnerName }} / {{ record.promiseDate }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审计编号</span>
+                  <code>{{ record.auditId }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.traceId }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>到货 / 释放</span>
+                  <code>{{ record.receiptTraceId ?? '待到货' }} / {{ record.scheduleReleaseTraceId ?? '待释放' }}</code>
+                </div>
+                <div class="outsourcing-governance-actions">
+                  <button type="button" class="btn-sm" @click="openPurchaseBoard">查看采购协同</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待外协承诺</strong>
+              <span>报表中心生成外协承诺包后，会在这里显示外协厂、到货、排产释放和审计追踪。</span>
+            </div>
+          </div>
         </div>
 
         <div class="quality-mrb-governance">
@@ -325,8 +488,46 @@
                 <h4>知识来源治理</h4>
                 <p>复核 RAG 文档版本、有效期、索引状态和引用范围，确保 AI 助手只引用已治理知识。</p>
               </div>
-              <strong>{{ knowledgeReviewRecords.length }} 条</strong>
+              <strong>{{ knowledgePendingDocuments.length }} 待治理 / {{ knowledgeReviewRecords.length }} 已复核</strong>
             </div>
+            <div v-if="knowledgePendingDocuments.length" class="knowledge-pending-list">
+              <article v-for="document in knowledgePendingDocuments" :key="document.id" class="knowledge-pending-card">
+                <div class="action-topline">
+                  <span>{{ document.category }}</span>
+                  <em :class="document.freshnessStatus === '已过期' || document.indexStatus !== 'indexed' ? 'policy-guarded' : 'policy-pending'">{{ document.freshnessStatus }}</em>
+                </div>
+                <strong>{{ document.title }}</strong>
+                <p>{{ document.summary }}</p>
+                <div class="policy-row">
+                  <span>索引状态</span>
+                  <code>{{ knowledgeIndexStatusLabel(document.indexStatus) }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>有效期</span>
+                  <code>{{ document.validUntil }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>责任人</span>
+                  <code>{{ document.owner }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>引用范围</span>
+                  <code>{{ document.references.join(' / ') }}</code>
+                </div>
+                <div class="knowledge-action-note">
+                  <span>处置建议</span>
+                  <strong>{{ document.recommendedAction }}</strong>
+                </div>
+              </article>
+            </div>
+            <button
+              v-if="knowledgePendingDocuments.length"
+              type="button"
+              class="btn-sm knowledge-open-button"
+              @click="openKnowledgeGovernance"
+            >
+              打开文档治理
+            </button>
             <div v-if="knowledgeReviewRecords.length" class="knowledge-review-list">
               <article v-for="record in knowledgeReviewRecords" :key="record.id" class="knowledge-review-card">
                 <div class="action-topline">
@@ -915,6 +1116,8 @@ import type { SystemUser, SystemConfig, CreateUserRequest, UpdateUserRequest, Up
 import { getUsers, createUser, updateUser, getConfigs, updateConfig, getNotificationConfigs, updateNotificationConfig } from '../../api/admin'
 import { getLlmStatus, getLlmConfig } from '../../api/llm'
 import type { LlmStatus, LlmConfig } from '../../api/llm'
+import { readAssistantActionAudits, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
+import { readAssistantRecoveryPackages, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
 import { readPocEvidenceGovernanceRecords, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
 import { approvalStatusLabel, decideAgentConfigApproval, isApprovalOpen, readAgentConfigApprovals, readQualityExperimentExpansionGatePolicy, type AgentConfigApprovalRecord, type AgentConfigApprovalStatus, type QualityExperimentExpansionGatePolicy } from '../../utils/agent-config-approval-sync'
 import { readPocReviewSignoffRecord, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
@@ -923,8 +1126,15 @@ import { readPocPilotRunRecord, type PocPilotRunRecord } from '../../utils/poc-p
 import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { readRiskSlaReviewRecord, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
+import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
-import { readKnowledgeGovernanceReviews, type KnowledgeGovernanceReviewRecord } from '../../utils/knowledge-governance-sync'
+import {
+  readKnowledgeGovernancePendingDocuments,
+  readKnowledgeGovernanceReviews,
+  type KnowledgeGovernanceReviewRecord,
+  type KnowledgeGovernanceSourceDocument,
+  type KnowledgeIndexStatus,
+} from '../../utils/knowledge-governance-sync'
 import {
   approveQualityKnowledgeGrayReleaseExpansion,
   buildQualityKnowledgeRecommendationFeedbackGovernanceRecords,
@@ -963,14 +1173,18 @@ const configs = ref<SystemConfig[]>([])
 const notificationConfigs = ref<NotificationConfig[]>([])
 const pocEvidenceRecords = ref<PocEvidenceGovernanceRecord[]>([])
 const agentApprovals = ref<AgentConfigApprovalRecord[]>([])
+const assistantActionAudits = ref<AssistantActionAuditRecord[]>([])
+const assistantRecoveryPackages = ref<AssistantRecoveryPackage[]>([])
 const pocReviewSignoff = ref<PocReviewSignoffRecord | null>(null)
 const pocRolloutPackage = ref<PocRolloutPackageRecord | null>(null)
 const pocPilotRun = ref<PocPilotRunRecord | null>(null)
 const pocHypercareAcceptance = ref<PocHypercareAcceptanceRecord | null>(null)
 const riskSlaReview = ref<RiskSlaReviewRecord | null>(null)
 const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
+const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const knowledgeReviewRecords = ref<KnowledgeGovernanceReviewRecord[]>([])
+const knowledgePendingDocuments = ref<KnowledgeGovernanceSourceDocument[]>([])
 const qualityKnowledgeReviewRecords = ref<QualityKnowledgeReviewQueueRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
 const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>([])
@@ -1047,6 +1261,15 @@ const agentActions = [
     status: '验收归档',
     statusClass: 'accepted',
   },
+  {
+    scope: 'AI 生产助手',
+    name: '治理助手可执行动作',
+    description: 'AI 生产助手执行或拒绝的动作进入 Agent 治理，按执行人、角色、目标页面和审计编号核对。',
+    requiredRole: 'Admin',
+    auditId: 'AUD-CHAT-*',
+    status: '动作审计',
+    statusClass: 'logged',
+  },
 ]
 const qualityKnowledgePolicyCards = computed<QualityKnowledgePolicyGovernanceRecord[]>(() =>
   buildQualityKnowledgePolicyGovernanceRecords(qualityKnowledgeReviewRecords.value)
@@ -1080,6 +1303,8 @@ const qualityGrayReleaseMonitorCards = computed<QualityKnowledgeGrayReleaseMonit
   buildQualityKnowledgeGrayReleaseMonitorRecords(qualityRetrainingVersionRecords.value, qualityRecommendationFeedbackRecords.value, qualityExperimentGatePolicy.value)
 )
 const qualityGrayReleaseDecisionCards = computed(() => qualityGrayReleaseDecisionRecords.value)
+const latestOutsourcingCommitment = computed(() => outsourcingCommitmentPackages.value[0] ?? null)
+const latestAssistantRecoveryPackage = computed(() => assistantRecoveryPackages.value[0] ?? null)
 const qualityClosedPolicy = computed(() =>
   qualityKnowledgeReviewRecords.value.find(record => record.status === 'closed')
 )
@@ -1163,7 +1388,22 @@ const agentPolicies = computed(() => [
 const agentGovernanceMetrics = computed(() => [
   { label: '可执行动作', value: agentActions.length },
   { label: '需 Admin 权限', value: agentActions.filter(item => item.requiredRole === 'Admin').length },
+  { label: '助手动作审计', value: assistantActionAudits.value.length },
+  { label: '助手拒绝动作', value: assistantActionAudits.value.filter(item => !item.permitted).length },
+  {
+    label: '交期恢复包',
+    value: latestAssistantRecoveryPackage.value
+      ? `${assistantRecoveryPackages.value.length} 条 / ${latestAssistantRecoveryPackage.value.statusLabel}`
+      : '待生成',
+  },
+  {
+    label: '外协承诺包',
+    value: latestOutsourcingCommitment.value
+      ? `${outsourcingCommitmentPackages.value.length} 条 / ${latestOutsourcingCommitment.value.statusLabel}`
+      : '待生成',
+  },
   { label: '配置审批中', value: agentApprovals.value.filter(item => isApprovalOpen(item.status)).length },
+  { label: '知识待治理', value: knowledgePendingDocuments.value.length },
   { label: '知识复核', value: knowledgeReviewRecords.value.length },
   { label: '质量策略规则', value: qualityKnowledgePolicyCards.value.length },
   { label: '再训练版本', value: qualityRetrainingGovernanceCards.value.length },
@@ -1275,6 +1515,60 @@ function openAuditLogs() {
   router.push('/audit-logs')
 }
 
+function openKnowledgeGovernance() {
+  router.push('/knowledge/documents')
+}
+
+function openPurchaseBoard() {
+  router.push('/purchase')
+}
+
+function openSchedulingBoard() {
+  router.push('/scheduling')
+}
+
+function openRiskBoard() {
+  router.push('/risk')
+}
+
+function openQualityBoard() {
+  router.push('/quality')
+}
+
+function knowledgeIndexStatusLabel(status: KnowledgeIndexStatus) {
+  return {
+    indexed: '已索引',
+    pending: '待索引',
+    failed: '失败',
+  }[status]
+}
+
+function assistantActionTypeLabel(type: AssistantActionAuditRecord['type']) {
+  return {
+    navigate: '页面跳转',
+    schedule_suggestion: '排产建议',
+    export_report: '报表导出',
+    create_anomaly_card: '异常处置',
+    delivery_recovery_package: '交期恢复包',
+  }[type]
+}
+
+function assistantActionStatusClass(permitted: boolean) {
+  return permitted ? 'accepted' : 'guarded'
+}
+
+function outsourcingCommitmentStatusClass(record: OutsourcingCommitmentPackage) {
+  if (record.scheduleReleaseTraceId) return 'accepted'
+  if (record.receiptTraceId) return 'guarded'
+  return 'pending'
+}
+
+function assistantPackageStatusClass(record: AssistantRecoveryPackage) {
+  if (record.status === 'closed') return 'accepted'
+  if (record.purchaseActionStatus === 'closed' || record.qualityActionStatus === 'closed') return 'guarded'
+  return 'pending'
+}
+
 function otdEvidenceStatusClass(status: OtdEvidenceStatus) {
   if (status === 'closed') return 'accepted'
   if (status === 'active') return 'guarded'
@@ -1331,14 +1625,18 @@ function formatTime(t: string) { return t?.slice(0, 16).replace('T', ' ') || '' 
 onMounted(async () => {
   pocEvidenceRecords.value = readPocEvidenceGovernanceRecords()
   agentApprovals.value = readAgentConfigApprovals()
+  assistantActionAudits.value = readAssistantActionAudits()
+  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
   pocReviewSignoff.value = readPocReviewSignoffRecord()
   pocRolloutPackage.value = readPocRolloutPackageRecord()
   pocPilotRun.value = readPocPilotRunRecord()
   pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
   riskSlaReview.value = readRiskSlaReviewRecord()
   qualityMrbDisposition.value = readQualityMrbDispositionRecord()
+  outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
   knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
+  knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments()
   qualityKnowledgeReviewRecords.value = readQualityKnowledgeReviewQueueRecords()
   qualityRetrainingVersionRecords.value = readQualityKnowledgeRetrainingVersionRecords()
   qualityRecommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
@@ -1434,6 +1732,7 @@ onMounted(async () => {
 /* Agent 治理 */
 .agent-governance-panel { display: flex; flex-direction: column; gap: 14px; padding: 14px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
 .agent-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.agent-heading-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .agent-heading h3 { margin: 0 0 6px; font-size: 17px; color: #0f172a; }
 .agent-heading p { margin: 0; color: #64748b; font-size: 13px; }
 .eyebrow { display: block; margin-bottom: 4px; color: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
@@ -1452,6 +1751,35 @@ onMounted(async () => {
 .agent-action-card h4,
 .policy-block h4 { margin: 0 0 8px; color: #0f172a; font-size: 14px; }
 .agent-action-card p { min-height: 48px; margin: 0 0 12px; color: #475569; font-size: 12px; line-height: 1.55; }
+.assistant-action-governance { display: grid; grid-template-columns: 1fr; }
+.assistant-action-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.assistant-action-card { padding: 11px; border: 1px solid #dbeafe; border-radius: 6px; background: #f8fbff; }
+.assistant-action-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.assistant-action-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.assistant-package-governance { display: grid; grid-template-columns: 1fr; }
+.assistant-package-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.assistant-package-card { padding: 11px; border: 1px solid #c7d2fe; border-radius: 6px; background: #f8faff; }
+.assistant-package-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.assistant-package-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.assistant-package-closure { display: grid; gap: 4px; margin-top: 8px; padding: 8px; border: 1px solid #bfdbfe; border-radius: 5px; background: #eff6ff; }
+.assistant-package-closure.quality { border-color: #bbf7d0; background: #f0fdf4; }
+.assistant-package-closure span { color: #1d4ed8; font-size: 12px; font-weight: 700; }
+.assistant-package-closure strong { margin: 0; color: #0f172a; font-size: 12px; line-height: 1.45; }
+.assistant-package-closure code { overflow-wrap: anywhere; color: #1d4ed8; font-size: 11px; }
+.assistant-package-steps { display: grid; gap: 6px; margin-top: 8px; }
+.assistant-package-steps span { color: #64748b; font-size: 12px; font-weight: 700; }
+.assistant-package-steps ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.assistant-package-steps li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 6px; align-items: center; min-width: 0; padding: 7px 8px; border-radius: 5px; background: #fff; }
+.assistant-package-steps b { color: #111827; font-size: 12px; }
+.assistant-package-steps em { color: #64748b; font-style: normal; font-size: 11px; }
+.assistant-package-steps code { overflow-wrap: anywhere; color: #1d4ed8; font-size: 11px; text-align: right; }
+.assistant-package-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.outsourcing-governance { display: grid; grid-template-columns: 1fr; }
+.outsourcing-governance-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.outsourcing-governance-card { padding: 11px; border: 1px solid #c7d2fe; border-radius: 6px; background: #f8faff; }
+.outsourcing-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.outsourcing-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.outsourcing-governance-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .risk-sla-governance { display: grid; grid-template-columns: 1fr; }
 .risk-sla-governance-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
 .risk-sla-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
@@ -1473,6 +1801,14 @@ onMounted(async () => {
 .poc-evidence-empty span { display: block; margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .poc-evidence-empty { padding: 11px; border: 1px dashed #bfdbfe; border-radius: 6px; background: #fff; }
 .knowledge-governance-lane { display: grid; grid-template-columns: 1fr; }
+.knowledge-pending-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.knowledge-pending-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
+.knowledge-pending-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.knowledge-pending-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.knowledge-action-note { display: grid; gap: 4px; margin-top: 8px; padding: 8px; border: 1px solid #fed7aa; border-radius: 5px; background: #fff; }
+.knowledge-action-note span { color: #c2410c; font-size: 12px; font-weight: 700; }
+.knowledge-action-note strong { margin: 0; color: #475569; font-size: 12px; line-height: 1.45; }
+.knowledge-open-button { width: fit-content; margin-bottom: 10px; }
 .knowledge-review-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .knowledge-review-card { padding: 11px; border: 1px solid #a7f3d0; border-radius: 6px; background: #f0fdfa; }
 .knowledge-review-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
@@ -1591,6 +1927,10 @@ onMounted(async () => {
   .policy-lane { grid-template-columns: 1fr; display: grid; }
   .agent-metrics,
   .agent-grid,
+  .assistant-action-list,
+  .assistant-package-list,
+  .outsourcing-governance-list,
+  .knowledge-pending-list,
   .knowledge-review-list,
   .quality-policy-list,
   .quality-retraining-list,

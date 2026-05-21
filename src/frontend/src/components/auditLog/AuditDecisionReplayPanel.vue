@@ -295,24 +295,165 @@ function mapKnowledgeGovernanceReviewToReplay(record: KnowledgeGovernanceReviewR
   }
 }
 
+function mapBarcodeReworkReleaseEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
+  let risk = '返工复验放行后，OP-20 接收、排产回写和标签状态必须同步。'
+  let steps: string[] = []
+
+  switch (record.stage) {
+    case '质量复验':
+      risk = '返工复验合格后可继续释放 OP-20 接收，但必须确认交接释放、排产回写和标签解冻同步完成。'
+      steps = [
+        `质量闭环读取 ${record.source} 的扫码返工冻结、复验结论和下道接收条件。`,
+        `追踪编号 ${record.traceId} 对应的复验结果已确认，允许进入交接释放。`,
+        `复验结论写入统一 OTD 证据链，并同步给交接释放、排产回写和标签状态。`,
+        `当前状态为 ${record.statusLabel}，审计回放要求核对复验结果、冻结解除和后续排产窗口是否一致。`,
+      ]
+      break
+    case '交接释放':
+      risk = 'OP-20 接收已放行，但仍需确认排产回写和标签解冻是否同步完成。'
+      steps = [
+        `质量闭环读取 ${record.source} 的复验放行结果和 OP-20 接收冻结。`,
+        `追踪编号 ${record.traceId} 已解冻 OP-20 接收并恢复下道交接。`,
+        `交接释放结果同步给排产回写和标签状态，避免单点放行后留下未回写窗口。`,
+        `当前状态为 ${record.statusLabel}，审计回放要求核对接收数量、窗口恢复和实物标签是否一致。`,
+      ]
+      break
+    case '排产回写':
+      risk = '排产窗口已恢复，但仍需确认标签状态和交接释放与同一条复验链同步。'
+      steps = [
+        `AI 排产读取 ${record.source} 的交接释放结果和返工复验耗时。`,
+        `追踪编号 ${record.traceId} 已把 OP-20 接收窗口回写为可排。`,
+        `排产恢复信息同步给标签状态和审计回放，保留复验耗时口径。`,
+        `当前状态为 ${record.statusLabel}，审计回放要求核对窗口、节拍和 OTD 复盘口径是否一致。`,
+      ]
+      break
+    case '标签状态':
+    default:
+      risk = '标签解冻已完成，但必须与交接释放和排产回写保持同源。'
+      steps = [
+        `条码 / QR 打印读取 ${record.source} 的复验放行结果和流转卡绑定状态。`,
+        `追踪编号 ${record.traceId} 已把流转卡标签从质量冻结更新为复验放行。`,
+        `标签状态同步给交接释放和排产回写，现场扫码可以继续进入 OP-20 接收确认。`,
+        `当前状态为 ${record.statusLabel}，审计回放要求核对现场标签、接收状态和排产窗口是否一致。`,
+      ]
+      break
+  }
+
+  return {
+    id: `otd-${record.id}`,
+    type: '质量复验释放证据',
+    title: `${record.stage}：${record.title}`,
+    summary: record.summary,
+    object: record.object,
+    actor: record.source,
+    evidence: record.traceId,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'otd',
+    traceId: record.traceId,
+    risk,
+    auditState: '返工复验、交接释放、排产回写和标签状态已归档',
+    steps,
+  }
+}
+
+function mapOutsourcingCommitmentToReplay(record: OtdEvidenceChainItem): ReplayItem {
+  return {
+    id: `otd-${record.id}`,
+    type: '外协承诺包',
+    title: `外协承诺包：${record.title}`,
+    summary: record.summary,
+    object: record.object,
+    actor: record.source,
+    evidence: record.traceId,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'otd',
+    traceId: record.traceId,
+    risk: '外协承诺已锁定，但仍属于厂外等待，不应计为厂内恢复。',
+    auditState: '外协承诺、计划复核和厂外等待口径已归档',
+    steps: [
+      `报表中心从 OTD KPI 多维钻取生成外协承诺包：${record.title}。`,
+      `对象 ${record.object} 来自 ${record.source}，承诺摘要：${record.summary}`,
+      `追踪编号 ${record.traceId} 对应的原始 KPI 证据追踪号已同步写入统一 OTD 证据链，必须保留厂外等待口径。`,
+      'AI 排产可读取该承诺包生成外协复核建议，但不能把厂外等待误判为厂内恢复。',
+    ],
+  }
+}
+
+function mapOutsourcingReceiptToReplay(record: OtdEvidenceChainItem): ReplayItem {
+  return {
+    id: `otd-${record.id}`,
+    type: '采购收货证据',
+    title: `外协到货：${record.title}`,
+    summary: record.summary,
+    object: record.object,
+    actor: record.source,
+    evidence: record.traceId,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'otd',
+    traceId: record.traceId,
+    risk: '外协到货已确认，仍需由 AI 排产复核释放窗口和后续工序承诺。',
+    auditState: '外协到货、采购确认、排产释放复核和 OTD 口径已归档',
+    steps: [
+      `采购协同确认外协到货：${record.title}。`,
+      `对象 ${record.object} 来自 ${record.source}，到货摘要：${record.summary}`,
+      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，原外协承诺追踪 ${record.sourceTraceId ?? '已同步'} 保留为前置证据。`,
+      'AI 排产可关闭厂外等待口径，并按到货后最早可执行窗口复核释放排产。',
+    ],
+  }
+}
+
+function mapOutsourcingScheduleReleaseToReplay(record: OtdEvidenceChainItem): ReplayItem {
+  return {
+    id: `otd-${record.id}`,
+    type: '排产释放证据',
+    title: `外协排产释放：${record.title}`,
+    summary: record.summary,
+    object: record.object,
+    actor: record.source,
+    evidence: record.traceId,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'otd',
+    traceId: record.traceId,
+    risk: '外协到货已由 AI 排产采纳释放，审计需确认厂外等待口径已关闭且未误计为厂内提前恢复。',
+    auditState: '外协承诺、采购到货、排产采纳、厂外等待口径关闭和 OTD 口径已归档',
+    steps: [
+      `AI 排产采纳外协释放建议：${record.title}。`,
+      `对象 ${record.object} 来自 ${record.source}，释放摘要：${record.summary}`,
+      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，前置外协到货追踪 ${record.sourceTraceId ?? '已同步'} 保留为来源证据。`,
+      '审计回放要求核对外协承诺、采购到货、排产采纳、厂外等待口径关闭和 OTD 口径归档是否连续闭环。',
+    ],
+  }
+}
+
 function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isCommitmentPackage = record.stage === '客户承诺包'
+  const isOutsourcingCommitment = record.stage === '外协承诺'
+  const isOutsourcingReceipt = record.stage === '外协到货'
+  const isOutsourcingScheduleRelease = record.stage === '外协排产释放'
   const isKittingEvidence = record.stage === '库存齐套'
   const isEquipmentEvidence = record.stage === '设备维护' || record.stage === '设备实证'
-  const isProductionEvidence = record.stage === '生产完工' || record.stage === '生产复核'
+  const isProductionCompletionEvidence = record.stage === '生产完工'
+  const isProductionCloseoutEvidence = record.stage === '生产复核'
   const isShopfloorSituationEvidence = record.stage === '现场态势'
   const isShopfloorEscalationEvidence = record.stage === '现场处置包'
   const isAnomalyDispatchEvidence = record.stage === '异常分流'
   const isRiskSlaReviewEvidence = record.stage === '风险 SLA 复核'
+  const isAssistantQualityEvidence = record.stage === '助手质量回写'
   const isBarcodeExecutionEvidence = record.stage === '扫码执行'
   const isBarcodeCompletionEvidence = record.stage === '扫码完工'
   const isBarcodeMaterialEvidence = record.stage === '物料消耗'
   const isBarcodeQualityGateEvidence = record.stage === '质量门'
   const isBarcodeHandoffEvidence = record.stage === '工序交接'
+  const isBarcodeReworkReleaseEvidence = [
+    'TRACE-QR-WO-RUSH-9001-OP-10-RECHECK',
+    'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20',
+    'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
+    'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
+  ].includes(record.traceId)
   const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行'
   const isEngineeringChangeEvidence = record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
   const isRouteCapabilityEvidence = record.stage === '工艺能力校验' || record.stage === '工艺能力放行'
-  const isPurchaseReceiptEvidence = record.stage === '采购回写' || record.stage === '供应到货'
+  const isPurchaseReceiptEvidence = record.stage === '采购回写' || record.stage === '供应到货' || isOutsourcingReceipt
   const isSupplyRiskEvidence = record.stage === '供应风险'
   const isSupplierNetworkEvidence = record.stage === '供应网络'
   const isPurchaseCorrectionEvidence = record.stage === '采购整改'
@@ -320,16 +461,24 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isLaborAssignmentEvidence = record.stage === '人员替班' || record.stage === '人员复核' || record.stage === '人员放行'
   const isLaborBlockEvidence = record.stage === '人员阻断'
   const isLaborStartEvidence = record.stage === '生产开工'
+  if (isBarcodeReworkReleaseEvidence) return mapBarcodeReworkReleaseEvidenceToReplay(record)
+  if (isOutsourcingCommitment) return mapOutsourcingCommitmentToReplay(record)
+  if (isOutsourcingReceipt) return mapOutsourcingReceiptToReplay(record)
+  if (isOutsourcingScheduleRelease) return mapOutsourcingScheduleReleaseToReplay(record)
   return {
     id: `otd-${record.id}`,
     type: isCommitmentPackage
       ? '客户承诺包'
+      : isOutsourcingCommitment
+        ? '外协承诺包'
       : isKittingEvidence
         ? '库存齐套证据'
-        : isEquipmentEvidence
-          ? '设备停机证据'
-          : isProductionEvidence
-            ? '生产完工证据'
+      : isEquipmentEvidence
+        ? '设备停机证据'
+        : isProductionCompletionEvidence
+          ? '生产完工证据'
+          : isProductionCloseoutEvidence
+            ? '生产复核证据'
             : isShopfloorSituationEvidence
               ? '现场态势证据'
               : isShopfloorEscalationEvidence
@@ -338,6 +487,8 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
                   ? '异常分流证据'
                   : isRiskSlaReviewEvidence
                     ? '风险SLA证据'
+                    : isAssistantQualityEvidence
+                      ? '助手质量责任证据'
                     : isBarcodeExecutionEvidence
                       ? '扫码执行证据'
                       : isBarcodeCompletionEvidence
@@ -381,20 +532,26 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
     traceId: record.traceId,
     risk: isCommitmentPackage
       ? `当前状态：${record.statusLabel}。承诺包只能基于 KPI 钻取、责任动作和 OTD 证据链对外复盘。`
+      : isOutsourcingCommitment
+        ? `当前状态：${record.statusLabel}。外协承诺只能说明外部供应窗口已锁定，不能替代厂内恢复。`
       : isKittingEvidence
         ? `当前状态：${record.statusLabel}。该齐套证据必须同时核对 BOM 版本、可用库存、在途量和排产时间窗，避免缺料工单被误排。`
         : isEquipmentEvidence
           ? `当前状态：${record.statusLabel}。该设备证据必须核对停机时长、影响工单、替代设备、维护窗口和瓶颈保护策略。`
-          : isProductionEvidence
+          : isProductionCompletionEvidence
             ? `当前状态：${record.statusLabel}。该生产证据必须核对完工数量、工单进度、质量门、后续工序窗口和 OTD 承诺。`
-            : isShopfloorSituationEvidence
-              ? `当前状态：${record.statusLabel}。该现场态势证据必须核对瓶颈负载、齐套缺口、质量返工、责任人、动作入口和排产影响。`
+            : isProductionCloseoutEvidence
+              ? `当前状态：${record.statusLabel}。该生产复核证据必须核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`
+          : isShopfloorSituationEvidence
+            ? `当前状态：${record.statusLabel}。该现场态势证据必须核对瓶颈负载、齐套缺口、质量返工、责任人、动作入口和排产影响。`
               : isShopfloorEscalationEvidence
                 ? `当前状态：${record.statusLabel}。该现场处置证据必须核对生产经理审批、风险队列、AI 排产分流、物料/质量复核和关闭留痕。`
                 : isAnomalyDispatchEvidence
                   ? `当前状态：${record.statusLabel}。该异常分流证据必须核对异常来源、影响工单、风险队列、AI 排产复核、责任人和下游质量/设备/物料处置。`
                   : isRiskSlaReviewEvidence
                     ? `当前状态：${record.statusLabel}。该风险 SLA 证据必须核对逾期风险、关键风险、晨会编号、责任动作、排产保护、采购承诺和设备窗口。`
+                    : isAssistantQualityEvidence
+                      ? `当前状态：${record.statusLabel}。该助手质量回写必须核对首件检验、OP-20 扭矩复核窗口、执行包追踪和排产释放条件。`
                     : isBarcodeExecutionEvidence
                       ? `当前状态：${record.statusLabel}。该扫码执行证据必须核对扫码对象、现场入口、执行人、下一核对点、生产报工入口和排产影响复核。`
                       : isBarcodeCompletionEvidence
@@ -430,20 +587,26 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
       : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
+      : isOutsourcingCommitment
+        ? '外协承诺、排产复核和厂外等待口径已归档'
       : isKittingEvidence
         ? '库存齐套、BOM 版本、在途量、缺口处置和排产复核已归档'
         : isEquipmentEvidence
           ? '设备停机、替代设备、维护窗口、瓶颈保护和排产复核已归档'
-          : isProductionEvidence
+          : isProductionCompletionEvidence
             ? '生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档'
-            : isShopfloorSituationEvidence
-              ? '现场态势、事件来源、责任人、动作入口和排产影响已归档'
+            : isProductionCloseoutEvidence
+              ? '完工复核、排产窗口、质量门和承诺交期已归档'
+          : isShopfloorSituationEvidence
+            ? '现场态势、事件来源、责任人、动作入口和排产影响已归档'
               : isShopfloorEscalationEvidence
                 ? '现场处置包、生产经理审批、排产分流、风险关闭和跨模块回写已归档'
                 : isAnomalyDispatchEvidence
                   ? '异常确认、风险队列、AI 排产复核、责任人和下游处置已归档'
                   : isRiskSlaReviewEvidence
                     ? '风险 SLA 晨会、逾期风险、责任动作、闭环追踪和 OTD 恢复已归档'
+                    : isAssistantQualityEvidence
+                      ? '助手执行包、首件检验、质量复核窗口和排产释放条件已归档'
                     : isBarcodeExecutionEvidence
                       ? '扫码对象、现场入口、执行人、下一核对点和生产入口已归档'
                       : isBarcodeCompletionEvidence
@@ -484,6 +647,13 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
           `追踪编号 ${record.traceId} 写入统一 OTD 证据链。`,
           `AI 生产助手可读取该承诺包回答客户交付恢复口径，报表 CSV 可导出审计编号。`,
         ]
+      : isOutsourcingCommitment
+        ? [
+            `报表中心从 OTD KPI 多维钻取生成外协承诺包：${record.title}。`,
+            `对象 ${record.object} 来自 ${record.source}，承诺摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，原始 KPI 追踪已同步保留外部约束口径。`,
+            `AI 排产可读取该承诺包生成外协复核建议，但不会把厂外等待误判为厂内恢复。`,
+          ]
       : isKittingEvidence
         ? [
             `库存齐套读取 ${record.source} 的 BOM 版本、库存可用量、在途量和排产时间窗。`,
@@ -500,13 +670,21 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对换设备、延后、加班和拆单建议是否被调度员复核。`,
           ]
-      : isProductionEvidence
+      : isProductionCompletionEvidence
         ? [
             `生产报工读取 ${record.source} 的完工数量、工单进度、质量结果和后续工序窗口。`,
             `${record.stage} 阶段生成执行证据：${record.title}。`,
             `对象 ${record.object} 的执行摘要：${record.summary}`,
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对排产页复核、质量门放行和承诺交期是否仍成立。`,
+          ]
+      : isProductionCloseoutEvidence
+        ? [
+            `生产报工读取 ${record.source} 的完工回写、排产页复核、质量门和承诺交期。`,
+            `${record.stage} 阶段生成完工复核证据：${record.title}。`,
+            `对象 ${record.object} 的复核摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给排产复核、报表和审计回放。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`,
           ]
       : isShopfloorSituationEvidence
         ? [
@@ -539,6 +717,14 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `对象 ${record.object} 的风险摘要：${record.summary}`,
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产、AI 生产助手、Agent 治理和报表 CSV。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对排产保护、采购承诺、设备窗口和责任动作闭环是否支撑 OTD 恢复。`,
+          ]
+      : isAssistantQualityEvidence
+        ? [
+            `质量闭环读取 ${record.source} 的首件检验、OP-20 扭矩复核窗口和执行包责任动作。`,
+            `${record.stage} 阶段生成助手执行包质量回写：${record.title}。`,
+            `对象 ${record.object} 的质量闭环摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产交接面板和风险处置队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对质量复核是否支撑交期恢复执行包释放。`,
           ]
       : isBarcodeExecutionEvidence
         ? [
@@ -881,9 +1067,12 @@ const metrics = computed(() => [
   { label: '质量灰度回放', value: replayItems.value.filter(item => item.type === '质量灰度').length },
   { label: '质量灰度发布', value: replayItems.value.filter(item => item.type === '质量灰度发布').length },
   { label: '客户承诺包', value: replayItems.value.filter(item => item.type === '客户承诺包').length },
+  { label: '外协承诺包', value: replayItems.value.filter(item => item.type === '外协承诺包').length },
+  { label: '外协释放回放', value: replayItems.value.filter(item => item.type === '排产释放证据').length },
   { label: '库存齐套回放', value: replayItems.value.filter(item => item.type === '库存齐套证据').length },
   { label: '设备停机回放', value: replayItems.value.filter(item => item.type === '设备停机证据').length },
   { label: '生产完工回放', value: replayItems.value.filter(item => item.type === '生产完工证据').length },
+  { label: '生产复核回放', value: replayItems.value.filter(item => item.type === '生产复核证据').length },
   { label: '现场态势回放', value: replayItems.value.filter(item => item.type === '现场态势证据').length },
   { label: '现场处置回放', value: replayItems.value.filter(item => item.type === '现场处置证据').length },
   { label: '异常分流回放', value: replayItems.value.filter(item => item.type === '异常分流证据').length },
@@ -892,6 +1081,7 @@ const metrics = computed(() => [
   { label: '扫码完工回放', value: replayItems.value.filter(item => item.type === '扫码完工证据').length },
   { label: '扫码物料回放', value: replayItems.value.filter(item => item.type === '扫码物料证据').length },
   { label: '扫码质量门回放', value: replayItems.value.filter(item => item.type === '扫码质量门证据').length },
+  { label: '质量复验释放回放', value: replayItems.value.filter(item => item.type === '质量复验释放证据').length },
   { label: '扫码交接回放', value: replayItems.value.filter(item => item.type === '扫码交接证据').length },
   { label: '工程约束回放', value: replayItems.value.filter(item => item.type === '工程约束证据').length },
   { label: '工程变更回放', value: replayItems.value.filter(item => item.type === '工程变更证据').length },
@@ -928,6 +1118,8 @@ onMounted(() => {
   else if (qualityRecommendationFeedbackRecords.value[0]) selectedId.value = `quality-recommendation-feedback-${qualityRecommendationFeedbackRecords.value[0].id}`
   else if (knowledgeReviewRecords.value[0]) selectedId.value = knowledgeReviewRecords.value[0].id
   else if (otdEvidenceRecords.value.find(item => item.stage === '客户承诺包')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '客户承诺包')?.id}`
+  else if (otdEvidenceRecords.value.find(item => item.stage === '外协排产释放')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '外协排产释放')?.id}`
+  else if (otdEvidenceRecords.value.find(item => item.stage === '外协承诺')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '外协承诺')?.id}`
   else if (otdEvidenceRecords.value[0]) selectedId.value = `otd-${otdEvidenceRecords.value[0].id}`
   else if (pocReviewSignoff.value) selectedId.value = pocReviewSignoff.value.id
   else if (pocEvidenceRecords.value[0]) selectedId.value = pocEvidenceRecords.value[0].id

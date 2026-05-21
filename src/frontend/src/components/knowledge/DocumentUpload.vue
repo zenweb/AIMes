@@ -150,9 +150,11 @@ import {
   type CustomerOrderImportEvidence,
 } from '../../utils/customer-order-import-sync'
 import {
+  applyKnowledgeGovernanceReviewToDocument,
   createDefaultKnowledgeGovernanceReview,
-  readKnowledgeGovernanceReview,
+  readKnowledgeGovernanceDocuments,
   writeKnowledgeGovernanceReview,
+  type KnowledgeGovernanceSourceDocument,
 } from '../../utils/knowledge-governance-sync'
 import {
   approveQualityKnowledgeRetrainingCandidate,
@@ -177,9 +179,7 @@ import {
   runQualityKnowledgeRetrainingValidation,
   type QualityKnowledgeRetrainingVersionRecord,
 } from '../../utils/quality-knowledge-sample-sync'
-import KnowledgeGovernancePanel, {
-  type KnowledgeGovernanceDocument,
-} from './KnowledgeGovernancePanel.vue'
+import KnowledgeGovernancePanel from './KnowledgeGovernancePanel.vue'
 
 interface QueueFile {
   file: File
@@ -209,42 +209,10 @@ const qualityKnowledgeAssets = computed(() =>
     qualityGrayReleaseDecisionRecords.value
   )
 )
-const governanceDocuments = ref<KnowledgeGovernanceDocument[]>(([
+const governanceDocuments = ref<KnowledgeGovernanceSourceDocument[]>(([
   ...qualityKnowledgeSampleDocuments(),
-  {
-    id: 'kg-sop-cnc',
-    title: 'CNC 精加工 SOP',
-    category: '工艺文档',
-    version: 'V2.3',
-    summary: '用于 OP-020 CNC 精加工参数、首件确认和刀具寿命预警。',
-    indexStatus: 'indexed',
-    validUntil: '2026-12-31',
-    freshnessStatus: '有效',
-    references: ['AI 生产助手', '工艺路线', '生产报工'],
-  },
-  {
-    id: 'kg-quality-torque',
-    title: '装配扭矩检验规范',
-    category: '质量文档',
-    version: 'V1.8',
-    summary: '定义 OP-040 扭矩 32-36 N.m 的检验窗口和复验规则。',
-    indexStatus: 'indexed',
-    validUntil: '2026-06-05',
-    freshnessStatus: '即将过期',
-    references: ['质量闭环', 'AI 生产助手'],
-  },
-  {
-    id: 'kg-equipment-cnc-maint',
-    title: 'CNC-01 主轴维护手册',
-    category: '设备文档',
-    version: 'V1.1',
-    summary: '用于设备健康下降、主轴振动和预防维护窗口推荐。',
-    indexStatus: 'pending',
-    validUntil: '2026-05-10',
-    freshnessStatus: '已过期',
-    references: ['设备维护', '风险预警', 'AI 排产'],
-  },
-] satisfies KnowledgeGovernanceDocument[]).map(applyKnowledgeReview))
+  ...readKnowledgeGovernanceDocuments(),
+] satisfies KnowledgeGovernanceSourceDocument[]))
 
 const canUpload = computed(() => queue.value.some(f => f.status === 'pending'))
 const importMappedFields = computed(() => customerOrderImport.value?.mappedFields ?? ['工单号', '产品', '交期', '工艺路线', '物料缺口', '设备约束'])
@@ -311,6 +279,9 @@ async function startUpload() {
         validUntil: '待填写',
         freshnessStatus: '即将过期',
         references: ['待确认'],
+        owner: '知识库管理员',
+        recommendedAction: '确认文档分类、有效期和引用范围后再重建索引。',
+        auditHint: '待生成审计编号',
       })
     } catch (e: any) {
       clearInterval(progressInterval)
@@ -322,21 +293,11 @@ async function startUpload() {
   uploading.value = false
 }
 
-function applyKnowledgeReview(document: KnowledgeGovernanceDocument): KnowledgeGovernanceDocument {
-  const review = readKnowledgeGovernanceReview(document.id)
-  if (!review) return document
-  return {
-    ...document,
-    version: review.reviewedVersion,
-    summary: review.summary,
-    indexStatus: 'indexed',
-    validUntil: review.validUntil,
-    freshnessStatus: '有效',
-    references: review.references,
-  }
+function applyKnowledgeReview(document: KnowledgeGovernanceSourceDocument): KnowledgeGovernanceSourceDocument {
+  return applyKnowledgeGovernanceReviewToDocument(document)
 }
 
-function qualityKnowledgeSampleDocuments(): KnowledgeGovernanceDocument[] {
+function qualityKnowledgeSampleDocuments(): KnowledgeGovernanceSourceDocument[] {
   return readQualityKnowledgeSamples().map(sample => ({
     id: sample.documentId,
     title: sample.documentTitle,
@@ -347,10 +308,13 @@ function qualityKnowledgeSampleDocuments(): KnowledgeGovernanceDocument[] {
     validUntil: sample.validUntil,
     freshnessStatus: '有效',
     references: sample.reuseTargets,
+    owner: '质量工程师 / 知识库管理员',
+    recommendedAction: '保持扫码返工样本与质量闭环、AI 助手和审计日志的引用范围一致。',
+    auditHint: sample.auditId,
   }))
 }
 
-function handleKnowledgeReview(document: KnowledgeGovernanceDocument) {
+function handleKnowledgeReview(document: KnowledgeGovernanceSourceDocument) {
   const review = writeKnowledgeGovernanceReview(createDefaultKnowledgeGovernanceReview(new Date().toISOString(), {
     documentId: document.id,
     documentTitle: document.title,
@@ -604,6 +568,9 @@ function prepareCustomerOrderImport() {
       validUntil: '2026-06-30',
       freshnessStatus: '有效',
       references: ['报表中心', 'AI 排产', '生产报工'],
+      owner: '交付项目经理 / 知识库管理员',
+      recommendedAction: '把客户字段映射、风险识别和排产验证结果纳入 POC 验收证据。',
+      auditHint: evidence.batchId,
     })
   }
 }

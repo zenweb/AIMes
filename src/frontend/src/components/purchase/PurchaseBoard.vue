@@ -121,6 +121,54 @@
       </div>
     </section>
 
+    <section v-if="outsourcingCommitment" class="outsourcing-receipt-panel" aria-label="外协承诺到货确认">
+      <div class="outsourcing-receipt-heading">
+        <div>
+          <span class="eyebrow">外协协同</span>
+          <h3>外协承诺到货确认与排产释放</h3>
+        </div>
+        <span class="risk-badge" :class="outsourcingCommitment.receiptTraceId ? 'mitigated' : 'ordered'">
+          {{ outsourcingCommitment.statusLabel }}
+        </span>
+      </div>
+
+      <div class="outsourcing-receipt-grid">
+        <article>
+          <span>外协对象</span>
+          <strong>{{ outsourcingCommitment.targetName }}</strong>
+          <em>{{ outsourcingCommitment.affectedOrders }}</em>
+        </article>
+        <article>
+          <span>外协厂</span>
+          <strong>{{ outsourcingCommitment.partnerName }}</strong>
+          <em>{{ outsourcingCommitment.promiseDate }} 承诺到货</em>
+        </article>
+        <article>
+          <span>承诺追踪</span>
+          <strong>{{ outsourcingCommitment.auditId }}</strong>
+          <em>{{ outsourcingCommitment.traceId }}</em>
+        </article>
+      </div>
+
+      <div class="outsourcing-receipt-actions">
+        <button
+          type="button"
+          class="btn outsourcing-receive"
+          :disabled="Boolean(outsourcingCommitment.receiptTraceId)"
+          @click="handleConfirmOutsourcingArrival"
+        >
+          确认外协到货
+        </button>
+      </div>
+
+      <div class="outsourcing-receipt-trace">
+        <span>到货联动</span>
+        <strong>{{ outsourcingCommitment.receiptTraceId ? '外协到货已确认' : '等待采购确认到货' }}</strong>
+        <p>{{ outsourcingCommitment.receiptMessage ?? outsourcingCommitment.commitment }}</p>
+        <code>{{ outsourcingCommitment.receiptTraceId ?? outsourcingCommitment.traceId }}</code>
+      </div>
+    </section>
+
     <section v-if="materialDispatch" class="material-supplier-panel" aria-label="异常分流供应商整改">
       <div class="material-supplier-heading">
         <div>
@@ -319,6 +367,11 @@ import {
   closeAssistantRecoveryPurchaseAction,
   readAssistantRecoveryPackages,
 } from '../../utils/assistant-action-package-sync'
+import {
+  confirmOutsourcingCommitmentArrival,
+  readLatestOutsourcingCommitmentPackage,
+  type OutsourcingCommitmentPackage,
+} from '../../utils/outsourcing-commitment-sync'
 
 const orders = ref<PurchaseOrderSummary[]>([])
 const currentPage = ref(1)
@@ -360,6 +413,7 @@ type SupplyRiskDecision = 'open' | 'escalated' | 'alternate_committed' | 'altern
 const supplyRiskDecision = ref<SupplyRiskDecision>('open')
 const supplyRiskTrace = ref<{ title: string; detail: string; traceId: string } | null>(null)
 const supplierNetworkDecision = ref<SupplierNetworkDecision | null>(readSupplierNetworkDecision())
+const outsourcingCommitment = ref<OutsourcingCommitmentPackage | null>(readLatestOutsourcingCommitmentPackage())
 const materialDispatch = ref<AnomalyDispatchRecord | null>(readAnomalyDispatchRecordByType('material'))
 const shortageAction = ref<ShortageAction>({
   materialCode: 'M-AL-6061',
@@ -781,6 +835,12 @@ function handleSupplierNetworkDecision() {
   })
 }
 
+function handleConfirmOutsourcingArrival() {
+  if (!outsourcingCommitment.value) return
+  const updated = confirmOutsourcingCommitmentArrival(outsourcingCommitment.value.sourceKpiId, '采购 王工')
+  if (updated) outsourcingCommitment.value = updated
+}
+
 function handleMaterialSupplierCorrection() {
   if (!materialDispatch.value) return
   const dispatch = materialDispatch.value
@@ -919,6 +979,7 @@ function fmtAmt(n: number) { return n.toLocaleString('zh-CN', { minimumFractionD
 
 onMounted(async () => {
   applyStoredSupplyRiskEscalation()
+  outsourcingCommitment.value = readLatestOutsourcingCommitmentPackage()
   try {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
     orders.value = result.items
@@ -1025,6 +1086,17 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   background: #f0f9ff;
 }
 
+.outsourcing-receipt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: #f8faff;
+}
+
 .supply-risk-heading {
   display: flex;
   justify-content: space-between;
@@ -1033,6 +1105,13 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 }
 
 .supplier-network-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.outsourcing-receipt-heading {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -1049,12 +1128,15 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 
 .supply-risk-heading h3,
 .supplier-network-heading h3,
-.supply-risk-trace p {
+.outsourcing-receipt-heading h3,
+.supply-risk-trace p,
+.outsourcing-receipt-trace p {
   margin: 0;
 }
 
 .supply-risk-heading h3,
-.supplier-network-heading h3 {
+.supplier-network-heading h3,
+.outsourcing-receipt-heading h3 {
   color: #111827;
   font-size: 16px;
 }
@@ -1094,6 +1176,12 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   gap: 8px;
 }
 
+.outsourcing-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .supply-risk-card {
   display: flex;
   flex-direction: column;
@@ -1116,6 +1204,32 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   background: #fff;
 }
 
+.outsourcing-receipt-grid article {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 74px;
+  padding: 9px 10px;
+  border: 1px solid #e0e7ff;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.outsourcing-receipt-grid span,
+.outsourcing-receipt-grid em,
+.outsourcing-receipt-trace span,
+.outsourcing-receipt-trace p {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.outsourcing-receipt-grid strong {
+  color: #111827;
+  font-size: 14px;
+}
+
 .supplier-candidate-card.selected {
   border-color: #22c55e;
   background: #f0fdf4;
@@ -1129,6 +1243,12 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.outsourcing-receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .candidate-topline {
@@ -1209,6 +1329,18 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   color: #fff;
 }
 
+.outsourcing-receive {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.outsourcing-receive:disabled {
+  background: #c7d2fe;
+  border-color: #c7d2fe;
+  cursor: not-allowed;
+}
+
 .supply-risk-trace {
   display: flex;
   flex-direction: column;
@@ -1229,6 +1361,21 @@ h4 { font-size: 13px; margin: 0 0 8px; }
   background: #fff;
 }
 
+.outsourcing-receipt-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.outsourcing-receipt-trace strong {
+  color: #111827;
+  font-size: 14px;
+}
+
 .supply-risk-trace.empty {
   border-color: #e5e7eb;
   background: #fff;
@@ -1240,7 +1387,8 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 }
 
 .supply-risk-trace code,
-.supplier-network-trace code {
+.supplier-network-trace code,
+.outsourcing-receipt-trace code {
   color: #1d4ed8;
   font-size: 12px;
 }
@@ -1308,6 +1456,7 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 @media (max-width: 1100px) {
   .supply-risk-grid,
   .supplier-network-grid,
+  .outsourcing-receipt-grid,
   .material-supplier-body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

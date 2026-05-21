@@ -183,6 +183,11 @@ import {
   type RouteCapabilityValidation,
 } from '../../utils/engineering-change-sync'
 import {
+  confirmOutsourcingScheduleRelease,
+  readLatestOutsourcingCommitmentPackage,
+  type OutsourcingCommitmentPackage,
+} from '../../utils/outsourcing-commitment-sync'
+import {
   readOtdEvidenceChainRecords,
   type OtdEvidenceChainItem,
 } from '../../utils/otd-evidence-chain-sync'
@@ -245,6 +250,7 @@ const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
 const laborReassignment = ref<LaborReassignmentRecord | null>(null)
 const laborQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
 const barcodeScheduleReleaseRecord = ref<OtdEvidenceChainItem | null>(null)
+const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
 const assistantRecoveryPackageRecords = ref<AssistantRecoveryPackage[]>([])
 const engineeringConstraints = ref<EngineeringConstraintItem[]>([
   {
@@ -528,6 +534,8 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
   const barcodeScheduleRelease = readBarcodeScheduleReleaseRecord()
   const supplierNetworkDecision = readSupplierNetworkDecision()
   const supplyRisk = readSupplyRiskEscalation()
+  const outsourcingCommitment = readLatestOutsourcingCommitmentPackage()
+  outsourcingCommitmentRecord.value = outsourcingCommitment
   const engineeringImpact = readEngineeringChangeImpactAnalysis()
   const routeCapability = readRouteCapabilityValidation()
   const anomalyDispatchRecords = readAnomalyDispatchRecords()
@@ -727,6 +735,49 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
       ]
     : supplyMergedEvents
 
+  const outsourcingMergedEvents = outsourcingCommitment
+    ? (() => {
+      const received = Boolean(outsourcingCommitment.receiptTraceId)
+      const released = Boolean(outsourcingCommitment.scheduleReleaseTraceId)
+      return [
+        {
+          id: `evt-outsourcing-commitment-${outsourcingCommitment.sourceKpiId}`,
+          type: 'material' as const,
+          typeLabel: '外协承诺',
+          severity: 'warning' as const,
+          severityLabel: released ? '已释放' : received ? '已到货' : '待到货',
+          title: released
+            ? `${outsourcingCommitment.targetName} 外协排产释放已确认`
+            : received ? `${outsourcingCommitment.targetName} 外协到货已确认` : `${outsourcingCommitment.targetName} 外协承诺已锁定`,
+          impact: released
+            ? `${outsourcingCommitment.scheduleReleaseMessage} OTD 证据链已关闭厂外等待口径并保留排产释放审计。`
+            : received
+            ? `${outsourcingCommitment.receiptMessage} AI 排产可把厂外等待关闭，并复核 ${outsourcingCommitment.affectedOrders} 的释放窗口。`
+            : `${outsourcingCommitment.partnerName} 已承诺 ${outsourcingCommitment.promiseDate} 交付 ${outsourcingCommitment.affectedOrders}，但当前仍保留厂外等待口径，不应计为厂内已恢复。`,
+          affectedOrders: outsourcingCommitment.affectedOrders,
+          window: released ? '排产释放已确认' : received ? '到货确认后' : outsourcingCommitment.promiseDate,
+          evidence: Array.from(new Set([
+            outsourcingCommitment.auditId,
+            outsourcingCommitment.traceId,
+            ...(outsourcingCommitment.receiptAuditId ? [outsourcingCommitment.receiptAuditId] : []),
+            ...(outsourcingCommitment.receiptTraceId ? [outsourcingCommitment.receiptTraceId] : []),
+            ...(outsourcingCommitment.scheduleReleaseAuditId ? [outsourcingCommitment.scheduleReleaseAuditId] : []),
+            ...(outsourcingCommitment.scheduleReleaseTraceId ? [outsourcingCommitment.scheduleReleaseTraceId] : []),
+            outsourcingCommitment.sourceTraceId,
+            outsourcingCommitment.partnerName,
+          ])),
+          resolved: received || released,
+          resolutionNote: released
+            ? '厂外等待口径已关闭，AI 排产释放结论和 OTD 复盘证据已归档。'
+            : received
+            ? '外协到货已确认，AI 排产可关闭厂外等待并复核后续释放窗口。'
+            : '外协承诺已记录，AI 排产需保留外部约束并等待到货确认或计划拆分。',
+        },
+        ...supplierNetworkMergedEvents,
+      ]
+    })()
+    : supplierNetworkMergedEvents
+
   const engineeringImpactMergedEvents = engineeringImpact
     ? [
         {
@@ -756,9 +807,9 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
               ? '工程变更已驳回，AI 排产需撤回模拟并等待采购/原料到货。'
               : '工程变更已完成影响分析，AI 排产只能生成审批前模拟方案，正式释放仍需工程审批。',
         },
-        ...supplierNetworkMergedEvents,
+        ...outsourcingMergedEvents,
       ]
-    : supplierNetworkMergedEvents
+    : outsourcingMergedEvents
 
   const routeMergedEvents = routeCapability
     ? [
@@ -844,7 +895,7 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
             : `${record.summary} ${record.scheduleAction}`,
           affectedOrders: record.workOrders,
           window: record.status === 'closed' ? '风险关闭后复核' : record.scheduleWindow,
-          evidence: [record.auditId, record.traceId, ...record.evidence],
+          evidence: [record.auditId, record.traceId],
           resolved: record.status === 'closed',
           resolutionNote: record.status === 'closed'
             ? '风险队列已关闭现场处置包，AI 排产需复核已采用的 CNC 分流和急单窗口是否维持 OTD 改善。'
@@ -1537,14 +1588,17 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     const purchaseActionLine = assistantRecoveryPackage.purchaseActionSummary
       ? `采购责任动作：${assistantRecoveryPackage.purchaseActionSummary}${assistantRecoveryPackage.purchaseActionTraceId ? `（${assistantRecoveryPackage.purchaseActionTraceId}）` : ''}`
       : '采购责任动作等待收货闭合。'
+    const qualityActionLine = assistantRecoveryPackage.qualityActionSummary
+      ? `质量责任动作：${assistantRecoveryPackage.qualityActionSummary}${assistantRecoveryPackage.qualityActionTraceId ? `（${assistantRecoveryPackage.qualityActionTraceId}）` : ''}`
+      : '质量责任动作等待首件复核闭合。'
     activeAgentSuggestion.value = {
       eventId: event.id,
       title: assistantRecoveryPackage.status === 'closed'
         ? `${assistantRecoveryPackage.title}闭环复核建议`
         : `${assistantRecoveryPackage.title}排产建议`,
       action: assistantRecoveryPackage.status === 'closed'
-        ? `${assistantRecoveryPackage.closureTraceId ?? assistantRecoveryPackage.traceId}：执行交接已闭环，建议复核 WO-RUSH-9001 的 CNC-003 夜班窗口、M-AL-6061B 替代批次和 OP-20 质量复核是否继续支撑 ${assistantRecoveryPackage.otdImpact} OTD 恢复。${purchaseActionLine}`
-        : `${assistantRecoveryPackage.traceId}：${assistantRecoveryPackage.scheduleAction} 关联动作：${assistantRecoveryPackage.dispatchSteps.map(step => `${step.module}-${step.owner}`).join(' / ')}。${purchaseActionLine}`,
+        ? `${assistantRecoveryPackage.closureTraceId ?? assistantRecoveryPackage.traceId}：执行交接已闭环，建议复核 WO-RUSH-9001 的 CNC-003 夜班窗口、M-AL-6061B 替代批次和 OP-20 质量复核是否继续支撑 ${assistantRecoveryPackage.otdImpact} OTD 恢复。${purchaseActionLine} ${qualityActionLine}`
+        : `${assistantRecoveryPackage.traceId}：${assistantRecoveryPackage.scheduleAction} 关联动作：${assistantRecoveryPackage.dispatchSteps.map(step => `${step.module}-${step.owner}`).join(' / ')}。${purchaseActionLine} ${qualityActionLine}`,
       otdImpact: assistantRecoveryPackage.otdImpact,
       delayImpact: assistantRecoveryPackage.delayImpact,
       changeoverImpact: assistantRecoveryPackage.changeoverImpact,
@@ -1644,6 +1698,40 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
       otdImpact: '+5%',
       delayImpact: '-1 单风险',
       changeoverImpact: '+4min',
+    }
+    return
+  }
+  const activeOutsourcingCommitment = outsourcingCommitmentRecord.value ?? readLatestOutsourcingCommitmentPackage()
+  if (activeOutsourcingCommitment && event.id === `evt-outsourcing-commitment-${activeOutsourcingCommitment.sourceKpiId}`) {
+    if (activeOutsourcingCommitment.scheduleReleaseTraceId) {
+      activeAgentSuggestion.value = {
+        eventId: event.id,
+        title: '外协排产释放后的 OTD 复盘',
+        action: `${activeOutsourcingCommitment.scheduleReleaseTraceId} 已确认关闭 ${activeOutsourcingCommitment.affectedOrders} 的厂外等待口径，建议复核后续工序承诺、客户交期和 ${activeOutsourcingCommitment.scheduleReleaseAuditId} 审计链是否已进入 OTD 复盘。`,
+        otdImpact: '+2% 已释放归档',
+        delayImpact: '0 单外部等待',
+        changeoverImpact: '+4min',
+      }
+      return
+    }
+    if (activeOutsourcingCommitment.receiptTraceId) {
+      activeAgentSuggestion.value = {
+        eventId: event.id,
+        title: '外协到货后的排产释放复核',
+        action: `${activeOutsourcingCommitment.receiptTraceId} 已确认 ${activeOutsourcingCommitment.partnerName} 到货，建议关闭 ${activeOutsourcingCommitment.affectedOrders} 的厂外等待口径，按到货后最早可执行窗口释放排产，并保留 ${activeOutsourcingCommitment.receiptAuditId} 进入 OTD 复盘。`,
+        otdImpact: '+2% 已到货释放',
+        delayImpact: '-1 单外部等待',
+        changeoverImpact: '+4min',
+      }
+      return
+    }
+    activeAgentSuggestion.value = {
+      eventId: event.id,
+      title: '外协承诺后的排产复核建议',
+      action: `${activeOutsourcingCommitment.traceId} 已锁定 ${activeOutsourcingCommitment.partnerName} 的 ${activeOutsourcingCommitment.promiseDate} 外协窗口，建议保留 ${activeOutsourcingCommitment.affectedOrders} 的延期口径，不将其计入厂内已恢复订单，并等待到货确认后再释放排产。`,
+      otdImpact: '+1% 外部约束保留',
+      delayImpact: '0 单厂内恢复',
+      changeoverImpact: '0min',
     }
     return
   }
@@ -1838,14 +1926,35 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
   activeAgentSuggestion.value = suggestionMap[event.id] ?? fallbackByType[event.type]
 }
 
-function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
+async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
   const sourceEvent = scheduleEvents.value.find(event => event.id === suggestion.eventId)
+  const activeOutsourcingCommitment = outsourcingCommitmentRecord.value ?? readLatestOutsourcingCommitmentPackage()
+  const shouldReleaseOutsourcing = Boolean(
+    activeOutsourcingCommitment
+    && suggestion.eventId === `evt-outsourcing-commitment-${activeOutsourcingCommitment.sourceKpiId}`
+    && activeOutsourcingCommitment.receiptTraceId
+    && !activeOutsourcingCommitment.scheduleReleaseTraceId,
+  )
   handleScheduleDecision({
     decision: 'accepted',
     reasonCategory: sourceEvent ? `${sourceEvent.type}_event_agent` : 'event_agent',
     categoryLabel: sourceEvent ? sourceEvent.typeLabel : '事件建议',
     reasonDetail: `${suggestion.title}：${suggestion.action}`,
   })
+  if (!shouldReleaseOutsourcing || !activeOutsourcingCommitment) return
+
+  const released = confirmOutsourcingScheduleRelease(activeOutsourcingCommitment.sourceKpiId, '调度员 李工')
+  if (!released) return
+  outsourcingCommitmentRecord.value = released
+  await loadRiskTriggeredEvents()
+  activeAgentSuggestion.value = {
+    eventId: `evt-outsourcing-commitment-${released.sourceKpiId}`,
+    title: '外协排产释放已确认',
+    action: `${released.scheduleReleaseTraceId}：${released.scheduleReleaseMessage} ${released.scheduleReleaseAuditId} 已进入 OTD 证据链和审计回放。`,
+    otdImpact: '+2% 已释放归档',
+    delayImpact: '0 单外部等待',
+    changeoverImpact: '+4min',
+  }
 }
 
 async function closeAssistantRecoveryHandoff(id: string) {
@@ -1857,7 +1966,7 @@ async function closeAssistantRecoveryHandoff(id: string) {
   activeAgentSuggestion.value = {
     eventId,
     title: `${closed.title}闭环复核建议`,
-    action: `${closed.closureTraceId ?? closed.traceId}：执行交接已闭环，建议复核 WO-RUSH-9001 的 CNC-003 夜班窗口、M-AL-6061B 替代批次和 OP-20 质量复核是否继续支撑 ${closed.otdImpact} OTD 恢复。`,
+    action: `${closed.closureTraceId ?? closed.traceId}：执行交接已闭环，建议复核 WO-RUSH-9001 的 CNC-003 夜班窗口、M-AL-6061B 替代批次和 OP-20 质量复核是否继续支撑 ${closed.otdImpact} OTD 恢复。${closed.purchaseActionSummary ? `采购责任动作：${closed.purchaseActionSummary}。` : ''}${closed.qualityActionSummary ? `质量责任动作：${closed.qualityActionSummary}。` : ''}`,
     otdImpact: closed.otdImpact,
     delayImpact: closed.delayImpact,
     changeoverImpact: closed.changeoverImpact,

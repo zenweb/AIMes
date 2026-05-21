@@ -248,7 +248,9 @@ function buildAssistantRecoveryRiskItems(): RiskActionItem[] {
     workOrders: record.workOrders,
     deliveryImpact: `${record.otdImpact} / ${record.delayImpact}`,
     suggestion: record.purchaseActionSummary
-      ? `${record.riskSuggestion} ${record.purchaseActionSummary}`
+      ? `${record.riskSuggestion} ${record.purchaseActionSummary}${record.qualityActionSummary ? ` ${record.qualityActionSummary}` : ''}`
+      : record.qualityActionSummary
+        ? `${record.riskSuggestion} ${record.qualityActionSummary}`
       : record.riskSuggestion,
     owner: record.owner,
     dueAt: record.dueAt,
@@ -256,10 +258,14 @@ function buildAssistantRecoveryRiskItems(): RiskActionItem[] {
     impact: record.closureSummary
       ? `${record.riskImpact} ${record.closureSummary}`
       : record.purchaseActionSummary
-        ? `${record.riskImpact} ${record.purchaseActionSummary}`
+        ? `${record.riskImpact} ${record.purchaseActionSummary}${record.qualityActionSummary ? ` ${record.qualityActionSummary}` : ''}`
+        : record.qualityActionSummary
+          ? `${record.riskImpact} ${record.qualityActionSummary}`
         : record.riskImpact,
     note: record.purchaseActionStatus === 'closed'
-      ? `采购责任动作：${record.purchaseActionSummary}${record.purchaseActionTraceId ? ` ${record.purchaseActionTraceId}` : ''}`
+      ? `采购责任动作：${record.purchaseActionSummary}${record.purchaseActionTraceId ? ` ${record.purchaseActionTraceId}` : ''}${record.qualityActionSummary ? `；质量责任动作：${record.qualityActionSummary}${record.qualityActionTraceId ? ` ${record.qualityActionTraceId}` : ''}` : ''}`
+      : record.qualityActionStatus === 'closed'
+        ? `质量责任动作：${record.qualityActionSummary}${record.qualityActionTraceId ? ` ${record.qualityActionTraceId}` : ''}`
       : undefined,
   }))
 }

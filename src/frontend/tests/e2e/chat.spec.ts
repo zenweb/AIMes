@@ -192,6 +192,20 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await page.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 交期恢复执行包' }).getByRole('button', { name: '复核排产影响' }).click()
     await expect(page.locator('.agent-suggestion').getByText(/采购责任动作：采购 王工 已确认 PO-RUSH-20260519 加急收货/)).toBeVisible()
 
+    await page.goto('quality', { waitUntil: 'commit' })
+    await page.waitForSelector('.quality-board', { timeout: 20000 })
+    const assistantQualityCard = page.locator('.assistant-quality-closure-card')
+    await expect(assistantQualityCard.getByText('助手执行包质量责任')).toBeVisible()
+    await expect(assistantQualityCard.getByText('WO-RUSH-9001 交期恢复执行包')).toBeVisible()
+    await assistantQualityCard.getByRole('button', { name: '确认首件复核闭环' }).click()
+    await expect(assistantQualityCard.getByText(/质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格/)).toBeVisible()
+    await expect(assistantQualityCard.getByText('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521')).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await expect(page.locator('.recovery-handoff-panel').getByText(/质量责任动作：质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格/)).toBeVisible()
+    await page.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 交期恢复执行包' }).getByRole('button', { name: '复核排产影响' }).click()
+    await expect(page.locator('.agent-suggestion').getByText(/质量责任动作：质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格/)).toBeVisible()
+
     await page.goto('risk', { waitUntil: 'commit' })
     await page.waitForSelector('.risk-board', { timeout: 20000 })
     const riskCard = page.locator('.action-card').filter({ hasText: 'WO-RUSH-9001 交期恢复执行包' })
@@ -199,11 +213,14 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(riskCard.getByText('助手执行包')).toBeVisible()
     await expect(riskCard.locator('.card-topline').getByText('已关闭')).toBeVisible()
     await expect(riskCard.getByText(/采购责任动作：采购 王工 已确认 PO-RUSH-20260519 加急收货/)).toBeVisible()
+    await expect(riskCard.getByText(/质量责任动作：质量工程师 周工 已确认 FAI-WO-RUSH-9001-OP20-20260521 首件检验合格/)).toBeVisible()
     await expect(page.locator('.queue-trace').getByText(/确认执行交接闭环/)).toBeVisible()
 
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 20000 })
     await expect(page.locator('.otd-evidence-chain').getByText('助手执行包')).toBeVisible()
+    await expect(page.locator('.otd-evidence-chain').getByText('助手质量回写')).toBeVisible()
+    await expect(page.locator('.otd-evidence-chain').getByText('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521')).toBeVisible()
     await expect(page.getByText('AI 助手是否把问答转成了可执行闭环？')).toBeVisible()
     await expect(page.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')).toBeVisible()
     await expect(page.getByText('执行交接已闭环')).toBeVisible()
@@ -223,6 +240,11 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     const replayDetail = auditPanel.locator('.replay-detail')
     await expect(replayDetail.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521', { exact: true })).toBeVisible()
     await expect(auditPanel.getByText(/当前状态为 执行交接已闭环/)).toBeVisible()
+    const qualityEvidenceCard = auditPanel.locator('.decision-card').filter({ hasText: '助手质量回写：WO-RUSH-9001 交期恢复执行包质量动作已闭合' })
+    await expect(qualityEvidenceCard).toBeVisible()
+    await qualityEvidenceCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(replayDetail.getByText('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521', { exact: true })).toBeVisible()
+    await expect(auditPanel.getByText(/助手执行包质量回写/)).toBeVisible()
   })
 
   test('业务问答：工程数据约束可直接进入 BOM 与工艺路线页面', async ({ page }) => {

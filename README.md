@@ -252,6 +252,23 @@ npm run dev
 
 这些账号仅用于本地演示。生产环境必须修改默认密码，并通过环境变量配置强随机 `Jwt__SigningKey`。
 
+## 预览与排查
+
+`npm run preview` 只会启动前端预览服务，默认监听 `http://localhost:4173/scheduling/`，不会自动拉起后端。它依赖后端 API `http://localhost:5147`，所以如果没有先启动 `MES.Api`，登录和业务请求都会失败。
+
+`npm run test:e2e` 会先构建前端，再用 Playwright 跑完整 E2E。它也是基于前端预览产物来执行，不是单独跑一个后端。
+
+如果你在登录时看到 `Npgsql.NpgsqlException ... 127.0.0.1:5432`，说明当前后端还在走 PostgreSQL provider，但本机没有可用的 PostgreSQL 实例。切回本地 SQL Server 开发模式，或先启动 Docker/PostgreSQL，再登录：
+
+```powershell
+Remove-Item Env:Database__Provider -ErrorAction SilentlyContinue
+Remove-Item Env:ConnectionStrings__DefaultConnection -ErrorAction SilentlyContinue
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run --project src/backend/MES.Api/MES.Api.csproj
+```
+
+如果你使用的是本地 SQL Server 2016，默认连接串是 `sa / zen`；如果后端能正常启动，`admin / admin123` 就可以登录。
+
 ## 常用命令
 
 ### 解决方案
