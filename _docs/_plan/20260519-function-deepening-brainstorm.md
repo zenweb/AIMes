@@ -808,9 +808,14 @@ OTD 改善复盘
   - 同一次完工会生成 `工序交接` 阶段证据，追踪编号为 `TRACE-QR-WO-RUSH-9001-OP-10-HANDOFF-OP-20`，把 `OP-10 CNC 精加工` 向 `OP-20 装配复检` 的接收关系归档。
   - `质量闭环` 新增“扫码质量门”回放区，读取统一 OTD 证据链中的 `质量门 / 工序交接` 记录，避免质量门只存在于生产报工弹窗里。
   - `报表中心` 和 `审计日志` 可继续回放质量门与工序交接，扫码现场动作扩展为“到达 -> 开工 -> 完工 -> 物料 -> 质量门 -> 工序交接”。
+- 2026-05-21 继续把扫码后续工序从“进入通用 OTD 证据链”推进到“可专属审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `扫码完工证据`、`扫码物料证据`、`扫码质量门证据`、`扫码交接证据` 专属回放。
+  - 指标新增 `扫码完工回放`、`扫码物料回放`、`扫码质量门回放`、`扫码交接回放`，不再把扫码完工后的关键证据混在通用 `OTD 证据回放` 里。
+  - 回放链分别按扫码开工追踪/完工报数、物料批次/BOM 用量、首件质检/质量门放行、上道完工/下道接收条件展开。
+  - e2e 已扩展 `Scanner 条码现场入口 › 扫码工单带入生产报工并生成开工证据`，覆盖扫码完工 -> 物料消耗 -> 质量门 -> 工序交接四段专属审计回放。
 - 已补 e2e 覆盖：
   - `Scanner 条码现场入口 › 扫码工单带入生产报工并生成开工证据`：继续验证质量页、报表和审计中的 `质量门 / 工序交接` 证据。
-- 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/scanner.spec.ts --grep "扫码工单带入生产报工"`：1 passed；`npm run test:e2e -- tests/e2e/barcode.spec.ts tests/e2e/scanner.spec.ts tests/e2e/production.spec.ts tests/e2e/quality.spec.ts tests/e2e/report.spec.ts tests/e2e/audit.spec.ts`：45 passed。
+- 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/scanner.spec.ts --grep "扫码工单带入生产报工"`：1 passed；`npm run test:e2e -- tests/e2e/scanner.spec.ts`：7 passed。
 - 已继续把扫码质量门推进到不合格分流：
   - `扫码完工报数` 中选择 `Rework` 或出现不良数量时，`质量门` 证据会从“首件巡检放行”变为“首件巡检待复核”，不会生成下道 `HANDOFF` 交接证据。
   - 不合格分流会写入 `扫码返工` 阶段证据，追踪编号为 `TRACE-QR-WO-RUSH-9001-OP-10-REWORK`，明确返工待复验。
