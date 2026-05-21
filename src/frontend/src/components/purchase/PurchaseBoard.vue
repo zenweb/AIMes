@@ -361,7 +361,10 @@ import {
   type SupplierNetworkCandidate,
   type SupplierNetworkDecision,
 } from '../../utils/shortage-risk-sync'
-import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
+import {
+  closeOtdEvidenceChainRecords,
+  upsertOtdEvidenceChainRecord,
+} from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
   closeAssistantRecoveryPurchaseAction,
@@ -953,6 +956,18 @@ async function handleReceiveExpedite() {
     resolvedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
     message: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
   })
+  closeOtdEvidenceChainRecords(
+    record =>
+      record.stage === '库存齐套'
+      && record.status !== 'closed'
+      && record.traceId.includes(materialCode)
+      && record.object.includes('WO-RUSH-9001'),
+    {
+      statusLabel: '采购收货已齐套',
+      sourceTraceId: selected.value.orderNumber,
+      summary: record => `${record.summary} 采购协同 ${selected.value?.orderNumber} 已完成 ${materialCode} 加急收货，缺口清零，排产复核可释放冻结工序。`,
+    }
+  )
   upsertOtdEvidenceChainRecord({
     id: `purchase-receipt-${selected.value.orderNumber}`,
     stage: '采购回写',

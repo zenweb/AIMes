@@ -58,3 +58,28 @@ export function upsertOtdEvidenceChainRecord(record: OtdEvidenceChainItem) {
   window.localStorage.setItem(OTD_EVIDENCE_CHAIN_KEY, JSON.stringify(next))
   return next
 }
+
+export function closeOtdEvidenceChainRecords(
+  matcher: (record: OtdEvidenceChainItem) => boolean,
+  closure: {
+    statusLabel: string
+    summary?: (record: OtdEvidenceChainItem) => string
+    sourceTraceId?: string
+  }
+) {
+  if (!canUseStorage()) return []
+  let changed = false
+  const next = readRawEvidenceChain().map(record => {
+    if (!matcher(record)) return record
+    changed = true
+    return {
+      ...record,
+      summary: closure.summary ? closure.summary(record) : record.summary,
+      sourceTraceId: closure.sourceTraceId ?? record.sourceTraceId,
+      status: 'closed' as const,
+      statusLabel: closure.statusLabel,
+    }
+  })
+  if (changed) window.localStorage.setItem(OTD_EVIDENCE_CHAIN_KEY, JSON.stringify(next))
+  return next
+}

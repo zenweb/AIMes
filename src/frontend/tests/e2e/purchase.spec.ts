@@ -62,6 +62,37 @@ test.describe('Purchase 采购协同', () => {
     await expect(detail.getByText(/齐套缺口是否清零、供应风险是否关闭、排产窗口是否可释放/)).toBeVisible()
   })
 
+  test('采购收货后关闭缺料齐套 Agent 治理待办', async ({ page }) => {
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 30000 })
+    const kittingPanel = page.locator('.kitting-panel')
+    await kittingPanel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
+    await expect(kittingPanel.getByText('缺料事件已同步 AI 排产')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const pendingPanel = page.locator('.agent-governance-panel')
+    await expect(pendingPanel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('1 待处理 / 1 条')).toBeVisible()
+
+    await page.goto('purchase', { waitUntil: 'commit' })
+    await page.waitForSelector('.po-board', { timeout: 30000 })
+    const purchasePanel = page.locator('.shortage-action-panel')
+    await purchasePanel.getByRole('button', { name: '生成采购加急单' }).click()
+    await expect(purchasePanel.getByText('已加急')).toBeVisible()
+    await purchasePanel.getByRole('button', { name: '模拟加急收货' }).click()
+    await expect(purchasePanel.getByText('风险下降')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const closedPanel = page.locator('.agent-governance-panel')
+    await expect(closedPanel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('0 待处理 / 1 条')).toBeVisible()
+    const closedCard = closedPanel.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
+    await expect(closedCard.getByText('采购收货已齐套')).toBeVisible()
+    await expect(closedCard.getByText(/PO-RUSH-20260519 已完成 M-AL-6061 加急收货/)).toBeVisible()
+  })
+
   test('缺料事件可生成替代料建议', async ({ page }) => {
     const panel = page.locator('.shortage-action-panel')
     await panel.getByRole('button', { name: '启用替代料建议' }).click()
