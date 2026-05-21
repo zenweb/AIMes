@@ -745,6 +745,52 @@ test.describe('Admin Agent 治理', () => {
     await expect(page.locator('.bom-board')).toBeVisible()
   })
 
+  test('质量返工事件进入 Agent 治理并可跳转质量排产和报表', async ({ page }) => {
+    await page.goto('quality', { waitUntil: 'commit' })
+    await page.waitForSelector('.quality-board', { timeout: 30000 })
+    const qualityPanel = page.locator('.quality-rework-panel')
+    await qualityPanel.getByRole('button', { name: '生成返工排产事件' }).click()
+    await expect(qualityPanel.getByText(/返工排产事件已生成/)).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '质量返工治理' }).getByText('1 条 / 待排产复核')).toBeVisible()
+    const governance = panel.locator('.quality-rework-governance')
+    await expect(governance.getByRole('heading', { name: '质量返工治理' })).toBeVisible()
+    const card = governance.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
+    await expect(card.getByText('待排产复核')).toBeVisible()
+    await expect(card.getByText('热处理 硬度检测返工')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '返工窗口' }).getByText('2 件 / 6h')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '关联对象' }).getByText('HT-01 / MAT-AL6061-B03')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '批次号' }).getByText('WO-003-硬度检测')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: 'OTD 影响' }).getByText('WO-003 延期 +1 单风险')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '根因证据' }).getByText('硬度不足 / 热处理参数漂移')).toBeVisible()
+
+    await card.getByRole('button', { name: '查看质量闭环' }).click()
+    await page.waitForURL(/\/scheduling\/quality$/)
+    await expect(page.locator('.quality-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const schedulingCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
+    await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await expect(page.locator('.schedule-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const reportCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
+    await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
+    await page.waitForURL(/\/scheduling\/report$/)
+    await expect(page.locator('.report-board')).toBeVisible()
+    await expect(page.locator('.quality-rework-report').getByText('WO-003 返工对 OTD 的影响')).toBeVisible()
+  })
+
   test('POC 复盘签署进入 Agent 治理与审计编号', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_poc_review_signoff', JSON.stringify({

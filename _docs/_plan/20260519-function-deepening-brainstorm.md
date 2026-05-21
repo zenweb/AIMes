@@ -66,8 +66,10 @@ OTD 改善复盘
 - `AI 生产助手` 新增“质量返工对热处理 OTD 有什么影响？”证据化问答，优先读取 `aimes_quality_rework_impact`，避免落到通用 MRB 或静态延期文案。
 - 质量页生成 `INS-003 / WO-003` 返工排产事件后，助手会输出热处理/硬度检测、2 件返工、预计 6h、设备 `HT-01`、物料批次 `MAT-AL6061-B03`、批次号 `WO-003-硬度检测`、`WO-003 延期 +1 单风险`、根因证据和返工复验窗口建议。
 - 回答同步提供 `打开质量闭环`、`打开 AI 排产`、`打开 OTD 报告` 三个上下文动作，把质量返工从聊天解释继续带回责任页面。
+- 继续把同一返工证据纳入 `系统管理` Agent 治理，新增 `质量返工治理` 指标和治理卡，展示 `INS-003 / WO-003`、返工窗口、`HT-01 / MAT-AL6061-B03`、批次号、OTD 风险和根因证据，并提供质量、排产、报表三类核对入口。
 - 已补 e2e：`AI 生产助手 (ChatPanel) › 业务问答：质量返工事件生成后解释热处理 OTD 影响`，覆盖质量页生成返工事件、助手读取证据和跨页面动作入口。
-- 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "质量返工事件生成后解释热处理 OTD 影响"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：20 passed。
+- 已补 e2e：`Admin Agent 治理 › 质量返工事件进入 Agent 治理并可跳转质量排产和报表`，覆盖质量页生成返工事件、治理指标/卡片和三类跨页核对入口。
+- 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "质量返工事件生成后解释热处理 OTD 影响"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：20 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "质量返工事件进入 Agent 治理并可跳转质量排产和报表"`：1 passed。
 
 ### 2026-05-21 追加推进：MRB 报废补料处置
 

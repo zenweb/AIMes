@@ -293,6 +293,55 @@
           </div>
         </div>
 
+        <div class="quality-rework-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>质量返工治理</h4>
+                <p>监管热处理返工对排产和 OTD 的影响，核对检验点、设备、物料批次、根因证据和复验窗口。</p>
+              </div>
+              <strong>{{ qualityReworkImpact ? '1 条' : '0 条' }}</strong>
+            </div>
+            <article v-if="qualityReworkImpact" class="quality-rework-governance-card">
+              <div class="action-topline">
+                <span>{{ qualityReworkImpact.inspectionId }} / {{ qualityReworkImpact.workOrderId }}</span>
+                <em class="policy-guarded">待排产复核</em>
+              </div>
+              <strong>{{ qualityReworkImpact.processName }} {{ qualityReworkImpact.inspectionPoint }}返工</strong>
+              <p>{{ qualityReworkImpact.recommendedAction }}</p>
+              <div class="policy-row">
+                <span>返工窗口</span>
+                <code>{{ qualityReworkImpact.defectQuantity }} 件 / {{ qualityReworkImpact.reworkHours }}h</code>
+              </div>
+              <div class="policy-row">
+                <span>关联对象</span>
+                <code>{{ qualityReworkImpact.equipmentCode }} / {{ qualityReworkImpact.materialBatchCode }}</code>
+              </div>
+              <div class="policy-row">
+                <span>批次号</span>
+                <code>{{ qualityReworkImpact.batchCode }}</code>
+              </div>
+              <div class="policy-row">
+                <span>OTD 影响</span>
+                <code>{{ qualityReworkImpact.otdImpact }}</code>
+              </div>
+              <div class="policy-row">
+                <span>根因证据</span>
+                <code>{{ qualityReworkImpact.rootCause }}</code>
+              </div>
+              <div class="assistant-package-actions">
+                <button type="button" class="btn-sm" @click="openQualityBoard">查看质量闭环</button>
+                <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
+              </div>
+            </article>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待返工排产事件</strong>
+              <span>质量闭环生成 INS-003 返工排产事件后，会在这里显示返工窗口、批次证据和 OTD 风险。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="quality-mrb-governance">
           <div class="policy-block">
             <div class="otd-governance-heading">
@@ -1169,6 +1218,7 @@ import { readPocRolloutPackageRecord, type PocRolloutPackageRecord } from '../..
 import { readPocPilotRunRecord, type PocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { readRiskSlaReviewRecord, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+import { readQualityReworkImpact, type QualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
@@ -1224,6 +1274,7 @@ const pocRolloutPackage = ref<PocRolloutPackageRecord | null>(null)
 const pocPilotRun = ref<PocPilotRunRecord | null>(null)
 const pocHypercareAcceptance = ref<PocHypercareAcceptanceRecord | null>(null)
 const riskSlaReview = ref<RiskSlaReviewRecord | null>(null)
+const qualityReworkImpact = ref<QualityReworkImpact | null>(null)
 const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
@@ -1475,6 +1526,7 @@ const agentGovernanceMetrics = computed(() => [
   { label: 'POC 试点运行', value: pocPilotRun.value ? '已闭环' : '待确认' },
   { label: 'POC Hypercare', value: pocHypercareAcceptance.value ? pocHypercareAcceptance.value.statusLabel : '待生成' },
   { label: '风险 SLA 复核', value: riskSlaReview.value ? riskSlaReview.value.statusLabel : '待生成' },
+  { label: '质量返工治理', value: qualityReworkImpact.value ? '1 条 / 待排产复核' : '待生成' },
   { label: '质量 MRB 处置', value: qualityMrbDisposition.value ? qualityMrbDisposition.value.statusLabel : '待生成' },
   { label: '审计覆盖', value: '100%' },
 ])
@@ -1599,6 +1651,10 @@ function openQualityBoard() {
   router.push('/quality')
 }
 
+function openReportBoard() {
+  router.push('/report')
+}
+
 function knowledgeIndexStatusLabel(status: KnowledgeIndexStatus) {
   return {
     indexed: '已索引',
@@ -1696,6 +1752,7 @@ onMounted(async () => {
   pocPilotRun.value = readPocPilotRunRecord()
   pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
   riskSlaReview.value = readRiskSlaReviewRecord()
+  qualityReworkImpact.value = readQualityReworkImpact()
   qualityMrbDisposition.value = readQualityMrbDispositionRecord()
   outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
@@ -1854,6 +1911,10 @@ onMounted(async () => {
 .kitting-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .kitting-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .kitting-governance-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quality-rework-governance { display: grid; grid-template-columns: 1fr; }
+.quality-rework-governance-card { padding: 11px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; }
+.quality-rework-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.quality-rework-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .quality-mrb-governance { display: grid; grid-template-columns: 1fr; }
 .quality-mrb-governance-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
 .quality-mrb-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
