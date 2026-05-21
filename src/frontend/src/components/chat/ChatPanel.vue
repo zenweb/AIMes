@@ -118,6 +118,7 @@ import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
+import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
@@ -546,6 +547,31 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if (
+    (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
+    && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
+  ) {
+    const rework = readQualityReworkImpact()
+    if (!rework) {
+      return [
+        '**质量返工影响：当前还没有生成返工排产事件。**',
+        '',
+        '- 请先在质量闭环页点击“生成返工排产事件”。',
+        '- 生成后助手会读取 INS-003、返工工时、设备/物料批次、OTD 风险和排产复核建议。',
+      ].join('\n') + citationLine
+    }
+    return [
+      `**质量返工影响：${rework.inspectionId} / ${rework.workOrderId} 已进入排产复核。**`,
+      '',
+      `- 质量事件：${rework.processName} / ${rework.inspectionPoint}，${rework.defectQuantity} 件返工，预计占用 ${rework.reworkHours}h。`,
+      `- 关联对象：设备 ${rework.equipmentCode}，物料批次 ${rework.materialBatchCode}，批次号 ${rework.batchCode}。`,
+      `- OTD 影响：${rework.otdImpact}。`,
+      `- 根因证据：${rework.rootCause}；${rework.evidence.join('；')}。`,
+      `- 排产建议：${rework.recommendedAction}`,
+      '- 该返工事件已同步到 AI 排产事件队列和报表中心 OTD 复盘。',
+    ].join('\n') + citationLine
+  }
+
+  if (
     (q.includes('mrb') || q.includes('报废') || q.includes('补料') || q.includes('质量'))
     && (q.includes('处置') || q.includes('影响') || q.includes('重排') || q.includes('otd') || q.includes('报废'))
   ) {
@@ -793,6 +819,8 @@ function getExecutableActions(question: string): ChatAction[] {
     && (q.includes('wo-rush-9001') || q.includes('工单') || q.includes('原因') || q.includes('风险'))
   const equipmentDowntimeIntent = (q.includes('cnc-01') || q.includes('cnc-001') || q.includes('cnc'))
     && (q.includes('故障') || q.includes('停机'))
+  const qualityReworkIntent = (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
+    && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
 
   if (q.includes('打开') || q.includes('进入') || q.includes('跳转')) {
     if (q.includes('排产')) {
@@ -850,6 +878,10 @@ function getExecutableActions(question: string): ChatAction[] {
 
   if (equipmentDowntimeIntent) {
     actions.push(...equipmentDowntimeActions())
+  }
+
+  if (qualityReworkIntent) {
+    actions.push(...qualityReworkActions())
   }
 
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
@@ -983,6 +1015,32 @@ function equipmentDowntimeActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/scheduling',
       resultMessage: '已打开 AI 排产工作台，复核 CNC-001 停机后的换设备、加班和拆单建议。',
+    },
+  ]
+}
+
+function qualityReworkActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-quality',
+      label: '打开质量闭环',
+      type: 'navigate',
+      targetRoute: '/quality',
+      resultMessage: '已打开质量闭环页面，核对 INS-003 热处理返工、根因证据和复验动作。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核质量返工插入与复验窗口建议。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对 WO-003 返工对 OTD 的影响。',
     },
   ]
 }

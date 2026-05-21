@@ -349,6 +349,33 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText(/缺口清零，排产复核可释放冻结工序/)).toBeVisible()
   })
 
+  test('业务问答：质量返工事件生成后解释热处理 OTD 影响', async ({ page }) => {
+    await page.goto('quality', { waitUntil: 'commit' })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+    const qualityPanel = page.locator('.quality-rework-panel')
+    await qualityPanel.getByRole('button', { name: '生成返工排产事件' }).click()
+    await expect(qualityPanel.getByText(/返工排产事件已生成/)).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('质量返工对热处理 OTD 有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('质量返工影响：INS-003 / WO-003 已进入排产复核。')).toBeVisible()
+    await expect(chat.getByText(/热处理 \/ 硬度检测，2 件返工，预计占用 6h/)).toBeVisible()
+    await expect(chat.getByText(/设备 HT-01，物料批次 MAT-AL6061-B03/)).toBeVisible()
+    await expect(chat.getByText(/批次号 WO-003-硬度检测/)).toBeVisible()
+    await expect(chat.getByText(/WO-003 延期 \+1 单风险/)).toBeVisible()
+    await expect(chat.getByText(/硬度不足 \/ 热处理参数漂移/)).toBeVisible()
+    await expect(chat.getByText(/硬度检测 检验结果 rework/)).toBeVisible()
+    await expect(chat.getByText(/建议插入返工与复验窗口/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开质量闭环' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+  })
+
   test('业务问答：评估 CNC-001 故障 4 小时影响', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('如果 CNC-001 故障 4 小时会怎样？')
