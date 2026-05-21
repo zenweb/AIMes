@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { readProductionAnomalyEvent } from '../../utils/production-anomaly-sync'
 import { readAnomalyDispatchRecords } from '../../utils/anomaly-dispatch-sync'
 import { readAssistantRecoveryPackages } from '../../utils/assistant-action-package-sync'
@@ -192,25 +192,29 @@ function buildMonitoringSituationRiskItems(): RiskActionItem[] {
   }))
 }
 
-const productionAnomalyRiskItem = buildProductionAnomalyRiskItem()
-const anomalyDispatchRiskItems = buildAnomalyDispatchRiskItems()
-const assistantRecoveryRiskItems = buildAssistantRecoveryRiskItems()
-const monitoringSituationRiskItems = buildMonitoringSituationRiskItems()
-const actionItems = ref<RiskActionItem[]>(
-  productionAnomalyRiskItem
+const actionItems = ref<RiskActionItem[]>([])
+const actionRecords = ref<string[]>([])
+
+function syncRiskActionQueue() {
+  const productionAnomalyRiskItem = buildProductionAnomalyRiskItem()
+  const anomalyDispatchRiskItems = buildAnomalyDispatchRiskItems()
+  const assistantRecoveryRiskItems = buildAssistantRecoveryRiskItems()
+  const monitoringSituationRiskItems = buildMonitoringSituationRiskItems()
+
+  actionItems.value = productionAnomalyRiskItem
     ? [productionAnomalyRiskItem, ...monitoringSituationRiskItems, ...assistantRecoveryRiskItems, ...anomalyDispatchRiskItems, ...baseActionItems]
     : [...monitoringSituationRiskItems, ...assistantRecoveryRiskItems, ...anomalyDispatchRiskItems, ...baseActionItems]
-)
 
-const actionRecords = ref<string[]>([
-  ...monitoringSituationRiskItems.map(item => `${item.title} 已由实时监控升级为跨模块处置包，进入风险处置队列。`),
-  ...assistantRecoveryRiskItems.map(item => `${item.title} 已由 AI 生产助手生成执行包，升级为跨模块风险处置项。`),
-  ...anomalyDispatchRiskItems.map(item => `${item.title} 已由异常管理现场事件中心确认分流，进入风险处置队列。`),
-  ...(productionAnomalyRiskItem
-    ? [`${productionAnomalyRiskItem.title} 已由生产报工异常上报自动进入风险处置队列。`]
-    : []),
-  '系统生成 3 张风险处置卡，并同步为调度员 Agent 触发器。',
-])
+  actionRecords.value = [
+    ...monitoringSituationRiskItems.map(item => `${item.title} 已由实时监控升级为跨模块处置包，进入风险处置队列。`),
+    ...assistantRecoveryRiskItems.map(item => `${item.title} 已由 AI 生产助手生成执行包，升级为跨模块风险处置项。`),
+    ...anomalyDispatchRiskItems.map(item => `${item.title} 已由异常管理现场事件中心确认分流，进入风险处置队列。`),
+    ...(productionAnomalyRiskItem
+      ? [`${productionAnomalyRiskItem.title} 已由生产报工异常上报自动进入风险处置队列。`]
+      : []),
+    '系统生成 3 张风险处置卡，并同步为调度员 Agent 触发器。',
+  ]
+}
 
 const openCount = computed(() => actionItems.value.filter(item => item.status !== 'closed').length)
 const metrics = computed(() => [
@@ -287,6 +291,10 @@ function recordRiskAction(item: RiskActionItem, status: RiskActionTraceStatus, t
     createdAt: new Date().toISOString(),
   })
 }
+
+onMounted(() => {
+  syncRiskActionQueue()
+})
 </script>
 
 <style scoped>
