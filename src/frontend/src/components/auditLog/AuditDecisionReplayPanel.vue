@@ -302,6 +302,7 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isProductionEvidence = record.stage === '生产完工' || record.stage === '生产复核'
   const isShopfloorSituationEvidence = record.stage === '现场态势'
   const isShopfloorEscalationEvidence = record.stage === '现场处置包'
+  const isAnomalyDispatchEvidence = record.stage === '异常分流'
   const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行'
   const isEngineeringChangeEvidence = record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
   const isRouteCapabilityEvidence = record.stage === '工艺能力校验' || record.stage === '工艺能力放行'
@@ -327,29 +328,31 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
               ? '现场态势证据'
               : isShopfloorEscalationEvidence
                 ? '现场处置证据'
-                : isEngineeringConstraintEvidence
-                  ? '工程约束证据'
-                  : isEngineeringChangeEvidence
-                    ? '工程变更证据'
-                    : isRouteCapabilityEvidence
-                      ? '工艺能力证据'
-                      : isPurchaseReceiptEvidence
-                        ? '采购收货证据'
-                        : isSupplyRiskEvidence
-                          ? '供应风险证据'
-                          : isSupplierNetworkEvidence
-                            ? '供应网络证据'
-                            : isPurchaseCorrectionEvidence
-                              ? '采购整改证据'
-                              : isLaborCapabilityEvidence
-                                ? '人员能力证据'
-                                : isLaborAssignmentEvidence
-                                  ? '人员替班证据'
-                                  : isLaborBlockEvidence
-                                    ? '人员阻断证据'
-                                    : isLaborStartEvidence
-                                      ? '人员开工证据'
-                                      : 'OTD 证据链',
+                : isAnomalyDispatchEvidence
+                  ? '异常分流证据'
+                  : isEngineeringConstraintEvidence
+                    ? '工程约束证据'
+                    : isEngineeringChangeEvidence
+                      ? '工程变更证据'
+                      : isRouteCapabilityEvidence
+                        ? '工艺能力证据'
+                        : isPurchaseReceiptEvidence
+                          ? '采购收货证据'
+                          : isSupplyRiskEvidence
+                            ? '供应风险证据'
+                            : isSupplierNetworkEvidence
+                              ? '供应网络证据'
+                              : isPurchaseCorrectionEvidence
+                                ? '采购整改证据'
+                                : isLaborCapabilityEvidence
+                                  ? '人员能力证据'
+                                  : isLaborAssignmentEvidence
+                                    ? '人员替班证据'
+                                    : isLaborBlockEvidence
+                                      ? '人员阻断证据'
+                                      : isLaborStartEvidence
+                                        ? '人员开工证据'
+                                        : 'OTD 证据链',
     title: `${record.stage}：${record.title}`,
     summary: record.summary,
     object: record.object,
@@ -370,28 +373,30 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
               ? `当前状态：${record.statusLabel}。该现场态势证据必须核对瓶颈负载、齐套缺口、质量返工、责任人、动作入口和排产影响。`
               : isShopfloorEscalationEvidence
                 ? `当前状态：${record.statusLabel}。该现场处置证据必须核对生产经理审批、风险队列、AI 排产分流、物料/质量复核和关闭留痕。`
-                : isEngineeringConstraintEvidence
-                  ? `当前状态：${record.statusLabel}。该工程证据必须核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产可用窗口。`
-                  : isEngineeringChangeEvidence
-                    ? `当前状态：${record.statusLabel}。该 ECN 证据必须核对库存缺口、替代料可用量、质量门、供应批次、成本影响和 OTD 模拟/释放结论。`
-                    : isRouteCapabilityEvidence
-                      ? `当前状态：${record.statusLabel}。该工艺证据必须核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。`
-                      : isPurchaseReceiptEvidence
-                        ? `当前状态：${record.statusLabel}。该采购收货证据必须核对 PO/替代供应商、到货数量、齐套缺口、影响工单和排产释放条件。`
-                        : isSupplyRiskEvidence
-                          ? `当前状态：${record.statusLabel}。该供应风险证据必须核对原供应商延期、替代供应商承诺、受影响工单和排产保护建议。`
-                          : isSupplierNetworkEvidence
-                            ? `当前状态：${record.statusLabel}。该供应网络证据必须核对供应商绩效、准交率、SLA、报价/产能和违约复盘。`
-                            : isPurchaseCorrectionEvidence
-                              ? `当前状态：${record.statusLabel}。该采购整改证据必须核对来料异常、8D 承诺、备用批次、复检入库和排产复核。`
-                              : isLaborCapabilityEvidence
-                                ? `当前状态：${record.statusLabel}。该人员能力证据必须核对技能、资质有效期、排班窗口、可用工时和开工约束。`
-                                : isLaborAssignmentEvidence
-                                  ? `当前状态：${record.statusLabel}。该替班证据必须核对临期资质、候选评分、替班人员、主管复核和放行窗口。`
-                                  : isLaborBlockEvidence
-                                    ? `当前状态：${record.statusLabel}。该人员阻断证据必须核对无有效候选、停工复核责任人、阻断工序和恢复条件。`
-                                    : isLaborStartEvidence
-                                      ? `当前状态：${record.statusLabel}。该开工证据必须核对替班执行人、工位设备、工程复核和生产开工放行。`
+                : isAnomalyDispatchEvidence
+                  ? `当前状态：${record.statusLabel}。该异常分流证据必须核对异常来源、影响工单、风险队列、AI 排产复核、责任人和下游质量/设备/物料处置。`
+                  : isEngineeringConstraintEvidence
+                    ? `当前状态：${record.statusLabel}。该工程证据必须核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产可用窗口。`
+                    : isEngineeringChangeEvidence
+                      ? `当前状态：${record.statusLabel}。该 ECN 证据必须核对库存缺口、替代料可用量、质量门、供应批次、成本影响和 OTD 模拟/释放结论。`
+                      : isRouteCapabilityEvidence
+                        ? `当前状态：${record.statusLabel}。该工艺证据必须核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。`
+                        : isPurchaseReceiptEvidence
+                          ? `当前状态：${record.statusLabel}。该采购收货证据必须核对 PO/替代供应商、到货数量、齐套缺口、影响工单和排产释放条件。`
+                          : isSupplyRiskEvidence
+                            ? `当前状态：${record.statusLabel}。该供应风险证据必须核对原供应商延期、替代供应商承诺、受影响工单和排产保护建议。`
+                            : isSupplierNetworkEvidence
+                              ? `当前状态：${record.statusLabel}。该供应网络证据必须核对供应商绩效、准交率、SLA、报价/产能和违约复盘。`
+                              : isPurchaseCorrectionEvidence
+                                ? `当前状态：${record.statusLabel}。该采购整改证据必须核对来料异常、8D 承诺、备用批次、复检入库和排产复核。`
+                                : isLaborCapabilityEvidence
+                                  ? `当前状态：${record.statusLabel}。该人员能力证据必须核对技能、资质有效期、排班窗口、可用工时和开工约束。`
+                                  : isLaborAssignmentEvidence
+                                    ? `当前状态：${record.statusLabel}。该替班证据必须核对临期资质、候选评分、替班人员、主管复核和放行窗口。`
+                                    : isLaborBlockEvidence
+                                      ? `当前状态：${record.statusLabel}。该人员阻断证据必须核对无有效候选、停工复核责任人、阻断工序和恢复条件。`
+                                      : isLaborStartEvidence
+                                        ? `当前状态：${record.statusLabel}。该开工证据必须核对替班执行人、工位设备、工程复核和生产开工放行。`
       : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
@@ -405,28 +410,30 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
               ? '现场态势、事件来源、责任人、动作入口和排产影响已归档'
               : isShopfloorEscalationEvidence
                 ? '现场处置包、生产经理审批、排产分流、风险关闭和跨模块回写已归档'
-                : isEngineeringConstraintEvidence
-                  ? '工程约束来源、替代料放行、质量门、能力口径和排产复核已归档'
-                  : isEngineeringChangeEvidence
-                    ? '工程变更影响、审批结论、质量门、成本供应和排产模拟/释放已归档'
-                    : isRouteCapabilityEvidence
-                      ? '工艺能力校验、瓶颈资源、分流合批、外协兜底和排产复核已归档'
-                      : isPurchaseReceiptEvidence
-                        ? '采购收货、齐套缺口、替代到货、排产释放和 OTD 证据已归档'
-                        : isSupplyRiskEvidence
-                          ? '供应延期、替代承诺、排产保护、责任复核和 OTD 证据已归档'
-                          : isSupplierNetworkEvidence
-                            ? '供应商绩效、SLA 选优、违约复盘、二供观察和排产复核已归档'
-                            : isPurchaseCorrectionEvidence
-                              ? '来料异常、供应商 8D、备用批次、复检入库和排产复核已归档'
-                              : isLaborCapabilityEvidence
-                                ? '人员技能、资质、排班、可用工时和开工约束已归档'
-                                : isLaborAssignmentEvidence
-                                  ? '临期资质、替班评分、主管复核、补证放行和排产复核已归档'
-                                  : isLaborBlockEvidence
-                                    ? '无有效候选、停工复核、阻断工序、责任人和恢复条件已归档'
-                                    : isLaborStartEvidence
-                                      ? '替班执行、工位设备、工程复核、生产开工和 OTD 证据已归档'
+                : isAnomalyDispatchEvidence
+                  ? '异常确认、风险队列、AI 排产复核、责任人和下游处置已归档'
+                  : isEngineeringConstraintEvidence
+                    ? '工程约束来源、替代料放行、质量门、能力口径和排产复核已归档'
+                    : isEngineeringChangeEvidence
+                      ? '工程变更影响、审批结论、质量门、成本供应和排产模拟/释放已归档'
+                      : isRouteCapabilityEvidence
+                        ? '工艺能力校验、瓶颈资源、分流合批、外协兜底和排产复核已归档'
+                        : isPurchaseReceiptEvidence
+                          ? '采购收货、齐套缺口、替代到货、排产释放和 OTD 证据已归档'
+                          : isSupplyRiskEvidence
+                            ? '供应延期、替代承诺、排产保护、责任复核和 OTD 证据已归档'
+                            : isSupplierNetworkEvidence
+                              ? '供应商绩效、SLA 选优、违约复盘、二供观察和排产复核已归档'
+                              : isPurchaseCorrectionEvidence
+                                ? '来料异常、供应商 8D、备用批次、复检入库和排产复核已归档'
+                                : isLaborCapabilityEvidence
+                                  ? '人员技能、资质、排班、可用工时和开工约束已归档'
+                                  : isLaborAssignmentEvidence
+                                    ? '临期资质、替班评分、主管复核、补证放行和排产复核已归档'
+                                    : isLaborBlockEvidence
+                                      ? '无有效候选、停工复核、阻断工序、责任人和恢复条件已归档'
+                                      : isLaborStartEvidence
+                                        ? '替班执行、工位设备、工程复核、生产开工和 OTD 证据已归档'
       : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
     steps: isCommitmentPackage
       ? [
@@ -474,6 +481,14 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `对象 ${record.object} 的处置摘要：${record.summary}`,
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对 CNC 分流、急单窗口、物料/质量复核和关闭留痕是否闭环。`,
+          ]
+      : isAnomalyDispatchEvidence
+        ? [
+            `异常管理读取 ${record.source} 的异常来源、影响工单、责任人、处置时限和建议动作。`,
+            `${record.stage} 阶段生成分流证据：${record.title}。`,
+            `对象 ${record.object} 的分流摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对质量返工、设备维护、库存隔离或采购整改是否进入下游闭环。`,
           ]
       : isEngineeringConstraintEvidence
         ? [
@@ -781,6 +796,7 @@ const metrics = computed(() => [
   { label: '生产完工回放', value: replayItems.value.filter(item => item.type === '生产完工证据').length },
   { label: '现场态势回放', value: replayItems.value.filter(item => item.type === '现场态势证据').length },
   { label: '现场处置回放', value: replayItems.value.filter(item => item.type === '现场处置证据').length },
+  { label: '异常分流回放', value: replayItems.value.filter(item => item.type === '异常分流证据').length },
   { label: '工程约束回放', value: replayItems.value.filter(item => item.type === '工程约束证据').length },
   { label: '工程变更回放', value: replayItems.value.filter(item => item.type === '工程变更证据').length },
   { label: '工艺能力回放', value: replayItems.value.filter(item => item.type === '工艺能力证据').length },

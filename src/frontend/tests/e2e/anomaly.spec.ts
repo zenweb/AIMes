@@ -70,10 +70,14 @@ test.describe('Anomaly 现场事件中心', () => {
     await page.goto('audit-logs', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 30000 })
     const auditPanel = page.locator('.audit-replay-panel')
+    await expect(auditPanel.locator('.metric-chip').filter({ hasText: '异常分流回放' }).getByText('1')).toBeVisible()
     const auditCard = auditPanel.locator('.decision-card').filter({ hasText: '异常分流：装配间隙超差已分流到质量返工与排产复核' })
     await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-topline').getByText('异常分流证据')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(auditPanel.locator('.replay-detail').getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521', { exact: true })).toBeVisible()
+    await expect(auditPanel.locator('.replay-detail').getByText(/异常管理读取 异常管理 \/ 质量工程师 周工/)).toBeVisible()
+    await expect(auditPanel.locator('.replay-detail').getByText(/核对质量返工、设备维护、库存隔离或采购整改是否进入下游闭环/)).toBeVisible()
   })
 
   test('设备异常确认分流后进入设备维护、排产复核和 OTD 审计', async ({ page }) => {
