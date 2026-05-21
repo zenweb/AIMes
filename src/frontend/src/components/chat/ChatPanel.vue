@@ -763,6 +763,10 @@ function getExecutableActions(question: string): ChatAction[] {
     || (q.includes('工艺') && q.includes('路线'))
     || q.includes('工程数据')
     || q.includes('替代料')
+  const delayRiskIntent = (q.includes('延期') || q.includes('延误') || q.includes('最危险') || q.includes('最高风险') || q.includes('top') || q.includes('前三') || q.includes('3 个'))
+    && (q.includes('wo-rush-9001') || q.includes('工单') || q.includes('原因') || q.includes('风险'))
+  const equipmentDowntimeIntent = (q.includes('cnc-01') || q.includes('cnc-001') || q.includes('cnc'))
+    && (q.includes('故障') || q.includes('停机'))
 
   if (q.includes('打开') || q.includes('进入') || q.includes('跳转')) {
     if (q.includes('排产')) {
@@ -811,27 +815,15 @@ function getExecutableActions(question: string): ChatAction[] {
   }
 
   if (engineeringDataIntent && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))) {
-    actions.push({
-      id: 'open-engineering-scheduling',
-      label: '打开 AI 排产',
-      type: 'navigate',
-      targetRoute: '/scheduling',
-      resultMessage: '已打开 AI 排产工作台，并定位到工程约束解释。',
-    })
-    actions.push({
-      id: 'open-bom',
-      label: '打开 BOM 管理',
-      type: 'navigate',
-      targetRoute: '/bom',
-      resultMessage: '已打开 BOM 管理页面。',
-    })
-    actions.push({
-      id: 'open-routing',
-      label: '打开工艺路线',
-      type: 'navigate',
-      targetRoute: '/routing',
-      resultMessage: '已打开工艺路线页面。',
-    })
+    actions.push(...engineeringConstraintActions())
+  }
+
+  if (delayRiskIntent) {
+    actions.push(...rushOrderRiskActions())
+  }
+
+  if (equipmentDowntimeIntent) {
+    actions.push(...equipmentDowntimeActions())
   }
 
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
@@ -882,6 +874,91 @@ function getExecutableActions(question: string): ChatAction[] {
   }
 
   return dedupeActions(actions)
+}
+
+function engineeringConstraintActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-engineering-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，并定位到工程约束解释。',
+    },
+    {
+      id: 'open-bom',
+      label: '打开 BOM 管理',
+      type: 'navigate',
+      targetRoute: '/bom',
+      resultMessage: '已打开 BOM 管理页面。',
+    },
+    {
+      id: 'open-routing',
+      label: '打开工艺路线',
+      type: 'navigate',
+      targetRoute: '/routing',
+      resultMessage: '已打开工艺路线页面。',
+    },
+  ]
+}
+
+function rushOrderRiskActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-risk',
+      label: '打开风险预警',
+      type: 'navigate',
+      targetRoute: '/risk',
+      resultMessage: '已打开风险预警页面，核对 WO-RUSH-9001 和今日 Top 风险处置队列。',
+    },
+    {
+      id: 'open-kitting',
+      label: '打开库存齐套',
+      type: 'navigate',
+      targetRoute: '/inventory',
+      resultMessage: '已打开库存齐套页面，核对 WO-RUSH-9001 / M-AL-6061 缺口和齐套证据。',
+    },
+    {
+      id: 'open-purchase',
+      label: '打开采购协同',
+      type: 'navigate',
+      targetRoute: '/purchase',
+      resultMessage: '已打开采购协同页面，核对 PO-RUSH-20260519 加急和收货闭环。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核缺料、设备和质量事件后的重排建议。',
+    },
+  ]
+}
+
+function equipmentDowntimeActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-equipment',
+      label: '打开设备维护',
+      type: 'navigate',
+      targetRoute: '/equipment',
+      resultMessage: '已打开设备维护页面，核对 CNC-001 停机诊断和瓶颈保护策略。',
+    },
+    {
+      id: 'open-risk',
+      label: '打开风险预警',
+      type: 'navigate',
+      targetRoute: '/risk',
+      resultMessage: '已打开风险预警页面，核对 CNC-001 停机风险处置队列。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核 CNC-001 停机后的换设备、加班和拆单建议。',
+    },
+  ]
 }
 
 function dedupeActions(actions: ChatAction[]): ChatAction[] {
