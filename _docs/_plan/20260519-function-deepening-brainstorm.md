@@ -597,6 +597,11 @@ OTD 改善复盘
     - `Engineering data 工程数据约束 › BOM 工程变更批准后进入正式排产释放和 OTD 审计`
     - `Engineering data 工程数据约束 › BOM 工程变更驳回后撤回排产模拟并进入 OTD 审计`
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/engineering-data.spec.ts`：8 passed。
+- 2026-05-21 继续把工程数据从“进入通用 OTD 证据链”推进到“可专属审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `工程约束证据`、`工程变更证据`、`工艺能力证据` 三类专属回放，并增加 `工程约束回放`、`工程变更回放`、`工艺能力回放` 指标。
+  - `工程约束 / 工程放行` 回放要求核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产释放窗口；`工程变更影响 / 批准 / 驳回` 回放要求核对库存缺口、替代料可用量、质量门、供应批次、成本影响和审批前模拟/正式释放/驳回撤回；`工艺能力校验 / 放行` 回放要求核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。
+  - e2e 已扩展 `Engineering data 工程数据约束` 全套 8 条用例，覆盖 BOM 替代料放行、ECN 影响/批准/驳回、工艺能力放行、AI 排产同步工程证据 -> 报表 OTD 证据链 -> 审计专属回放。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/engineering-data.spec.ts`：8 passed。
 
 ---
 

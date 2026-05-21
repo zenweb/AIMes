@@ -300,9 +300,26 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isKittingEvidence = record.stage === '库存齐套'
   const isEquipmentEvidence = record.stage === '设备维护' || record.stage === '设备实证'
   const isProductionEvidence = record.stage === '生产完工' || record.stage === '生产复核'
+  const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行'
+  const isEngineeringChangeEvidence = record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
+  const isRouteCapabilityEvidence = record.stage === '工艺能力校验' || record.stage === '工艺能力放行'
   return {
     id: `otd-${record.id}`,
-    type: isCommitmentPackage ? '客户承诺包' : isKittingEvidence ? '库存齐套证据' : isEquipmentEvidence ? '设备停机证据' : isProductionEvidence ? '生产完工证据' : 'OTD 证据链',
+    type: isCommitmentPackage
+      ? '客户承诺包'
+      : isKittingEvidence
+        ? '库存齐套证据'
+        : isEquipmentEvidence
+          ? '设备停机证据'
+          : isProductionEvidence
+            ? '生产完工证据'
+            : isEngineeringConstraintEvidence
+              ? '工程约束证据'
+              : isEngineeringChangeEvidence
+                ? '工程变更证据'
+                : isRouteCapabilityEvidence
+                  ? '工艺能力证据'
+                  : 'OTD 证据链',
     title: `${record.stage}：${record.title}`,
     summary: record.summary,
     object: record.object,
@@ -319,6 +336,12 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
           ? `当前状态：${record.statusLabel}。该设备证据必须核对停机时长、影响工单、替代设备、维护窗口和瓶颈保护策略。`
           : isProductionEvidence
             ? `当前状态：${record.statusLabel}。该生产证据必须核对完工数量、工单进度、质量门、后续工序窗口和 OTD 承诺。`
+            : isEngineeringConstraintEvidence
+              ? `当前状态：${record.statusLabel}。该工程证据必须核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产可用窗口。`
+              : isEngineeringChangeEvidence
+                ? `当前状态：${record.statusLabel}。该 ECN 证据必须核对库存缺口、替代料可用量、质量门、供应批次、成本影响和 OTD 模拟/释放结论。`
+                : isRouteCapabilityEvidence
+                  ? `当前状态：${record.statusLabel}。该工艺证据必须核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。`
       : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
@@ -328,6 +351,12 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
           ? '设备停机、替代设备、维护窗口、瓶颈保护和排产复核已归档'
           : isProductionEvidence
             ? '生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档'
+            : isEngineeringConstraintEvidence
+              ? '工程约束来源、替代料放行、质量门、能力口径和排产复核已归档'
+              : isEngineeringChangeEvidence
+                ? '工程变更影响、审批结论、质量门、成本供应和排产模拟/释放已归档'
+                : isRouteCapabilityEvidence
+                  ? '工艺能力校验、瓶颈资源、分流合批、外协兜底和排产复核已归档'
       : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
     steps: isCommitmentPackage
       ? [
@@ -359,6 +388,30 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `对象 ${record.object} 的执行摘要：${record.summary}`,
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
             `当前状态为 ${record.statusLabel}，审计回放要求核对排产页复核、质量门放行和承诺交期是否仍成立。`,
+          ]
+      : isEngineeringConstraintEvidence
+        ? [
+            `工程数据读取 ${record.source} 的 BOM/工艺路线版本、替代料、质量门和能力约束。`,
+            `${record.stage} 阶段生成证据：${record.title}。`,
+            `对象 ${record.object} 的工程摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产约束解释。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对替代料放行、质量门保留、人员/设备能力和排产释放窗口。`,
+          ]
+      : isEngineeringChangeEvidence
+        ? [
+            `工程变更读取 ${record.source} 的库存缺口、替代料可用量、质量影响、供应批次、成本和 OTD 模拟。`,
+            `${record.stage} 阶段生成证据：${record.title}。`,
+            `对象 ${record.object} 的 ECN 摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对审批前模拟、正式放行或驳回撤回是否已同步 AI 排产。`,
+          ]
+      : isRouteCapabilityEvidence
+        ? [
+            `工艺路线读取 ${record.source} 的瓶颈资源、候选设备/外协、能力缺口和合批窗口。`,
+            `${record.stage} 阶段生成证据：${record.title}。`,
+            `对象 ${record.object} 的工艺能力摘要：${record.summary}`,
+            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+            `当前状态为 ${record.statusLabel}，审计回放要求核对分流/合批方案、外协兜底和排产释放条件。`,
           ]
       : [
           `${record.stage} 阶段生成证据：${record.title}。`,
@@ -576,6 +629,9 @@ const metrics = computed(() => [
   { label: '库存齐套回放', value: replayItems.value.filter(item => item.type === '库存齐套证据').length },
   { label: '设备停机回放', value: replayItems.value.filter(item => item.type === '设备停机证据').length },
   { label: '生产完工回放', value: replayItems.value.filter(item => item.type === '生产完工证据').length },
+  { label: '工程约束回放', value: replayItems.value.filter(item => item.type === '工程约束证据').length },
+  { label: '工程变更回放', value: replayItems.value.filter(item => item.type === '工程变更证据').length },
+  { label: '工艺能力回放', value: replayItems.value.filter(item => item.type === '工艺能力证据').length },
   { label: 'OTD 证据回放', value: replayItems.value.filter(item => item.type === 'OTD 证据链').length },
   { label: 'POC 复盘签署', value: replayItems.value.filter(item => item.type === 'POC 签署').length },
   { label: '配置审批中', value: pendingApprovalCount.value },
