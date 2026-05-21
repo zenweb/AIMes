@@ -451,6 +451,10 @@ OTD 改善复盘
 - 验证通过：
   - `node ./node_modules/nuxt/bin/nuxt.mjs build`
   - `node node_modules/@playwright/test/cli.js test tests/e2e/production.spec.ts --reporter=list --workers=1 --retries=0`：通过。
+- 2026-05-21 继续把生产执行从“完工写入 OTD 证据链”推进到“可审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `生产完工证据` 类型，专门回放完工数量、工单进度、质量结果、后续工序窗口和 OTD 承诺。
+  - `WO-001 / OP-20` 完工后生成 `TRACE-PROD-COMPLETE-OP-20` 与 `TRACE-PROD-CLOSEOUT-OP-20`，审计页显示 `生产完工回放` 指标，并要求核对排产页复核、质量门放行和承诺交期是否仍成立。
+  - e2e 已扩展 `Production 生产看板 › 完工后生成排产与质量回写记录`，覆盖生产报工 -> AI 排产 -> 报表 OTD 证据链 -> 审计回放。
 
 ---
 

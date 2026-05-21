@@ -335,6 +335,20 @@ test.describe('Production 生产看板', () => {
       const completionEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '完工回写' })
       await expect(completionEvidence.getByText('生产完工')).toBeVisible()
       await expect(completionEvidence.getByText(/TRACE-PROD-COMPLETE/)).toBeVisible()
+
+      await page.goto('audit-logs', { waitUntil: 'commit' })
+      await page.waitForSelector('.audit-board', { timeout: 60000 })
+      const auditPanel = page.locator('.audit-replay-panel')
+      await expect(auditPanel.locator('.metric-chip').filter({ hasText: '生产完工回放' }).getByText('2')).toBeVisible()
+      const closeoutCard = auditPanel.locator('.decision-card').filter({ hasText: '生产复核：WO-001 CNC 精加工 完工复核' })
+      await expect(closeoutCard).toBeVisible()
+      await expect(closeoutCard.locator('.decision-topline').getByText('生产完工证据')).toBeVisible()
+      await expect(closeoutCard.locator('.decision-meta').getByText('证据：TRACE-PROD-CLOSEOUT-OP-20')).toBeVisible()
+      await closeoutCard.getByRole('button', { name: '回放决策链' }).click()
+      const detail = auditPanel.locator('.replay-detail')
+      await expect(detail.getByText(/生产报工读取 生产报工 \/ admin 的完工数量、工单进度、质量结果和后续工序窗口/)).toBeVisible()
+      await expect(detail.getByText(/当前状态为 (完工复核已提交|OTD 风险待复核)/)).toBeVisible()
+      await expect(detail.getByText(/排产页复核、质量门放行和承诺交期是否仍成立/)).toBeVisible()
     } else {
       test.skip()
     }
