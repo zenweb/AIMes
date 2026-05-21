@@ -274,12 +274,41 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     const chat = page.locator('.chat-panel')
     await expect(chat.getByText('延期原因分析：WO-RUSH-9001 当前是最高风险订单。')).toBeVisible()
     await expect(chat.getByText(/M-AL-6061.*齐套缺口 12 件/)).toBeVisible()
+    await expect(chat.getByText(/尚未读取到库存齐套证据/)).toBeVisible()
     await expect(chat.getByText(/CNC-001.*夜班维护窗口/)).toBeVisible()
     await expect(chat.getByText(/OTD 可从 82% 恢复到 96%/)).toBeVisible()
     await expect(chat.getByText(/引用治理：CNC 精加工 SOP V2.3/)).toBeVisible()
     await expect(chat.getByText(/阻断来源：CNC-01 主轴维护手册 V1.1 已过期/)).toBeVisible()
     await chat.locator('.sources-toggle').click()
     await expect(chat.locator('.source-item').filter({ hasText: 'BOM-A100 替代料规则 V1.0' })).toBeVisible()
+  })
+
+  test('业务问答：采购收货闭合后解释缺料齐套状态', async ({ page }) => {
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 30000 })
+    await page.locator('.kitting-panel').locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
+    await expect(page.locator('.kitting-panel').getByText('缺料事件已同步 AI 排产')).toBeVisible()
+
+    await page.goto('purchase', { waitUntil: 'commit' })
+    await page.waitForSelector('.po-board', { timeout: 30000 })
+    const purchasePanel = page.locator('.shortage-action-panel')
+    await purchasePanel.getByRole('button', { name: '生成采购加急单' }).click()
+    await expect(purchasePanel.getByText('已加急')).toBeVisible()
+    await purchasePanel.getByRole('button', { name: '模拟加急收货' }).click()
+    await expect(purchasePanel.getByText('风险下降')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('为什么 WO-RUSH-9001 会延期？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('延期原因分析：WO-RUSH-9001 当前是最高风险订单。')).toBeVisible()
+    await expect(chat.getByText(/采购收货已齐套/)).toBeVisible()
+    await expect(chat.getByText(/采购证据 PO-RUSH-20260519/)).toBeVisible()
+    await expect(chat.getByText(/缺口清零，排产复核可释放冻结工序/)).toBeVisible()
+    await expect(chat.getByText(/OTD 可从 82% 恢复到 96%/)).toBeVisible()
   })
 
   test('业务问答：列出今天最危险的 3 个工单', async ({ page }) => {

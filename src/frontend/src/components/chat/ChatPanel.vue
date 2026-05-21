@@ -118,6 +118,7 @@ import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
+import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -371,6 +372,37 @@ function exportActionReport() {
   a.download = 'AI-MES-OTD-POC-Report.csv'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function latestKittingEvidenceForRushOrder(): OtdEvidenceChainItem | null {
+  return readOtdEvidenceChainRecords()
+    .filter(record =>
+      record.stage === '库存齐套'
+      && record.object.includes('WO-RUSH-9001')
+      && record.title.includes('M-AL-6061')
+    )
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
+function buildKittingDelayLines() {
+  const evidence = latestKittingEvidenceForRushOrder()
+  if (!evidence) {
+    return [
+      '- 主因：`M-AL-6061` 齐套缺口 12 件，后段 CNC 精加工不能直接释放。',
+      '- 采购闭环：尚未读取到库存齐套证据，请先在库存齐套生成缺料排产事件。',
+    ]
+  }
+  if (evidence.status === 'closed') {
+    const closureTrace = evidence.sourceTraceId ? `，采购证据 ${evidence.sourceTraceId}` : ''
+    return [
+      `- 主因：\`${evidence.object}\` 的 \`M-AL-6061\` 齐套风险已闭合，当前状态 ${evidence.statusLabel}${closureTrace}。`,
+      `- 采购闭环：${evidence.summary}`,
+    ]
+  }
+  return [
+    `- 主因：\`${evidence.object}\` 仍存在 \`M-AL-6061\` 齐套风险，当前状态 ${evidence.statusLabel}。`,
+    `- 齐套证据：${evidence.summary}`,
+  ]
 }
 
 // ====== 演示数据 ======
@@ -657,10 +689,11 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if ((q.includes('为什么') || q.includes('原因')) && (q.includes('延期') || q.includes('延误'))) {
+    const kittingLines = buildKittingDelayLines()
     return [
       '**延期原因分析：WO-RUSH-9001 当前是最高风险订单。**',
       '',
-      '- 主因：`M-AL-6061` 齐套缺口 12 件，后段 CNC 精加工不能直接释放。',
+      ...kittingLines,
       '- 次因：`CNC-001` 是瓶颈设备，夜班维护窗口会挤占 4h 可用产能。',
       '- 质量影响：`INS-003` 热处理返工占用 `HT-01` 复验窗口，影响同批 `WO-DEMO-1007`。',
       '- Agent 建议：启用 `M-AL-6061B` 替代料评估，急单放入锁定期后的第一个 CNC 空窗，并把低优先级工单后移。',
