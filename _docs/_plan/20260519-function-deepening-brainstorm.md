@@ -388,6 +388,10 @@ OTD 改善复盘
   - `node ./node_modules/nuxt/bin/nuxt.mjs build`
   - `node node_modules/@playwright/test/cli.js test tests/e2e/equipment.spec.ts --reporter=list --workers=1 --retries=0`：18 passed。
   - `node node_modules/@playwright/test/cli.js test --reporter=list --workers=1`：103 passed。
+- 2026-05-21 继续把设备故障从“进入报表证据链”推进到“可审计回放”：
+  - `审计日志` 的统一 OTD 证据映射新增 `设备停机证据` 类型，专门回放停机诊断、影响工单、替代设备、维护窗口、瓶颈保护和排产复核要求。
+  - `CNC-001` 停机事件生成后，可在审计页看到 `设备停机回放` 指标、`TRACE-EQ-DOWNTIME-CNC-001` 追踪号和换设备/延后/加班/拆单建议的调度员复核要求。
+  - e2e 已扩展 `Equipment 设备管理 › 标记设备故障后回写 AI 排产事件队列`，覆盖设备 -> AI 排产 -> 报表 OTD 证据链 -> 审计回放。
 
 ---
 

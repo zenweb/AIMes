@@ -70,6 +70,20 @@ test.describe('Equipment 设备管理', () => {
     const equipmentEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'CNC-001 停机窗口已同步重排' })
     await expect(equipmentEvidence.locator('.evidence-topline span').getByText('设备维护', { exact: true })).toBeVisible()
     await expect(equipmentEvidence.getByText('TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 60000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    await expect(auditPanel.locator('.metric-chip').filter({ hasText: '设备停机回放' }).getByText('1')).toBeVisible()
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: '设备维护：CNC-001 停机窗口已同步重排' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-topline').getByText('设备停机证据')).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    const detail = auditPanel.locator('.replay-detail')
+    await expect(detail.getByText(/设备维护读取 设备维护 \/ 瓶颈保护 的停机诊断、可替代设备、维护窗口和瓶颈保护策略/)).toBeVisible()
+    await expect(detail.getByText(/当前状态为 待维护/)).toBeVisible()
+    await expect(detail.getByText(/换设备、延后、加班和拆单建议是否被调度员复核/)).toBeVisible()
   })
 
   test('生成客户真实设备故障样例并回写排产事件', async ({ page }) => {
