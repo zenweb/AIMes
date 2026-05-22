@@ -126,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, onMounted, watch, defineAsyncComponent } from 'vue'
 import GanttToolbar from '../gantt/GanttToolbar.vue'
 import ScheduleMetrics from './ScheduleMetrics.vue'
 import ScheduleAgentWorkbenchPanel from './ScheduleAgentWorkbenchPanel.vue'
@@ -142,6 +142,7 @@ import ScheduleFeedbackPanel, {
 } from './ScheduleFeedbackPanel.vue'
 import ScheduleEventQueuePanel, {
   type ScheduleAgentSuggestion,
+  type ScheduleAgentScenario,
   type ScheduleEventItem,
 } from './ScheduleEventQueuePanel.vue'
 import ScheduleRecoveryHandoffPanel from './ScheduleRecoveryHandoffPanel.vue'
@@ -370,6 +371,374 @@ const rushOrderImpact = reactive<RushOrderImpact>({
   options: [],
 })
 const warnings = ref<string[]>([])
+
+type ScenarioTemplate = Omit<ScheduleAgentScenario, 'id' | 'selected'>
+
+const scenarioTemplatesByType: Record<ScheduleEventItem['type'], ScenarioTemplate[]> = {
+  material: [
+    {
+      name: '冻结后段 + 替代料',
+      strategy: '冻结受缺料影响的 CNC 后段，优先评估 M-AL-6061B 替代料并保留首件检验。',
+      otdImpact: '+8%',
+      delayImpact: '-1 单',
+      changeoverImpact: '+12min',
+      rationale: '保护急单交期，同时避免未确认替代料直接进入生产。',
+      recommended: true,
+    },
+    {
+      name: '等待采购到货',
+      strategy: '保持原排产顺序，等待 PO-RUSH-20260519 到货后再释放冻结工序。',
+      otdImpact: '+3%',
+      delayImpact: '0 单改善',
+      changeoverImpact: '0min',
+      rationale: '换线最少，但急单恢复窗口偏晚。',
+    },
+    {
+      name: '跨单借料',
+      strategy: '从低优先级工单借料，先释放 WO-RUSH-9001，再补齐 WO-DEMO-1002。',
+      otdImpact: '+6%',
+      delayImpact: '-1 单',
+      changeoverImpact: '+24min',
+      rationale: '急单恢复更快，但会放大后续工单齐套风险。',
+    },
+  ],
+  equipment: [
+    {
+      name: '夜班维护 + CNC-003 分流',
+      strategy: '把 CNC-001 维护窗口放入夜班低负载时段，锁定期后把急单分流到 CNC-003。',
+      otdImpact: '+5%',
+      delayImpact: '-6h',
+      changeoverImpact: '-18min',
+      rationale: '兼顾瓶颈保护和维护窗口，现场扰动最低。',
+      recommended: true,
+    },
+    {
+      name: '立即停机维护',
+      strategy: '立即释放 CNC-001 维护窗口，中断当前瓶颈任务并顺延后续工序。',
+      otdImpact: '+1%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '设备风险下降最快，但会破坏锁定期承诺。',
+    },
+    {
+      name: '外协临时分流',
+      strategy: '将受影响 CNC 工序转给外协，内部产线只保留质检与装配窗口。',
+      otdImpact: '+4%',
+      delayImpact: '-4h',
+      changeoverImpact: '+30min',
+      rationale: '交付恢复可行，但外协到货和审计链更重。',
+    },
+  ],
+  rush: [
+    {
+      name: '加班插入',
+      strategy: '保护 8 小时锁定期，把 WO-RUSH-9001 插入锁定期后第一个 CNC 空窗。',
+      otdImpact: '+11%',
+      delayImpact: '-2 单',
+      changeoverImpact: '+20min',
+      rationale: 'OTD 改善最高，且现场变更边界清楚。',
+      recommended: true,
+    },
+    {
+      name: '强插当前窗口',
+      strategy: '直接挤占当前 CNC 窗口，低优先级工单立即后移。',
+      otdImpact: '+7%',
+      delayImpact: '-1 单',
+      changeoverImpact: '+42min',
+      rationale: '急单最快，但破坏锁定期并扩大换线成本。',
+    },
+    {
+      name: '换设备插入',
+      strategy: '切到 CNC-002/CNC-003 组合加工，装配窗口保持原节奏。',
+      otdImpact: '+9%',
+      delayImpact: '-1 单',
+      changeoverImpact: '+28min',
+      rationale: '比强插温和，但设备能力和首件检验需额外确认。',
+    },
+  ],
+  quality: [
+    {
+      name: '返工合批 + 复验锁定',
+      strategy: '合并同工艺返工批次，保留复验窗口并锁定后续质量门。',
+      otdImpact: '+3%',
+      delayImpact: '-1 单风险',
+      changeoverImpact: '-10min',
+      rationale: '控制质量风险，同时降低返工造成的连续挤占。',
+      recommended: true,
+    },
+    {
+      name: '先放行后复验',
+      strategy: '先恢复后续工序，复验安排到装配前。',
+      otdImpact: '+5%',
+      delayImpact: '-1 单',
+      changeoverImpact: '0min',
+      rationale: '交期更好，但质量门风险不可接受。',
+    },
+    {
+      name: '完全冻结',
+      strategy: '冻结受影响工单，等待质量工程师完成复核后再排产。',
+      otdImpact: '-2%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '质量最稳，但交付恢复不足。',
+    },
+  ],
+  labor: [
+    {
+      name: '替班放行',
+      strategy: '按已审批替班记录释放热处理工序，生产开工保留班组长复核。',
+      otdImpact: '+4%',
+      delayImpact: '-1 班次风险',
+      changeoverImpact: '0min',
+      rationale: '资质有效且审计链完整，是人员约束的首选恢复路径。',
+      recommended: true,
+    },
+    {
+      name: '停工复核',
+      strategy: '保持热处理冻结，等待主管补证或改派后再释放。',
+      otdImpact: '-6%',
+      delayImpact: '+1 班次待复核',
+      changeoverImpact: '0min',
+      rationale: '无有效候选时必须采用，不能用排产优化绕过开工资质。',
+    },
+    {
+      name: '跨班借调',
+      strategy: '从白班借调具备资质人员，夜班加班执行。',
+      otdImpact: '+2%',
+      delayImpact: '0 单风险',
+      changeoverImpact: '+6min',
+      rationale: '可缓解短期风险，但排班和加班窗口需要主管确认。',
+    },
+  ],
+  route: [
+    {
+      name: '合批分流',
+      strategy: '按已确认能力窗口合批或分流到候选设备。',
+      otdImpact: '+4%',
+      delayImpact: '-1 单风险',
+      changeoverImpact: '+10min',
+      rationale: '工艺放行证据完整，适合释放热处理瓶颈。',
+      recommended: true,
+    },
+    {
+      name: '等待工艺确认',
+      strategy: '冻结超排窗口，等待工艺路线能力校验。',
+      otdImpact: '-4%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '保守但拖慢 OTD 恢复。',
+    },
+    {
+      name: '外协兜底',
+      strategy: '把瓶颈工序临时转外协，内部保留质量复验。',
+      otdImpact: '+3%',
+      delayImpact: '-1 单风险',
+      changeoverImpact: '+22min',
+      rationale: '适合能力缺口持续扩大时启用。',
+    },
+  ],
+  anomaly: [
+    {
+      name: '冻结当前工序',
+      strategy: '先冻结异常关联工序，核对异常中心、风险队列和责任人处置结论。',
+      otdImpact: '+2%',
+      delayImpact: '-1 个窗口风险',
+      changeoverImpact: '0min',
+      rationale: '避免异常未闭环时继续放大交付风险。',
+      recommended: true,
+    },
+    {
+      name: '直接顺延',
+      strategy: '不拆分责任动作，只把受影响工序整体后移。',
+      otdImpact: '-1%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '操作简单，但不能解释责任模块。',
+    },
+    {
+      name: '替代资源分流',
+      strategy: '把设备或物料异常转入替代资源，质量异常保留复验。',
+      otdImpact: '+3%',
+      delayImpact: '-1 个窗口风险',
+      changeoverImpact: '+12min',
+      rationale: '需要下游模块确认后才能采纳。',
+    },
+  ],
+  monitoring: [
+    {
+      name: '瓶颈保护 + 风险回写',
+      strategy: '保护锁定期和 CNC 瓶颈窗口，要求风险队列回写处置结果。',
+      otdImpact: '+5%',
+      delayImpact: '-4h',
+      changeoverImpact: '+10min',
+      rationale: '把现场态势转为可审计的跨模块动作。',
+      recommended: true,
+    },
+    {
+      name: '现场先处置',
+      strategy: '等待现场班组先关闭事件，再由排产复核。',
+      otdImpact: '+1%',
+      delayImpact: '0 单改善',
+      changeoverImpact: '0min',
+      rationale: '风险低，但 Agent 响应偏慢。',
+    },
+    {
+      name: '立即重排',
+      strategy: '不等待风险队列确认，直接释放分流窗口。',
+      otdImpact: '+4%',
+      delayImpact: '-3h',
+      changeoverImpact: '+18min',
+      rationale: '恢复快，但责任闭环不完整。',
+    },
+  ],
+  engineering: [
+    {
+      name: '审批前模拟',
+      strategy: '只生成模拟排产，正式释放必须等待工程审批。',
+      otdImpact: '+5%',
+      delayImpact: '-1 单风险',
+      changeoverImpact: '+8min',
+      rationale: '能提前看 OTD，但不绕过 ECN 门禁。',
+      recommended: true,
+    },
+    {
+      name: '立即释放',
+      strategy: '直接按替代料释放生产窗口。',
+      otdImpact: '+7%',
+      delayImpact: '-1 单风险',
+      changeoverImpact: '+8min',
+      rationale: '交期更好，但审批前不可采纳。',
+    },
+    {
+      name: '维持原物料',
+      strategy: '撤回模拟，等待原料采购到货。',
+      otdImpact: '-4%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '适合 ECN 被驳回后的保守策略。',
+    },
+  ],
+  pilot: [
+    {
+      name: '上线窗口复核',
+      strategy: '复核首批真实工单的排产采纳、执行回写和异常关闭证据。',
+      otdImpact: '+1%',
+      delayImpact: '0 单新增风险',
+      changeoverImpact: '0min',
+      rationale: '保证 POC 进入正式上线后口径不漂移。',
+      recommended: true,
+    },
+    {
+      name: '仅看报表',
+      strategy: '只在报表中心核对 OTD，不回到排产事件队列。',
+      otdImpact: '0%',
+      delayImpact: '未知',
+      changeoverImpact: '0min',
+      rationale: '证据链不完整，无法解释现场执行。',
+    },
+    {
+      name: '扩大样本',
+      strategy: '把 30 单样本扩大到 60 单后再验收。',
+      otdImpact: '+2%',
+      delayImpact: '0 单新增风险',
+      changeoverImpact: '+8min',
+      rationale: '更有说服力，但当前验收节奏更慢。',
+    },
+  ],
+  risk: [
+    {
+      name: '承诺窗口保护',
+      strategy: '按晨会复核包保护承诺工单，优先处理关键缺料和瓶颈设备。',
+      otdImpact: '+5%',
+      delayImpact: '-1 单延期风险',
+      changeoverImpact: '+12min',
+      rationale: '责任动作已明确，适合直接进入排产复核。',
+      recommended: true,
+    },
+    {
+      name: '逐项关闭',
+      strategy: '按风险卡逐项关闭，不形成统一排产保护。',
+      otdImpact: '+2%',
+      delayImpact: '0 单改善',
+      changeoverImpact: '0min',
+      rationale: '执行简单，但对老板问题解释力弱。',
+    },
+    {
+      name: '生产经理强控',
+      strategy: '由生产经理直接冻结所有风险关联工单。',
+      otdImpact: '+3%',
+      delayImpact: '+1 单风险',
+      changeoverImpact: '0min',
+      rationale: '风险控制强，但影响面过大。',
+    },
+  ],
+  production: [
+    {
+      name: '后续窗口复核',
+      strategy: '复核后续工序、质量门和 OTD 证据链，确认完工回写支撑承诺交期。',
+      otdImpact: '+2% 已锁定',
+      delayImpact: '0 单新增风险',
+      changeoverImpact: '0min',
+      rationale: '生产完成后最适合做闭环复核。',
+      recommended: true,
+    },
+    {
+      name: '直接关闭',
+      strategy: '只关闭生产工单，不触发排产复核。',
+      otdImpact: '0%',
+      delayImpact: '未知',
+      changeoverImpact: '0min',
+      rationale: '会丢失后续质量门和交付复盘。',
+    },
+    {
+      name: '重新拆单',
+      strategy: '把剩余工序拆成多个小批次插入。',
+      otdImpact: '+1%',
+      delayImpact: '-1 个窗口',
+      changeoverImpact: '+16min',
+      rationale: '适合有返修或交接不稳定时启用。',
+    },
+  ],
+}
+
+function buildScenarioOptions(event: ScheduleEventItem, suggestion: ScheduleAgentSuggestion): ScheduleAgentScenario[] {
+  const templates = scenarioTemplatesByType[event.type] ?? scenarioTemplatesByType.rush
+  return templates.map((template, index) => ({
+    ...template,
+    id: `${event.id}-scenario-${index + 1}`,
+    selected: template.recommended || template.name === suggestion.recommendedScenarioName,
+  }))
+}
+
+function enrichSuggestionWithScenarioPackage(suggestion: ScheduleAgentSuggestion | null): ScheduleAgentSuggestion | null {
+  if (!suggestion || suggestion.scenarioOptions?.length) return suggestion
+  const event = scheduleEvents.value.find(item => item.id === suggestion.eventId)
+  if (!event) return suggestion
+  const scenarioOptions = buildScenarioOptions(event, suggestion)
+  const recommendedScenario = scenarioOptions.find(scenario => scenario.recommended) ?? scenarioOptions[0]
+  return {
+    ...suggestion,
+    recommendedScenarioName: suggestion.recommendedScenarioName ?? recommendedScenario?.name,
+    decisionRationale: suggestion.decisionRationale
+      ?? `推荐 ${recommendedScenario?.name ?? suggestion.title}，因为它在 ${event.typeLabel} 下对 OTD、延期和换线成本的综合收益最高，同时保留人工采纳审计。`,
+    scenarioOptions,
+  }
+}
+
+function formatScenarioDecisionTrail(suggestion: ScheduleAgentSuggestion) {
+  if (!suggestion.scenarioOptions?.length) return suggestion.action
+  const recommended = suggestion.scenarioOptions.find(scenario => scenario.recommended || scenario.selected) ?? suggestion.scenarioOptions[0]
+  const rejected = suggestion.scenarioOptions.filter(scenario => scenario.id !== recommended.id)
+  const rejectedSummary = rejected.map(scenario => `${scenario.name}：${scenario.rationale}`).join('；')
+  return `${suggestion.action} 推荐方案：${recommended.name}（${recommended.strategy}，OTD ${recommended.otdImpact}，延期 ${recommended.delayImpact}，换线 ${recommended.changeoverImpact}）。未选方案：${rejectedSummary}。决策依据：${suggestion.decisionRationale ?? recommended.rationale}`
+}
+
+watch(activeAgentSuggestion, (suggestion) => {
+  const enriched = enrichSuggestionWithScenarioPackage(suggestion)
+  if (enriched && enriched !== suggestion) {
+    activeAgentSuggestion.value = enriched
+  }
+})
 
 async function loadData() {
   loading.value = true
@@ -1994,7 +2363,7 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
     decision: 'accepted',
     reasonCategory: sourceEvent ? `${sourceEvent.type}_event_agent` : 'event_agent',
     categoryLabel: sourceEvent ? sourceEvent.typeLabel : '事件建议',
-    reasonDetail: `${suggestion.title}：${suggestion.action}`,
+    reasonDetail: `${suggestion.title}：${formatScenarioDecisionTrail(suggestion)}`,
   })
   if (!shouldReleaseOutsourcing || !activeOutsourcingCommitment) return
 

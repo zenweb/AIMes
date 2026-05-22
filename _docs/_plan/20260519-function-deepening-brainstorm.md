@@ -288,6 +288,14 @@ OTD 改善复盘
   - `npm run test:e2e -- tests/e2e/scheduling.spec.ts`：17 passed。
   - `npm run test:e2e`：119 passed，1 flaky retry 后通过，退出码 0；原 14 failed 未复现。
 
+### 2026-05-22 追加推进：事件 Agent 多方案决策包
+
+- `AI 排产` 的事件触发 Agent 从“一条建议”升级为“多方案决策包”，每个事件建议会展示推荐方案、备选方案、OTD 影响、延期影响、换线影响和不选原因。
+- 急单插单场景新增 `加班插入 / 强插当前窗口 / 换设备插入` 三方案对比，默认推荐 `加班插入`，明确其 OTD 改善最高且不破坏 8 小时锁定期；同时解释强插和换设备的换线/质量门成本。
+- 调度员采纳后，反馈记录和 `OTD 复盘证据链` 会保留推荐方案、未选方案和决策依据，避免只留下“已采纳 Agent 推荐”的薄记录。
+- 已补 e2e：`Scheduling 排产甘特图 › 急单插单生成多方案决策包并进入 OTD 复盘`。
+- 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "急单插单生成多方案决策包并进入 OTD 复盘"`：1 passed；`npm run test:e2e -- tests/e2e/scheduling.spec.ts`：20 passed。
+
 ---
 
 ## P1：风险预警变行动队列

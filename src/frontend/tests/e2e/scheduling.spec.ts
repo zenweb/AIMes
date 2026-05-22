@@ -177,11 +177,45 @@ test.describe('Scheduling 排产甘特图', () => {
 
     await panel.locator('.event-card').filter({ hasText: 'CNC 加工中心 01 健康下降' }).getByRole('button', { name: '生成重排建议' }).click()
     await expect(panel.getByText('设备维护窗口重排建议')).toBeVisible()
-    await expect(panel.getByText(/维护窗口放入夜班/)).toBeVisible()
+    await expect(panel.locator('.agent-suggestion > p').getByText(/维护窗口放入夜班/)).toBeVisible()
 
     await panel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
     await expect(panel.getByText('急单插入重排建议')).toBeVisible()
-    await expect(panel.getByText(/锁定期后第一个 CNC 空窗/)).toBeVisible()
+    await expect(panel.locator('.agent-suggestion > p').getByText(/锁定期后第一个 CNC 空窗/)).toBeVisible()
+  })
+
+  test('急单插单生成多方案决策包并进入 OTD 复盘', async ({ page }) => {
+    const eventPanel = page.locator('.event-queue-panel')
+
+    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+
+    const scenarioPackage = eventPanel.locator('.scenario-package')
+    await expect(scenarioPackage.getByText('Agent 多方案决策包')).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '加班插入' })).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '强插当前窗口' })).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '换设备插入' })).toBeVisible()
+    await expect(scenarioPackage.getByText(/OTD 改善最高/)).toBeVisible()
+    await expect(scenarioPackage.getByText(/破坏锁定期并扩大换线成本/)).toBeVisible()
+
+    await eventPanel.getByRole('button', { name: '采纳此建议' }).click()
+
+    const feedbackRecord = page.locator('.feedback-record')
+    await expect(feedbackRecord.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(feedbackRecord.getByText(/推荐方案：加班插入/)).toBeVisible()
+    await expect(feedbackRecord.getByText(/未选方案：强插当前窗口/)).toBeVisible()
+
+    const snapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_schedule_feedback_snapshot') || 'null'))
+    expect(snapshot.reasonDetail).toContain('推荐方案：加班插入')
+    expect(snapshot.reasonDetail).toContain('未选方案：强插当前窗口')
+    expect(snapshot.reasonDetail).toContain('换设备插入')
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
+    await expect(scheduleEvidence.locator('span').getByText('人工采纳', { exact: true })).toBeVisible()
+    await expect(scheduleEvidence.getByText(/推荐方案：加班插入/)).toBeVisible()
+    await expect(scheduleEvidence.getByText(/未选方案：强插当前窗口/)).toBeVisible()
   })
 
   test('采纳事件建议进入反馈记录', async ({ page }) => {
@@ -198,7 +232,7 @@ test.describe('Scheduling 排产甘特图', () => {
 
     const record = feedbackPanel.locator('.feedback-record')
     await expect(record.getByText('已采纳 Agent 推荐')).toBeVisible()
-    await expect(record.getByText(/急单插单事件/)).toBeVisible()
+    await expect(record.locator('span').getByText(/急单插单事件/)).toBeVisible()
     await expect(record.getByText(/急单插入重排建议/)).toBeVisible()
     await expect(record.getByText(/锁定期后第一个 CNC 空窗/)).toBeVisible()
 
@@ -208,9 +242,10 @@ test.describe('Scheduling 排产甘特图', () => {
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
-    await expect(evidenceChain.getByText('人工采纳')).toBeVisible()
-    await expect(evidenceChain.getByText('已采纳 Agent 推荐')).toBeVisible()
-    await expect(evidenceChain.getByText(/急单插入重排建议/)).toBeVisible()
+    const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
+    await expect(scheduleEvidence.locator('span').getByText('人工采纳', { exact: true })).toBeVisible()
+    await expect(scheduleEvidence.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(scheduleEvidence.getByText(/急单插入重排建议/)).toBeVisible()
   })
 
   test('点击任务条展示任务级排产解释', async ({ page }) => {

@@ -46,6 +46,35 @@
           <span>延期 {{ activeSuggestion.delayImpact }}</span>
           <span>换线 {{ activeSuggestion.changeoverImpact }}</span>
         </div>
+        <div v-if="activeSuggestion.scenarioOptions?.length" class="scenario-package" aria-label="Agent 多方案决策包">
+          <div class="scenario-package-heading">
+            <span>Agent 多方案决策包</span>
+            <strong>{{ activeSuggestion.recommendedScenarioName || '推荐方案' }}</strong>
+          </div>
+          <div class="scenario-grid">
+            <article
+              v-for="scenario in activeSuggestion.scenarioOptions"
+              :key="scenario.id"
+              class="scenario-row"
+              :class="{ recommended: scenario.recommended }"
+            >
+              <div class="scenario-title">
+                <strong>{{ scenario.name }}</strong>
+                <span v-if="scenario.recommended">推荐</span>
+              </div>
+              <p>{{ scenario.strategy }}</p>
+              <div class="scenario-metrics">
+                <span>OTD {{ scenario.otdImpact }}</span>
+                <span>延期 {{ scenario.delayImpact }}</span>
+                <span>换线 {{ scenario.changeoverImpact }}</span>
+              </div>
+              <em>{{ scenario.rationale }}</em>
+            </article>
+          </div>
+          <p v-if="activeSuggestion.decisionRationale" class="decision-rationale">
+            {{ activeSuggestion.decisionRationale }}
+          </p>
+        </div>
         <button class="adopt-suggestion" type="button" @click="$emit('adopt', activeSuggestion)">
           采纳此建议
         </button>
@@ -85,6 +114,21 @@ export interface ScheduleAgentSuggestion {
   otdImpact: string
   delayImpact: string
   changeoverImpact: string
+  recommendedScenarioName?: string
+  decisionRationale?: string
+  scenarioOptions?: ScheduleAgentScenario[]
+}
+
+export interface ScheduleAgentScenario {
+  id: string
+  selected?: boolean
+  name: string
+  strategy: string
+  otdImpact: string
+  delayImpact: string
+  changeoverImpact: string
+  rationale: string
+  recommended?: boolean
 }
 
 defineProps<{
@@ -202,6 +246,96 @@ h3 {
   font-size: 12px;
 }
 
+.scenario-package {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.scenario-package-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.scenario-package-heading span {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.scenario-package-heading strong {
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.scenario-row {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.scenario-row.recommended {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.scenario-title,
+.scenario-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.scenario-title strong {
+  color: #111827;
+  font-size: 12px;
+}
+
+.scenario-title span,
+.scenario-metrics span {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scenario-row p,
+.scenario-row em,
+.decision-rationale {
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.scenario-row em {
+  font-style: normal;
+}
+
+.decision-rationale {
+  padding-top: 2px;
+  color: #1e40af;
+  font-weight: 700;
+}
+
 .event-resolved {
   background: #dcfce7;
   color: #15803d;
@@ -294,7 +428,8 @@ h3 {
 
 @media (max-width: 1180px) {
   .event-queue-panel,
-  .event-grid {
+  .event-grid,
+  .scenario-grid {
     grid-template-columns: 1fr;
   }
 }
