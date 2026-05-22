@@ -517,6 +517,60 @@
           </div>
         </div>
 
+        <div class="engineering-change-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>工程变更治理</h4>
+                <p>监管 BOM 替代料 ECN 的影响分析、审批结论、排产释放或模拟撤回，确保工程变更不会绕过 Agent 风险门禁。</p>
+              </div>
+              <strong>{{ engineeringChangeImpact ? engineeringChangeImpact.decisionLabel : '0 条' }}</strong>
+            </div>
+            <article v-if="engineeringChangeImpact" class="engineering-change-card">
+              <div class="action-topline">
+                <span>{{ engineeringChangeImpact.changeId }}</span>
+                <em :class="'policy-' + engineeringChangeStatusClass(engineeringChangeImpact.decision)">{{ engineeringChangeImpact.statusLabel }}</em>
+              </div>
+              <strong>{{ engineeringChangeImpact.changeTitle }}</strong>
+              <p>{{ engineeringChangeImpact.summary }}</p>
+              <div class="policy-row">
+                <span>影响工单</span>
+                <code>{{ engineeringChangeImpact.affectedOrders }}</code>
+              </div>
+              <div class="policy-row">
+                <span>库存影响</span>
+                <code>{{ engineeringChangeImpact.inventoryImpact }}</code>
+              </div>
+              <div class="policy-row">
+                <span>质量门</span>
+                <code>{{ engineeringChangeImpact.qualityImpact }}</code>
+              </div>
+              <div class="policy-row">
+                <span>OTD 影响</span>
+                <code>{{ engineeringChangeImpact.otdImpact }}</code>
+              </div>
+              <div class="policy-row">
+                <span>审批审计</span>
+                <code>{{ engineeringChangeImpact.decisionAuditId ?? engineeringChangeImpact.auditId }}</code>
+              </div>
+              <div class="policy-row">
+                <span>追踪编号</span>
+                <code>{{ engineeringChangeImpact.traceId }}</code>
+              </div>
+              <div class="engineering-change-actions">
+                <button type="button" class="btn-sm" @click="openBomBoard">查看 BOM 约束</button>
+                <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
+                <button type="button" class="btn-sm" @click="openAuditLogs">查看审计回放</button>
+              </div>
+            </article>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待工程变更影响分析</strong>
+              <span>BOM 管理生成 ECN 影响分析或审批结论后，会在这里显示库存、质量、供应、成本和 OTD 影响。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="poc-evidence-lane">
           <div class="policy-block">
             <h4>客户 POC 证据治理</h4>
@@ -1317,6 +1371,7 @@ import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } fro
 import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readEngineeringChangeImpactAnalysis, type EngineeringChangeDecision, type EngineeringChangeImpactAnalysis } from '../../utils/engineering-change-sync'
 import {
   readKnowledgeGovernancePendingDocuments,
   readKnowledgeGovernanceReviews,
@@ -1373,6 +1428,7 @@ const qualityReworkImpact = ref<QualityReworkImpact | null>(null)
 const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const anomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
+const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null)
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const knowledgeReviewRecords = ref<KnowledgeGovernanceReviewRecord[]>([])
 const knowledgePendingDocuments = ref<KnowledgeGovernanceSourceDocument[]>([])
@@ -1631,6 +1687,12 @@ const agentGovernanceMetrics = computed(() => [
       : '待生成',
   },
   {
+    label: '工程变更治理',
+    value: engineeringChangeImpact.value
+      ? `1 条 / ${engineeringChangeImpact.value.decisionLabel}`
+      : '待生成',
+  },
+  {
     label: '生产执行治理',
     value: productionExecutionEvidenceRecords.value.length
       ? `${productionExecutionEvidenceRecords.value.length} 条 / ${activeProductionExecutionEvidenceRecords.value.length} 待复核`
@@ -1823,6 +1885,12 @@ function otdEvidenceStatusClass(status: OtdEvidenceStatus) {
   return 'logged'
 }
 
+function engineeringChangeStatusClass(decision: EngineeringChangeDecision) {
+  if (decision === 'approved') return 'accepted'
+  if (decision === 'rejected') return 'guarded'
+  return 'pending'
+}
+
 function handleApprovalDecision(id: string, decision: Extract<AgentConfigApprovalStatus, 'approved' | 'rejected'>) {
   decideAgentConfigApproval(id, decision, 'admin')
   agentApprovals.value = readAgentConfigApprovals()
@@ -1884,6 +1952,7 @@ onMounted(async () => {
   qualityMrbDisposition.value = readQualityMrbDispositionRecord()
   outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   anomalyDispatchRecords.value = readAnomalyDispatchRecords()
+  engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
   knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
   knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments()
@@ -2045,6 +2114,11 @@ onMounted(async () => {
 .kitting-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .kitting-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .kitting-governance-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.engineering-change-governance { display: grid; grid-template-columns: 1fr; }
+.engineering-change-card { padding: 11px; border: 1px solid #c7d2fe; border-radius: 6px; background: #f8faff; }
+.engineering-change-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.engineering-change-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.engineering-change-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .quality-rework-governance { display: grid; grid-template-columns: 1fr; }
 .quality-rework-governance-card { padding: 11px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; }
 .quality-rework-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
@@ -2202,6 +2276,7 @@ onMounted(async () => {
   .anomaly-dispatch-list,
   .outsourcing-governance-list,
   .kitting-governance-list,
+  .engineering-change-governance,
   .knowledge-pending-list,
   .knowledge-review-list,
   .quality-policy-list,

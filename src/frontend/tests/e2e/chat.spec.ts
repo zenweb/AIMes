@@ -284,6 +284,38 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText('已打开 BOM 管理页面。')).toBeVisible()
   })
 
+  test('业务问答：工程变更批准后解释 ECN 对排产和 OTD 的影响', async ({ page }) => {
+    await page.goto('bom', { waitUntil: 'commit' })
+    await page.waitForSelector('.bom-board', { timeout: 30000 })
+    await page.locator('.list-item').filter({ hasText: 'BOM-A100' }).click()
+    const impact = page.locator('.change-impact')
+    await impact.getByRole('button', { name: '生成影响分析' }).click()
+    await impact.getByRole('button', { name: '批准 ECN 放行' }).click()
+    await expect(impact.getByText('AUD-ENG-ECN-20260521-APPROVE')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('工程变更 ECN 对排产和 OTD 有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('工程变更影响：ECN-BOM-A100-6061B-20260521 已批准。')).toBeVisible()
+    await expect(chat.getByText(/BOM-A100 V1.0，M-AL-6061B 替代 M-AL-6061/)).toBeVisible()
+    await expect(chat.getByText(/WO-RUSH-9001 \/ WO-DEMO-1002 \/ WO-DEMO-1005/)).toBeVisible()
+    await expect(chat.getByText(/M-AL-6061 当前缺口 19 件/)).toBeVisible()
+    await expect(chat.getByText(/OP-040 扭矩检验/)).toBeVisible()
+    await expect(chat.getByText(/材料成本 \+1.8%/)).toBeVisible()
+    await expect(chat.getByText(/Agent 模拟 OTD \+7%/)).toBeVisible()
+    await expect(chat.getByText(/AUD-ENG-ECN-20260521-APPROVE 已批准/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-ENG-ECN-BOM-A100-6061B/)).toBeVisible()
+    await expect(chat.getByText(/系统治理、OTD 复盘证据链和审计回放/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 BOM 管理' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
+  })
+
   test('业务问答：解释订单延期原因', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('为什么 WO-RUSH-9001 会延期？')

@@ -695,6 +695,13 @@ OTD 改善复盘
   - `工程约束 / 工程放行` 回放要求核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产释放窗口；`工程变更影响 / 批准 / 驳回` 回放要求核对库存缺口、替代料可用量、质量门、供应批次、成本影响和审批前模拟/正式释放/驳回撤回；`工艺能力校验 / 放行` 回放要求核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。
   - e2e 已扩展 `Engineering data 工程数据约束` 全套 8 条用例，覆盖 BOM 替代料放行、ECN 影响/批准/驳回、工艺能力放行、AI 排产同步工程证据 -> 报表 OTD 证据链 -> 审计专属回放。
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/engineering-data.spec.ts`：8 passed。
+- 2026-05-22 继续把 ECN 从“工程页/排产/审计可见”推进到“系统治理与助手可解释”：
+  - `系统管理 / Agent 治理` 新增 `工程变更治理`，直接读取 `aimes_engineering_change_impact_analysis`，展示 `ECN-BOM-A100-6061B-20260521` 的影响工单、库存缺口、质量门、OTD 影响、审批审计和追踪编号。
+  - 治理卡提供 `查看 BOM 约束`、`查看 AI 排产`、`查看 OTD 报告` 和 `查看审计回放`，让 ECN 审批结论不只停留在 BOM 管理或通用 OTD 证据链里。
+  - `AI 生产助手` 新增工程变更专项问答，读取同一 ECN 记录解释审批前模拟、批准正式释放、驳回模拟撤回三种状态下的排产和 OTD 影响，并提供 BOM、排产、报表、系统治理四类处置入口。
+  - 已补 e2e：`Admin Agent 治理 › 工程变更 ECN 进入 Agent 治理并可跳转 BOM 排产报表和审计`。
+  - 已补 e2e：`AI 生产助手 (ChatPanel) › 业务问答：工程变更批准后解释 ECN 对排产和 OTD 的影响`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "工程变更 ECN"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "工程变更批准后解释 ECN"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：28 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：23 passed；`git diff --check`：passed。
 
 ---
 

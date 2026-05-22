@@ -121,6 +121,7 @@ import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposi
 import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readEngineeringChangeImpactAnalysis } from '../../utils/engineering-change-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -437,6 +438,25 @@ function isAnomalyDispatchIntent(q: string) {
     || q.includes('风险')
     || q.includes('otd')
     || q.includes('治理')
+  return subject && predicate
+}
+
+function isEngineeringChangeIntent(q: string) {
+  const subject = q.includes('ecn')
+    || q.includes('工程变更')
+    || q.includes('变更影响')
+    || q.includes('替代料')
+    || q.includes('6061b')
+    || q.includes('m-al-6061b')
+  const predicate = q.includes('影响')
+    || q.includes('排产')
+    || q.includes('otd')
+    || q.includes('审批')
+    || q.includes('批准')
+    || q.includes('驳回')
+    || q.includes('治理')
+    || q.includes('释放')
+    || q.includes('撤回')
   return subject && predicate
 }
 
@@ -775,9 +795,48 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if (
-    (q.includes('bom') || q.includes('物料清单') || q.includes('工艺路线') || q.includes('工程数据') || q.includes('替代料'))
+    (
+      q.includes('bom')
+      || q.includes('物料清单')
+      || q.includes('工艺路线')
+      || q.includes('工程数据')
+      || q.includes('替代料')
+      || q.includes('工程变更')
+      || q.includes('ecn')
+    )
     && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))
   ) {
+    if (isEngineeringChangeIntent(q)) {
+      const impact = readEngineeringChangeImpactAnalysis()
+      if (!impact) {
+        return [
+          '**工程变更影响：当前还没有生成 ECN 影响分析。**',
+          '',
+          '- 请先在 BOM 管理选择 `BOM-A100`，点击“生成影响分析”。',
+          '- 生成后助手会读取库存缺口、质量门、供应批次、成本、OTD 影响、审批状态和追踪编号。',
+        ].join('\n') + citationLine
+      }
+      const decisionLine = impact.decision === 'approved'
+        ? `- 审批结论：${impact.decisionAuditId} 已批准，AI 排产可把审批前模拟转为正式替代料释放。`
+        : impact.decision === 'rejected'
+          ? `- 审批结论：${impact.decisionAuditId} 已驳回，AI 排产需要撤回模拟并保持 ${impact.sourceMaterialCode} 原物料策略。`
+          : '- 审批结论：待工程审批，AI 排产只能生成审批前模拟，不自动正式采纳。'
+      return [
+        `**工程变更影响：${impact.changeId} ${impact.decisionLabel}。**`,
+        '',
+        `- 变更对象：${impact.bomCode} ${impact.bomVersion}，${impact.alternateMaterialCode} 替代 ${impact.sourceMaterialCode}。`,
+        `- 影响工单：${impact.affectedOrders}`,
+        `- 库存影响：${impact.inventoryImpact}`,
+        `- 质量影响：${impact.qualityImpact}`,
+        `- 供应与成本：${impact.supplierImpact}；${impact.costImpact}`,
+        `- OTD 影响：${impact.otdImpact}，排产窗口：${impact.scheduleWindow}`,
+        decisionLine,
+        `- 推荐结论：${impact.recommendedDecision}`,
+        `- 审计追踪：${impact.auditId} / ${impact.decisionAuditId ?? '待审批'} / ${impact.traceId}`,
+        '- 该 ECN 已同步到 BOM 管理、AI 排产事件队列、系统治理、OTD 复盘证据链和审计回放。',
+      ].join('\n') + citationLine
+    }
+
     return [
       '**工程数据约束：BOM、工艺路线和质量门已经进入排产解释。**',
       '',
@@ -911,6 +970,8 @@ function getExecutableActions(question: string): ChatAction[] {
     || q.includes('工艺路线')
     || (q.includes('工艺') && q.includes('路线'))
     || q.includes('工程数据')
+    || q.includes('工程变更')
+    || q.includes('ecn')
     || q.includes('替代料')
   const delayRiskIntent = (q.includes('延期') || q.includes('延误') || q.includes('最危险') || q.includes('最高风险') || q.includes('top') || q.includes('前三') || q.includes('3 个'))
     && (q.includes('wo-rush-9001') || q.includes('工单') || q.includes('原因') || q.includes('风险'))
@@ -983,6 +1044,19 @@ function getExecutableActions(question: string): ChatAction[] {
         resultMessage: '已打开风险预警页面。',
       })
     }
+    if (q.includes('治理') || q.includes('系统管理') || q.includes('agent')) {
+      actions.push({
+        id: 'open-admin-governance',
+        label: '打开系统治理',
+        type: 'navigate',
+        targetRoute: '/admin',
+        resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对工程变更记录。',
+      })
+    }
+  }
+
+  if (isEngineeringChangeIntent(q)) {
+    actions.push(...engineeringChangeActions())
   }
 
   if (engineeringDataIntent && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))) {
@@ -1081,6 +1155,39 @@ function engineeringConstraintActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/routing',
       resultMessage: '已打开工艺路线页面。',
+    },
+  ]
+}
+
+function engineeringChangeActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-bom',
+      label: '打开 BOM 管理',
+      type: 'navigate',
+      targetRoute: '/bom',
+      resultMessage: '已打开 BOM 管理页面，核对 ECN 影响分析与审批结论。',
+    },
+    {
+      id: 'open-engineering-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核工程变更审批前模拟、正式释放或驳回撤回建议。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对工程变更进入 OTD 证据链后的影响。',
+    },
+    {
+      id: 'open-admin-governance',
+      label: '打开系统治理',
+      type: 'navigate',
+      targetRoute: '/admin',
+      resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对工程变更记录。',
     },
   ]
 }
