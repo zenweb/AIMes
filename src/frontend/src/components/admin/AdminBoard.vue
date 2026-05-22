@@ -571,6 +571,60 @@
           </div>
         </div>
 
+        <div class="route-capability-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>工艺能力治理</h4>
+                <p>监管工艺路线瓶颈能力校验、分流/合批确认和排产释放条件，避免热处理能力缺口只停留在工艺页。</p>
+              </div>
+              <strong>{{ routeCapabilityValidation ? routeCapabilityValidation.statusLabel : '0 条' }}</strong>
+            </div>
+            <article v-if="routeCapabilityValidation" class="route-capability-card">
+              <div class="action-topline">
+                <span>{{ routeCapabilityValidation.routeCode }} {{ routeCapabilityValidation.operationCode }}</span>
+                <em :class="routeCapabilityValidation.decision === 'released' ? 'policy-accepted' : 'policy-guarded'">{{ routeCapabilityValidation.statusLabel }}</em>
+              </div>
+              <strong>{{ routeCapabilityValidation.routeName }} {{ routeCapabilityValidation.operationName }}能力复核</strong>
+              <p>{{ routeCapabilityValidation.summary }}</p>
+              <div class="policy-row">
+                <span>影响工单</span>
+                <code>{{ routeCapabilityValidation.affectedOrders }}</code>
+              </div>
+              <div class="policy-row">
+                <span>瓶颈资源</span>
+                <code>{{ routeCapabilityValidation.bottleneckResource }}</code>
+              </div>
+              <div class="policy-row">
+                <span>候选资源</span>
+                <code>{{ routeCapabilityValidation.candidateEquipment }}</code>
+              </div>
+              <div class="policy-row">
+                <span>能力缺口</span>
+                <code>{{ routeCapabilityValidation.capacityGapHours }}h / 换线 {{ routeCapabilityValidation.changeoverMinutes }}min</code>
+              </div>
+              <div class="policy-row">
+                <span>合批窗口</span>
+                <code>{{ routeCapabilityValidation.batchWindow }}</code>
+              </div>
+              <div class="policy-row">
+                <span>审计追踪</span>
+                <code>{{ routeCapabilityValidation.auditId }} / {{ routeCapabilityValidation.traceId }}</code>
+              </div>
+              <div class="route-capability-actions">
+                <button type="button" class="btn-sm" @click="openRoutingBoard">查看工艺路线</button>
+                <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
+                <button type="button" class="btn-sm" @click="openAuditLogs">查看审计回放</button>
+              </div>
+            </article>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待工艺能力校验</strong>
+              <span>工艺路线运行能力校验或确认分流/合批后，会在这里显示瓶颈资源、候选设备、合批窗口和排产释放条件。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="poc-evidence-lane">
           <div class="policy-block">
             <h4>客户 POC 证据治理</h4>
@@ -1371,7 +1425,13 @@ import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } fro
 import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
-import { readEngineeringChangeImpactAnalysis, type EngineeringChangeDecision, type EngineeringChangeImpactAnalysis } from '../../utils/engineering-change-sync'
+import {
+  readEngineeringChangeImpactAnalysis,
+  readRouteCapabilityValidation,
+  type EngineeringChangeDecision,
+  type EngineeringChangeImpactAnalysis,
+  type RouteCapabilityValidation,
+} from '../../utils/engineering-change-sync'
 import {
   readKnowledgeGovernancePendingDocuments,
   readKnowledgeGovernanceReviews,
@@ -1429,6 +1489,7 @@ const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const anomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
 const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null)
+const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const knowledgeReviewRecords = ref<KnowledgeGovernanceReviewRecord[]>([])
 const knowledgePendingDocuments = ref<KnowledgeGovernanceSourceDocument[]>([])
@@ -1693,6 +1754,12 @@ const agentGovernanceMetrics = computed(() => [
       : '待生成',
   },
   {
+    label: '工艺能力治理',
+    value: routeCapabilityValidation.value
+      ? `1 条 / ${routeCapabilityValidation.value.statusLabel}`
+      : '待生成',
+  },
+  {
     label: '生产执行治理',
     value: productionExecutionEvidenceRecords.value.length
       ? `${productionExecutionEvidenceRecords.value.length} 条 / ${activeProductionExecutionEvidenceRecords.value.length} 待复核`
@@ -1825,6 +1892,10 @@ function openBomBoard() {
   router.push('/bom')
 }
 
+function openRoutingBoard() {
+  router.push('/routing')
+}
+
 function openSchedulingBoard() {
   router.push('/scheduling')
 }
@@ -1953,6 +2024,7 @@ onMounted(async () => {
   outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   anomalyDispatchRecords.value = readAnomalyDispatchRecords()
   engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
+  routeCapabilityValidation.value = readRouteCapabilityValidation()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
   knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
   knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments()
@@ -2119,6 +2191,11 @@ onMounted(async () => {
 .engineering-change-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .engineering-change-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .engineering-change-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.route-capability-governance { display: grid; grid-template-columns: 1fr; }
+.route-capability-card { padding: 11px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f8fff9; }
+.route-capability-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.route-capability-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.route-capability-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .quality-rework-governance { display: grid; grid-template-columns: 1fr; }
 .quality-rework-governance-card { padding: 11px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; }
 .quality-rework-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
@@ -2277,6 +2354,7 @@ onMounted(async () => {
   .outsourcing-governance-list,
   .kitting-governance-list,
   .engineering-change-governance,
+  .route-capability-governance,
   .knowledge-pending-list,
   .knowledge-review-list,
   .quality-policy-list,

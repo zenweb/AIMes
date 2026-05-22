@@ -121,7 +121,7 @@ import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposi
 import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
-import { readEngineeringChangeImpactAnalysis } from '../../utils/engineering-change-sync'
+import { readEngineeringChangeImpactAnalysis, readRouteCapabilityValidation } from '../../utils/engineering-change-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -460,6 +460,26 @@ function isEngineeringChangeIntent(q: string) {
   return subject && predicate
 }
 
+function isRouteCapabilityIntent(q: string) {
+  const subject = q.includes('工艺能力')
+    || q.includes('能力校验')
+    || q.includes('热处理瓶颈')
+    || q.includes('热处理能力')
+    || q.includes('op-090')
+    || q.includes('r-b200')
+    || q.includes('分流')
+    || q.includes('合批')
+  const predicate = q.includes('影响')
+    || q.includes('排产')
+    || q.includes('otd')
+    || q.includes('治理')
+    || q.includes('释放')
+    || q.includes('校验')
+    || q.includes('瓶颈')
+    || q.includes('外协')
+  return subject && predicate
+}
+
 function buildKittingDelayLines() {
   const evidence = latestKittingEvidenceForRushOrder()
   if (!evidence) {
@@ -664,7 +684,8 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if (
-    (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
+    !isRouteCapabilityIntent(q)
+    && (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
   ) {
     const rework = readQualityReworkImpact()
@@ -803,9 +824,41 @@ function getBusinessAnalysisReply(question: string): string {
       || q.includes('替代料')
       || q.includes('工程变更')
       || q.includes('ecn')
+      || q.includes('工艺能力')
+      || q.includes('能力校验')
+      || q.includes('热处理瓶颈')
+      || q.includes('op-090')
+      || q.includes('r-b200')
     )
     && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))
   ) {
+    if (isRouteCapabilityIntent(q)) {
+      const validation = readRouteCapabilityValidation()
+      if (!validation) {
+        return [
+          '**工艺能力影响：当前还没有运行能力校验。**',
+          '',
+          '- 请先在工艺路线选择 `R-B200`，运行 `OP-090 热处理` 能力校验。',
+          '- 校验后助手会读取瓶颈资源、候选设备/外协、能力缺口、合批窗口、排产释放状态和审计追踪。',
+        ].join('\n') + citationLine
+      }
+      const decisionLine = validation.decision === 'released'
+        ? `- 释放结论：${validation.auditId} 已确认分流/合批，AI 排产可把 ${validation.candidateEquipment} 纳入排产复核。`
+        : `- 释放结论：${validation.auditId} 已识别能力缺口，AI 排产需要冻结超排窗口，等待制造确认分流或外协兜底。`
+      return [
+        `**工艺能力影响：${validation.routeCode} ${validation.operationCode} ${validation.statusLabel}。**`,
+        '',
+        `- 工艺路线：${validation.routeName} ${validation.routeVersion}，工序 ${validation.operationName}。`,
+        `- 影响工单：${validation.affectedOrders}`,
+        `- 瓶颈资源：${validation.bottleneckResource}，能力缺口 ${validation.capacityGapHours}h。`,
+        `- 候选资源：${validation.candidateEquipment}，合批窗口：${validation.batchWindow}。`,
+        `- 换线影响：${validation.changeoverMinutes}min，排产建议需要保留热处理炉批次和外协兜底复核。`,
+        decisionLine,
+        `- 审计追踪：${validation.auditId} / ${validation.traceId}`,
+        '- 该能力校验已同步到工艺路线、AI 排产事件队列、系统治理、OTD 复盘证据链和审计回放。',
+      ].join('\n') + citationLine
+    }
+
     if (isEngineeringChangeIntent(q)) {
       const impact = readEngineeringChangeImpactAnalysis()
       if (!impact) {
@@ -965,10 +1018,16 @@ function getBusinessAnalysisReply(question: string): string {
 function getExecutableActions(question: string): ChatAction[] {
   const q = question.toLowerCase()
   const actions: ChatAction[] = []
+  const routeCapabilityIntent = isRouteCapabilityIntent(q)
   const engineeringDataIntent = q.includes('bom')
     || q.includes('物料清单')
     || q.includes('工艺路线')
     || (q.includes('工艺') && q.includes('路线'))
+    || q.includes('工艺能力')
+    || q.includes('能力校验')
+    || q.includes('热处理瓶颈')
+    || q.includes('op-090')
+    || q.includes('r-b200')
     || q.includes('工程数据')
     || q.includes('工程变更')
     || q.includes('ecn')
@@ -977,7 +1036,8 @@ function getExecutableActions(question: string): ChatAction[] {
     && (q.includes('wo-rush-9001') || q.includes('工单') || q.includes('原因') || q.includes('风险'))
   const equipmentDowntimeIntent = (q.includes('cnc-01') || q.includes('cnc-001') || q.includes('cnc'))
     && (q.includes('故障') || q.includes('停机'))
-  const qualityReworkIntent = (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
+  const qualityReworkIntent = !routeCapabilityIntent
+    && (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
   const productionExecutionIntent = isProductionExecutionIntent(q)
   const anomalyDispatchIntent = isAnomalyDispatchIntent(q)
@@ -1059,7 +1119,11 @@ function getExecutableActions(question: string): ChatAction[] {
     actions.push(...engineeringChangeActions())
   }
 
-  if (engineeringDataIntent && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))) {
+  if (routeCapabilityIntent) {
+    actions.push(...routeCapabilityActions())
+  }
+
+  if (!routeCapabilityIntent && engineeringDataIntent && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))) {
     actions.push(...engineeringConstraintActions())
   }
 
@@ -1188,6 +1252,39 @@ function engineeringChangeActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/admin',
       resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对工程变更记录。',
+    },
+  ]
+}
+
+function routeCapabilityActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-routing',
+      label: '打开工艺路线',
+      type: 'navigate',
+      targetRoute: '/routing',
+      resultMessage: '已打开工艺路线页面，核对 R-B200 OP-090 能力校验与分流/合批结论。',
+    },
+    {
+      id: 'open-engineering-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核工艺能力缺口或分流确认后的排产事件。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对工艺能力校验进入 OTD 证据链后的影响。',
+    },
+    {
+      id: 'open-admin-governance',
+      label: '打开系统治理',
+      type: 'navigate',
+      targetRoute: '/admin',
+      resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对工艺能力记录。',
     },
   ]
 }
@@ -1339,8 +1436,10 @@ function qualityReworkActions(): ChatAction[] {
 function dedupeActions(actions: ChatAction[]): ChatAction[] {
   const seen = new Set<string>()
   return actions.filter(action => {
-    if (seen.has(action.id)) return false
+    const semanticKey = `${action.type}:${action.targetRoute ?? ''}:${action.label}`
+    if (seen.has(action.id) || seen.has(semanticKey)) return false
     seen.add(action.id)
+    seen.add(semanticKey)
     return true
   })
 }

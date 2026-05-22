@@ -702,6 +702,14 @@ OTD 改善复盘
   - 已补 e2e：`Admin Agent 治理 › 工程变更 ECN 进入 Agent 治理并可跳转 BOM 排产报表和审计`。
   - 已补 e2e：`AI 生产助手 (ChatPanel) › 业务问答：工程变更批准后解释 ECN 对排产和 OTD 的影响`。
   - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "工程变更 ECN"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "工程变更批准后解释 ECN"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：28 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：23 passed；`git diff --check`：passed。
+- 2026-05-22 继续把工艺能力从“工艺页/排产/审计可见”推进到“系统治理与助手可解释”：
+  - `系统管理 / Agent 治理` 新增 `工艺能力治理`，直接读取 `aimes_route_capability_validation`，展示 `R-B200 OP-090` 热处理瓶颈能力校验、分流/合批状态、影响工单、候选设备/外协、能力缺口、合批窗口和审计追踪。
+  - 治理卡提供 `查看工艺路线`、`查看 AI 排产`、`查看 OTD 报告` 和 `查看审计回放`，让工艺能力放行结论不只停留在工艺路线或通用 OTD 证据链里。
+  - `AI 生产助手` 新增工艺能力专项问答，读取同一校验记录解释瓶颈资源、候选设备/外协、能力缺口、合批窗口、换线影响和排产释放条件，并对 `热处理瓶颈` 与 `热处理返工` 做意图区分。
+  - 助手动作去重从仅按 `id` 扩展为同一路由/同标签/同动作类型语义去重，避免异常分流这类“排产影响 + 分流路径”复合意图同时生成两个 `打开 AI 排产` 按钮。
+  - 已补 e2e：`Admin Agent 治理 › 工艺能力校验进入 Agent 治理并可跳转工艺排产报表和审计`。
+  - 已补 e2e：`AI 生产助手 (ChatPanel) › 业务问答：工艺能力放行后解释热处理瓶颈对排产和 OTD 的影响`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "工艺能力校验进入 Agent 治理"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "工艺能力放行后解释热处理瓶颈"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "质量返工事件生成后解释热处理 OTD 影响"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "异常分流后解释现场事件处置影响"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：29 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：22 passed + 2 flaky retries passed，exit code 0；`git diff --check`：passed。
 
 ---
 

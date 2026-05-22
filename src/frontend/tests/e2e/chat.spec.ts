@@ -316,6 +316,38 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
   })
 
+  test('业务问答：工艺能力放行后解释热处理瓶颈对排产和 OTD 的影响', async ({ page }) => {
+    await page.goto('routing', { waitUntil: 'commit' })
+    await page.waitForSelector('.routing-board', { timeout: 30000 })
+    await page.locator('.list-item').filter({ hasText: 'R-B200' }).click()
+    const validation = page.locator('.capability-validation')
+    await validation.getByRole('button', { name: '运行能力校验' }).click()
+    await validation.getByRole('button', { name: '确认分流/合批方案' }).click()
+    await expect(validation.getByText('TRACE-ROUTE-CAP-R-B200-OP-090')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('工艺能力校验对热处理瓶颈排产和 OTD 有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('工艺能力影响：R-B200 OP-090 分流已确认。')).toBeVisible()
+    await expect(chat.getByText(/传动轴总成工艺路线 V2.1，工序 热处理/)).toBeVisible()
+    await expect(chat.getByText(/WO-DEMO-1007 \/ WO-DEMO-1010 \/ WO-RUSH-9001/)).toBeVisible()
+    await expect(chat.getByText(/热处理炉 HT-01，能力缺口 4.5h/)).toBeVisible()
+    await expect(chat.getByText(/HT-02 夜班窗口 \/ 外协 HT-SUP-01/)).toBeVisible()
+    await expect(chat.getByText(/2026-05-21 22:00-02:00/)).toBeVisible()
+    await expect(chat.getByText(/换线影响：35min/)).toBeVisible()
+    await expect(chat.getByText(/AUD-ROUTE-CAP-20260521-001 已确认分流\/合批/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-ROUTE-CAP-R-B200-OP-090/)).toBeVisible()
+    await expect(chat.getByText(/系统治理、OTD 复盘证据链和审计回放/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开工艺路线' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
+  })
+
   test('业务问答：解释订单延期原因', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('为什么 WO-RUSH-9001 会延期？')
