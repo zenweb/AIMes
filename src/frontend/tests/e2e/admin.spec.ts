@@ -694,6 +694,58 @@ test.describe('Admin Agent 治理', () => {
     await expect(otdLane.getByText('TRACE-PROD-COMPLETE-OP-020')).toBeVisible()
   })
 
+  test('异常分流进入 Agent 治理并可跳转异常风险排产和质量', async ({ page }) => {
+    await page.goto('anomaly', { waitUntil: 'commit' })
+    await page.waitForSelector('.anomaly-board', { timeout: 30000 })
+    const qualityLane = page.locator('.event-center .event-lane').filter({ hasText: '装配间隙超差' })
+    await qualityLane.getByRole('button', { name: '确认分流' }).click()
+    await expect(page.locator('.dispatch-trace').getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+
+    const panel = page.locator('.agent-governance-panel')
+    await expect(panel.locator('.agent-metric').filter({ hasText: '异常分流治理' }).getByText('1 条 / 1 待下游闭环')).toBeVisible()
+    const governance = panel.locator('.anomaly-dispatch-governance')
+    await expect(governance.getByRole('heading', { name: '异常分流治理' })).toBeVisible()
+    const card = governance.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
+    await expect(card.locator('.action-topline span').getByText('质量异常', { exact: true })).toBeVisible()
+    await expect(card.getByText('质量分流已确认')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '影响工单' }).getByText('WO-20260502 / WO-RUSH-9001')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '责任人' }).getByText('质量工程师 周工 / 今日 15:00')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '分流路径' }).getByText('异常管理 -> 质量闭环 -> AI 排产 -> OTD 复盘')).toBeVisible()
+    await expect(card.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521')).toBeVisible()
+
+    await card.getByRole('button', { name: '查看异常中心' }).click()
+    await page.waitForURL(/\/scheduling\/anomaly$/)
+    await expect(page.locator('.anomaly-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const riskCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
+    await riskCard.getByRole('button', { name: '查看风险预警' }).click()
+    await page.waitForURL(/\/scheduling\/risk$/)
+    await expect(page.locator('.risk-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const schedulingCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
+    await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
+    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await expect(page.locator('.schedule-board')).toBeVisible()
+
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    const qualityCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
+    await qualityCard.getByRole('button', { name: '查看质量闭环' }).click()
+    await page.waitForURL(/\/scheduling\/quality$/)
+    await expect(page.locator('.quality-board')).toBeVisible()
+  })
+
   test('缺料齐套证据进入 Agent 治理并可跳转库存排产采购和 BOM', async ({ page }) => {
     await page.goto('inventory', { waitUntil: 'commit' })
     await page.waitForSelector('.inv-board', { timeout: 30000 })

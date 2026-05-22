@@ -405,6 +405,35 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
   })
 
+  test('业务问答：异常分流后解释现场事件处置影响', async ({ page }) => {
+    await page.goto('anomaly', { waitUntil: 'commit' })
+    await page.waitForSelector('.anomaly-board', { timeout: 30000 })
+    const qualityLane = page.locator('.event-center .event-lane').filter({ hasText: '装配间隙超差' })
+    await qualityLane.getByRole('button', { name: '确认分流' }).click()
+    await expect(page.locator('.dispatch-trace').getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('异常分流对 OTD 和排产有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('异常分流影响：装配间隙超差已分流到质量返工与排产复核。')).toBeVisible()
+    await expect(chat.getByText(/分流类型：质量异常，状态 质量分流已确认/)).toBeVisible()
+    await expect(chat.getByText(/WO-20260502 \/ WO-RUSH-9001/)).toBeVisible()
+    await expect(chat.getByText(/预计影响 1 个装配窗口/)).toBeVisible()
+    await expect(chat.getByText(/质量工程师 周工，截止 今日 15:00/)).toBeVisible()
+    await expect(chat.getByText(/排产窗口：OP-030 复验前/)).toBeVisible()
+    await expect(chat.getByText(/保护 WO-RUSH-9001 后段装配承诺/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521/)).toBeVisible()
+    await expect(chat.getByText(/异常管理 -> 质量闭环 -> AI 排产 -> OTD 复盘/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开异常中心' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开风险预警' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+  })
+
   test('业务问答：评估 CNC-001 故障 4 小时影响', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('如果 CNC-001 故障 4 小时会怎样？')

@@ -621,6 +621,12 @@ OTD 改善复盘
 - 验证通过：
   - `npx vue-tsc --noEmit -p tsconfig.json`：passed。
   - `npm run test:e2e -- tests/e2e/anomaly.spec.ts`：5 passed。
+- 2026-05-22 继续把异常分流从“审计/报表可追溯”推进到“治理面和助手可解释”：
+  - `系统管理 / Agent 治理` 新增 `异常分流治理` 指标和治理区块，直接读取 `aimes_anomaly_dispatch_records`，展示异常类型、影响工单、责任人、分流路径、追踪编号和下游处置入口。
+  - 治理卡按异常类型提供 `查看异常中心`、`查看风险预警`、`查看 AI 排产`，并为质量异常提供 `查看质量闭环`、设备异常提供 `查看设备维护`、物料异常提供 `查看库存齐套 / 查看采购协同`。
+  - `AI 生产助手` 新增异常分流问答，读取最新分流记录回答交付影响、责任人、排产窗口、建议动作、审计追踪和分流路径，避免异常处置只能在异常页或审计页人工串联。
+  - 已补 e2e：`Admin Agent 治理 › 异常分流进入 Agent 治理并可跳转异常风险排产和质量`；`AI 生产助手 (ChatPanel) › 业务问答：异常分流后解释现场事件处置影响`。
+  - 验证结果：`npx vue-tsc --noEmit -p tsconfig.json`：passed；`npm run test:e2e -- tests/e2e/admin.spec.ts --grep "异常分流进入 Agent 治理并可跳转异常风险排产和质量"`：1 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts --grep "异常分流后解释现场事件处置影响"`：1 passed；`npm run test:e2e -- tests/e2e/admin.spec.ts`：27 passed；`npm run test:e2e -- tests/e2e/chat.spec.ts`：22 passed；`git diff --check`：passed。
 
 ---
 

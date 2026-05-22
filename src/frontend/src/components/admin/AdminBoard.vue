@@ -243,6 +243,57 @@
           </div>
         </div>
 
+        <div class="anomaly-dispatch-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>异常分流治理</h4>
+                <p>监管现场事件中心确认的异常分流，核对质量、设备、物料事件是否进入风险、排产、质量、设备、库存和采购闭环。</p>
+              </div>
+              <strong>{{ anomalyDispatchRecords.length ? anomalyDispatchRecords.length + ' 条' : '0 条' }}</strong>
+            </div>
+            <div v-if="anomalyDispatchRecords.length" class="anomaly-dispatch-list">
+              <article v-for="record in anomalyDispatchRecords" :key="record.id" class="anomaly-dispatch-card">
+                <div class="action-topline">
+                  <span>{{ record.typeLabel }}</span>
+                  <em class="policy-pending">{{ record.statusLabel }}</em>
+                </div>
+                <strong>{{ record.title }}</strong>
+                <p>{{ record.summary }}</p>
+                <div class="policy-row">
+                  <span>影响工单</span>
+                  <code>{{ record.affectedOrders }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>责任人</span>
+                  <code>{{ record.owner }} / {{ record.dueAt }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>分流路径</span>
+                  <code>{{ record.route }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>追踪编号</span>
+                  <code>{{ record.traceId }}</code>
+                </div>
+                <div class="assistant-package-actions">
+                  <button type="button" class="btn-sm" @click="openAnomalyBoard">查看异常中心</button>
+                  <button type="button" class="btn-sm" @click="openRiskBoard">查看风险预警</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button v-if="record.type === 'quality'" type="button" class="btn-sm" @click="openQualityBoard">查看质量闭环</button>
+                  <button v-if="record.type === 'equipment'" type="button" class="btn-sm" @click="openEquipmentBoard">查看设备维护</button>
+                  <button v-if="record.type === 'material'" type="button" class="btn-sm" @click="openInventoryBoard">查看库存齐套</button>
+                  <button v-if="record.type === 'material'" type="button" class="btn-sm" @click="openPurchaseBoard">查看采购协同</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待异常分流证据</strong>
+              <span>异常管理现场事件中心确认分流后，会在这里显示影响工单、责任人、分流路径和下游处置入口。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="outsourcing-governance">
           <div class="policy-block">
             <div class="otd-governance-heading">
@@ -1265,6 +1316,7 @@ import { readQualityReworkImpact, type QualityReworkImpact } from '../../utils/q
 import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
+import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
   readKnowledgeGovernancePendingDocuments,
   readKnowledgeGovernanceReviews,
@@ -1320,6 +1372,7 @@ const riskSlaReview = ref<RiskSlaReviewRecord | null>(null)
 const qualityReworkImpact = ref<QualityReworkImpact | null>(null)
 const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
+const anomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const knowledgeReviewRecords = ref<KnowledgeGovernanceReviewRecord[]>([])
 const knowledgePendingDocuments = ref<KnowledgeGovernanceSourceDocument[]>([])
@@ -1572,6 +1625,12 @@ const agentGovernanceMetrics = computed(() => [
   { label: '灰度复核', value: qualityGrayReleaseOpenReviewIssueCount.value },
   { label: 'OTD 复盘证据', value: otdEvidenceRecords.value.length },
   {
+    label: '异常分流治理',
+    value: anomalyDispatchRecords.value.length
+      ? `${anomalyDispatchRecords.value.length} 条 / ${anomalyDispatchRecords.value.filter(record => record.status === 'routed').length} 待下游闭环`
+      : '待生成',
+  },
+  {
     label: '生产执行治理',
     value: productionExecutionEvidenceRecords.value.length
       ? `${productionExecutionEvidenceRecords.value.length} 条 / ${activeProductionExecutionEvidenceRecords.value.length} 待复核`
@@ -1682,6 +1741,14 @@ function openAuditLogs() {
 
 function openKnowledgeGovernance() {
   router.push('/knowledge/documents')
+}
+
+function openAnomalyBoard() {
+  router.push('/anomaly')
+}
+
+function openEquipmentBoard() {
+  router.push('/equipment')
 }
 
 function openPurchaseBoard() {
@@ -1816,6 +1883,7 @@ onMounted(async () => {
   qualityReworkImpact.value = readQualityReworkImpact()
   qualityMrbDisposition.value = readQualityMrbDispositionRecord()
   outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
+  anomalyDispatchRecords.value = readAnomalyDispatchRecords()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
   knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
   knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments()
@@ -1956,6 +2024,11 @@ onMounted(async () => {
 .assistant-package-steps em { color: #64748b; font-style: normal; font-size: 11px; }
 .assistant-package-steps code { overflow-wrap: anywhere; color: #1d4ed8; font-size: 11px; text-align: right; }
 .assistant-package-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.anomaly-dispatch-governance { display: grid; grid-template-columns: 1fr; }
+.anomaly-dispatch-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.anomaly-dispatch-card { padding: 11px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb; }
+.anomaly-dispatch-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.anomaly-dispatch-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
 .outsourcing-governance { display: grid; grid-template-columns: 1fr; }
 .outsourcing-governance-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .outsourcing-governance-card { padding: 11px; border: 1px solid #c7d2fe; border-radius: 6px; background: #f8faff; }
@@ -2126,6 +2199,7 @@ onMounted(async () => {
   .agent-grid,
   .assistant-action-list,
   .assistant-package-list,
+  .anomaly-dispatch-list,
   .outsourcing-governance-list,
   .kitting-governance-list,
   .knowledge-pending-list,

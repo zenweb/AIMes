@@ -120,6 +120,7 @@ import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
+import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -401,6 +402,11 @@ function latestProductionExecutionEvidence(stage: '生产完工' | '生产复核
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
+function latestAnomalyDispatchRecord(): AnomalyDispatchRecord | null {
+  return readAnomalyDispatchRecords()
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
 function isProductionExecutionIntent(q: string) {
   const subject = q.includes('生产完工')
     || q.includes('生产复核')
@@ -413,6 +419,24 @@ function isProductionExecutionIntent(q: string) {
     || q.includes('复核')
     || q.includes('证据')
     || q.includes('回写')
+  return subject && predicate
+}
+
+function isAnomalyDispatchIntent(q: string) {
+  if (q.includes('创建') || q.includes('生成') || q.includes('上报') || q.includes('处置卡')) return false
+  const subject = q.includes('异常分流')
+    || q.includes('现场事件')
+    || q.includes('装配间隙')
+    || q.includes('来料异常')
+    || q.includes('主轴温升')
+    || q.includes('异常')
+  const predicate = q.includes('影响')
+    || q.includes('闭环')
+    || q.includes('处置')
+    || q.includes('排产')
+    || q.includes('风险')
+    || q.includes('otd')
+    || q.includes('治理')
   return subject && predicate
 }
 
@@ -564,6 +588,30 @@ function getBusinessAnalysisReply(question: string): string {
       `- 审计追踪：${review.auditId} / ${review.traceId}`,
       ...closureLines,
       '- 该复核包已同步到 AI 排产事件队列、系统治理、报表 OTD 证据链和审计回放。',
+    ].join('\n') + citationLine
+  }
+
+  if (isAnomalyDispatchIntent(q)) {
+    const dispatch = latestAnomalyDispatchRecord()
+    if (!dispatch) {
+      return [
+        '**异常分流影响：当前还没有确认分流记录。**',
+        '',
+        '- 请先在异常管理的现场事件中心点击“确认分流”。',
+        '- 生成后助手会读取异常类型、影响工单、责任人、交付影响、排产窗口、审计编号和追踪编号。',
+      ].join('\n') + citationLine
+    }
+    return [
+      `**异常分流影响：${dispatch.title}。**`,
+      '',
+      `- 分流类型：${dispatch.typeLabel}，状态 ${dispatch.statusLabel}。`,
+      `- 影响工单：${dispatch.affectedOrders}；交付影响：${dispatch.deliveryImpact}`,
+      `- 责任人：${dispatch.owner}，截止 ${dispatch.dueAt}。`,
+      `- 排产窗口：${dispatch.scheduleWindow}`,
+      `- 建议动作：${dispatch.suggestedAction}`,
+      `- 审计追踪：${dispatch.auditId} / ${dispatch.traceId}`,
+      `- 分流路径：${dispatch.route}`,
+      '- 该异常分流已同步到风险队列、AI 排产、系统治理、OTD 复盘证据链和审计回放。',
     ].join('\n') + citationLine
   }
 
@@ -871,8 +919,18 @@ function getExecutableActions(question: string): ChatAction[] {
   const qualityReworkIntent = (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
   const productionExecutionIntent = isProductionExecutionIntent(q)
+  const anomalyDispatchIntent = isAnomalyDispatchIntent(q)
 
   if (q.includes('打开') || q.includes('进入') || q.includes('跳转')) {
+    if (q.includes('异常') || q.includes('现场事件')) {
+      actions.push({
+        id: 'open-anomaly',
+        label: '打开异常中心',
+        type: 'navigate',
+        targetRoute: '/anomaly',
+        resultMessage: '已打开异常管理现场事件中心。',
+      })
+    }
     if (q.includes('生产') || q.includes('报工') || q.includes('完工')) {
       actions.push({
         id: 'open-production',
@@ -945,6 +1003,10 @@ function getExecutableActions(question: string): ChatAction[] {
 
   if (productionExecutionIntent) {
     actions.push(...productionExecutionActions())
+  }
+
+  if (anomalyDispatchIntent) {
+    actions.push(...anomalyDispatchActions())
   }
 
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
@@ -1104,6 +1166,39 @@ function productionExecutionActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/report',
       resultMessage: '已打开报表中心，核对生产完工和生产复核证据链。',
+    },
+  ]
+}
+
+function anomalyDispatchActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-anomaly',
+      label: '打开异常中心',
+      type: 'navigate',
+      targetRoute: '/anomaly',
+      resultMessage: '已打开异常管理现场事件中心，核对异常分流来源和责任人。',
+    },
+    {
+      id: 'open-risk',
+      label: '打开风险预警',
+      type: 'navigate',
+      targetRoute: '/risk',
+      resultMessage: '已打开风险预警页面，核对异常分流进入风险处置队列后的责任动作。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核异常分流后的排产窗口和重排建议。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对异常分流对 OTD 证据链的影响。',
     },
   ]
 }
