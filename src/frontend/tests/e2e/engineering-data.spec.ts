@@ -7,6 +7,8 @@ test.describe('Engineering data 工程数据约束', () => {
     await page.addInitScript(() => {
       if (!sessionStorage.getItem('aimes_e2e_storage_reset')) {
         localStorage.removeItem('aimes_engineering_change_impact_analysis')
+        localStorage.removeItem('aimes_bom_kitting_package')
+        localStorage.removeItem('aimes_shortage_kitting_event')
         localStorage.removeItem('aimes_otd_evidence_chain')
         sessionStorage.setItem('aimes_e2e_storage_reset', '1')
       }
@@ -73,6 +75,57 @@ test.describe('Engineering data 工程数据约束', () => {
     await expect(detail.getByText('TRACE-ENG-ALT-BOM-A100-M-AL-6061B', { exact: true })).toBeVisible()
     await expect(detail.getByText(/工程数据读取 BOM 管理 \/ 替代料确认 的 BOM\/工艺路线版本、替代料、质量门和能力约束/)).toBeVisible()
     await expect(detail.getByText(/替代料放行、质量门保留、人员\/设备能力和排产释放窗口/)).toBeVisible()
+  })
+
+  test('BOM 展开齐套检查包进入库存齐套排产和 OTD 审计', async ({ page }) => {
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+    await page.locator('.list-item').filter({ hasText: 'BOM-A100' }).click()
+
+    const panel = page.locator('.constraint-section')
+    const kitting = panel.locator('.bom-kitting-source')
+    await expect(kitting.getByText('把 BOM 展开结果送入库存齐套')).toBeVisible()
+    await expect(kitting.locator('.kitting-source-card').filter({ hasText: 'M-AL-6061' }).getByText('M-AL-6061', { exact: true })).toBeVisible()
+    await expect(kitting.getByText(/缺 19 件/)).toBeVisible()
+    await kitting.getByRole('button', { name: '生成 BOM 齐套检查包' }).click()
+    await expect(kitting.getByText('BOM 展开齐套包已进入库存与排产')).toBeVisible()
+    await expect(kitting.getByText('AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
+    await expect(kitting.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 30000 })
+    const inventoryPackage = page.locator('.bom-kitting-package-panel')
+    await expect(inventoryPackage.getByText('BOM-A100 展开齐套包')).toBeVisible()
+    await expect(inventoryPackage.getByText(/M-AL-6061 缺口 19 件/)).toBeVisible()
+    await expect(inventoryPackage.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.waitForSelector('.engineering-constraint-panel', { timeout: 45000 })
+    const constraintPanel = page.locator('.engineering-constraint-panel')
+    await expect(constraintPanel.getByText('BOM-A100 已展开为工单齐套包')).toBeVisible()
+    await expect(constraintPanel.locator('.constraint-evidence').getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001', { exact: true })).toBeVisible()
+    const eventPanel = page.locator('.event-queue-panel')
+    const kittingEvent = eventPanel.locator('.event-card').filter({ hasText: 'M-AL-6061 工单齐套缺口' })
+    await expect(kittingEvent.locator('.event-evidence').getByText('BOM-A100 V1.0', { exact: true })).toBeVisible()
+    await expect(kittingEvent.locator('.event-evidence').getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001', { exact: true })).toBeVisible()
+    await kittingEvent.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(eventPanel.getByText('缺料约束重排建议')).toBeVisible()
+    await expect(eventPanel.getByText(/引用 BOM 替代料规则/)).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'BOM-A100 展开齐套检查包已进入排产复核' })
+    await expect(evidence.locator('.evidence-topline span').getByText('库存齐套', { exact: true })).toBeVisible()
+    await expect(evidence.locator('code').getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001', { exact: true })).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 30000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: '库存齐套：BOM-A100 展开齐套检查包已进入排产复核' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-topline').getByText('库存齐套证据')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(auditPanel.locator('.replay-detail').getByText(/BOM 管理 \/ BOM-A100 V1.0/)).toBeVisible()
+    await expect(auditPanel.locator('.replay-detail').getByText(/调拨、替代料、采购加急和排产顺序调整是否闭环/)).toBeVisible()
   })
 
   test('BOM 工程变更影响分析进入排产模拟和 OTD 审计', async ({ page }) => {

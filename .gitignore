@@ -13,6 +13,8 @@ src/frontend/node_modules/
 src/frontend/dist/
 src/frontend/.nuxt/
 src/frontend/.output/
+src/frontend/.nuxt-e2e*/
+src/frontend/.output-e2e*/
 
 # IDE
 .idea/

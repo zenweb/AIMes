@@ -116,6 +116,31 @@
                 <em v-if="engineeringChangeImpact.decidedBy">{{ engineeringChangeImpact.decidedBy }} · {{ engineeringChangeImpact.decisionAuditId }}</em>
               </div>
             </div>
+            <div v-if="selected.bomCode === 'BOM-A100'" class="bom-kitting-source" :class="{ published: bomKittingPackage }">
+              <div class="kitting-source-head">
+                <div>
+                  <span class="eyebrow">BOM 展开齐套检查</span>
+                  <h4>{{ bomKittingPackage ? 'BOM 展开齐套包已进入库存与排产' : '把 BOM 展开结果送入库存齐套' }}</h4>
+                  <p>{{ bomKittingPackage ? bomKittingPackage.summary : '按 WO-RUSH-9001 的排产窗口展开 BOM-A100，核对 M-AL-6061、M-SEAL-20 与关键替代料，把缺口直接生成库存齐套和排产事件。' }}</p>
+                </div>
+                <div class="kitting-source-actions">
+                  <button type="button" @click="publishBomKittingPackage">生成 BOM 齐套检查包</button>
+                  <em v-if="bomKittingPackage">{{ bomKittingPackage.auditId }}</em>
+                </div>
+              </div>
+              <div class="kitting-source-grid">
+                <div v-for="item in bomKittingItems" :key="item.materialCode" class="kitting-source-card" :class="{ shortage: item.shortageQuantity > 0 }">
+                  <span>{{ item.materialCode }}</span>
+                  <strong>{{ item.requiredQuantity }}{{ item.unit }} / 可用 {{ item.availableQuantity }}{{ item.unit }} / 在途 {{ item.inboundQuantity }}{{ item.unit }}</strong>
+                  <p>{{ item.action }}</p>
+                </div>
+              </div>
+              <div v-if="bomKittingPackage" class="kitting-source-trace">
+                <span>{{ bomKittingPackage.workOrderNumber }}</span>
+                <code>{{ bomKittingPackage.traceId }}</code>
+                <strong>{{ bomKittingPackage.statusLabel }}</strong>
+              </div>
+            </div>
             <div class="agent-bridge">
               <span>排产引用</span>
               <strong>{{ bomAgentBridge }}</strong>
@@ -194,6 +219,8 @@ import {
   type AlternateMaterialApproval,
   type EngineeringChangeImpactAnalysis,
 } from '../../utils/engineering-change-sync'
+import { readBomKittingPackage, writeBomKittingPackage, type BomKittingPackage, type BomKittingPackageItem } from '../../utils/shortage-risk-sync'
+import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 
 const loading = ref(false)
 const boms = ref<BomSummary[]>([])
@@ -221,6 +248,7 @@ function goToPage(p: number | string) {
 const selected = ref<BomDetail | null>(null)
 const alternateApproval = ref<AlternateMaterialApproval | null>(null)
 const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null)
+const bomKittingPackage = ref<BomKittingPackage | null>(null)
 const explosion = ref<BomExplosionResult | null>(null)
 const explodeQty = ref(1)
 const collapsed = ref<Record<string, boolean>>({})
@@ -300,6 +328,39 @@ const engineeringChangeDecisionText = computed(() => {
   return '待工程审批：AI 排产只能生成审批前模拟，不自动正式采纳。'
 })
 
+const bomKittingItems: BomKittingPackageItem[] = [
+  {
+    materialCode: 'M-AL-6061',
+    materialName: '铝合金 6061',
+    requiredQuantity: 64,
+    availableQuantity: 45,
+    inboundQuantity: 20,
+    shortageQuantity: 19,
+    unit: '件',
+    action: '缺 19 件：先触发采购加急，同时评估 M-AL-6061B 替代料工程放行。',
+  },
+  {
+    materialCode: 'M-SEAL-20',
+    materialName: '密封圈 20',
+    requiredQuantity: 32,
+    availableQuantity: 1300,
+    inboundQuantity: 0,
+    shortageQuantity: 0,
+    unit: '件',
+    action: '已齐套：装配前保留批次追溯，不阻断 WO-RUSH-9001。',
+  },
+  {
+    materialCode: 'M-AL-6061B',
+    materialName: '铝合金 6061B',
+    requiredQuantity: 19,
+    availableQuantity: 28,
+    inboundQuantity: 0,
+    shortageQuantity: 0,
+    unit: '件',
+    action: '替代可用：需工程确认后进入 AI 排产正式释放，质量门不可压缩。',
+  },
+]
+
 function toggleTree(key: string) {
   collapsed.value[key] = !collapsed.value[key]
 }
@@ -338,6 +399,7 @@ function flatItems(items: BomItem[]): BomItem[] {
 async function selectBom(b: BomSummary) {
   alternateApproval.value = readAlternateMaterialApproval()
   engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
+  bomKittingPackage.value = readBomKittingPackage()
   try {
     selected.value = await getBomById(b.id)
   } catch {
@@ -377,6 +439,40 @@ function approveEngineeringChange() {
 
 function rejectEngineeringChange() {
   engineeringChangeImpact.value = rejectEngineeringChangeImpactAnalysis()
+}
+
+function publishBomKittingPackage() {
+  if (!selected.value) return
+  const now = new Date().toISOString()
+  const record: BomKittingPackage = {
+    id: 'bom-kitting-package-bom-a100-wo-rush-9001',
+    bomCode: selected.value.bomCode,
+    bomVersion: selected.value.version,
+    productName: selected.value.productName,
+    workOrderNumber: 'WO-RUSH-9001',
+    scheduleWindow: '2026-05-20 14:00-22:00',
+    statusLabel: '待库存齐套',
+    owner: '计划员 李工 / 物控 王工',
+    auditId: 'AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522',
+    traceId: 'TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001',
+    createdAt: now,
+    summary: 'BOM-A100 V1.0 已展开到 WO-RUSH-9001 排产窗口，M-AL-6061 缺口 19 件，M-SEAL-20 已齐套，M-AL-6061B 替代料可用但需工程确认。',
+    items: bomKittingItems,
+  }
+  writeBomKittingPackage(record)
+  upsertOtdEvidenceChainRecord({
+    id: record.id,
+    stage: '库存齐套',
+    title: `${record.bomCode} 展开齐套检查包已进入排产复核`,
+    summary: `${record.summary} 责任人：${record.owner}；动作：${record.items.map(item => `${item.materialCode} ${item.action}`).join('；')}`,
+    object: record.workOrderNumber,
+    source: `BOM 管理 / ${record.bomCode} ${record.bomVersion}`,
+    traceId: record.traceId,
+    status: 'active',
+    statusLabel: record.statusLabel,
+    createdAt: record.createdAt,
+  })
+  bomKittingPackage.value = record
 }
 
 function handleExplode() {
@@ -440,6 +536,7 @@ async function loadBoms() {
 onMounted(() => {
   alternateApproval.value = readAlternateMaterialApproval()
   engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
+  bomKittingPackage.value = readBomKittingPackage()
   loadBoms()
 })
 </script>
@@ -522,6 +619,24 @@ onMounted(() => {
 .impact-decision.rejected span { color: #b91c1c; }
 .impact-decision strong { font-weight: 600; }
 .impact-decision em { color: #667085; font-size: 12px; font-style: normal; overflow-wrap: anywhere; }
+.bom-kitting-source { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid #c7d2fe; border-radius: 6px; background: #eef2ff; }
+.bom-kitting-source.published { border-color: #bbf7d0; background: #f0fdf4; }
+.kitting-source-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.kitting-source-head h4,
+.kitting-source-head p { margin: 0; }
+.kitting-source-head h4 { color: #1f2937; font-size: 14px; }
+.kitting-source-head p { margin-top: 4px; color: #667085; font-size: 12px; line-height: 1.5; }
+.kitting-source-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 6px; }
+.kitting-source-actions button { padding: 6px 10px; border: 1px solid #4f46e5; border-radius: 4px; background: #4f46e5; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.kitting-source-actions em { color: #15803d; font-size: 12px; font-style: normal; font-weight: 700; }
+.kitting-source-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kitting-source-card { min-width: 0; padding: 8px; border: 1px solid rgba(255,255,255,0.78); border-radius: 6px; background: rgba(255,255,255,0.78); }
+.kitting-source-card.shortage { border-color: #fecaca; background: #fff7f7; }
+.kitting-source-card span { display: block; margin-bottom: 4px; color: #4f46e5; font-size: 11px; font-weight: 700; }
+.kitting-source-card strong { display: block; margin-bottom: 4px; color: #1f2937; font-size: 12px; line-height: 1.45; }
+.kitting-source-card p { margin: 0; color: #667085; font-size: 12px; line-height: 1.45; }
+.kitting-source-trace { display: grid; grid-template-columns: minmax(120px, 0.25fr) minmax(160px, 0.45fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #fff; color: #1f2937; font-size: 12px; }
+.kitting-source-trace code { color: #4f46e5; font-family: inherit; font-weight: 700; }
 .agent-bridge { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; background: #eef6ff; border-radius: 6px; font-size: 12px; }
 .agent-bridge span { color: #1677ff; font-weight: 700; white-space: nowrap; }
 .agent-bridge strong { flex: 1; color: #1f2937; font-weight: 600; }
@@ -545,7 +660,9 @@ onMounted(() => {
   .alternate-approval { grid-template-columns: 1fr; }
   .impact-head { flex-direction: column; }
   .impact-actions { align-items: flex-start; }
-  .impact-grid, .impact-trace, .impact-decision { grid-template-columns: 1fr; }
+  .impact-grid, .impact-trace, .impact-decision, .kitting-source-grid, .kitting-source-trace { grid-template-columns: 1fr; }
+  .kitting-source-head { flex-direction: column; }
+  .kitting-source-actions { align-items: flex-start; }
   .agent-bridge { align-items: flex-start; flex-direction: column; }
 }
 </style>

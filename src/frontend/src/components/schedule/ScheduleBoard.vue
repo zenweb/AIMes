@@ -164,6 +164,7 @@ import { planToGanttData, detectConflicts } from '../../utils/gantt-mapper'
 import { useExport } from '../../composables/useExport'
 import {
   matchesShortageMaterial,
+  readBomKittingPackage,
   readShortageKittingEvent,
   readShortageRiskResolution,
   readSupplierNetworkDecision,
@@ -524,6 +525,7 @@ async function loadRiskTriggeredEvents() {
 function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
   const resolution = readShortageRiskResolution()
   const kittingEvent = readShortageKittingEvent()
+  const bomKittingPackage = readBomKittingPackage()
   const downtimeEvent = readEquipmentDowntimeEvent()
   const qualityRework = readQualityReworkImpact()
   const qualityMrbDisposition = readQualityMrbDispositionRecord()
@@ -544,6 +546,12 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
   const monitoringSituationEscalations = readMonitoringSituationEscalations()
   const pocPilotRun = readPocPilotRunRecord()
   const riskSlaReview = readRiskSlaReviewRecord()
+  const productionAnomalyRecords = readOtdEvidenceChainRecords()
+    .filter(record =>
+      record.stage === '生产异常'
+      && record.traceId.startsWith('TRACE-PROD-ANOMALY-')
+    )
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
   barcodeScheduleReleaseRecord.value = barcodeScheduleRelease
   engineeringChangeImpact.value = engineeringImpact
   routeCapabilityValidation.value = routeCapability
@@ -556,9 +564,14 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
           severity: 'critical' as const,
           severityLabel: '高风险',
           title: `${kittingEvent.materialCode} 工单齐套缺口`,
-          impact: `${kittingEvent.workOrderNumber} 需要 ${kittingEvent.requiredQuantity}，可用 ${kittingEvent.availableQuantity}，在途 ${kittingEvent.inboundQuantity}，缺口 ${kittingEvent.shortageQuantity}；${kittingEvent.suggestion}`,
+          impact: bomKittingPackage
+            ? `${bomKittingPackage.bomCode} ${bomKittingPackage.bomVersion} 展开到 ${kittingEvent.workOrderNumber}：需要 ${kittingEvent.requiredQuantity}，可用 ${kittingEvent.availableQuantity}，在途 ${kittingEvent.inboundQuantity}，缺口 ${kittingEvent.shortageQuantity}；${kittingEvent.suggestion}`
+            : `${kittingEvent.workOrderNumber} 需要 ${kittingEvent.requiredQuantity}，可用 ${kittingEvent.availableQuantity}，在途 ${kittingEvent.inboundQuantity}，缺口 ${kittingEvent.shortageQuantity}；${kittingEvent.suggestion}`,
           affectedOrders: kittingEvent.affectedOrders,
           window: kittingEvent.window,
+          evidence: bomKittingPackage
+            ? [bomKittingPackage.auditId, bomKittingPackage.traceId, `${bomKittingPackage.bomCode} ${bomKittingPackage.bomVersion}`]
+            : undefined,
         },
         ...events,
       ]
@@ -839,6 +852,26 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
       ]
     : engineeringImpactMergedEvents
 
+  const productionAnomalyMergedEvents = productionAnomalyRecords.length
+    ? [
+        ...productionAnomalyRecords.map(record => ({
+          id: `evt-production-anomaly-${record.traceId}`,
+          type: 'anomaly' as const,
+          typeLabel: '生产异常',
+          severity: 'critical' as const,
+          severityLabel: record.statusLabel,
+          title: record.title,
+          impact: record.summary,
+          affectedOrders: record.object,
+          window: '异常上报后立即复核',
+          evidence: [record.traceId, record.sourceTraceId].filter(Boolean) as string[],
+          resolved: false,
+          resolutionNote: '生产报工异常已写入 OTD 证据链，AI 排产需冻结当前工序并复核承诺交期影响。',
+        })),
+        ...routeMergedEvents,
+      ]
+    : routeMergedEvents
+
   const anomalyMergedEvents = anomalyDispatchRecords.length
     ? [
         ...anomalyDispatchRecords.map(record => ({
@@ -855,9 +888,9 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
           resolved: false,
           resolutionNote: '异常已确认分流，AI 排产需复核受影响窗口并保留 OTD 证据。',
         })),
-        ...routeMergedEvents,
+        ...productionAnomalyMergedEvents,
       ]
-    : routeMergedEvents
+    : productionAnomalyMergedEvents
 
   const assistantMergedEvents = assistantPackages.length
     ? [
@@ -987,6 +1020,26 @@ function applyEngineeringChangeApprovals() {
   alternateMaterialApproval.value = approval
   const impact = readEngineeringChangeImpactAnalysis()
   engineeringChangeImpact.value = impact
+  const bomKittingPackage = readBomKittingPackage()
+
+  if (bomKittingPackage && !impact) {
+    const shortageItem = bomKittingPackage.items.find(item => item.shortageQuantity > 0)
+    engineeringConstraints.value = engineeringConstraints.value.map(constraint => constraint.id === 'eng-bom-al6061'
+      ? {
+          ...constraint,
+          title: `${bomKittingPackage.bomCode} 已展开为工单齐套包`,
+          explanation: `${bomKittingPackage.auditId}：${bomKittingPackage.summary}`,
+          evidence: [bomKittingPackage.auditId, bomKittingPackage.traceId],
+          affectedOrders: `${bomKittingPackage.workOrderNumber}${shortageItem ? ` / ${shortageItem.materialCode} 缺 ${shortageItem.shortageQuantity}${shortageItem.unit}` : ''}`,
+          agentUsage: '用于 BOM 展开齐套事件',
+        }
+      : constraint
+    )
+    engineeringConstraintTrace.value = {
+      summary: 'BOM 展开齐套、设备、质量、人员 4 类约束已进入 Agent 推荐',
+      detail: `${bomKittingPackage.traceId} 已把 ${bomKittingPackage.bomCode} ${bomKittingPackage.bomVersion} 展开结果同步到库存齐套和排产事件队列；当前急单建议同时引用 R-A100 CNC 能力、OP-040 质检窗口和人员资质。`,
+    }
+  }
 
   if (impact) {
     const decisionText = impact.decision === 'approved'
@@ -1884,10 +1937,12 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     },
     anomaly: {
       eventId: event.id,
-      title: '异常分流后的排产复核',
-      action: `针对 ${event.title}，按异常分流结果冻结受影响窗口，复核质量、设备或物料处置是否影响承诺交期。`,
-      otdImpact: '+2%',
-      delayImpact: '-1 个窗口风险',
+      title: event.typeLabel === '生产异常' ? '生产异常上报后的排产冻结复核' : '异常分流后的排产复核',
+      action: event.typeLabel === '生产异常'
+        ? `针对 ${event.title}，先冻结当前工序和受影响设备窗口，核对异常中心、风险队列和班组长处置结论，再决定是否释放后续工序。`
+        : `针对 ${event.title}，按异常分流结果冻结受影响窗口，复核质量、设备或物料处置是否影响承诺交期。`,
+      otdImpact: event.typeLabel === '生产异常' ? '-4% 待复核' : '+2%',
+      delayImpact: event.typeLabel === '生产异常' ? '+1 个工序窗口待确认' : '-1 个窗口风险',
       changeoverImpact: '0min',
     },
     monitoring: {

@@ -625,6 +625,89 @@
           </div>
         </div>
 
+        <div class="labor-governance">
+          <div class="policy-block">
+            <div class="otd-governance-heading">
+              <div>
+                <h4>人员能力治理</h4>
+                <p>监管技能资质、替班建议、停工复核和重新放行记录，确保人员约束不会绕过生产开工和 AI 排产。</p>
+              </div>
+              <strong>{{ laborGovernanceSummary }}</strong>
+            </div>
+            <div v-if="laborReassignmentRecords.length || laborQualificationBlockRecords.length || laborEvidenceRecords.length" class="labor-governance-list">
+              <article v-for="record in laborReassignmentRecords" :key="record.id" class="labor-governance-card">
+                <div class="action-topline">
+                  <span>{{ record.workOrderNumber }} {{ record.operationCode }}</span>
+                  <em class="policy-accepted">{{ record.status === 'executed' ? '替班已执行' : '已替班复核' }}</em>
+                </div>
+                <strong>{{ record.blockedEmployeeNumber }} 资质临期已生成 {{ record.replacementEmployeeNumber }} 替班复核</strong>
+                <p>{{ record.reason }}</p>
+                <div class="policy-row">
+                  <span>影响工序</span>
+                  <code>{{ record.workOrderNumber }} / {{ record.operationName }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>原人员</span>
+                  <code>{{ record.blockedEmployeeNumber }} {{ record.blockedEmployeeName }} / {{ record.blockedCertification }} {{ record.blockedExpiresAt }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>替班人员</span>
+                  <code>{{ record.replacementEmployeeNumber }} {{ record.replacementEmployeeName }} / {{ record.replacementCertification }} {{ record.replacementExpiresAt }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审核人</span>
+                  <code>{{ record.reviewerEmployeeNumber }} {{ record.reviewerName }} / {{ record.reviewerRole }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审计追踪</span>
+                  <code>{{ record.auditId }} / {{ record.traceId }}</code>
+                </div>
+                <div class="labor-governance-actions">
+                  <button type="button" class="btn-sm" @click="openEmployeeBoard">查看人员管理</button>
+                  <button type="button" class="btn-sm" @click="openProductionBoard">查看生产报工</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
+                  <button type="button" class="btn-sm" @click="openAuditLogs">查看审计回放</button>
+                </div>
+              </article>
+              <article v-for="record in laborQualificationBlockRecords" :key="record.id" class="labor-governance-card blocked">
+                <div class="action-topline">
+                  <span>{{ record.workOrderNumber }} {{ record.operationCode }}</span>
+                  <em :class="record.status === 'released' ? 'policy-accepted' : 'policy-guarded'">{{ laborQualificationStatusLabel(record.status) }}</em>
+                </div>
+                <strong>{{ record.workOrderNumber }} {{ record.operationName }} 人员资质阻断</strong>
+                <p>{{ record.reason }}</p>
+                <div class="policy-row">
+                  <span>阻断人员</span>
+                  <code>{{ record.blockedEmployeeNumber }} {{ record.blockedEmployeeName }} / {{ record.blockedCertification }} {{ record.blockedExpiresAt }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>要求条件</span>
+                  <code>{{ record.requiredSkill }} / {{ record.requiredTeam }} / {{ record.requiredShift }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>主管复核</span>
+                  <code>{{ record.reviewerEmployeeNumber }} {{ record.reviewerName }} / {{ record.reviewerRole }}</code>
+                </div>
+                <div class="policy-row">
+                  <span>审计追踪</span>
+                  <code>{{ record.releaseAuditId ?? record.auditId }} / {{ record.releaseTraceId ?? record.traceId }}</code>
+                </div>
+                <div class="labor-governance-actions">
+                  <button type="button" class="btn-sm" @click="openEmployeeBoard">查看人员管理</button>
+                  <button type="button" class="btn-sm" @click="openProductionBoard">查看生产报工</button>
+                  <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
+                  <button type="button" class="btn-sm" @click="openAuditLogs">查看审计回放</button>
+                </div>
+              </article>
+            </div>
+            <div v-else class="poc-evidence-empty">
+              <strong>等待人员能力证据</strong>
+              <span>人员管理同步技能资质或生成替班/停工复核后，会在这里显示工序、人员、审核人、审计编号和跨页核对入口。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="poc-evidence-lane">
           <div class="policy-block">
             <h4>客户 POC 证据治理</h4>
@@ -878,6 +961,8 @@
                 </div>
                 <div class="assistant-package-actions">
                   <button type="button" class="btn-sm" @click="openProductionBoard">查看生产报工</button>
+                  <button v-if="record.stage === '生产异常'" type="button" class="btn-sm" @click="openAnomalyBoard">查看异常中心</button>
+                  <button v-if="record.stage === '生产异常'" type="button" class="btn-sm" @click="openRiskBoard">查看风险预警</button>
                   <button type="button" class="btn-sm" @click="openSchedulingBoard">查看 AI 排产</button>
                   <button type="button" class="btn-sm" @click="openReportBoard">查看 OTD 报告</button>
                 </div>
@@ -1426,6 +1511,13 @@ import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } 
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
+  readLaborQualificationBlocks,
+  readLaborReassignments,
+  type LaborQualificationBlockRecord,
+  type LaborQualificationBlockStatus,
+  type LaborReassignmentRecord,
+} from '../../utils/labor-assignment-sync'
+import {
   readEngineeringChangeImpactAnalysis,
   readRouteCapabilityValidation,
   type EngineeringChangeDecision,
@@ -1488,6 +1580,8 @@ const qualityReworkImpact = ref<QualityReworkImpact | null>(null)
 const qualityMrbDisposition = ref<QualityMrbDispositionRecord | null>(null)
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const anomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
+const laborReassignmentRecords = ref<LaborReassignmentRecord[]>([])
+const laborQualificationBlockRecords = ref<LaborQualificationBlockRecord[]>([])
 const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null)
 const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
@@ -1619,13 +1713,27 @@ const kittingEvidenceRecords = computed(() =>
 const activeKittingEvidenceRecords = computed(() =>
   kittingEvidenceRecords.value.filter(record => record.status !== 'closed')
 )
-const productionExecutionStages = ['扫码执行', '生产开工', '扫码完工', '物料消耗', '质量门', '工序交接', '扫码返工', '交接冻结', '扫码异常', '生产完工', '生产复核']
+const productionExecutionStages = ['扫码执行', '生产开工', '扫码完工', '物料消耗', '质量门', '工序交接', '扫码返工', '交接冻结', '扫码异常', '生产异常', '生产完工', '生产复核']
 const productionExecutionEvidenceRecords = computed(() =>
   otdEvidenceRecords.value.filter(record => productionExecutionStages.includes(record.stage))
 )
 const activeProductionExecutionEvidenceRecords = computed(() =>
   productionExecutionEvidenceRecords.value.filter(record => record.status !== 'closed')
 )
+const laborEvidenceStages = ['人员能力', '人员替班', '人员阻断', '人员复核', '人员放行']
+const laborEvidenceRecords = computed(() =>
+  otdEvidenceRecords.value.filter(record => laborEvidenceStages.includes(record.stage))
+)
+const activeLaborQualificationBlockRecords = computed(() =>
+  laborQualificationBlockRecords.value.filter(record => record.status !== 'released')
+)
+const laborGovernanceSummary = computed(() => {
+  const activeBlocks = activeLaborQualificationBlockRecords.value.length
+  if (activeBlocks) return `${activeBlocks} 阻断 / ${laborQualificationBlockRecords.value.length} 复核`
+  if (laborReassignmentRecords.value.length) return `${laborReassignmentRecords.value.length} 替班 / ${laborEvidenceRecords.value.length} 证据`
+  if (laborEvidenceRecords.value.length) return `${laborEvidenceRecords.value.length} 证据`
+  return '待生成'
+})
 const qualityClosedPolicy = computed(() =>
   qualityKnowledgeReviewRecords.value.find(record => record.status === 'closed')
 )
@@ -1764,6 +1872,10 @@ const agentGovernanceMetrics = computed(() => [
     value: productionExecutionEvidenceRecords.value.length
       ? `${productionExecutionEvidenceRecords.value.length} 条 / ${activeProductionExecutionEvidenceRecords.value.length} 待复核`
       : '待生成',
+  },
+  {
+    label: '人员能力治理',
+    value: laborGovernanceSummary.value,
   },
   { label: 'POC 复盘签署', value: pocReviewSignoff.value ? '已签署' : '待签署' },
   { label: 'POC 上线交付', value: pocRolloutPackage.value ? '行动包已生成' : '待生成' },
@@ -1912,6 +2024,10 @@ function openProductionBoard() {
   router.push('/production')
 }
 
+function openEmployeeBoard() {
+  router.push('/employee')
+}
+
 function openReportBoard() {
   router.push('/report')
 }
@@ -1960,6 +2076,14 @@ function engineeringChangeStatusClass(decision: EngineeringChangeDecision) {
   if (decision === 'approved') return 'accepted'
   if (decision === 'rejected') return 'guarded'
   return 'pending'
+}
+
+function laborQualificationStatusLabel(status: LaborQualificationBlockStatus) {
+  return {
+    active: '停工复核',
+    reviewing: '主管复核中',
+    released: '重新放行',
+  }[status]
 }
 
 function handleApprovalDecision(id: string, decision: Extract<AgentConfigApprovalStatus, 'approved' | 'rejected'>) {
@@ -2023,6 +2147,8 @@ onMounted(async () => {
   qualityMrbDisposition.value = readQualityMrbDispositionRecord()
   outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
   anomalyDispatchRecords.value = readAnomalyDispatchRecords()
+  laborReassignmentRecords.value = readLaborReassignments()
+  laborQualificationBlockRecords.value = readLaborQualificationBlocks()
   engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
   routeCapabilityValidation.value = readRouteCapabilityValidation()
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
@@ -2242,6 +2368,13 @@ onMounted(async () => {
 .production-execution-card { padding: 11px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f0fdf4; }
 .production-execution-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
 .production-execution-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.labor-governance { display: grid; grid-template-columns: 1fr; }
+.labor-governance-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.labor-governance-card { padding: 11px; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff; }
+.labor-governance-card.blocked { border-color: #fed7aa; background: #fff7ed; }
+.labor-governance-card strong { display: block; margin-bottom: 6px; color: #0f172a; font-size: 13px; }
+.labor-governance-card p { margin: 0 0 8px; color: #475569; font-size: 12px; line-height: 1.45; }
+.labor-governance-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .quality-policy-governance { display: grid; grid-template-columns: 1fr; }
 .quality-policy-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .quality-policy-card { padding: 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
@@ -2355,6 +2488,7 @@ onMounted(async () => {
   .kitting-governance-list,
   .engineering-change-governance,
   .route-capability-governance,
+  .labor-governance-list,
   .knowledge-pending-list,
   .knowledge-review-list,
   .quality-policy-list,

@@ -1356,6 +1356,7 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
   const isEquipment = stage.includes('设备') || source.includes('设备')
   const isInventory = stage.includes('库存') || item.title.includes('齐套') || item.summary.includes('缺口')
   const isQuality = stage.includes('质量') || source.includes('质量') || item.title.includes('返工') || item.title.includes('CAPA')
+  const isProduction = stage.includes('生产') || source.includes('生产报工')
   const isSchedule = stage.includes('Agent') || stage.includes('排产') || source.includes('AI 排产')
   const isRisk = stage.includes('风险') || source.includes('风险')
   const isAssistant = stage.includes('助手') || source.includes('AI 生产助手')
@@ -1370,6 +1371,8 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
         ? '/inventory'
         : isQuality
           ? '/quality'
+          : isProduction
+            ? '/production'
           : isRisk
             ? '/risk'
             : '/scheduling'
@@ -1381,6 +1384,8 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
         ? '库存齐套'
         : route === '/quality'
           ? '质量闭环'
+          : route === '/production'
+            ? '生产报工'
           : route === '/risk'
             ? '风险预警'
             : 'AI 排产'
@@ -1395,6 +1400,8 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
         ? '齐套缺口是否已转成可执行供应动作？'
         : isQuality
           ? '质量返工是否已回写排产和 OTD？'
+          : isProduction
+            ? '生产异常或执行结果是否已进入排产和 OTD 复核？'
           : isRisk
             ? '延期风险来源是否已进入处置队列？'
             : isAssistant

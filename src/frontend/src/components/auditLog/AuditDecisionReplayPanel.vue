@@ -432,6 +432,7 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   const isOutsourcingScheduleRelease = record.stage === '外协排产释放'
   const isKittingEvidence = record.stage === '库存齐套'
   const isEquipmentEvidence = record.stage === '设备维护' || record.stage === '设备实证'
+  const isProductionAnomalyEvidence = record.stage === '生产异常'
   const isProductionCompletionEvidence = record.stage === '生产完工'
   const isProductionCloseoutEvidence = record.stage === '生产复核'
   const isShopfloorSituationEvidence = record.stage === '现场态势'
@@ -465,6 +466,7 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   if (isOutsourcingCommitment) return mapOutsourcingCommitmentToReplay(record)
   if (isOutsourcingReceipt) return mapOutsourcingReceiptToReplay(record)
   if (isOutsourcingScheduleRelease) return mapOutsourcingScheduleReleaseToReplay(record)
+  if (isProductionAnomalyEvidence) return mapProductionAnomalyEvidenceToReplay(record)
   return {
     id: `otd-${record.id}`,
     type: isCommitmentPackage
@@ -863,6 +865,30 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
   }
 }
 
+function mapProductionAnomalyEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
+  return {
+    id: `otd-${record.id}`,
+    type: '生产异常证据',
+    title: `${record.stage}：${record.title}`,
+    summary: record.summary,
+    object: record.object,
+    actor: record.source,
+    evidence: record.traceId,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'otd',
+    traceId: record.traceId,
+    risk: `当前状态：${record.statusLabel}。该生产异常证据必须核对异常上报、风险处置队列、异常中心、AI 排产复核和班组长现场处置是否连续。`,
+    auditState: '生产异常上报、风险队列、异常中心、AI 排产复核和 OTD 证据已归档',
+    steps: [
+      `生产报工读取 ${record.source} 的异常上报、异常管理事件、风险处置队列和 AI 排产影响。`,
+      `${record.stage} 阶段生成异常证据：${record.title}。`,
+      `对象 ${record.object} 的异常摘要：${record.summary}`,
+      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，来源事件 ${record.sourceTraceId ?? '已同步'} 保留为异常管理事件。`,
+      `当前状态为 ${record.statusLabel}，审计回放要求核对风险处置队列 / AI 排产 / 异常中心是否围绕同一异常追踪闭环。`,
+    ],
+  }
+}
+
 function mapQualityRecommendationFeedbackToReplay(record: QualityKnowledgeRecommendationFeedbackRecord): ReplayItem {
   return {
     id: `quality-recommendation-feedback-${record.id}`,
@@ -1071,6 +1097,7 @@ const metrics = computed(() => [
   { label: '外协释放回放', value: replayItems.value.filter(item => item.type === '排产释放证据').length },
   { label: '库存齐套回放', value: replayItems.value.filter(item => item.type === '库存齐套证据').length },
   { label: '设备停机回放', value: replayItems.value.filter(item => item.type === '设备停机证据').length },
+  { label: '生产异常回放', value: replayItems.value.filter(item => item.type === '生产异常证据').length },
   { label: '生产完工回放', value: replayItems.value.filter(item => item.type === '生产完工证据').length },
   { label: '生产复核回放', value: replayItems.value.filter(item => item.type === '生产复核证据').length },
   { label: '现场态势回放', value: replayItems.value.filter(item => item.type === '现场态势证据').length },

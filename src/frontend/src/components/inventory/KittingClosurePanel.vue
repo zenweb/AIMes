@@ -58,6 +58,28 @@
       </div>
     </div>
 
+    <section v-if="bomKittingPackage" class="bom-kitting-package-panel" aria-label="BOM 展开齐套包">
+      <div class="bom-kitting-package-head">
+        <div>
+          <span class="eyebrow">BOM 管理接入</span>
+          <h4>{{ bomKittingPackage.bomCode }} 展开齐套包</h4>
+          <p>{{ bomKittingPackage.summary }}</p>
+        </div>
+        <div class="bom-kitting-package-trace">
+          <strong>{{ bomKittingPackage.statusLabel }}</strong>
+          <code>{{ bomKittingPackage.traceId }}</code>
+          <span>{{ bomKittingPackage.owner }}</span>
+        </div>
+      </div>
+      <div class="bom-kitting-package-grid">
+        <div v-for="item in bomKittingPackage.items" :key="item.materialCode" class="bom-kitting-package-card" :class="{ shortage: item.shortageQuantity > 0 }">
+          <span>{{ item.materialCode }}</span>
+          <strong>需 {{ item.requiredQuantity }}{{ item.unit }} / 可用 {{ item.availableQuantity }}{{ item.unit }} / 缺 {{ item.shortageQuantity }}{{ item.unit }}</strong>
+          <p>{{ item.action }}</p>
+        </div>
+      </div>
+    </section>
+
     <section v-if="materialDispatch" class="material-dispatch-panel" aria-label="异常分流批次隔离">
       <div>
         <span class="eyebrow">异常分流接入</span>
@@ -86,6 +108,7 @@ import { computed, ref } from 'vue'
 import { writeShortageKittingEvent } from '../../utils/shortage-risk-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readBomKittingPackage, type BomKittingPackage } from '../../utils/shortage-risk-sync'
 
 type KittingStatus = 'shortage' | 'warning' | 'ready'
 
@@ -159,6 +182,7 @@ const orders = ref<KittingOrder[]>([
 const syncTitle = ref('等待同步')
 const syncMessage = ref('生成缺料排产事件后，AI 排产会读取齐套检查结果并给出重排建议。')
 const materialDispatch = ref<AnomalyDispatchRecord | null>(readAnomalyDispatchRecordByType('material'))
+const bomKittingPackage = ref<BomKittingPackage | null>(readBomKittingPackage())
 
 const shortageCount = computed(() => orders.value.filter(order => order.status !== 'ready').length)
 const windows = computed(() => [
@@ -458,6 +482,96 @@ h3 {
   background: #f8fbff;
 }
 
+.bom-kitting-package-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #f5f7ff;
+}
+
+.bom-kitting-package-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.38fr);
+  gap: 10px;
+}
+
+.bom-kitting-package-head h4,
+.bom-kitting-package-head p {
+  margin: 0;
+}
+
+.bom-kitting-package-head h4 {
+  color: #111827;
+  font-size: 14px;
+}
+
+.bom-kitting-package-head p,
+.bom-kitting-package-card p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bom-kitting-package-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.bom-kitting-package-trace strong,
+.bom-kitting-package-trace code,
+.bom-kitting-package-trace span {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.bom-kitting-package-trace code {
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.bom-kitting-package-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bom-kitting-package-card {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.bom-kitting-package-card.shortage {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.bom-kitting-package-card span {
+  display: block;
+  margin-bottom: 4px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bom-kitting-package-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .material-dispatch-panel p {
   color: #4b5563;
   font-size: 12px;
@@ -496,7 +610,9 @@ h3 {
 @media (max-width: 1180px) {
   .kitting-grid,
   .window-grid,
-  .material-dispatch-panel {
+  .material-dispatch-panel,
+  .bom-kitting-package-head,
+  .bom-kitting-package-grid {
     grid-template-columns: 1fr;
   }
 }

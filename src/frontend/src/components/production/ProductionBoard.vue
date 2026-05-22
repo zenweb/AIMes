@@ -1395,6 +1395,7 @@ async function confirmException() {
   const eventId = `prod-anomaly-${Date.now()}`
   const detectedAt = new Date().toISOString()
   const barcodeContext = getBarcodeStartContextForOperation(op)
+  const anomalyTraceId = `TRACE-PROD-ANOMALY-${op.workOrderNumber}-${op.operationCode}`
 
   writeProductionAnomalyEvent({
     id: eventId,
@@ -1420,8 +1421,21 @@ async function confirmException() {
     type: 'risk',
     typeLabel: '风险联动',
     title: `${op.workOrderNumber} 异常已进入处置队列`,
-    detail: `${op.operationName} 上报异常：${reason}。已生成异常管理事件 ${eventId}，建议触发排产风险复核${barcodeAnomalyTraceId ? `；扫码异常证据 ${barcodeAnomalyTraceId} 已进入 OTD 复盘。` : '。'}`,
+    detail: `${op.operationName} 上报异常：${reason}。已生成异常管理事件 ${eventId}，建议触发排产风险复核；生产异常证据 ${anomalyTraceId} 已进入 OTD 复盘${barcodeAnomalyTraceId ? `；扫码异常证据 ${barcodeAnomalyTraceId} 已进入 OTD 复盘。` : '。'}`,
     tags: ['异常管理', '排产风险', '事件回写', ...(barcodeAnomalyTraceId ? ['扫码异常'] : [])],
+  })
+  upsertOtdEvidenceChainRecord({
+    id: `production-anomaly-${op.workOrderNumber}-${op.operationCode}`,
+    stage: '生产异常',
+    title: `${op.workOrderNumber} ${op.operationName} 异常上报进入风险联动`,
+    summary: `${op.operationName} 上报异常：${reason}。异常管理事件 ${eventId} 已生成，需冻结当前工序，班组长复核 SOP、设备状态和物料批次，并由 AI 排产复核承诺交期影响。`,
+    object: op.workOrderNumber,
+    source: `生产报工 / ${user.value?.username ?? 'operator'}`,
+    traceId: anomalyTraceId,
+    sourceTraceId: eventId,
+    status: 'active',
+    statusLabel: '异常待分流',
+    createdAt: detectedAt,
   })
   notify('异常已上报：' + reason, 'error')
   dialog.type = ''

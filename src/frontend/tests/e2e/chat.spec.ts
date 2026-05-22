@@ -18,7 +18,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(purchasePanel.getByText('风险下降')).toBeVisible()
 
     await page.goto('dashboard', { waitUntil: 'commit' })
-    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.waitForSelector('.chat-fab', { timeout: 30000 })
   }
 
   test.beforeEach(async ({ page }) => {
@@ -27,7 +27,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
     })
     await page.goto('dashboard', { waitUntil: 'commit' })
-    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.waitForSelector('.chat-fab', { timeout: 30000 })
   })
 
   test('浮动按钮可见', async ({ page }) => {
@@ -348,6 +348,34 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
   })
 
+  test('业务问答：BOM 展开齐套包解释缺料、库存和排产影响', async ({ page }) => {
+    await page.goto('bom', { waitUntil: 'commit' })
+    await page.waitForSelector('.bom-board', { timeout: 30000 })
+    await page.locator('.list-item').filter({ hasText: 'BOM-A100' }).click()
+    const kitting = page.locator('.bom-kitting-source')
+    await kitting.getByRole('button', { name: '生成 BOM 齐套检查包' }).click()
+    await expect(kitting.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await page.waitForSelector('.chat-fab', { timeout: 30000 })
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('BOM 展开齐套包对库存和排产有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('BOM 展开齐套：BOM-A100 V1.0 已进入 WO-RUSH-9001 排产复核。')).toBeVisible()
+    await expect(chat.getByText(/工单窗口：2026-05-20 14:00-22:00/)).toBeVisible()
+    await expect(chat.getByText(/M-AL-6061 缺 19件/)).toBeVisible()
+    await expect(chat.getByText(/M-AL-6061B：替代可用/)).toBeVisible()
+    await expect(chat.getByText(/AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001/)).toBeVisible()
+    await expect(chat.getByText(/库存齐套、AI 排产事件队列、系统治理/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 BOM 管理' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开库存齐套' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
+  })
+
   test('业务问答：解释订单延期原因', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('为什么 WO-RUSH-9001 会延期？')
@@ -498,6 +526,77 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
   })
 
+  test('业务问答：现场态势处置包生成后解释监控、风险和 Hypercare 影响', async ({ page }) => {
+    await page.goto('monitoring', { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.shopfloor-situation', { timeout: 30000 })
+
+    const monitoringPanel = page.locator('.shopfloor-situation')
+    await monitoringPanel.getByRole('button', { name: '升级为跨模块处置包' }).click()
+    await expect(monitoringPanel.getByText('现场态势已升级为跨模块处置包')).toBeVisible()
+    await expect(monitoringPanel.getByLabel('现场态势升级处置包').getByText('CNC-001 现场态势升级处置包')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('实时监控现场态势对 OTD 有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('实时监控现场态势：CNC-001 现场态势升级处置包。')).toBeVisible()
+    await expect(chat.getByText(/来源事件：CNC-001，影响 WO-RUSH-9001 \/ WO-DEMO-1002/)).toBeVisible()
+    await expect(chat.getByText(/OTD 影响：\+6%/)).toBeVisible()
+    await expect(chat.getByText(/排产动作：CNC-001 瓶颈负载超过 90%/)).toBeVisible()
+    await expect(chat.getByText(/风险建议：风险队列升级给生产经理/)).toBeVisible()
+    await expect(chat.getByText(/审计追踪：AUD-SF-ESC-SF-CNC-LOAD-20260521 \/ TRACE-SF-ESC-SF-CNC-LOAD/)).toBeVisible()
+    await expect(chat.getByText(/该现场态势已同步到风险预警、AI 排产、报表 OTD 证据链和审计回放。/)).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开实时监控' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开风险预警' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开审计回放' })).toBeVisible()
+
+    await page.getByRole('button', { name: '打开实时监控' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/monitoring$/)
+    await expect(page.locator('.shopfloor-situation')).toBeVisible()
+    await expect(chat.getByText('动作已执行：已打开实时监控页面，核对现场态势图和处置包。')).toBeVisible()
+  })
+
+  test('业务问答：外协承诺生成后解释厂外等待是否可计入 OTD 恢复', async ({ page }) => {
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 30000 })
+
+    const kpiPanel = page.locator('.otd-kpi-drilldown-panel')
+    await kpiPanel.getByRole('tab', { name: '产品族' }).click()
+    await kpiPanel.getByRole('button', { name: /法兰盘 DN100/ }).click()
+    await kpiPanel.getByRole('button', { name: '生成外协承诺包' }).click()
+    await expect(page.locator('.otd-kpi-drilldown-panel').getByText('法兰盘 DN100 外协承诺包')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('法兰盘 DN100 外协到货后厂外等待能不能计入 OTD 恢复？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('外协承诺口径：法兰盘 DN100 当前状态为 外协承诺待到货。')).toBeVisible()
+    await expect(chat.getByText(/外协对象：法兰盘 DN100，外协厂 华东精密外协厂，承诺到货 2026-05-23。/)).toBeVisible()
+    await expect(chat.getByText(/影响工单：WO-DEMO-1013/)).toBeVisible()
+    await expect(chat.getByText(/承诺包审计：AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001 \/ TRACE-OUTSOURCING-FLANGE-20260521/)).toBeVisible()
+    await expect(chat.getByText(/当前结论：外协承诺待到货，外协承诺只能证明外部供应窗口已锁定，厂外等待口径尚未关闭。/)).toBeVisible()
+    await expect(chat.getByText(/OTD 口径：不能计入厂内已恢复订单，也不能把外协承诺误判为排产释放。/)).toBeVisible()
+    await expect(chat.getByText(/下一步：采购协同确认 华东精密外协厂 到货/)).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开采购协同' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开 OTD 报告' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开系统治理' })).toBeVisible()
+    await expect(chat.getByRole('button', { name: '打开审计回放' })).toBeVisible()
+
+    await page.getByRole('button', { name: '打开采购协同' }).click()
+    await expect(page).toHaveURL(/\/purchase$/)
+    await expect(page.locator('.po-board')).toBeVisible()
+    await expect(chat.getByText('动作已执行：已打开采购协同页面，核对 法兰盘 DN100 外协到货与收货闭环。')).toBeVisible()
+  })
+
   test('业务问答：评估 CNC-001 故障 4 小时影响', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('如果 CNC-001 故障 4 小时会怎样？')
@@ -539,5 +638,40 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText(/待维护/)).toBeVisible()
     await expect(chat.getByText(/设备维护 \/ 瓶颈保护/)).toBeVisible()
     await expect(chat.getByText(/尚未读取到设备停机证据/)).not.toBeVisible()
+  })
+
+  test('业务问答：人员替班证据生成后解释开工和排产影响', async ({ page }) => {
+    await page.goto('employee', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 30000 })
+    const skillPanel = page.locator('.skill-matrix-panel')
+    await skillPanel.getByRole('button', { name: '同步人员证据' }).click()
+    await expect(skillPanel.getByText('人员能力证据已同步 OTD 复盘')).toBeVisible()
+    await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
+    await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible()
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await expect(page.locator('.chat-fab')).toBeVisible()
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('人员资质临期对 WO-013 开工和排产有什么影响？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByText('人员能力影响：WO-013 热处理开工受人员资质约束。')).toBeVisible()
+    await expect(chat.getByText(/EMP-003 王五.*热处理上岗证 2026-05-25 临期/)).toBeVisible()
+    await expect(chat.getByText(/EMP-006 孙八 接管 淬火 \/ 回火/)).toBeVisible()
+    await expect(chat.getByText(/审核人 赵六/)).toBeVisible()
+    await expect(chat.getByText(/TRACE-LABOR-REASSIGN-WO-013-OP-10/)).toBeVisible()
+    await expect(chat.getByText(/人员替班事件/)).toBeVisible()
+    await expect(chat.getByText(/系统管理 Agent 治理、报表 OTD 证据链和审计回放/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开人员管理' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开生产报工' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开 AI 排产' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开系统治理' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开审计回放' })).toBeVisible()
+
+    await page.getByRole('button', { name: '打开系统治理' }).click()
+    await expect(page).toHaveURL(/\/scheduling\/admin$/)
+    await expect(page.locator('.admin-board')).toBeVisible()
+    await expect(chat.getByText(/核对人员能力治理记录/)).toBeVisible()
   })
 })

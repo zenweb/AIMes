@@ -116,12 +116,16 @@ import { readLatestOtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitmen
 import { readPocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
 import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readMonitoringSituationEscalations, type MonitoringSituationEscalation } from '../../utils/monitoring-situation-escalation-sync'
+import { readLatestOutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import { readEngineeringChangeImpactAnalysis, readRouteCapabilityValidation } from '../../utils/engineering-change-sync'
+import { readBomKittingPackage } from '../../utils/shortage-risk-sync'
+import { readLaborQualificationBlocks, readLaborReassignments } from '../../utils/labor-assignment-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -397,7 +401,7 @@ function latestEquipmentDowntimeEvidenceForCnc001(): OtdEvidenceChainItem | null
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
-function latestProductionExecutionEvidence(stage: '生产完工' | '生产复核'): OtdEvidenceChainItem | null {
+function latestProductionExecutionEvidence(stage: '生产完工' | '生产复核' | '生产异常'): OtdEvidenceChainItem | null {
   return readOtdEvidenceChainRecords()
     .filter(record => record.stage === stage)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
@@ -408,22 +412,32 @@ function latestAnomalyDispatchRecord(): AnomalyDispatchRecord | null {
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
+function latestMonitoringSituationEscalation(): MonitoringSituationEscalation | null {
+  return readMonitoringSituationEscalations()
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
 function isProductionExecutionIntent(q: string) {
-  const subject = q.includes('生产完工')
+  const subject = q.includes('生产异常')
+    || q.includes('异常上报')
+    || q.includes('生产完工')
     || q.includes('生产复核')
     || q.includes('生产执行')
     || q.includes('生产报工')
     || q.includes('完工')
+    || q.includes('主轴温升')
   const predicate = q.includes('otd')
     || q.includes('影响')
     || q.includes('排产')
     || q.includes('复核')
     || q.includes('证据')
     || q.includes('回写')
+    || q.includes('风险')
   return subject && predicate
 }
 
 function isAnomalyDispatchIntent(q: string) {
+  if (q.includes('生产异常') || q.includes('异常上报')) return false
   if (q.includes('创建') || q.includes('生成') || q.includes('上报') || q.includes('处置卡')) return false
   const subject = q.includes('异常分流')
     || q.includes('现场事件')
@@ -438,6 +452,45 @@ function isAnomalyDispatchIntent(q: string) {
     || q.includes('风险')
     || q.includes('otd')
     || q.includes('治理')
+  return subject && predicate
+}
+
+function isMonitoringSituationIntent(q: string) {
+  const subject = q.includes('实时监控')
+    || q.includes('现场态势')
+    || q.includes('现场处置')
+    || q.includes('监控')
+  const predicate = q.includes('影响')
+    || q.includes('排产')
+    || q.includes('处置')
+    || q.includes('证据')
+    || q.includes('治理')
+    || q.includes('解释')
+    || q.includes('联动')
+  return subject && predicate
+}
+
+function isOutsourcingCommitmentIntent(q: string) {
+  const subject = q.includes('外协')
+    || q.includes('法兰盘')
+    || q.includes('dn100')
+    || q.includes('厂外等待')
+    || q.includes('外部约束')
+    || q.includes('外协承诺')
+    || q.includes('外协到货')
+    || q.includes('排产释放')
+  const predicate = q.includes('影响')
+    || q.includes('otd')
+    || q.includes('恢复')
+    || q.includes('关闭')
+    || q.includes('口径')
+    || q.includes('能不能')
+    || q.includes('能否')
+    || q.includes('是否')
+    || q.includes('解释')
+    || q.includes('排产')
+    || q.includes('计入')
+    || q.includes('已恢复')
   return subject && predicate
 }
 
@@ -460,6 +513,21 @@ function isEngineeringChangeIntent(q: string) {
   return subject && predicate
 }
 
+function isBomKittingIntent(q: string) {
+  const subject = q.includes('bom')
+    || q.includes('物料清单')
+    || q.includes('齐套包')
+    || q.includes('展开齐套')
+    || q.includes('工单齐套')
+    || q.includes('m-al-6061')
+  const predicate = q.includes('齐套')
+    || q.includes('缺料')
+    || q.includes('库存')
+    || q.includes('展开')
+    || q.includes('解释')
+  return subject && predicate
+}
+
 function isRouteCapabilityIntent(q: string) {
   const subject = q.includes('工艺能力')
     || q.includes('能力校验')
@@ -478,6 +546,167 @@ function isRouteCapabilityIntent(q: string) {
     || q.includes('瓶颈')
     || q.includes('外协')
   return subject && predicate
+}
+
+function isLaborCapabilityIntent(q: string) {
+  const subject = q.includes('人员')
+    || q.includes('资质')
+    || q.includes('技能')
+    || q.includes('替班')
+    || q.includes('停工复核')
+    || q.includes('开工校验')
+    || q.includes('emp-003')
+    || q.includes('emp-006')
+    || q.includes('wo-013')
+  const predicate = q.includes('影响')
+    || q.includes('排产')
+    || q.includes('开工')
+    || q.includes('治理')
+    || q.includes('复核')
+    || q.includes('otd')
+    || q.includes('解释')
+    || q.includes('为什么')
+    || q.includes('能不能')
+  return subject && predicate
+}
+
+function latestLaborEvidence(): OtdEvidenceChainItem | null {
+  return readOtdEvidenceChainRecords()
+    .filter(record => ['人员能力', '人员替班', '人员阻断', '人员复核', '人员放行', '生产开工'].includes(record.stage))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+}
+
+function buildMonitoringSituationLines() {
+  const escalation = latestMonitoringSituationEscalation()
+  if (!escalation) {
+    return [
+      '**实时监控现场态势：当前还没有生成处置包。**',
+      '',
+      '- 请先在实时监控点击“同步态势证据”或“升级为跨模块处置包”。',
+      '- 生成后助手会读取瓶颈负载、齐套缺口、质量返工、负责人、排产动作、审计编号和追踪编号。',
+    ]
+  }
+
+  const lines = [
+    `**实时监控现场态势：${escalation.title}。**`,
+    '',
+    `- 来源事件：${escalation.source}，影响 ${escalation.workOrders}，负责人 ${escalation.owner}。`,
+    `- OTD 影响：${escalation.otdImpact}；延期影响：${escalation.delayImpact}；换线影响：${escalation.changeoverImpact}。`,
+    `- 排产动作：${escalation.scheduleAction}`,
+    `- 风险建议：${escalation.riskSuggestion}`,
+    `- 审计追踪：${escalation.auditId} / ${escalation.traceId}`,
+    `- 证据链：${escalation.evidence.join(' / ')}`,
+  ]
+
+  if (escalation.status === 'closed') {
+    lines.push(
+      `- 闭环结论：${escalation.statusLabel}，${escalation.closureTrace ? `关闭追踪 ${escalation.closureTrace}` : '关闭追踪已写入审计' }。`,
+      `- 处置结果：${escalation.dispatchSteps[escalation.dispatchSteps.length - 1] ?? '现场处置包已关闭'}`,
+    )
+  } else {
+    lines.push(`- 处置状态：${escalation.statusLabel}，生产经理审批中，等待风险队列、AI 排产和物料/质量复核同步确认。`)
+  }
+
+  lines.push('- 该现场态势已同步到风险预警、AI 排产、报表 OTD 证据链和审计回放。')
+  return lines
+}
+
+function buildHypercareLines() {
+  const hypercare = readPocHypercareAcceptanceRecord()
+  if (!hypercare) {
+    return [
+      '**Hypercare 稳定运行：当前还没有生成上线验收监控包。**',
+      '',
+      '- 请先在报表中心生成 POC 首批真实工单试点运行确认，再生成上线验收与 Hypercare 监控包。',
+      '- 监控包会读取 OTD、OEE、P1/P2 未关闭事件、AI 建议采纳率和审计编号。',
+    ]
+  }
+
+  return [
+    `**Hypercare 稳定运行：${hypercare.title}。**`,
+    '',
+    `- 状态：${hypercare.statusLabel}，周期 ${hypercare.goLiveWindow}。`,
+    `- 验收门禁：${hypercare.acceptanceGate}`,
+    `- 当前指标：OTD ${hypercare.actualOtd}，OEE ${hypercare.currentOee}，P1/P2 未关闭 ${hypercare.unresolvedP1P2} 个，异常 ${hypercare.incidentCount} 个。`,
+    `- 监控项：${hypercare.monitors.map(monitor => `${monitor.label} ${monitor.current}/${monitor.statusLabel}`).join('；')}`,
+    `- 审计追踪：${hypercare.auditId} / ${hypercare.traceId}`,
+    '- 该 Hypercare 记录已写入生产概览、实时监控、系统治理、报表 CSV 和审计回放。',
+  ]
+}
+
+function buildOutsourcingCommitmentLines() {
+  const commitment = readLatestOutsourcingCommitmentPackage()
+  if (!commitment) {
+    return [
+      '**外协承诺口径：当前还没有生成外协承诺包。**',
+      '',
+      '- 请先到报表中心的 OTD KPI 多维钻取，切换到“产品族”，选择“法兰盘 DN100”。',
+      '- 点击“生成外协承诺包”后，助手会读取外协厂、承诺日期、影响工单、排产复核、审计编号和追踪编号。',
+    ]
+  }
+
+  const lines = [
+    `**外协承诺口径：${commitment.targetName} 当前状态为 ${commitment.statusLabel}。**`,
+    '',
+    `- 外协对象：${commitment.targetName}，外协厂 ${commitment.partnerName}，承诺到货 ${commitment.promiseDate}。`,
+    `- 影响工单：${commitment.affectedOrders}；KPI 来源：${commitment.dimensionLabel} / ${commitment.sourceTraceId}。`,
+    `- 承诺包审计：${commitment.auditId} / ${commitment.traceId}。`,
+  ]
+
+  if (!commitment.receiptTraceId) {
+    lines.push(
+      `- 当前结论：${commitment.statusLabel}，外协承诺只能证明外部供应窗口已锁定，厂外等待口径尚未关闭。`,
+      '- OTD 口径：不能计入厂内已恢复订单，也不能把外协承诺误判为排产释放。',
+      `- 下一步：采购协同确认 ${commitment.partnerName} 到货，然后由 AI 排产复核是否关闭 ${commitment.affectedOrders} 的厂外等待口径。`,
+    )
+    return lines
+  }
+
+  lines.push(
+    `- 到货证据：${commitment.receiptMessage ?? `${commitment.partnerName} 外协到货已确认。`}`,
+    `- 到货审计：${commitment.receiptAuditId} / ${commitment.receiptTraceId}。`,
+  )
+
+  if (!commitment.scheduleReleaseTraceId) {
+    lines.push(
+      '- 当前结论：外协到货已确认，但还没有 AI 排产释放审计，仍需复核后续工序窗口。',
+      '- OTD 口径：厂外等待可进入关闭复核，但暂时不能计入已恢复订单。',
+      `- 下一步：在 AI 排产打开“${commitment.targetName} 外协到货已确认”事件，点击“复核排产影响”并采纳释放建议。`,
+    )
+    return lines
+  }
+
+  lines.push(
+    `- 排产释放：${commitment.scheduleReleaseMessage ?? `${commitment.affectedOrders} 厂外等待口径已关闭。`}`,
+    `- 排产释放审计：${commitment.scheduleReleaseAuditId} / ${commitment.scheduleReleaseTraceId}。`,
+    '- 当前结论：厂外等待口径已关闭，排产释放已确认。',
+    `- OTD 口径：${commitment.affectedOrders} 可计入已恢复订单，并进入报表中心 OTD 复盘、系统治理和审计回放。`,
+  )
+  return lines
+}
+
+function buildBomKittingLines() {
+  const record = readBomKittingPackage()
+  if (!record) {
+    return [
+      '**BOM 展开齐套：当前还没有生成齐套检查包。**',
+      '',
+      '- 请先在 BOM 管理选择 `BOM-A100`，点击“生成 BOM 齐套检查包”。',
+      '- 生成后助手会读取 BOM 版本、工单窗口、关键物料、库存可用量、在途量、缺口、审计编号和追踪编号。',
+    ]
+  }
+  const shortage = record.items.find(item => item.shortageQuantity > 0)
+  return [
+    `**BOM 展开齐套：${record.bomCode} ${record.bomVersion} 已进入 ${record.workOrderNumber} 排产复核。**`,
+    '',
+    `- 工单窗口：${record.scheduleWindow}，状态 ${record.statusLabel}。`,
+    `- 齐套结论：${record.summary}`,
+    `- 缺口物料：${shortage ? `${shortage.materialCode} 缺 ${shortage.shortageQuantity}${shortage.unit}，需要 ${shortage.requiredQuantity}${shortage.unit}，可用 ${shortage.availableQuantity}${shortage.unit}，在途 ${shortage.inboundQuantity}${shortage.unit}` : '当前未发现缺口。'}`,
+    `- 物料动作：${record.items.map(item => `${item.materialCode}：${item.action}`).join('；')}`,
+    `- 责任人：${record.owner}`,
+    `- 审计追踪：${record.auditId} / ${record.traceId}`,
+    '- 该齐套包已同步到库存齐套、AI 排产事件队列、系统治理、OTD 复盘证据链和审计回放。',
+  ]
 }
 
 function buildKittingDelayLines() {
@@ -576,6 +805,10 @@ function getBusinessAnalysisReply(question: string): string {
     ? `\n\n引用治理：${citationTrace.sources.map(source => source.sourceName).join('；')}。\n阻断来源：${citationTrace.blockedSource}`
     : ''
 
+  if (isOutsourcingCommitmentIntent(q)) {
+    return buildOutsourcingCommitmentLines().join('\n') + citationLine
+  }
+
   if ((q.includes('客户') || q.includes('交付') || q.includes('承诺')) && (q.includes('承诺包') || q.includes('恢复') || q.includes('otd'))) {
     const commitment = readLatestOtdKpiCommitmentPackage()
     if (!commitment) {
@@ -631,6 +864,53 @@ function getBusinessAnalysisReply(question: string): string {
     ].join('\n') + citationLine
   }
 
+  if (isMonitoringSituationIntent(q)) {
+    const monitoringLines = buildMonitoringSituationLines()
+    const hypercareLines = q.includes('hypercare') || q.includes('上线验收') || q.includes('稳定运行')
+      ? buildHypercareLines()
+      : []
+    return [
+      ...monitoringLines,
+      ...hypercareLines,
+      '- 处置入口：打开实时监控、风险预警、AI 排产、OTD 报告或审计回放，继续核对同一证据链。',
+    ].join('\n') + citationLine
+  }
+
+  if (isLaborCapabilityIntent(q)) {
+    const reassignment = readLaborReassignments()[0] ?? null
+    const block = readLaborQualificationBlocks()[0] ?? null
+    const laborEvidence = latestLaborEvidence()
+    if (!reassignment && !block && !laborEvidence) {
+      return [
+        '**人员能力影响：当前还没有人员约束证据。**',
+        '',
+        '- 请先在人员管理同步人员证据，或生成 `WO-013` 热处理资质临期替班建议。',
+        '- 生成后助手会读取技能、资质有效期、排班窗口、替班候选、停工复核、审计编号和排产释放状态。',
+      ].join('\n') + citationLine
+    }
+    const statusLine = block?.status === 'released'
+      ? `- 停工复核：${block.auditId} 已重新放行，释放追踪 ${block.releaseTraceId ?? block.traceId}。`
+      : block
+        ? `- 停工复核：${block.auditId} 当前 ${block.status === 'reviewing' ? '主管复核中' : '停工复核'}，${block.workOrderNumber} ${block.operationName} 开工保持受控。`
+        : '- 停工复核：未发现 active 阻断记录。'
+    const reassignmentLine = reassignment
+      ? `- 替班结论：${reassignment.blockedEmployeeNumber} ${reassignment.blockedEmployeeName} 的 ${reassignment.blockedCertification} ${reassignment.blockedExpiresAt} 临期，已由 ${reassignment.replacementEmployeeNumber} ${reassignment.replacementEmployeeName} 接管 ${reassignment.operationName}，审核人 ${reassignment.reviewerName}。`
+      : '- 替班结论：尚未生成有效替班记录，生产开工需要继续等待人员复核。'
+    const evidenceLine = laborEvidence
+      ? `- 证据来源：${laborEvidence.stage} / ${laborEvidence.traceId} / ${laborEvidence.statusLabel}；${laborEvidence.summary}`
+      : '- 证据来源：暂未读取到 OTD 人员证据链。'
+    return [
+      '**人员能力影响：WO-013 热处理开工受人员资质约束。**',
+      '',
+      reassignmentLine,
+      statusLine,
+      evidenceLine,
+      '- 排产影响：AI 排产会把人员能力作为约束，未放行时生成“人员资质阻断事件”，替班确认后切换为“人员替班事件”。',
+      '- 开工影响：生产报工必须读取同一替班或阻断记录，不能绕过资质临期、班组排班和主管复核。',
+      '- 治理要求：系统管理 Agent 治理、报表 OTD 证据链和审计回放需要核对同一追踪编号。',
+    ].join('\n') + citationLine
+  }
+
   if (isAnomalyDispatchIntent(q)) {
     const dispatch = latestAnomalyDispatchRecord()
     if (!dispatch) {
@@ -656,6 +936,28 @@ function getBusinessAnalysisReply(question: string): string {
   }
 
   if (isProductionExecutionIntent(q)) {
+    const anomaly = latestProductionExecutionEvidence('生产异常')
+    if (q.includes('生产异常') || q.includes('异常上报') || q.includes('主轴温升')) {
+      if (!anomaly) {
+        return [
+          '**生产异常影响：当前还没有生产异常上报证据。**',
+          '',
+          '- 请先在生产报工页选择工序并提交异常上报。',
+          '- 上报后助手会读取生产异常、风险队列、异常中心、AI 排产复核和 OTD 追踪编号。',
+        ].join('\n') + citationLine
+      }
+      return [
+        `**生产异常影响：${anomaly.title}。**`,
+        '',
+        `- 影响对象：${anomaly.object}，状态 ${anomaly.statusLabel}。`,
+        `- 异常摘要：${anomaly.summary}`,
+        `- 证据来源：${anomaly.source}。`,
+        `- 追踪编号：${anomaly.traceId}${anomaly.sourceTraceId ? ` / ${anomaly.sourceTraceId}` : ''}`,
+        '- 排产影响：AI 排产需要冻结当前工序和受影响设备窗口，复核异常中心、风险队列和班组长处置结论后再释放后续工序。',
+        '- 治理要求：系统管理 Agent 治理、报表 OTD 证据链和审计回放必须核对同一生产异常追踪编号。',
+      ].join('\n') + citationLine
+    }
+
     const completion = latestProductionExecutionEvidence('生产完工')
     const review = latestProductionExecutionEvidence('生产复核')
     if (!completion) {
@@ -832,6 +1134,10 @@ function getBusinessAnalysisReply(question: string): string {
     )
     && (q.includes('排产') || q.includes('约束') || q.includes('如何') || q.includes('影响') || q.includes('解释'))
   ) {
+    if (isBomKittingIntent(q)) {
+      return buildBomKittingLines().join('\n') + citationLine
+    }
+
     if (isRouteCapabilityIntent(q)) {
       const validation = readRouteCapabilityValidation()
       if (!validation) {
@@ -1019,6 +1325,8 @@ function getExecutableActions(question: string): ChatAction[] {
   const q = question.toLowerCase()
   const actions: ChatAction[] = []
   const routeCapabilityIntent = isRouteCapabilityIntent(q)
+  const outsourcingCommitmentIntent = isOutsourcingCommitmentIntent(q)
+  const bomKittingIntent = isBomKittingIntent(q)
   const engineeringDataIntent = q.includes('bom')
     || q.includes('物料清单')
     || q.includes('工艺路线')
@@ -1041,6 +1349,8 @@ function getExecutableActions(question: string): ChatAction[] {
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
   const productionExecutionIntent = isProductionExecutionIntent(q)
   const anomalyDispatchIntent = isAnomalyDispatchIntent(q)
+  const monitoringSituationIntent = isMonitoringSituationIntent(q)
+  const laborCapabilityIntent = isLaborCapabilityIntent(q)
 
   if (q.includes('打开') || q.includes('进入') || q.includes('跳转')) {
     if (q.includes('异常') || q.includes('现场事件')) {
@@ -1061,6 +1371,15 @@ function getExecutableActions(question: string): ChatAction[] {
         resultMessage: '已打开生产报工页面。',
       })
     }
+    if (q.includes('人员') || q.includes('资质') || q.includes('替班') || q.includes('技能')) {
+      actions.push({
+        id: 'open-employee',
+        label: '打开人员管理',
+        type: 'navigate',
+        targetRoute: '/employee',
+        resultMessage: '已打开人员管理页面，核对技能矩阵、资质有效期和替班复核记录。',
+      })
+    }
     if (q.includes('排产')) {
       actions.push({
         id: 'open-scheduling',
@@ -1068,6 +1387,15 @@ function getExecutableActions(question: string): ChatAction[] {
         type: 'navigate',
         targetRoute: '/scheduling',
         resultMessage: '已打开 AI 排产工作台。',
+      })
+    }
+    if (q.includes('监控') || q.includes('现场态势') || q.includes('现场处置')) {
+      actions.push({
+        id: 'open-monitoring',
+        label: '打开实时监控',
+        type: 'navigate',
+        targetRoute: '/monitoring',
+        resultMessage: '已打开实时监控页面，核对现场态势图、Hypercare 和现场处置包。',
       })
     }
     if (engineeringDataIntent) {
@@ -1104,6 +1432,22 @@ function getExecutableActions(question: string): ChatAction[] {
         resultMessage: '已打开风险预警页面。',
       })
     }
+    if (q.includes('hypercare') || q.includes('上线验收') || q.includes('稳定运行')) {
+      actions.push({
+        id: 'open-dashboard',
+        label: '打开生产概览',
+        type: 'navigate',
+        targetRoute: '/dashboard',
+        resultMessage: '已打开生产概览页面，核对上线验收与 Hypercare 指挥中心。',
+      })
+      actions.push({
+        id: 'open-monitoring-hypercare',
+        label: '打开实时监控',
+        type: 'navigate',
+        targetRoute: '/monitoring',
+        resultMessage: '已打开实时监控页面，核对 Hypercare 稳定运行监控。',
+      })
+    }
     if (q.includes('治理') || q.includes('系统管理') || q.includes('agent')) {
       actions.push({
         id: 'open-admin-governance',
@@ -1127,6 +1471,10 @@ function getExecutableActions(question: string): ChatAction[] {
     actions.push(...engineeringConstraintActions())
   }
 
+  if (bomKittingIntent) {
+    actions.push(...bomKittingActions())
+  }
+
   if (delayRiskIntent) {
     actions.push(...rushOrderRiskActions())
   }
@@ -1145,6 +1493,18 @@ function getExecutableActions(question: string): ChatAction[] {
 
   if (anomalyDispatchIntent) {
     actions.push(...anomalyDispatchActions())
+  }
+
+  if (monitoringSituationIntent) {
+    actions.push(...monitoringSituationActions())
+  }
+
+  if (laborCapabilityIntent) {
+    actions.push(...laborCapabilityActions())
+  }
+
+  if (outsourcingCommitmentIntent) {
+    actions.push(...outsourcingCommitmentActions())
   }
 
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
@@ -1219,6 +1579,39 @@ function engineeringConstraintActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/routing',
       resultMessage: '已打开工艺路线页面。',
+    },
+  ]
+}
+
+function bomKittingActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-bom-kitting',
+      label: '打开 BOM 管理',
+      type: 'navigate',
+      targetRoute: '/bom',
+      resultMessage: '已打开 BOM 管理页面，核对 BOM 展开齐套检查包。',
+    },
+    {
+      id: 'open-inventory-kitting',
+      label: '打开库存齐套',
+      type: 'navigate',
+      targetRoute: '/inventory',
+      resultMessage: '已打开库存齐套页面，核对 BOM 展开齐套包、物料缺口和在途量。',
+    },
+    {
+      id: 'open-scheduling-kitting',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核 BOM 齐套包触发的缺料事件。',
+    },
+    {
+      id: 'open-admin-kitting',
+      label: '打开系统治理',
+      type: 'navigate',
+      targetRoute: '/admin',
+      resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对缺料齐套治理记录。',
     },
   ]
 }
@@ -1358,18 +1751,39 @@ function productionExecutionActions(): ChatAction[] {
       resultMessage: '已打开生产报工页面，核对现场完工报告和执行追踪。',
     },
     {
+      id: 'open-risk-production',
+      label: '打开风险预警',
+      type: 'navigate',
+      targetRoute: '/risk',
+      resultMessage: '已打开风险预警页面，核对生产异常进入风险处置队列后的责任动作。',
+    },
+    {
+      id: 'open-anomaly-production',
+      label: '打开异常中心',
+      type: 'navigate',
+      targetRoute: '/anomaly',
+      resultMessage: '已打开异常管理现场事件中心，核对生产异常来源和 AI 处置建议。',
+    },
+    {
       id: 'open-scheduling',
       label: '打开 AI 排产',
       type: 'navigate',
       targetRoute: '/scheduling',
-      resultMessage: '已打开 AI 排产工作台，复核生产完工后的后续窗口、质量门和承诺交期。',
+      resultMessage: '已打开 AI 排产工作台，复核生产执行后的工序窗口、质量门和承诺交期。',
     },
     {
       id: 'open-report',
       label: '打开 OTD 报告',
       type: 'navigate',
       targetRoute: '/report',
-      resultMessage: '已打开报表中心，核对生产完工和生产复核证据链。',
+      resultMessage: '已打开报表中心，核对生产异常、生产完工和生产复核证据链。',
+    },
+    {
+      id: 'open-audit-production',
+      label: '打开审计回放',
+      type: 'navigate',
+      targetRoute: '/audit-logs',
+      resultMessage: '已打开审计日志页面，核对生产执行证据回放链。',
     },
   ]
 }
@@ -1403,6 +1817,140 @@ function anomalyDispatchActions(): ChatAction[] {
       type: 'navigate',
       targetRoute: '/report',
       resultMessage: '已打开报表中心，核对异常分流对 OTD 证据链的影响。',
+    },
+  ]
+}
+
+function monitoringSituationActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-monitoring',
+      label: '打开实时监控',
+      type: 'navigate',
+      targetRoute: '/monitoring',
+      resultMessage: '已打开实时监控页面，核对现场态势图和处置包。',
+    },
+    {
+      id: 'open-risk',
+      label: '打开风险预警',
+      type: 'navigate',
+      targetRoute: '/risk',
+      resultMessage: '已打开风险预警页面，核对现场态势升级后的风险处置队列。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核现场态势后的排产保护和重排建议。',
+    },
+    {
+      id: 'open-report',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: '已打开报表中心，核对现场态势和 Hypercare 进入 OTD 证据链的结果。',
+    },
+    {
+      id: 'open-audit-logs',
+      label: '打开审计回放',
+      type: 'navigate',
+      targetRoute: '/audit-logs',
+      resultMessage: '已打开审计日志页面，核对现场态势和 Hypercare 回放链。',
+    },
+  ]
+}
+
+function laborCapabilityActions(): ChatAction[] {
+  return [
+    {
+      id: 'open-employee',
+      label: '打开人员管理',
+      type: 'navigate',
+      targetRoute: '/employee',
+      resultMessage: '已打开人员管理页面，核对技能矩阵、资质有效期和替班复核记录。',
+    },
+    {
+      id: 'open-production',
+      label: '打开生产报工',
+      type: 'navigate',
+      targetRoute: '/production',
+      resultMessage: '已打开生产报工页面，核对热处理开工前人员资质校验。',
+    },
+    {
+      id: 'open-scheduling',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: '已打开 AI 排产工作台，复核人员替班或资质阻断事件。',
+    },
+    {
+      id: 'open-admin-governance',
+      label: '打开系统治理',
+      type: 'navigate',
+      targetRoute: '/admin',
+      resultMessage: '已打开系统管理页面，请切换到 Agent 治理核对人员能力治理记录。',
+    },
+    {
+      id: 'open-audit-logs',
+      label: '打开审计回放',
+      type: 'navigate',
+      targetRoute: '/audit-logs',
+      resultMessage: '已打开审计日志页面，核对人员能力、人员替班或人员阻断回放链。',
+    },
+  ]
+}
+
+function outsourcingCommitmentActions(): ChatAction[] {
+  const commitment = readLatestOutsourcingCommitmentPackage()
+  const targetName = commitment?.targetName ?? '法兰盘 DN100'
+  const partnerName = commitment?.partnerName ?? '华东精密外协厂'
+  const affectedOrders = commitment?.affectedOrders ?? 'WO-DEMO-1013'
+  return [
+    {
+      id: 'open-purchase-outsourcing',
+      label: '打开采购协同',
+      type: 'navigate',
+      targetRoute: '/purchase',
+      resultMessage: commitment
+        ? `已打开采购协同页面，核对 ${targetName} 外协到货与收货闭环。`
+        : '已打开采购协同页面，核对外协承诺到货与收货闭环。',
+    },
+    {
+      id: 'open-scheduling-outsourcing',
+      label: '打开 AI 排产',
+      type: 'navigate',
+      targetRoute: '/scheduling',
+      resultMessage: commitment
+        ? `已打开 AI 排产工作台，复核 ${affectedOrders} 厂外等待口径和释放建议。`
+        : '已打开 AI 排产工作台，复核外协到货后的排产释放建议。',
+    },
+    {
+      id: 'open-report-outsourcing',
+      label: '打开 OTD 报告',
+      type: 'navigate',
+      targetRoute: '/report',
+      resultMessage: commitment
+        ? `已打开报表中心，核对 ${targetName} 外协承诺、到货和排产释放结果。`
+        : '已打开报表中心，核对外协承诺、到货和排产释放结果。',
+    },
+    {
+      id: 'open-admin-governance-outsourcing',
+      label: '打开系统治理',
+      type: 'navigate',
+      targetRoute: '/admin',
+      resultMessage: commitment
+        ? `已打开系统管理页面，请切换到 Agent 治理核对 ${targetName} 外协证据。`
+        : `已打开系统管理页面，请切换到 Agent 治理核对 ${partnerName} 外协证据。`,
+    },
+    {
+      id: 'open-audit-logs-outsourcing',
+      label: '打开审计回放',
+      type: 'navigate',
+      targetRoute: '/audit-logs',
+      resultMessage: commitment
+        ? `已打开审计日志页面，核对 ${targetName} 外协承诺回放链。`
+        : '已打开审计日志页面，核对外协承诺回放链。',
     },
   ]
 }

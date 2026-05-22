@@ -1,4 +1,10 @@
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
 process.env.HOST ||= '127.0.0.1'
 process.env.PORT ||= '4173'
 
-await import('../.output/server/index.mjs')
+const outputDir = process.env.NITRO_OUTPUT_DIR ?? '.output'
+const serverEntry = resolve(process.cwd(), outputDir, 'server/index.mjs')
+
+await import(pathToFileURL(serverEntry).href)

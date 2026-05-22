@@ -1,5 +1,6 @@
 const SHORTAGE_RISK_SYNC_KEY = 'aimes_shortage_risk_resolution'
 const SHORTAGE_KITTING_EVENT_KEY = 'aimes_shortage_kitting_event'
+const BOM_KITTING_PACKAGE_KEY = 'aimes_bom_kitting_package'
 const SUPPLY_RISK_ESCALATION_KEY = 'aimes_supply_risk_escalation'
 const SUPPLIER_NETWORK_DECISION_KEY = 'aimes_supplier_network_decision'
 
@@ -27,6 +28,33 @@ export interface ShortageKittingEvent {
   window: string
   suggestion: string
   createdAt: string
+}
+
+export interface BomKittingPackageItem {
+  materialCode: string
+  materialName: string
+  requiredQuantity: number
+  availableQuantity: number
+  inboundQuantity: number
+  shortageQuantity: number
+  unit: string
+  action: string
+}
+
+export interface BomKittingPackage {
+  id: string
+  bomCode: string
+  bomVersion: string
+  productName: string
+  workOrderNumber: string
+  scheduleWindow: string
+  statusLabel: string
+  owner: string
+  auditId: string
+  traceId: string
+  createdAt: string
+  summary: string
+  items: BomKittingPackageItem[]
 }
 
 export interface SupplyRiskEscalation {
@@ -116,6 +144,41 @@ export function readShortageKittingEvent(): ShortageKittingEvent | null {
     return JSON.parse(raw) as ShortageKittingEvent
   } catch {
     localStorage.removeItem(SHORTAGE_KITTING_EVENT_KEY)
+    return null
+  }
+}
+
+export function writeBomKittingPackage(record: BomKittingPackage) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(BOM_KITTING_PACKAGE_KEY, JSON.stringify(record))
+  const shortageItem = record.items.find(item => item.shortageQuantity > 0)
+  if (!shortageItem) return
+
+  writeShortageKittingEvent({
+    materialCode: shortageItem.materialCode,
+    materialName: shortageItem.materialName,
+    workOrderNumber: record.workOrderNumber,
+    affectedOrders: record.workOrderNumber,
+    requiredQuantity: shortageItem.requiredQuantity,
+    availableQuantity: shortageItem.availableQuantity,
+    inboundQuantity: shortageItem.inboundQuantity,
+    shortageQuantity: shortageItem.shortageQuantity,
+    window: record.scheduleWindow,
+    suggestion: record.items.map(item => item.action).join('；'),
+    createdAt: record.createdAt,
+  })
+}
+
+export function readBomKittingPackage(): BomKittingPackage | null {
+  if (typeof localStorage === 'undefined') return null
+  const raw = localStorage.getItem(BOM_KITTING_PACKAGE_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as BomKittingPackage
+    return parsed?.bomCode && parsed?.workOrderNumber && parsed?.traceId ? parsed : null
+  } catch {
+    localStorage.removeItem(BOM_KITTING_PACKAGE_KEY)
     return null
   }
 }
