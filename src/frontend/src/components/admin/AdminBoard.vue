@@ -2047,6 +2047,7 @@ function assistantActionTypeLabel(type: AssistantActionAuditRecord['type']) {
     export_report: '报表导出',
     create_anomaly_card: '异常处置',
     delivery_recovery_package: '交期恢复包',
+    engineering_constraint_package: '工程约束包',
   }[type]
 }
 

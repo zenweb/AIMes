@@ -289,6 +289,50 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditPanel.getByText(/助手执行包质量回写/)).toBeVisible()
   })
 
+  test('可执行动作：生成工程约束复核包并同步排产证据与审计', async ({ page }) => {
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('帮我生成工程约束复核包')
+    await page.locator('.send-btn').click()
+
+    await expect(page.getByRole('button', { name: '生成工程约束复核包' })).toBeVisible()
+    await page.getByRole('button', { name: '生成工程约束复核包' }).click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(page).toHaveURL(/\/scheduling\/scheduling/)
+    await expect(chat.getByText('权限校验通过：Admin 可生成工程约束复核包。')).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-CHAT-ENG-CONSTRAINT-20260523-001')).toBeVisible()
+    await expect(chat.getByText('追踪编号：TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523')).toBeVisible()
+    await expect(chat.getByText(/已同步到 BOM 管理、工艺路线、AI 排产、OTD 复盘证据链和审计回放/)).toBeVisible()
+    const packageCard = chat.locator('.action-package-card').filter({ hasText: 'BOM-A100 / R-B200 工程约束复核包' })
+    await expect(packageCard).toBeVisible()
+    await expect(packageCard.getByText('待工程约束复核')).toBeVisible()
+    await expect(packageCard.getByText('WO-RUSH-9001 / WO-DEMO-1002 / WO-DEMO-1007')).toBeVisible()
+
+    const eventPanel = page.locator('.event-queue-panel')
+    await expect(eventPanel).toBeVisible({ timeout: 60000 })
+    const engineeringEvent = eventPanel.locator('.event-card').filter({ hasText: 'BOM-A100 / R-B200 工程约束复核包' })
+    await expect(engineeringEvent).toBeVisible()
+    await expect(engineeringEvent.getByText('助手工程约束')).toBeVisible()
+    await expect(engineeringEvent.getByText('TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523')).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 20000 })
+    const reportBoard = page.locator('.otd-evidence-chain')
+    await expect(reportBoard.getByText('助手工程约束')).toBeVisible()
+    await expect(reportBoard.getByText('BOM-A100 / ECN-BOM-A100-6061B-20260521 / R-B200 OP-090')).toBeVisible()
+    await expect(reportBoard.getByText('TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523')).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手生成工程约束复核包' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-ENG-CONSTRAINT-20260523-001')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(auditPanel.getByText(/工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门\/工程审批四个责任动作/)).toBeVisible()
+    await expect(auditPanel.getByText(/AI 助手意图、权限校验、工程约束复核包、BOM\/工艺证据和 OTD 证据已归档/)).toBeVisible()
+  })
+
   test('业务问答：工程数据约束可直接进入 BOM 与工艺路线页面', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('BOM 与工艺路线如何约束排产？')

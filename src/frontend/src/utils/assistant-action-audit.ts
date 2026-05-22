@@ -65,7 +65,9 @@ export function recordAssistantActionAudit(input: RecordAssistantActionAuditInpu
       ? 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521'
       : action.type === 'create_anomaly_card'
         ? 'TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522'
-        : undefined,
+        : action.type === 'engineering_constraint_package'
+          ? 'TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523'
+          : undefined,
     resultMessage: action.resultMessage,
     permitted,
     createdAt: new Date().toISOString(),

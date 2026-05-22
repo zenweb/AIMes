@@ -217,6 +217,7 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
   const routeText = record.targetRoute ? `目标页面 ${record.targetRoute}` : '无页面跳转'
   const isRecoveryPackage = record.type === 'delivery_recovery_package'
   const isAnomalyCard = record.type === 'create_anomaly_card'
+  const isEngineeringConstraintPackage = record.type === 'engineering_constraint_package'
   return {
     id: record.id,
     type: 'AI 助手动作',
@@ -233,14 +234,18 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
         ? '助手执行包已同步排产、风险、OTD 证据链和审计回放，可追溯每个责任动作。'
         : isAnomalyCard
           ? '助手异常处置卡已同步异常管理、风险队列、AI 排产和 OTD 证据链，可追溯现场处置责任。'
-          : '助手动作已进入审计回放，后续可追溯执行人与入口。'
+          : isEngineeringConstraintPackage
+            ? '助手工程约束复核包已同步 BOM、工艺路线、AI 排产、质量门和 OTD 证据链，可追溯约束来源。'
+            : '助手动作已进入审计回放，后续可追溯执行人与入口。'
       : '权限阻断已留痕，未改变业务数据。',
     auditState: record.permitted
       ? isRecoveryPackage
         ? 'AI 助手意图、权限校验、跨模块执行包和 OTD 证据已归档'
         : isAnomalyCard
           ? 'AI 助手意图、权限校验、异常处置卡、风险和排产证据已归档'
-          : 'AI 助手意图、权限校验、执行结果已归档'
+          : isEngineeringConstraintPackage
+            ? 'AI 助手意图、权限校验、工程约束复核包、BOM/工艺证据和 OTD 证据已归档'
+            : 'AI 助手意图、权限校验、执行结果已归档'
       : 'AI 助手意图与权限拒绝已归档',
     steps: isRecoveryPackage
       ? [
@@ -258,7 +263,15 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
             '异常处置卡已写入异常管理现场事件中心，并分解为风险升级、AI 排产冻结复核和设备维护确认。',
             `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
           ]
-      : [
+      : isEngineeringConstraintPackage
+        ? [
+            `AI 生产助手识别可执行意图：${record.label}。`,
+            `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+            `${statusText}，${routeText}。`,
+            '工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门/工程审批四个责任动作。',
+            `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
+          ]
+        : [
           `AI 生产助手识别可执行意图：${record.label}。`,
           `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
           `${statusText}，${routeText}。`,
@@ -464,7 +477,7 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
     'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
     'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
   ].includes(record.traceId)
-  const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行'
+  const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行' || record.stage === '助手工程约束'
   const isEngineeringChangeEvidence = record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
   const isRouteCapabilityEvidence = record.stage === '工艺能力校验' || record.stage === '工艺能力放行'
   const isPurchaseReceiptEvidence = record.stage === '采购回写' || record.stage === '供应到货' || isOutsourcingReceipt

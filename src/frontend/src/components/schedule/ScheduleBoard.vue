@@ -198,6 +198,10 @@ import {
   readAssistantRecoveryPackages,
   type AssistantRecoveryPackage,
 } from '../../utils/assistant-action-package-sync'
+import {
+  readAssistantEngineeringConstraintPackages,
+  type AssistantEngineeringConstraintPackage,
+} from '../../utils/assistant-engineering-constraint-package-sync'
 import { readMonitoringSituationEscalations } from '../../utils/monitoring-situation-escalation-sync'
 import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
@@ -254,6 +258,7 @@ const laborQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
 const barcodeScheduleReleaseRecord = ref<OtdEvidenceChainItem | null>(null)
 const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
 const assistantRecoveryPackageRecords = ref<AssistantRecoveryPackage[]>([])
+const assistantEngineeringConstraintPackageRecords = ref<AssistantEngineeringConstraintPackage[]>([])
 const engineeringConstraints = ref<EngineeringConstraintItem[]>([
   {
     id: 'eng-bom-al6061',
@@ -911,7 +916,9 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
   const routeCapability = readRouteCapabilityValidation()
   const anomalyDispatchRecords = readAnomalyDispatchRecords()
   const assistantPackages = readAssistantRecoveryPackages()
+  const assistantEngineeringPackages = readAssistantEngineeringConstraintPackages()
   assistantRecoveryPackageRecords.value = assistantPackages
+  assistantEngineeringConstraintPackageRecords.value = assistantEngineeringPackages
   const monitoringSituationEscalations = readMonitoringSituationEscalations()
   const pocPilotRun = readPocPilotRunRecord()
   const riskSlaReview = readRiskSlaReviewRecord()
@@ -1283,6 +1290,26 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
       ]
     : anomalyMergedEvents
 
+  const assistantEngineeringMergedEvents = assistantEngineeringPackages.length
+    ? [
+        ...assistantEngineeringPackages.map(record => ({
+          id: `evt-assistant-engineering-${record.id}`,
+          type: 'engineering' as const,
+          typeLabel: '助手工程约束',
+          severity: record.priority,
+          severityLabel: record.statusLabel,
+          title: record.title,
+          impact: `${record.summary} ${record.otdImpact}`,
+          affectedOrders: record.workOrders,
+          window: record.dueAt,
+          evidence: [record.auditCode, record.traceId, record.ecnCode, record.routeCode, ...record.dispatchSteps.map(step => step.evidence)],
+          resolved: false,
+          resolutionNote: 'AI 生产助手已生成工程约束复核包，调度员需等待 BOM、工艺路线、质量门和工程审批回写后释放正式排产。',
+        })),
+        ...assistantMergedEvents,
+      ]
+    : assistantMergedEvents
+
   const monitoringMergedEvents = monitoringSituationEscalations.length
     ? [
         ...monitoringSituationEscalations.map(record => ({
@@ -1303,9 +1330,9 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
             ? '风险队列已关闭现场处置包，AI 排产需复核已采用的 CNC 分流和急单窗口是否维持 OTD 改善。'
             : '实时监控已升级现场态势，AI 排产需生成锁定期后重排建议并同步反馈。',
         })),
-        ...assistantMergedEvents,
+        ...assistantEngineeringMergedEvents,
       ]
-    : assistantMergedEvents
+    : assistantEngineeringMergedEvents
 
   const pilotMergedEvents = pocPilotRun
     ? [
@@ -2385,6 +2412,7 @@ async function closeAssistantRecoveryHandoff(id: string) {
   const closed = closeAssistantRecoveryPackage(id, '调度员 李工')
   if (!closed) return
   assistantRecoveryPackageRecords.value = readAssistantRecoveryPackages()
+  assistantEngineeringConstraintPackageRecords.value = readAssistantEngineeringConstraintPackages()
   await loadRiskTriggeredEvents()
   const eventId = `evt-assistant-recovery-${closed.id}`
   activeAgentSuggestion.value = {
@@ -2424,6 +2452,7 @@ onMounted(() => {
   applyRouteCapabilityValidation()
   applyLaborReassignmentClosure()
   applyLaborQualificationBlockClosure()
+  assistantEngineeringConstraintPackageRecords.value = readAssistantEngineeringConstraintPackages()
   loadData()
 })
 </script>

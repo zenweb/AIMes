@@ -110,6 +110,7 @@ import { queryKnowledge, getChatHistory } from '../../api/knowledge'
 import { getLlmStatus } from '../../api/llm'
 import type { ChatAction, ChatActionPackage, ChatMessage, KnowledgeSourceDto } from '../../types/knowledge'
 import { writeAssistantAnomalyDispositionPackage, type AssistantAnomalyDispositionPackage } from '../../utils/assistant-anomaly-card-sync'
+import { writeAssistantEngineeringConstraintPackage, type AssistantEngineeringConstraintPackage } from '../../utils/assistant-engineering-constraint-package-sync'
 import { recordAssistantActionAudit } from '../../utils/assistant-action-audit'
 import { writeAssistantRecoveryPackage, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
 import { findAssistantCitationTrace } from '../../utils/knowledge-citations'
@@ -347,6 +348,27 @@ async function executeAction(action: ChatAction) {
       undefined,
       [mapAnomalyPackageToChatPackage(anomalyPackage)]
     )
+  } else if (action.type === 'engineering_constraint_package') {
+    const engineeringPackage = writeAssistantEngineeringConstraintPackage({
+      actor: currentUsername(),
+      role: currentUserRole(),
+    })
+    if (action.targetRoute) {
+      await router.push(action.targetRoute)
+    }
+    addMessage(
+      'assistant',
+      [
+        `权限校验通过：${currentUserRole()} 可生成工程约束复核包。`,
+        `审计编号：${engineeringPackage.auditCode}`,
+        `追踪编号：${engineeringPackage.traceId}`,
+        `动作已执行：${action.resultMessage}`,
+        '已同步到 BOM 管理、工艺路线、AI 排产、OTD 复盘证据链和审计回放。',
+      ].join('\n'),
+      undefined,
+      undefined,
+      [mapEngineeringConstraintPackageToChatPackage(engineeringPackage)]
+    )
   } else {
     addMessage('assistant', `动作已执行：${action.resultMessage}`)
   }
@@ -384,6 +406,21 @@ function mapAnomalyPackageToChatPackage(record: AssistantAnomalyDispositionPacka
     statusLabel: record.statusLabel,
     workOrders: record.workOrders,
     otdImpact: record.deliveryImpact,
+    owner: record.owner,
+    dueAt: record.dueAt,
+    steps: record.dispatchSteps,
+  }
+}
+
+function mapEngineeringConstraintPackageToChatPackage(record: AssistantEngineeringConstraintPackage): ChatActionPackage {
+  return {
+    id: record.id,
+    title: record.title,
+    auditCode: record.auditCode,
+    traceId: record.traceId,
+    statusLabel: record.statusLabel,
+    workOrders: record.workOrders,
+    otdImpact: record.otdImpact,
     owner: record.owner,
     dueAt: record.dueAt,
     steps: record.dispatchSteps,
@@ -1362,6 +1399,9 @@ function getExecutableActions(question: string): ChatAction[] {
     || q.includes('工艺路线')
     || (q.includes('工艺') && q.includes('路线'))
     || q.includes('工艺能力')
+    || q.includes('工程约束')
+    || q.includes('约束复核')
+    || q.includes('工程复核')
     || q.includes('能力校验')
     || q.includes('热处理瓶颈')
     || q.includes('op-090')
@@ -1501,6 +1541,18 @@ function getExecutableActions(question: string): ChatAction[] {
     actions.push(...engineeringConstraintActions())
   }
 
+  if (engineeringDataIntent && isEngineeringConstraintPackageIntent(q)) {
+    actions.push({
+      id: 'create-engineering-constraint-package',
+      label: '生成工程约束复核包',
+      type: 'engineering_constraint_package',
+      targetRoute: '/scheduling',
+      requiredRole: 'Admin',
+      auditCode: 'AUD-CHAT-ENG-CONSTRAINT-20260523-001',
+      resultMessage: '已生成 BOM-A100 / R-B200 工程约束复核包，包含 BOM、ECN、工艺路线、AI 排产和质量门四类责任动作。',
+    })
+  }
+
   if (bomKittingIntent) {
     actions.push(...bomKittingActions())
   }
@@ -1611,6 +1663,11 @@ function engineeringConstraintActions(): ChatAction[] {
       resultMessage: '已打开工艺路线页面。',
     },
   ]
+}
+
+function isEngineeringConstraintPackageIntent(q: string) {
+  return (q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键') || q.includes('复核包') || q.includes('执行包'))
+    && (q.includes('工程约束') || q.includes('工程数据') || q.includes('约束复核') || q.includes('工程复核'))
 }
 
 function bomKittingActions(): ChatAction[] {
