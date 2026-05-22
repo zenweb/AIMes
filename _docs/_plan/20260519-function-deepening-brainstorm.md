@@ -1483,6 +1483,12 @@ OTD 改善复盘
   - `审计日志` 的 AI 决策回放会读取助手动作记录，动态生成“AI 助手动作”回放卡。
   - 回放链展示意图识别、权限校验、页面跳转/动作结果和审计归档状态，避免助手动作只停留在聊天气泡。
   - 已补 e2e：`AI 生产助手 (ChatPanel) › 可执行动作：创建异常处置卡并留下权限审计` 覆盖聊天动作 -> 异常中心 -> 审计回放。
+- 2026-05-23 继续把 `创建异常处置卡` 从“跳转 + 审计号”推进为跨模块异常处置执行包：
+  - 新增 `aimes_assistant_anomaly_packages` 同步记录，固化 `CNC-001 主轴温升异常处置卡`、受影响工单、设备、工序、负责人、截止时间和四类分流动作。
+  - 执行动作会同步写入 `aimes_production_anomaly_event`、`aimes_anomaly_dispatch_records`、OTD `生产异常 / 助手异常处置` 证据链，并让异常中心、风险预警、AI 排产和审计回放读取同一追踪号。
+  - 审计回放对 `create_anomaly_card` 使用专属路径，展示异常管理、风险升级、AI 排产冻结复核和设备维护确认，不再只显示普通助手动作归档。
+  - 已补 e2e：`AI 生产助手 (ChatPanel) › 可执行动作：创建异常处置卡并联动风险排产和审计`，覆盖聊天执行 -> 异常中心 -> 风险队列 -> AI 排产事件队列 -> 审计回放。
+  - 验证结果：`VITE_SHOW_DEMO_HINTS=true node ./node_modules/nuxt/bin/nuxt.mjs build`：passed；`node ./node_modules/@playwright/test/cli.js test tests/e2e/chat.spec.ts -g "创建异常处置卡"`：1 passed。
 - 已推进 `客户真实工单导入样例` POC 缺口闭环：
   - `报表中心` 的补齐缺口可跳转到 `文档上传`，不再只显示静态待补提示。
   - `文档上传` 新增客户真实工单导入样例面板，生成 `IMP-POC-WO-20260520-001` 批次，映射工单号、产品、交期、工艺路线、物料缺口和设备约束。

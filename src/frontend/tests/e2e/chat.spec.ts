@@ -131,7 +131,9 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.locator('.chat-panel').getByText(/已生成 OTD\/POC 复盘 CSV/)).toBeVisible()
   })
 
-  test('可执行动作：创建异常处置卡并留下权限审计', async ({ page }) => {
+  test('可执行动作：创建异常处置卡并联动风险排产和审计', async ({ page }) => {
+    test.setTimeout(180000)
+
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('创建 CNC-001 主轴温升异常处置卡')
     await page.locator('.send-btn').click()
@@ -143,18 +145,40 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(page.locator('.event-center')).toBeVisible()
     const chat = page.locator('.chat-panel')
     await expect(chat.getByText('权限校验通过：Admin 可创建异常处置卡。')).toBeVisible()
-    await expect(chat.getByText('审计编号：AUD-CHAT-ANOMALY-20260520')).toBeVisible()
-    await expect(chat.getByText(/已创建 WO-RUSH-9001 CNC 精加工现场异常处置卡/)).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-CHAT-ANOMALY-20260522-001')).toBeVisible()
+    await expect(chat.getByText(/已创建 CNC-001 主轴温升异常处置卡/)).toBeVisible()
+    await expect(chat.getByText(/已同步到异常管理、风险处置队列、AI 排产事件队列、OTD 复盘证据链和审计回放/)).toBeVisible()
+    const anomalyPackage = chat.locator('.action-package-card').filter({ hasText: 'CNC-001 主轴温升异常处置卡' })
+    await expect(anomalyPackage).toBeVisible()
+    await expect(anomalyPackage.locator('code').getByText('TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522', { exact: true }).first()).toBeVisible()
+
+    const anomalyCard = page.locator('.anomaly-card').filter({ hasText: 'CNC-001 主轴温升异常处置卡' }).first()
+    await expect(anomalyCard).toBeVisible()
+    await expect(page.locator('.dispatch-trace').getByText('AI 助手创建的 CNC-001 主轴温升异常已分流到风险与排产复核')).toBeVisible()
+
+    await page.goto('risk', { waitUntil: 'commit' })
+    await page.waitForSelector('.risk-action-panel', { timeout: 20000 })
+    const riskPanel = page.locator('.risk-action-panel')
+    await expect(riskPanel.locator('.action-card').filter({ hasText: 'CNC-001 主轴温升异常处置卡' })).toBeVisible()
+    await expect(riskPanel.locator('.action-card').filter({ hasText: 'AI 助手创建的 CNC-001 主轴温升异常已分流到风险与排产复核' })).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await expect(page.locator('.agent-workbench-panel')).toBeVisible({ timeout: 60000 })
+    const eventPanel = page.locator('.event-queue-panel')
+    await expect(eventPanel).toBeVisible({ timeout: 60000 })
+    await expect(eventPanel.getByText('CNC-001 主轴温升异常处置卡已由 AI 助手创建')).toBeVisible()
+    await expect(eventPanel.getByText('AI 助手创建的 CNC-001 主轴温升异常已分流到风险与排产复核')).toBeVisible()
 
     await page.goto('audit-logs', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手创建异常处置卡' })
     await expect(auditCard).toBeVisible()
-    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-ANOMALY-20260520')).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-ANOMALY-20260522-001')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(auditPanel.getByText(/AI 生产助手识别可执行意图：创建异常处置卡/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 助手意图、权限校验、执行结果已归档/)).toBeVisible()
+    await expect(auditPanel.getByText(/异常处置卡已写入异常管理现场事件中心/)).toBeVisible()
+    await expect(auditPanel.getByText(/AI 助手意图、权限校验、异常处置卡、风险和排产证据已归档/)).toBeVisible()
   })
 
   test('可执行动作：生成交期恢复执行包并跨模块追溯', async ({ page }) => {

@@ -109,6 +109,7 @@ import { useRouter } from 'vue-router'
 import { queryKnowledge, getChatHistory } from '../../api/knowledge'
 import { getLlmStatus } from '../../api/llm'
 import type { ChatAction, ChatActionPackage, ChatMessage, KnowledgeSourceDto } from '../../types/knowledge'
+import { writeAssistantAnomalyDispositionPackage, type AssistantAnomalyDispositionPackage } from '../../utils/assistant-anomaly-card-sync'
 import { recordAssistantActionAudit } from '../../utils/assistant-action-audit'
 import { writeAssistantRecoveryPackage, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
 import { findAssistantCitationTrace } from '../../utils/knowledge-citations'
@@ -327,11 +328,25 @@ async function executeAction(action: ChatAction) {
       [mapRecoveryPackageToChatPackage(recoveryPackage)]
     )
   } else if (action.type === 'create_anomaly_card') {
-    const auditCode = action.auditCode ?? `AUD-${Date.now()}`
+    const anomalyPackage = writeAssistantAnomalyDispositionPackage({
+      actor: currentUsername(),
+      role: currentUserRole(),
+    })
     if (action.targetRoute) {
       await router.push(action.targetRoute)
     }
-    addMessage('assistant', `权限校验通过：${currentUserRole()} 可创建异常处置卡。\n审计编号：${auditCode}\n动作已执行：${action.resultMessage}`)
+    addMessage(
+      'assistant',
+      [
+        `权限校验通过：${currentUserRole()} 可创建异常处置卡。`,
+        `审计编号：${anomalyPackage.auditCode}`,
+        `动作已执行：${action.resultMessage}`,
+        '已同步到异常管理、风险处置队列、AI 排产事件队列、OTD 复盘证据链和审计回放。',
+      ].join('\n'),
+      undefined,
+      undefined,
+      [mapAnomalyPackageToChatPackage(anomalyPackage)]
+    )
   } else {
     addMessage('assistant', `动作已执行：${action.resultMessage}`)
   }
@@ -354,6 +369,21 @@ function mapRecoveryPackageToChatPackage(record: AssistantRecoveryPackage): Chat
     statusLabel: record.statusLabel,
     workOrders: record.workOrders,
     otdImpact: record.otdImpact,
+    owner: record.owner,
+    dueAt: record.dueAt,
+    steps: record.dispatchSteps,
+  }
+}
+
+function mapAnomalyPackageToChatPackage(record: AssistantAnomalyDispositionPackage): ChatActionPackage {
+  return {
+    id: record.id,
+    title: record.title,
+    auditCode: record.auditCode,
+    traceId: record.traceId,
+    statusLabel: record.statusLabel,
+    workOrders: record.workOrders,
+    otdImpact: record.deliveryImpact,
     owner: record.owner,
     dueAt: record.dueAt,
     steps: record.dispatchSteps,
@@ -1549,8 +1579,8 @@ function getExecutableActions(question: string): ChatAction[] {
       type: 'create_anomaly_card',
       targetRoute: '/anomaly',
       requiredRole: 'Admin',
-      auditCode: 'AUD-CHAT-ANOMALY-20260520',
-      resultMessage: '已创建 WO-RUSH-9001 CNC 精加工现场异常处置卡，并打开异常管理现场事件中心。',
+      auditCode: 'AUD-CHAT-ANOMALY-20260522-001',
+      resultMessage: '已创建 CNC-001 主轴温升异常处置卡，并打开异常管理现场事件中心。',
     })
   }
 

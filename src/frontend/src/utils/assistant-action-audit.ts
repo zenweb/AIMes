@@ -61,7 +61,11 @@ export function recordAssistantActionAudit(input: RecordAssistantActionAuditInpu
     role,
     targetRoute: action.targetRoute,
     auditCode,
-    traceId: action.type === 'delivery_recovery_package' ? 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521' : undefined,
+    traceId: action.type === 'delivery_recovery_package'
+      ? 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521'
+      : action.type === 'create_anomaly_card'
+        ? 'TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522'
+        : undefined,
     resultMessage: action.resultMessage,
     permitted,
     createdAt: new Date().toISOString(),

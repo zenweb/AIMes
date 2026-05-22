@@ -216,6 +216,7 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
   const statusText = record.permitted ? '权限通过并已执行' : '权限拒绝，动作未执行'
   const routeText = record.targetRoute ? `目标页面 ${record.targetRoute}` : '无页面跳转'
   const isRecoveryPackage = record.type === 'delivery_recovery_package'
+  const isAnomalyCard = record.type === 'create_anomaly_card'
   return {
     id: record.id,
     type: 'AI 助手动作',
@@ -230,12 +231,16 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
     risk: record.permitted
       ? isRecoveryPackage
         ? '助手执行包已同步排产、风险、OTD 证据链和审计回放，可追溯每个责任动作。'
-        : '助手动作已进入审计回放，后续可追溯执行人与入口。'
+        : isAnomalyCard
+          ? '助手异常处置卡已同步异常管理、风险队列、AI 排产和 OTD 证据链，可追溯现场处置责任。'
+          : '助手动作已进入审计回放，后续可追溯执行人与入口。'
       : '权限阻断已留痕，未改变业务数据。',
     auditState: record.permitted
       ? isRecoveryPackage
         ? 'AI 助手意图、权限校验、跨模块执行包和 OTD 证据已归档'
-        : 'AI 助手意图、权限校验、执行结果已归档'
+        : isAnomalyCard
+          ? 'AI 助手意图、权限校验、异常处置卡、风险和排产证据已归档'
+          : 'AI 助手意图、权限校验、执行结果已归档'
       : 'AI 助手意图与权限拒绝已归档',
     steps: isRecoveryPackage
       ? [
@@ -245,6 +250,14 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
           '执行包已分解为 AI 排产重排、风险升级、采购替代批次确认和质量首件复核四个责任动作。',
           `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
         ]
+      : isAnomalyCard
+        ? [
+            `AI 生产助手识别可执行意图：${record.label}。`,
+            `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+            `${statusText}，${routeText}。`,
+            '异常处置卡已写入异常管理现场事件中心，并分解为风险升级、AI 排产冻结复核和设备维护确认。',
+            `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
+          ]
       : [
           `AI 生产助手识别可执行意图：${record.label}。`,
           `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
