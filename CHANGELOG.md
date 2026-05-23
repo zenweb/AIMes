@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- `AI 生产助手` 新增“生成客户交付恢复承诺包”，可直接从聊天生成 `华东新能源` OTD 恢复承诺，写入报表中心、`AI 排产` 客户承诺事件、OTD `客户承诺包` 证据链、CSV 导出和审计回放，保留 `AUD-KPI-COMMITMENT-HUADONG-20260521-001` 与 `TRACE-KPI-COMMITMENT-HUADONG-20260521` 作为统一追踪
 - `AI 生产助手` 新增“生成工程约束复核包”，可把 `BOM-A100`、`ECN-BOM-A100-6061B-20260521`、`R-B200 OP-090` 和 `WO-RUSH-9001 / WO-DEMO-1002 / WO-DEMO-1007` 统一打包为跨模块责任动作，并同步写入 `AI 排产` 事件队列、OTD `助手工程约束` 证据链和审计回放，保留 `AUD-CHAT-ENG-CONSTRAINT-20260523-001` 与 `TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523` 作为统一追踪
 - `AI 生产助手` 的“创建异常处置卡”升级为跨模块异常处置包，执行后会同步写入异常管理现场事件、风险处置队列、AI 排产生产异常事件、OTD 证据链和审计回放，保留 `AUD-CHAT-ANOMALY-20260522-001` 与 `TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522` 作为统一追踪
 - `AI 排产` 事件触发 Agent 新增多方案决策包，急单、缺料、设备等事件会展示推荐方案、备选方案、OTD/延期/换线对比和不选原因；调度员采纳后会把推荐方案与未选方案理由写入反馈记录和 OTD 复盘证据链

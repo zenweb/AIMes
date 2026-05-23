@@ -114,7 +114,7 @@ import { writeAssistantEngineeringConstraintPackage, type AssistantEngineeringCo
 import { recordAssistantActionAudit } from '../../utils/assistant-action-audit'
 import { writeAssistantRecoveryPackage, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
 import { findAssistantCitationTrace } from '../../utils/knowledge-citations'
-import { readLatestOtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
+import { readLatestOtdKpiCommitmentPackage, writeOtdKpiCommitmentPackage, type OtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
 import { readPocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
 import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
@@ -369,6 +369,41 @@ async function executeAction(action: ChatAction) {
       undefined,
       [mapEngineeringConstraintPackageToChatPackage(engineeringPackage)]
     )
+  } else if (action.type === 'customer_commitment_package') {
+    const commitmentPackage = writeOtdKpiCommitmentPackage({
+      sourceKpiId: 'customer-huadong',
+      dimensionLabel: '客户',
+      targetName: '华东新能源',
+      baselineOtd: 76,
+      agentOtd: 94,
+      lift: 18,
+      delayedReduced: 3,
+      statusLabel: '客户恢复承诺',
+      driver: '急单插入、M-AL-6061 缺料闭环和 CNC 瓶颈保护共同支撑华东新能源交付恢复',
+      nextActions: [
+        '客户成功同步 OTD 恢复承诺和延期减少口径',
+        '调度员复核 WO-RUSH-9001 锁定期后插入与 CNC-003 夜班窗口',
+        '采购确认 M-AL-6061B 替代批次，质量保留 OP-040 扭矩检验窗口',
+      ],
+      sourceTraceId: 'TRACE-KPI-CUSTOMER-HUADONG-OTD-20260521',
+      actor: currentUsername(),
+    })
+    if (action.targetRoute) {
+      await router.push(action.targetRoute)
+    }
+    addMessage(
+      'assistant',
+      [
+        `权限校验通过：${currentUserRole()} 可生成客户交付恢复承诺包。`,
+        `审计编号：${commitmentPackage.auditId}`,
+        `追踪编号：${commitmentPackage.traceId}`,
+        `动作已执行：${action.resultMessage}`,
+        '已同步到报表中心、AI 排产、OTD 复盘证据链、CSV 导出和审计回放。',
+      ].join('\n'),
+      undefined,
+      undefined,
+      [mapCustomerCommitmentToChatPackage(commitmentPackage)]
+    )
   } else {
     addMessage('assistant', `动作已执行：${action.resultMessage}`)
   }
@@ -424,6 +459,21 @@ function mapEngineeringConstraintPackageToChatPackage(record: AssistantEngineeri
     owner: record.owner,
     dueAt: record.dueAt,
     steps: record.dispatchSteps,
+  }
+}
+
+function mapCustomerCommitmentToChatPackage(record: OtdKpiCommitmentPackage): ChatActionPackage {
+  return {
+    id: record.id,
+    title: record.title,
+    auditCode: record.auditId,
+    traceId: record.traceId,
+    statusLabel: record.statusLabel,
+    workOrders: `${record.dimensionLabel} / ${record.targetName}`,
+    otdImpact: `+${record.lift}% / 延期减少 ${record.delayedReduced} 单`,
+    owner: record.owner,
+    dueAt: record.dueAt,
+    steps: record.actions,
   }
 }
 
@@ -1589,6 +1639,18 @@ function getExecutableActions(question: string): ChatAction[] {
     actions.push(...outsourcingCommitmentActions())
   }
 
+  if (isCustomerCommitmentPackageIntent(q)) {
+    actions.push({
+      id: 'create-customer-commitment-package',
+      label: '生成客户交付恢复承诺包',
+      type: 'customer_commitment_package',
+      targetRoute: '/report',
+      requiredRole: 'Admin',
+      auditCode: 'AUD-KPI-COMMITMENT-HUADONG-20260521-001',
+      resultMessage: '已生成华东新能源交付恢复承诺包，包含客户交付、AI 排产和采购/工程/质量三类责任动作。',
+    })
+  }
+
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
     actions.push({
       id: 'generate-schedule-suggestion',
@@ -1668,6 +1730,17 @@ function engineeringConstraintActions(): ChatAction[] {
 function isEngineeringConstraintPackageIntent(q: string) {
   return (q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键') || q.includes('复核包') || q.includes('执行包'))
     && (q.includes('工程约束') || q.includes('工程数据') || q.includes('约束复核') || q.includes('工程复核'))
+}
+
+function isCustomerCommitmentPackageIntent(q: string) {
+  const createIntent = q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键')
+  const subject = q.includes('客户交付')
+    || q.includes('客户承诺')
+    || q.includes('交付恢复承诺')
+    || q.includes('恢复承诺包')
+    || q.includes('华东新能源')
+  const packageIntent = q.includes('承诺包') || q.includes('交付恢复') || q.includes('客户可复盘') || q.includes('otd恢复') || q.includes('otd 恢复')
+  return createIntent && subject && packageIntent
 }
 
 function bomKittingActions(): ChatAction[] {

@@ -333,6 +333,49 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditPanel.getByText(/AI 助手意图、权限校验、工程约束复核包、BOM\/工艺证据和 OTD 证据已归档/)).toBeVisible()
   })
 
+  test('可执行动作：生成客户交付恢复承诺包并同步排产报表和审计', async ({ page }) => {
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('帮我生成客户交付恢复承诺包')
+    await page.locator('.send-btn').click()
+
+    await expect(page.getByRole('button', { name: '生成客户交付恢复承诺包' })).toBeVisible()
+    await page.getByRole('button', { name: '生成客户交付恢复承诺包' }).click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(page).toHaveURL(/\/scheduling\/report/)
+    await expect(chat.getByText('权限校验通过：Admin 可生成客户交付恢复承诺包。')).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-KPI-COMMITMENT-HUADONG-20260521-001')).toBeVisible()
+    await expect(chat.getByText('追踪编号：TRACE-KPI-COMMITMENT-HUADONG-20260521')).toBeVisible()
+    await expect(chat.getByText(/已同步到报表中心、AI 排产、OTD 复盘证据链、CSV 导出和审计回放/)).toBeVisible()
+    const packageCard = chat.locator('.action-package-card').filter({ hasText: '华东新能源 交付恢复承诺包' })
+    await expect(packageCard).toBeVisible()
+    await expect(packageCard.getByText('+18% / 延期减少 3 单')).toBeVisible()
+
+    await page.waitForSelector('.report-board', { timeout: 20000 })
+    const reportBoard = page.locator('.otd-evidence-chain')
+    await expect(reportBoard.getByText('客户承诺包')).toBeVisible()
+    await expect(reportBoard.getByText('TRACE-KPI-COMMITMENT-HUADONG-20260521')).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await expect(page.locator('.event-queue-panel')).toBeVisible({ timeout: 60000 })
+    const commitmentEvent = page.locator('.event-card').filter({ hasText: '华东新能源 交付恢复承诺包' })
+    await expect(commitmentEvent).toBeVisible()
+    await expect(commitmentEvent.getByText('客户承诺包')).toBeVisible()
+    await commitmentEvent.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(page.locator('.agent-suggestion').getByText('客户交付恢复承诺后的排产复核')).toBeVisible()
+    await expect(page.locator('.agent-suggestion').getByText(/TRACE-KPI-COMMITMENT-HUADONG-20260521/)).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手生成客户交付恢复承诺包' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-KPI-COMMITMENT-HUADONG-20260521-001')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(auditPanel.getByText(/客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购\/工程\/质量责任确认三类动作/)).toBeVisible()
+    await expect(auditPanel.getByText(/AI 助手意图、权限校验、客户交付承诺、KPI 钻取和 OTD 证据已归档/)).toBeVisible()
+  })
+
   test('业务问答：工程数据约束可直接进入 BOM 与工艺路线页面', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('BOM 与工艺路线如何约束排产？')

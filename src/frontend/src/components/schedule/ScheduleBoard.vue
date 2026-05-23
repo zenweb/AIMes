@@ -190,6 +190,10 @@ import {
   type OutsourcingCommitmentPackage,
 } from '../../utils/outsourcing-commitment-sync'
 import {
+  readLatestOtdKpiCommitmentPackage,
+  type OtdKpiCommitmentPackage,
+} from '../../utils/otd-kpi-commitment-sync'
+import {
   readOtdEvidenceChainRecords,
   type OtdEvidenceChainItem,
 } from '../../utils/otd-evidence-chain-sync'
@@ -256,6 +260,7 @@ const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
 const laborReassignment = ref<LaborReassignmentRecord | null>(null)
 const laborQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
 const barcodeScheduleReleaseRecord = ref<OtdEvidenceChainItem | null>(null)
+const otdKpiCommitmentRecord = ref<OtdKpiCommitmentPackage | null>(null)
 const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
 const assistantRecoveryPackageRecords = ref<AssistantRecoveryPackage[]>([])
 const assistantEngineeringConstraintPackageRecords = ref<AssistantEngineeringConstraintPackage[]>([])
@@ -910,6 +915,8 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
   const barcodeScheduleRelease = readBarcodeScheduleReleaseRecord()
   const supplierNetworkDecision = readSupplierNetworkDecision()
   const supplyRisk = readSupplyRiskEscalation()
+  const otdKpiCommitment = readLatestOtdKpiCommitmentPackage()
+  otdKpiCommitmentRecord.value = otdKpiCommitment
   const outsourcingCommitment = readLatestOutsourcingCommitmentPackage()
   outsourcingCommitmentRecord.value = outsourcingCommitment
   const engineeringImpact = readEngineeringChangeImpactAnalysis()
@@ -1124,6 +1131,26 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
       ]
     : supplyMergedEvents
 
+  const customerCommitmentMergedEvents = otdKpiCommitment
+    ? [
+        {
+          id: `evt-otd-kpi-commitment-${otdKpiCommitment.sourceKpiId}`,
+          type: 'rush' as const,
+          typeLabel: '客户承诺包',
+          severity: 'warning' as const,
+          severityLabel: otdKpiCommitment.statusLabel,
+          title: otdKpiCommitment.title,
+          impact: `${otdKpiCommitment.commitment} ${otdKpiCommitment.summary}`,
+          affectedOrders: `${otdKpiCommitment.dimensionLabel} / ${otdKpiCommitment.targetName}`,
+          window: otdKpiCommitment.dueAt,
+          evidence: [otdKpiCommitment.auditId, otdKpiCommitment.traceId, ...otdKpiCommitment.actions.map(action => action.evidence)],
+          resolved: false,
+          resolutionNote: '客户交付恢复承诺已记录，AI 排产需复核承诺口径背后的急单插入、缺料闭环和质量门边界。',
+        },
+        ...supplierNetworkMergedEvents,
+      ]
+    : supplierNetworkMergedEvents
+
   const outsourcingMergedEvents = outsourcingCommitment
     ? (() => {
       const received = Boolean(outsourcingCommitment.receiptTraceId)
@@ -1162,10 +1189,10 @@ function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleE
             ? '外协到货已确认，AI 排产可关闭厂外等待并复核后续释放窗口。'
             : '外协承诺已记录，AI 排产需保留外部约束并等待到货确认或计划拆分。',
         },
-        ...supplierNetworkMergedEvents,
+        ...customerCommitmentMergedEvents,
       ]
     })()
-    : supplierNetworkMergedEvents
+    : customerCommitmentMergedEvents
 
   const engineeringImpactMergedEvents = engineeringImpact
     ? [
@@ -2147,6 +2174,18 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
       otdImpact: '+5%',
       delayImpact: '-1 单风险',
       changeoverImpact: '+4min',
+    }
+    return
+  }
+  const activeCustomerCommitment = otdKpiCommitmentRecord.value ?? readLatestOtdKpiCommitmentPackage()
+  if (activeCustomerCommitment && event.id === `evt-otd-kpi-commitment-${activeCustomerCommitment.sourceKpiId}`) {
+    activeAgentSuggestion.value = {
+      eventId: event.id,
+      title: '客户交付恢复承诺后的排产复核',
+      action: `${activeCustomerCommitment.traceId} 已生成 ${activeCustomerCommitment.targetName} 交付恢复承诺，建议复核 ${activeCustomerCommitment.agentOtd}% OTD 承诺背后的锁定期后插单、缺料闭环、CNC 瓶颈保护和质量门保留是否仍成立。`,
+      otdImpact: `+${activeCustomerCommitment.lift}%`,
+      delayImpact: `-${activeCustomerCommitment.delayedReduced} 单`,
+      changeoverImpact: '+10min 可控',
     }
     return
   }

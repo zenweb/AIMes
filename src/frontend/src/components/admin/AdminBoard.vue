@@ -2048,6 +2048,7 @@ function assistantActionTypeLabel(type: AssistantActionAuditRecord['type']) {
     create_anomaly_card: '异常处置',
     delivery_recovery_package: '交期恢复包',
     engineering_constraint_package: '工程约束包',
+    customer_commitment_package: '客户承诺包',
   }[type]
 }
 

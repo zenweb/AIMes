@@ -67,7 +67,9 @@ export function recordAssistantActionAudit(input: RecordAssistantActionAuditInpu
         ? 'TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522'
         : action.type === 'engineering_constraint_package'
           ? 'TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523'
-          : undefined,
+          : action.type === 'customer_commitment_package'
+            ? 'TRACE-KPI-COMMITMENT-HUADONG-20260521'
+            : undefined,
     resultMessage: action.resultMessage,
     permitted,
     createdAt: new Date().toISOString(),

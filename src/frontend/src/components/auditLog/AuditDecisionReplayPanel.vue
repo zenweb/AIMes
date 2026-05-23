@@ -218,6 +218,7 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
   const isRecoveryPackage = record.type === 'delivery_recovery_package'
   const isAnomalyCard = record.type === 'create_anomaly_card'
   const isEngineeringConstraintPackage = record.type === 'engineering_constraint_package'
+  const isCustomerCommitmentPackage = record.type === 'customer_commitment_package'
   return {
     id: record.id,
     type: 'AI 助手动作',
@@ -236,7 +237,9 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
           ? '助手异常处置卡已同步异常管理、风险队列、AI 排产和 OTD 证据链，可追溯现场处置责任。'
           : isEngineeringConstraintPackage
             ? '助手工程约束复核包已同步 BOM、工艺路线、AI 排产、质量门和 OTD 证据链，可追溯约束来源。'
-            : '助手动作已进入审计回放，后续可追溯执行人与入口。'
+            : isCustomerCommitmentPackage
+              ? '助手客户交付承诺包已同步报表中心、AI 排产、OTD 证据链和 CSV 导出，可追溯对外承诺口径。'
+              : '助手动作已进入审计回放，后续可追溯执行人与入口。'
       : '权限阻断已留痕，未改变业务数据。',
     auditState: record.permitted
       ? isRecoveryPackage
@@ -245,7 +248,9 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
           ? 'AI 助手意图、权限校验、异常处置卡、风险和排产证据已归档'
           : isEngineeringConstraintPackage
             ? 'AI 助手意图、权限校验、工程约束复核包、BOM/工艺证据和 OTD 证据已归档'
-            : 'AI 助手意图、权限校验、执行结果已归档'
+            : isCustomerCommitmentPackage
+              ? 'AI 助手意图、权限校验、客户交付承诺、KPI 钻取和 OTD 证据已归档'
+              : 'AI 助手意图、权限校验、执行结果已归档'
       : 'AI 助手意图与权限拒绝已归档',
     steps: isRecoveryPackage
       ? [
@@ -271,6 +276,14 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
             '工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门/工程审批四个责任动作。',
             `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
           ]
+        : isCustomerCommitmentPackage
+          ? [
+              `AI 生产助手识别可执行意图：${record.label}。`,
+              `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+              `${statusText}，${routeText}。`,
+              '客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购/工程/质量责任确认三类动作。',
+              `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
+            ]
         : [
           `AI 生产助手识别可执行意图：${record.label}。`,
           `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
