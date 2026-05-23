@@ -126,7 +126,8 @@ import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import { readEngineeringChangeImpactAnalysis, readRouteCapabilityValidation } from '../../utils/engineering-change-sync'
-import { readBomKittingPackage } from '../../utils/shortage-risk-sync'
+import { readBomKittingPackage, writeBomKittingPackage, type BomKittingPackage } from '../../utils/shortage-risk-sync'
+import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 import { readLaborQualificationBlocks, readLaborReassignments } from '../../utils/labor-assignment-sync'
 import {
   readLatestQualityKnowledgeReuseClosure,
@@ -404,6 +405,24 @@ async function executeAction(action: ChatAction) {
       undefined,
       [mapCustomerCommitmentToChatPackage(commitmentPackage)]
     )
+  } else if (action.type === 'bom_kitting_package') {
+    const bomKittingPackage = writeAssistantBomKittingPackage()
+    if (action.targetRoute) {
+      await router.push(action.targetRoute)
+    }
+    addMessage(
+      'assistant',
+      [
+        `权限校验通过：${currentUserRole()} 可生成 BOM 展开齐套检查包。`,
+        `审计编号：${bomKittingPackage.auditId}`,
+        `追踪编号：${bomKittingPackage.traceId}`,
+        `动作已执行：${action.resultMessage}`,
+        '已同步到 BOM 管理、库存齐套、AI 排产、OTD 复盘证据链、系统治理和审计回放。',
+      ].join('\n'),
+      undefined,
+      undefined,
+      [mapBomKittingPackageToChatPackage(bomKittingPackage)]
+    )
   } else {
     addMessage('assistant', `动作已执行：${action.resultMessage}`)
   }
@@ -474,6 +493,90 @@ function mapCustomerCommitmentToChatPackage(record: OtdKpiCommitmentPackage): Ch
     owner: record.owner,
     dueAt: record.dueAt,
     steps: record.actions,
+  }
+}
+
+function writeAssistantBomKittingPackage(): BomKittingPackage {
+  const createdAt = new Date().toISOString()
+  const record: BomKittingPackage = {
+    id: 'bom-kitting-package-bom-a100-wo-rush-9001',
+    bomCode: 'BOM-A100',
+    bomVersion: 'V1.0',
+    productName: '精密转接座',
+    workOrderNumber: 'WO-RUSH-9001',
+    scheduleWindow: '2026-05-20 14:00-22:00',
+    statusLabel: '待库存齐套',
+    owner: '计划员 李工 / 物控 王工',
+    auditId: 'AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522',
+    traceId: 'TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001',
+    createdAt,
+    summary: 'BOM-A100 V1.0 已展开到 WO-RUSH-9001 排产窗口，M-AL-6061 缺口 19 件，M-SEAL-20 已齐套，M-AL-6061B 替代料可用但需工程确认。',
+    items: [
+      {
+        materialCode: 'M-AL-6061',
+        materialName: '铝合金 6061',
+        requiredQuantity: 48,
+        availableQuantity: 29,
+        inboundQuantity: 8,
+        shortageQuantity: 19,
+        unit: '件',
+        action: '触发库存齐套缺口、采购加急和替代料工程确认',
+      },
+      {
+        materialCode: 'M-SEAL-20',
+        materialName: '密封圈 20mm',
+        requiredQuantity: 48,
+        availableQuantity: 96,
+        inboundQuantity: 0,
+        shortageQuantity: 0,
+        unit: '件',
+        action: '已齐套，可保留原排产窗口',
+      },
+      {
+        materialCode: 'M-AL-6061B',
+        materialName: '铝合金 6061B',
+        requiredQuantity: 19,
+        availableQuantity: 28,
+        inboundQuantity: 0,
+        shortageQuantity: 0,
+        unit: '件',
+        action: '作为替代料候选，等待 ECN/工程确认后释放',
+      },
+    ],
+  }
+  writeBomKittingPackage(record)
+  upsertOtdEvidenceChainRecord({
+    id: record.id,
+    stage: '库存齐套',
+    title: `${record.bomCode} 展开齐套检查包已进入排产复核`,
+    summary: `${record.summary} 责任人：${record.owner}；动作：${record.items.map(item => `${item.materialCode} ${item.action}`).join('；')}`,
+    object: record.workOrderNumber,
+    source: `AI 生产助手 / ${currentUsername()}`,
+    traceId: record.traceId,
+    status: 'active',
+    statusLabel: record.statusLabel,
+    createdAt,
+  })
+  return record
+}
+
+function mapBomKittingPackageToChatPackage(record: BomKittingPackage): ChatActionPackage {
+  return {
+    id: record.id,
+    title: `${record.bomCode} ${record.workOrderNumber} 展开齐套检查包`,
+    auditCode: record.auditId,
+    traceId: record.traceId,
+    statusLabel: record.statusLabel,
+    workOrders: record.workOrderNumber,
+    otdImpact: '缺口 19 件 / 待齐套',
+    owner: record.owner,
+    dueAt: record.scheduleWindow,
+    steps: record.items.map(item => ({
+      module: item.shortageQuantity > 0 ? '库存齐套 / 采购协同' : 'BOM 管理',
+      owner: record.owner,
+      action: `${item.materialCode} ${item.materialName}：${item.action}`,
+      evidence: `${record.traceId}-${item.materialCode}`,
+    })),
   }
 }
 
@@ -1651,6 +1754,18 @@ function getExecutableActions(question: string): ChatAction[] {
     })
   }
 
+  if (isBomKittingPackageIntent(q)) {
+    actions.push({
+      id: 'create-bom-kitting-package',
+      label: '生成 BOM 展开齐套检查包',
+      type: 'bom_kitting_package',
+      targetRoute: '/bom',
+      requiredRole: 'Admin',
+      auditCode: 'AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522',
+      resultMessage: '已生成 BOM-A100 / WO-RUSH-9001 展开齐套检查包，包含缺料、替代料和排产窗口复核。',
+    })
+  }
+
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
     actions.push({
       id: 'generate-schedule-suggestion',
@@ -1740,6 +1855,13 @@ function isCustomerCommitmentPackageIntent(q: string) {
     || q.includes('恢复承诺包')
     || q.includes('华东新能源')
   const packageIntent = q.includes('承诺包') || q.includes('交付恢复') || q.includes('客户可复盘') || q.includes('otd恢复') || q.includes('otd 恢复')
+  return createIntent && subject && packageIntent
+}
+
+function isBomKittingPackageIntent(q: string) {
+  const createIntent = q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键')
+  const subject = q.includes('bom') || q.includes('物料清单') || q.includes('齐套包') || q.includes('展开齐套') || q.includes('工单齐套')
+  const packageIntent = q.includes('齐套') || q.includes('缺料') || q.includes('检查包') || q.includes('排产事件')
   return createIntent && subject && packageIntent
 }
 

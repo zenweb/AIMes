@@ -69,7 +69,9 @@ export function recordAssistantActionAudit(input: RecordAssistantActionAuditInpu
           ? 'TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523'
           : action.type === 'customer_commitment_package'
             ? 'TRACE-KPI-COMMITMENT-HUADONG-20260521'
-            : undefined,
+            : action.type === 'bom_kitting_package'
+              ? 'TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001'
+              : undefined,
     resultMessage: action.resultMessage,
     permitted,
     createdAt: new Date().toISOString(),

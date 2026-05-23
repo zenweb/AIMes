@@ -2049,6 +2049,7 @@ function assistantActionTypeLabel(type: AssistantActionAuditRecord['type']) {
     delivery_recovery_package: '交期恢复包',
     engineering_constraint_package: '工程约束包',
     customer_commitment_package: '客户承诺包',
+    bom_kitting_package: 'BOM齐套包',
   }[type]
 }
 

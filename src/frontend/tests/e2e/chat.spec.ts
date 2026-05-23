@@ -376,6 +376,47 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditPanel.getByText(/AI 助手意图、权限校验、客户交付承诺、KPI 钻取和 OTD 证据已归档/)).toBeVisible()
   })
 
+  test('可执行动作：生成 BOM 展开齐套检查包并同步库存排产和审计', async ({ page }) => {
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('帮我生成 BOM 展开齐套检查包')
+    await page.locator('.send-btn').click()
+
+    await expect(page.getByRole('button', { name: '生成 BOM 展开齐套检查包' })).toBeVisible()
+    await page.getByRole('button', { name: '生成 BOM 展开齐套检查包' }).click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(page).toHaveURL(/\/scheduling\/bom/)
+    await expect(chat.getByText('权限校验通过：Admin 可生成 BOM 展开齐套检查包。')).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
+    await expect(chat.getByText('追踪编号：TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+    await expect(chat.getByText(/已同步到 BOM 管理、库存齐套、AI 排产、OTD 复盘证据链、系统治理和审计回放/)).toBeVisible()
+    const packageCard = chat.locator('.action-package-card').filter({ hasText: 'BOM-A100 WO-RUSH-9001 展开齐套检查包' })
+    await expect(packageCard).toBeVisible()
+    await expect(packageCard.getByText('缺口 19 件 / 待齐套')).toBeVisible()
+
+    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.waitForSelector('.inv-board', { timeout: 20000 })
+    await expect(page.locator('.bom-kitting-package-panel').getByText('BOM-A100 展开齐套包')).toBeVisible()
+    await expect(page.locator('.bom-kitting-package-panel').getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await expect(page.locator('.event-queue-panel')).toBeVisible({ timeout: 60000 })
+    const kittingEvent = page.locator('.event-card').filter({ hasText: 'M-AL-6061 工单齐套缺口' })
+    await expect(kittingEvent).toBeVisible()
+    await expect(kittingEvent.getByText('缺料事件')).toBeVisible()
+    await expect(kittingEvent.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手生成 BOM 展开齐套检查包' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(auditPanel.getByText(/BOM 展开齐套检查包已分解为 M-AL-6061 缺料处置、M-SEAL-20 已齐套确认和 M-AL-6061B 替代料工程确认三类动作/)).toBeVisible()
+    await expect(auditPanel.getByText(/AI 助手意图、权限校验、BOM 展开齐套、缺料事件和 OTD 证据已归档/)).toBeVisible()
+  })
+
   test('业务问答：工程数据约束可直接进入 BOM 与工艺路线页面', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('BOM 与工艺路线如何约束排产？')
