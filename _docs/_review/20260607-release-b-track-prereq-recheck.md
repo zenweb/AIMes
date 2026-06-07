@@ -2,17 +2,16 @@
 
 ## 结论
 
-Hosted CI 和 PostgreSQL/staging 的前置条件仍未满足，不应继续消耗时间反复跑对应门禁脚本。
+Hosted CI 已关闭；PostgreSQL/staging 的 Docker engine 前置条件仍未满足，不应继续消耗时间反复跑 staging 门禁脚本。
 
 ## 已验证
 
-- GitHub CLI 已登录，但仓库 remote 未指向 GitHub。
-- Docker 本地镜像为空。
-- Docker registry mirror 未配置。
-- 这与 2026-06-07 最新 hosted CI 与 staging 报告中的失败原因一致。
+- GitHub CLI 可查询远端 Actions，最新 remote main `3e494aea466fdff579e4e11ecb44600f5f8283c4` 的 CI run `27089905065` 和 Agent Evaluation run `27089905061` 均为 `success`。
+- `_docs/_reports/hosted-ci-20260607.md` 为 `Result: PASS`。
+- Docker CLI/Compose 存在，但 Docker engine 连接失败：`npipe:////./pipe/dockerDesktopLinuxEngine` 不存在。
+- 这与最新 staging 报告中的 engine unavailable 失败原因一致。
 
 ## 残余风险
 
-- Hosted CI 仍缺 GitHub Actions hosted runner 证据。
-- PostgreSQL/staging 仍缺依赖镜像、EF migration、API start、`/live`、`/ready` 实证。
+- PostgreSQL/staging 仍缺 Docker engine、依赖容器启动、EF migration、API start、`/live`、`/ready` 实证。
 - Attack Chain A/B/C、Security signoff、Gray observation 仍需人工/墙钟证据。
