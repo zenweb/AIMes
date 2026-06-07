@@ -7,9 +7,12 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace MES.Tests.Integration;
 
@@ -30,6 +33,29 @@ public sealed class PerformanceTestWebApplicationFactory : WebApplicationFactory
                 ["ConnectionStrings:RabbitMQ"] = string.Empty,
                 ["Messaging:Transport"] = "Disabled",
                 ["AI:VectorStore:Provider"] = "InMemory"
+            });
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            var cacheServices = services
+                .Where(d => d.ServiceType == typeof(IDistributedCache))
+                .ToList();
+            foreach (var descriptor in cacheServices)
+            {
+                services.Remove(descriptor);
+            }
+            services.AddDistributedMemoryCache();
+
+            services.Configure<HealthCheckServiceOptions>(options =>
+            {
+                var externalChecks = options.Registrations
+                    .Where(registration => registration.Name is "postgresql" or "redis" or "rabbitmq")
+                    .ToList();
+                foreach (var registration in externalChecks)
+                {
+                    options.Registrations.Remove(registration);
+                }
             });
         });
 
