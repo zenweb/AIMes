@@ -25,7 +25,11 @@ public sealed class PerformanceTestWebApplicationFactory : WebApplicationFactory
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Database:Provider"] = DatabaseProvider.InMemory,
-                ["ConnectionStrings:DefaultConnection"] = "Performance_Test_DB"
+                ["ConnectionStrings:DefaultConnection"] = "Performance_Test_DB",
+                ["ConnectionStrings:Redis"] = string.Empty,
+                ["ConnectionStrings:RabbitMQ"] = string.Empty,
+                ["Messaging:Transport"] = "Disabled",
+                ["AI:VectorStore:Provider"] = "InMemory"
             });
         });
 

@@ -25,7 +25,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Database:Provider"] = DatabaseProvider.InMemory,
-                ["ConnectionStrings:DefaultConnection"] = "MES_Test_DB"
+                ["ConnectionStrings:DefaultConnection"] = "MES_Test_DB",
+                ["ConnectionStrings:Redis"] = string.Empty,
+                ["ConnectionStrings:RabbitMQ"] = string.Empty,
+                ["Messaging:Transport"] = "Disabled",
+                ["AI:VectorStore:Provider"] = "InMemory"
             });
         });
 
