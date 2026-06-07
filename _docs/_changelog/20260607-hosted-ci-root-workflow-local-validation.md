@@ -30,3 +30,4 @@
 
 - 本地默认 `npm audit` 因用户级 registry 指向 `https://registry.npmmirror.com` 而失败；该 registry 不实现 npm audit API。
 - Hosted CI 仍需要 GitHub Actions 新 run 证明，不能只用本地验证关闭 release gate。
+- 本地提交 `53393d2` 已创建；首次 push 到 GitHub `main` 因 github.com 443 连接失败未完成。

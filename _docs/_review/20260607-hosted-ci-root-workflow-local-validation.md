@@ -15,5 +15,6 @@ CI run `27084449100` 的第一层根因是 workflow 仍按旧目录模型查找 
 ## 残余风险
 
 - Hosted CI gate 仍未 PASS，必须等待 GitHub Actions 新 run。
+- 本地提交 `53393d2` 已创建，但首次 `git push github HEAD:refs/heads/main` 因 github.com 443 连接失败未触发新 run。
 - Docker build 只会在 hosted CI 的 container job 中形成发布证据。
 - 当前工作树包含大量既有大改；本地验证证明当前整体状态可跑，但提交/推送时必须避免带入生成物。
