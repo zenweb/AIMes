@@ -8,6 +8,7 @@ using MES.Domain.Entities.Admin;
 using MES.Infrastructure.Data;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace MES.Tests.Integration.Controllers;
 
@@ -15,10 +16,12 @@ namespace MES.Tests.Integration.Controllers;
 public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
+    private readonly ITestOutputHelper _output;
 
-    public AuthControllerTests(TestWebApplicationFactory factory)
+    public AuthControllerTests(TestWebApplicationFactory factory, ITestOutputHelper output)
     {
         _factory = factory;
+        _output = output;
     }
 
     [Fact]
@@ -32,7 +35,7 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
             Password = "admin123",
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<LoginTestResponse>();
         body!.Token.Should().NotBeNullOrEmpty();
         body.MustChangePassword.Should().BeTrue("seeded demo accounts still use initial credentials and must be forced through password rotation");
@@ -43,7 +46,7 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/api/v1/auth/login", new { Username = "admin", Password = "wrong" });
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertStatusCodeAsync(response, HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -51,7 +54,7 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/api/v1/auth/login", new { Username = "", Password = "" });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertStatusCodeAsync(response, HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -77,14 +80,14 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
             NewPassword = newPassword,
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK);
 
         var loginResponse = await client.PostAsJsonAsync("/api/v1/auth/login", new
         {
             Username = username,
             Password = newPassword,
         });
-        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertStatusCodeAsync(loginResponse, HttpStatusCode.OK);
 
         var body = await loginResponse.Content.ReadFromJsonAsync<LoginTestResponse>();
         body!.MustChangePassword.Should().BeFalse("the user has rotated away from the initial password");
@@ -101,7 +104,7 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
             Password = "admin123",
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<LoginTestResponse>();
         body!.RefreshToken.Should().NotBeNullOrEmpty();
 
@@ -122,5 +125,15 @@ public class AuthControllerTests : IClassFixture<TestWebApplicationFactory>
         public string DisplayName { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public bool MustChangePassword { get; set; }
+    }
+
+    private async Task AssertStatusCodeAsync(HttpResponseMessage response, HttpStatusCode expected)
+    {
+        if (response.StatusCode != expected)
+        {
+            _output.WriteLine(await response.Content.ReadAsStringAsync());
+        }
+
+        response.StatusCode.Should().Be(expected);
     }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace MES.Tests.Integration.Security;
 
@@ -9,10 +10,12 @@ namespace MES.Tests.Integration.Security;
 public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
+    private readonly ITestOutputHelper _output;
 
-    public EndpointAuthorizationTests(TestWebApplicationFactory factory)
+    public EndpointAuthorizationTests(TestWebApplicationFactory factory, ITestOutputHelper output)
     {
         _factory = factory;
+        _output = output;
     }
 
     [Theory]
@@ -26,7 +29,7 @@ public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicatio
 
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "Sprint 3 H6 requires API route groups to reject unauthenticated callers by default");
+        await AssertStatusCodeAsync(response, HttpStatusCode.Unauthorized, "Sprint 3 H6 requires API route groups to reject unauthenticated callers by default");
     }
 
     [Fact]
@@ -45,7 +48,7 @@ public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicatio
 
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "login is the explicit anonymous entry point");
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK, "login is the explicit anonymous entry point");
     }
 
     [Fact]
@@ -57,7 +60,7 @@ public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicatio
 
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "health checks are intentionally public for platform probes");
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK, "health checks are intentionally public for platform probes");
     }
 
     [Fact]
@@ -69,6 +72,16 @@ public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicatio
 
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "Sprint 6 6.2 requires TestAuthHandler to support parameterized multi-role test identities");
+        await AssertStatusCodeAsync(response, HttpStatusCode.OK, "Sprint 6 6.2 requires TestAuthHandler to support parameterized multi-role test identities");
+    }
+
+    private async Task AssertStatusCodeAsync(HttpResponseMessage response, HttpStatusCode expected, string because)
+    {
+        if (response.StatusCode != expected)
+        {
+            _output.WriteLine(await response.Content.ReadAsStringAsync());
+        }
+
+        response.StatusCode.Should().Be(expected, because);
     }
 }
