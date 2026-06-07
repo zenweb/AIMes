@@ -23,8 +23,8 @@ Status: UNSIGNED
 
 ## B-Track Release Gate Cross-Check
 
-- Hosted CI: FAIL; GitHub Actions run evidence exists, but CI run `27084449100` completed with `conclusion=failure`.
-- PostgreSQL/staging: FAIL; Docker dependency image pull still blocked.
+- Hosted CI: PASS; GitHub Actions CI run `27086705027` and Agent Evaluation run `27086705023` completed with `conclusion=success`.
+- PostgreSQL/staging: FAIL; Docker dependency image pull / local Docker engine availability still blocks real rehearsal evidence.
 - Attack Chain A/B/C: FAIL; manual verification pending.
 - Gray observation: FAIL; first gray release and 14-day P0/P1=0 evidence still missing.
 

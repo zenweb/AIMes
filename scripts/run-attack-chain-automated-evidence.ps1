@@ -54,19 +54,19 @@ $script:reportLines = @(
 
 try {
     Invoke-AndCapture "Attack Chain A - endpoint authorization" {
-        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --filter "FullyQualifiedName~EndpointAuthorizationTests"
+        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --configuration Release --filter "FullyQualifiedName~EndpointAuthorizationTests"
     }
 
     Invoke-AndCapture "Attack Chain A - agent role matrix" {
-        dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~AgentPermissionPolicyTests"
+        dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --configuration Release --filter "FullyQualifiedName~AgentPermissionPolicyTests"
     }
 
     Invoke-AndCapture "Attack Chain B - credential and token leakage controls" {
-        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --filter "FullyQualifiedName~AdminControllerTests.CreateUser_ShouldRedactPasswordInAuditLog|FullyQualifiedName~AuthControllerTests.Login_ShouldPersistOnlyHashedRefreshToken|FullyQualifiedName~AuthControllerTests.Login_WithInvalidPassword_ShouldReturnUnauthorized"
+        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --configuration Release --filter "FullyQualifiedName~AdminControllerTests.CreateUser_ShouldRedactPasswordInAuditLog|FullyQualifiedName~AuthControllerTests.Login_ShouldPersistOnlyHashedRefreshToken|FullyQualifiedName~AuthControllerTests.Login_WithInvalidPassword_ShouldReturnUnauthorized"
     }
 
     Invoke-AndCapture "Attack Chain C - release security configuration gates" {
-        dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --filter "FullyQualifiedName~M1M2JwtConfiguration_ShouldUseValidatedOptionsInsteadOfRawConfiguration|FullyQualifiedName~M1M2CorsConfiguration_ShouldUseValidatedOptionsInsteadOfRawConfiguration|FullyQualifiedName~H21DirectoryBuildProps_ShouldNotSuppressHighSeverityNuGetAuditWarnings|FullyQualifiedName~SecuritySelfAssessment_ShouldFailLoudOnVulnerablePackageOutput"
+        dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --configuration Release --filter "FullyQualifiedName~M1M2JwtConfiguration_ShouldUseValidatedOptionsInsteadOfRawConfiguration|FullyQualifiedName~M1M2CorsConfiguration_ShouldUseValidatedOptionsInsteadOfRawConfiguration|FullyQualifiedName~H21DirectoryBuildProps_ShouldNotSuppressHighSeverityNuGetAuditWarnings|FullyQualifiedName~SecuritySelfAssessment_ShouldFailLoudOnVulnerablePackageOutput"
     }
 
     $script:reportLines += ""
