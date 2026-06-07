@@ -38,6 +38,21 @@ function Invoke-AndCapture([string]$Label, [scriptblock]$Command) {
     }
 }
 
+function Assert-DockerEngineAvailable() {
+    $infoOutput = docker info 2>&1
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    if ($exitCode -ne 0) {
+        $message = @(
+            "Docker daemon is unavailable.",
+            "docker info exit code: $exitCode",
+            ($infoOutput | ForEach-Object { [string]$_ })
+        ) -join [Environment]::NewLine
+        throw $message
+    }
+
+    $infoOutput
+}
+
 function Wait-HealthEndpoint([string]$Path) {
     $deadline = (Get-Date).AddSeconds($ReadyTimeoutSeconds)
     $uri = "$ApiBaseUrl$Path"
@@ -141,6 +156,7 @@ $script:reportLines = @(
 
 try {
     Invoke-AndCapture "Docker version" { docker --version; docker compose version }
+    Invoke-AndCapture "Docker engine" { Assert-DockerEngineAvailable }
     Invoke-AndCapture "Docker registry/proxy diagnostics" {
         "Registry mirrors:"
         docker info --format "{{json .RegistryConfig.Mirrors}}"
