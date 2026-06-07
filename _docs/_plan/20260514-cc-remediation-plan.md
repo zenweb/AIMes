@@ -26,7 +26,7 @@
 
 ## Current B-Track Release Gate Evidence
 
-- Hosted CI: `_docs/_reports/hosted-ci-20260607.md` is `Result: PASS`; latest verified remote main is `0e839720b32cb3fbbdc8befe8d14139b9e2ec0d2`, with GitHub Actions CI run `27089400757` and Agent Evaluation run `27089400769` completed successfully.
+- Hosted CI: `_docs/_reports/hosted-ci-20260607.md` is `Result: PASS`; latest verified remote main is `3ac45a0b001981f528db359aedf115ad341addc0`, with GitHub Actions CI run `27089650107` and Agent Evaluation run `27089650108` completed successfully.
 - PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260607-engine-unavailable.md` is `Result: FAIL`; local Docker Desktop Linux engine is currently unavailable, so real PostgreSQL/staging rehearsal cannot run yet.
 - Security self-assessment: `_docs/_reports/security-self-assessment-20260607-current.md` is `Result: PASS`.
 - Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260607-current.md` is `Result: PASS`.

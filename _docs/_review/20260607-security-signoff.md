@@ -24,7 +24,7 @@ Status: UNSIGNED
 
 ## B-Track Release Gate Cross-Check
 
-- Hosted CI: PASS; latest GitHub Actions CI run `27089128913` and Agent Evaluation run `27089128915` completed with `conclusion=success` at remote main `eb90dfc813783ebf7162b1d7ccff7d03adc5b048`.
+- Hosted CI: PASS; latest GitHub Actions CI run `27089650107` and Agent Evaluation run `27089650108` completed with `conclusion=success` at remote main `3ac45a0b001981f528db359aedf115ad341addc0`.
 - PostgreSQL/staging: FAIL; Docker Desktop Linux engine is unavailable, so real PostgreSQL rehearsal cannot run yet.
 - Attack Chain A/B/C: FAIL; manual verification pending.
 - Gray observation: FAIL; first gray release and 14-day P0/P1=0 evidence still missing.
