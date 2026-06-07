@@ -63,18 +63,18 @@
   </ItemGroup>
 
   <!-- 构建后复制前端文件 -->
-  <Target Name="CopyFrontendBuild" AfterTargets="AfterBuild" Condition="Exists('../../frontend/dist')">
+  <Target Name="CopyFrontendBuild" AfterTargets="AfterBuild" Condition="Exists('../../frontend/.output/public')">
     <ItemGroup>
-      <FrontendFiles Include="../../frontend/dist/**/*" />
+      <FrontendFiles Include="../../frontend/.output/public/**/*" />
     </ItemGroup>
     <RemoveDir Directories="wwwroot/scheduling" Condition="Exists('wwwroot/scheduling')" />
     <Copy SourceFiles="@(FrontendFiles)" DestinationFolder="wwwroot/scheduling/%(RecursiveDir)" />
   </Target>
 
   <!-- 发布时也复制 -->
-  <Target Name="PublishFrontendBuild" AfterTargets="Publish" Condition="Exists('../../frontend/dist')">
+  <Target Name="PublishFrontendBuild" AfterTargets="Publish" Condition="Exists('../../frontend/.output/public')">
     <ItemGroup>
-      <FrontendFiles Include="../../frontend/dist/**/*" />
+      <FrontendFiles Include="../../frontend/.output/public/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(FrontendFiles)" DestinationFolder="$(PublishDir)wwwroot/scheduling/%(RecursiveDir)" />
   </Target>

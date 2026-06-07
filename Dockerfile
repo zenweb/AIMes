@@ -26,7 +26,7 @@ WORKDIR /app
 EXPOSE 5000
 
 COPY --from=build /app/publish .
-COPY --from=frontend-build /frontend/dist ./wwwroot/scheduling
+COPY --from=frontend-build /frontend/.output/public ./wwwroot/scheduling
 
 ENV ASPNETCORE_URLS=http://+:5000
 ENV ASPNETCORE_ENVIRONMENT=Production
