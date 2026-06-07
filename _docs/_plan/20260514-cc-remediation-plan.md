@@ -26,14 +26,14 @@
 
 ## Current B-Track Release Gate Evidence
 
-- Hosted CI: `_docs/_reports/hosted-ci-20260605.md` is `Result: FAIL`; GitHub remote/Actions run evidence is missing.
-- PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260605-local.md` is `Result: FAIL`; Docker Hub image pull is blocked by missing proxy/registry mirror.
-- Security self-assessment: `_docs/_reports/security-self-assessment-20260605-local.md` is `Result: PASS`.
-- Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260605.md` is `Result: PASS`.
-- Attack Chain manual verification: `_docs/_reports/attack-chain-verification-20260605.md` is `Result: FAIL`; verifier/evidence are missing.
-- Security signoff: `_docs/_review/20260605-security-signoff.md` is `UNSIGNED`.
-- Gray observation: `_docs/_reports/gray-observation-20260605.md` is `Result: FAIL`; first gray release has not started.
-- Aggregate release gate: `_docs/_reports/release-gate-audit-20260605.md` is `Result: FAIL`.
+- Hosted CI: `_docs/_reports/hosted-ci-20260607.md` is `Result: PASS`; GitHub Actions CI run `27086705027` and Agent Evaluation run `27086705023` are queryable success evidence.
+- PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260607-recheck.md` is `Result: FAIL`; local Docker Desktop Linux engine is currently unavailable, and previous dependency image resolution remained blocked.
+- Security self-assessment: `_docs/_reports/security-self-assessment-20260607-current.md` is `Result: PASS`.
+- Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260607-current.md` is `Result: PASS`.
+- Attack Chain manual verification: `_docs/_reports/attack-chain-verification-20260607-manual-pending.md` is `Result: FAIL`; verifier/evidence are missing.
+- Security signoff: `_docs/_review/20260607-security-signoff.md` is `UNSIGNED`.
+- Gray observation: `_docs/_reports/gray-observation-20260607-not-started.md` is `Result: FAIL`; first gray release has not started.
+- Aggregate release gate: `_docs/_reports/release-gate-audit-20260607-hosted-ci-pass.md` is `Result: FAIL`; Hosted CI is closed, while staging, Attack Chain A/B/C, security signoff, and gray observation remain open.
 
 ## Execution Rule
 
