@@ -19,6 +19,15 @@
       </select>
     </div>
 
+    <div v-if="loadError" class="print-error" role="alert" aria-live="assertive">
+      <span>{{ loadError }}</span>
+      <button type="button" class="btn btn-retry" @click="loadInventoryList">重试加载</button>
+    </div>
+
+    <div v-if="printError" class="print-error" role="alert" aria-live="assertive">
+      {{ printError }}
+    </div>
+
     <section class="trace-batch" aria-label="现场追溯标签批次">
       <div class="trace-head">
         <div>
@@ -53,7 +62,13 @@
         :key="item.id"
         class="label-card"
         :class="{ selected: selected.has(item.id) }"
+        role="checkbox"
+        tabindex="0"
+        :aria-checked="selected.has(item.id)"
+        :aria-label="labelCardAriaLabel(item)"
         @click="toggleSelect(item.id)"
+        @keydown.enter="toggleSelect(item.id)"
+        @keydown.space.prevent="toggleSelect(item.id)"
       >
         <div class="label-check">
           <input type="checkbox" :checked="selected.has(item.id)" :id="'chk-' + item.id" />
@@ -75,6 +90,7 @@ import { ref, computed, onMounted } from 'vue'
 import QRCode from 'qrcode'
 import type { InventoryItem } from '../../types/inventory'
 import { getInventoryList } from '../../api/inventory'
+import { errorMessage } from '../../utils/error-message'
 import {
   readOtdEvidenceChainRecords,
   type OtdEvidenceChainItem,
@@ -85,6 +101,8 @@ const search = ref('')
 const typeFilter = ref('')
 const selected = ref(new Set<string>())
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
+const loadError = ref('')
+const printError = ref('')
 const traceLabels = [
   {
     type: '工单标签',
@@ -129,6 +147,10 @@ function toggleSelect(id: string) {
   selected.value = s
 }
 
+function labelCardAriaLabel(item: InventoryItem) {
+  return `选择打印标签：${item.materialCode} ${item.materialName}`
+}
+
 function renderQr(canvas: HTMLCanvasElement | null, code: string, _name: string) {
   if (!canvas) return
   QRCode.toCanvas(canvas, code, { width: 120, margin: 1, color: { dark: '#000', light: '#fff' } }).catch(() => {})
@@ -156,11 +178,15 @@ function isReleasedLabelStatus(code: string) {
 }
 
 function handlePrint() {
-  const printWindow = window.open('', '_blank')
-  if (!printWindow) return
-
   const selectedItems = items.value.filter(i => selected.value.has(i.id))
   if (!selectedItems.length) return
+
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    printError.value = '标签打印窗口打开失败：请允许浏览器弹窗后重试'
+    return
+  }
+  printError.value = ''
 
   printWindow.document.write('<html><head><title>标签打印</title>')
   printWindow.document.write('<style>')
@@ -183,13 +209,19 @@ function handlePrint() {
     printWindow.document.write('</div></body></html>')
     printWindow.document.close()
     printWindow.print()
+  }).catch((error: unknown) => {
+    printError.value = `标签二维码生成失败：${errorMessage(error, '请稍后重试')}`
   })
 }
 
-onMounted(async () => {
+async function loadInventoryList() {
   otdEvidenceRecords.value = readOtdEvidenceChainRecords()
-  try { items.value = await getInventoryList() }
-  catch {
+  try {
+    items.value = await getInventoryList()
+    loadError.value = ''
+  }
+  catch (e: unknown) {
+    loadError.value = `标签列表加载失败：${errorMessage(e, '请稍后重试')}`
     items.value = [
       { id: 'm1', materialCode: 'M-AL-6061', materialName: '铝合金 6061', materialType: 'RawMaterial', unit: '件', availableQuantity: 45, reservedQuantity: 30, realQuantity: 15, safetyStock: 64, storageLocation: '缺料预警 / 待采购收货', expiryDate: null, createdAt: '2026-01-01T00:00:00' },
       { id: 'm2', materialCode: 'WO-RUSH-9001', materialName: '急单阀体组件流转卡', materialType: 'Finished', unit: '单', availableQuantity: 1, reservedQuantity: 0, realQuantity: 1, safetyStock: 1, storageLocation: '生产一线', expiryDate: null, createdAt: '2026-01-01T00:00:00' },
@@ -197,6 +229,10 @@ onMounted(async () => {
       { id: 'm4', materialCode: 'FG-PRODUCT-A', materialName: '成品A', materialType: 'Finished', unit: 'pcs', availableQuantity: 80, reservedQuantity: 5, realQuantity: 75, safetyStock: 20, storageLocation: 'C-01', expiryDate: null, createdAt: '2026-01-01T00:00:00' },
     ]
   }
+}
+
+onMounted(async () => {
+  await loadInventoryList()
 })
 </script>
 
@@ -212,6 +248,9 @@ onMounted(async () => {
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
 .search-input { width: 200px; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
 .filter-select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
+.print-error { margin-bottom: 12px; padding: 8px 10px; border: 1px solid #ffa39e; border-radius: 4px; background: #fff1f0; color: #a8071a; font-size: 12px; }
+.print-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.btn-retry { padding: 4px 10px; font-size: 12px; background: #fff; color: #a8071a; border-color: #ffa39e; }
 .trace-batch { background: #fff; border: 1px solid #e6edf5; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
 .trace-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .eyebrow { display: block; font-size: 11px; color: #1677ff; font-weight: 700; margin-bottom: 3px; }

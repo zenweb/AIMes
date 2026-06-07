@@ -41,7 +41,7 @@ public class KnowledgeAppService : IKnowledgeAppService
         var embedding = await _llmGateway.GenerateEmbeddingAsync(request.Question, ct);
 
         // 2. 向量检索相关文档
-        var relevantChunks = await _vectorStore.SearchAsync(KnowledgeCollectionName, embedding, request.TopK);
+        var relevantChunks = await _vectorStore.SearchAsync(KnowledgeCollectionName, embedding, request.TopK, ct);
 
         // 3. 构建上下文
         var context = string.Join("\n\n", relevantChunks.Select(c => c.Content));
@@ -102,6 +102,17 @@ public class KnowledgeAppService : IKnowledgeAppService
 
         // 2. 分块处理
         var chunks = SplitIntoChunks(content, fileName);
+        if (chunks.Count == 0)
+        {
+            return new DocumentUploadResponse
+            {
+                DocumentId = Guid.NewGuid().ToString(),
+                FileName = fileName,
+                ChunkCount = 0,
+                UploadedAt = DateTime.UtcNow,
+                Status = "Skipped"
+            };
+        }
 
         // 3. 生成向量嵌入
         var chunkEntities = new List<DocumentChunk>();
@@ -123,7 +134,7 @@ public class KnowledgeAppService : IKnowledgeAppService
         }
 
         // 4. 存储到向量数据库
-        await _vectorStore.UpsertAsync(KnowledgeCollectionName, chunkEntities);
+        await _vectorStore.UpsertAsync(KnowledgeCollectionName, chunkEntities, ct);
 
         return new DocumentUploadResponse
         {
@@ -176,6 +187,11 @@ public class KnowledgeAppService : IKnowledgeAppService
         const int overlap = 200;
 
         var chunks = new List<string>();
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return chunks;
+        }
+
         var position = 0;
 
         while (position < content.Length)
@@ -196,7 +212,16 @@ public class KnowledgeAppService : IKnowledgeAppService
                 }
             }
 
-            chunks.Add(content.Substring(position, end - position).Trim());
+            var chunk = content.Substring(position, end - position).Trim();
+            if (!string.IsNullOrWhiteSpace(chunk))
+            {
+                chunks.Add(chunk);
+            }
+            if (end >= content.Length)
+            {
+                break;
+            }
+
             position = end - overlap;
 
             if (position < 0) position = 0;

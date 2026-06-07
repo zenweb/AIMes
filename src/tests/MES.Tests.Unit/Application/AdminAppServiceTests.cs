@@ -25,6 +25,16 @@ public class AdminAppServiceTests
 
         _userRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => users.ToList());
+        _userRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, CancellationToken _) => users.FirstOrDefault(u => u.Id == id));
+        _userRepoMock.Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int page, int pageSize, CancellationToken _) => users
+                .OrderBy(u => u.Username)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList());
+        _userRepoMock.Setup(r => r.CountAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => users.Count);
         _userRepoMock.Setup(r => r.CreateAsync(It.IsAny<SystemUser>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SystemUser u, CancellationToken _) =>
             {
@@ -77,6 +87,36 @@ public class AdminAppServiceTests
     }
 
     [Fact]
+    public async Task GetAllUsersAsync_ShouldUseRepositoryPaging()
+    {
+        var ct = new CancellationTokenSource().Token;
+
+        var result = await _sut.GetAllUsersAsync(2, 1, ct);
+
+        result.Items.Should().ContainSingle(u => u.Username == "operator1");
+        result.TotalCount.Should().Be(2);
+        result.Page.Should().Be(2);
+        result.PageSize.Should().Be(1);
+        _userRepoMock.Verify(r => r.GetPagedAsync(2, 1, ct), Times.Once);
+        _userRepoMock.Verify(r => r.CountAsync(ct), Times.Once);
+        _userRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(1, 0)]
+    public async Task GetAllUsersAsync_WithInvalidPaging_ShouldRejectBeforeRepository(int page, int pageSize)
+    {
+        var act = () => _sut.GetAllUsersAsync(page, pageSize);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        _userRepoMock.Verify(
+            r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _userRepoMock.Verify(r => r.CountAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task CreateUserAsync_ShouldReturnCreatedUser()
     {
         var result = await _sut.CreateUserAsync(new CreateUserRequest
@@ -111,6 +151,8 @@ public class AdminAppServiceTests
 
         result.DisplayName.Should().Be("修改后名字");
         result.Role.Should().Be("Operator");
+        _userRepoMock.Verify(r => r.GetByIdAsync(created.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _userRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -129,6 +171,8 @@ public class AdminAppServiceTests
         });
 
         result.IsActive.Should().BeFalse();
+        _userRepoMock.Verify(r => r.GetByIdAsync(created.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _userRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -138,6 +182,8 @@ public class AdminAppServiceTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*不存在*");
+        _userRepoMock.Verify(r => r.GetByIdAsync("non-existent", It.IsAny<CancellationToken>()), Times.Once);
+        _userRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

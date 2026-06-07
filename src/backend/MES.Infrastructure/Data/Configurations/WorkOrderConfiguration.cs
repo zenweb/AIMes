@@ -34,5 +34,7 @@ public class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         entity.HasIndex(e => e.Status);
         entity.HasIndex(e => e.WorkshopId);
         entity.HasIndex(e => e.PlannedStartDate);
+        entity.HasIndex(e => new { e.Status, e.WorkshopId, e.ProductCode, e.PlannedStartDate, e.PlannedEndDate });
+        entity.HasIndex(e => new { e.WorkshopId, e.Priority, e.PlannedStartDate });
     }
 }

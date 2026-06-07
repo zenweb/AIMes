@@ -23,6 +23,138 @@ namespace MES.Infrastructure.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MES.Domain.Entities.Admin.NotificationConfig", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enabled");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("label");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("notification_configs", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = "nc-001",
+                            Category = "equipment",
+                            Description = "设备运行/故障/离线状态变更通知",
+                            Enabled = true,
+                            Label = "设备状态"
+                        },
+                        new
+                        {
+                            Id = "nc-002",
+                            Category = "quality",
+                            Description = "质量检验不合格/SPC 超限预警",
+                            Enabled = true,
+                            Label = "质量预警"
+                        },
+                        new
+                        {
+                            Id = "nc-003",
+                            Category = "production",
+                            Description = "工单进度更新通知",
+                            Enabled = true,
+                            Label = "生产进度"
+                        },
+                        new
+                        {
+                            Id = "nc-004",
+                            Category = "anomaly",
+                            Description = "生产异常/设备异常告警",
+                            Enabled = true,
+                            Label = "异常告警"
+                        },
+                        new
+                        {
+                            Id = "nc-005",
+                            Category = "inventory",
+                            Description = "物料入库/出库/调拨/调整通知",
+                            Enabled = true,
+                            Label = "库存变更"
+                        },
+                        new
+                        {
+                            Id = "nc-006",
+                            Category = "purchase",
+                            Description = "采购单提交/确认/收货/取消通知",
+                            Enabled = true,
+                            Label = "采购状态"
+                        });
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Admin.RefreshToken", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("token");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("username");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("Username");
+
+                    b.ToTable("refresh_tokens", (string)null);
+                });
+
             modelBuilder.Entity("MES.Domain.Entities.Admin.SystemConfig", b =>
                 {
                     b.Property<string>("Id")
@@ -124,6 +256,16 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_login_at");
 
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean")
+                        .HasColumnName("must_change_password");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("password_hash");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -142,26 +284,370 @@ namespace MES.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("system_users", (string)null);
+                });
 
-                    b.HasData(
-                        new
-                        {
-                            Id = "su-001",
-                            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            DisplayName = "管理员",
-                            IsActive = true,
-                            Role = "Admin",
-                            Username = "admin"
-                        },
-                        new
-                        {
-                            Id = "su-002",
-                            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            DisplayName = "操作员1",
-                            IsActive = true,
-                            Role = "Operator",
-                            Username = "operator1"
-                        });
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentActionResult", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("action_type");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("actor");
+
+                    b.Property<string>("AgentDecisionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("agent_decision_id");
+
+                    b.Property<string>("AuditLogId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("audit_log_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("InitiatedBy")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("initiated_by");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ResultPayloadJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("result_payload_json");
+
+                    b.Property<string>("ResultStatus")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("result_status");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("role");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionType");
+
+                    b.HasIndex("AgentDecisionId");
+
+                    b.HasIndex("ResultStatus");
+
+                    b.ToTable("agent_action_results", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentDecision", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AdoptedScenarioId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("adopted_scenario_id");
+
+                    b.Property<string>("AdoptionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("adoption_reason");
+
+                    b.Property<string>("AgentName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("agent_name");
+
+                    b.Property<string>("AgentVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("agent_version");
+
+                    b.Property<string>("BoundedContext")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("bounded_context");
+
+                    b.Property<string>("BusinessKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("business_key");
+
+                    b.Property<string>("ContextHash")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("context_hash");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DecisionType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("decision_type");
+
+                    b.Property<string>("InputSummary")
+                        .HasColumnType("text")
+                        .HasColumnName("input_summary");
+
+                    b.Property<string>("OutputSummary")
+                        .HasColumnType("text")
+                        .HasColumnName("output_summary");
+
+                    b.Property<string>("PromptHash")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("prompt_hash");
+
+                    b.Property<string>("RecommendedScenarioId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("recommended_scenario_id");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<int>("ScenarioCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("scenario_count");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("trace_id");
+
+                    b.Property<string>("TriggerEventId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("trigger_event_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoundedContext");
+
+                    b.HasIndex("BusinessKey");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("agent_decisions", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentDecisionScenario", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentDecisionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("agent_decision_id");
+
+                    b.Property<string>("CapacityStrategy")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("capacity_strategy");
+
+                    b.Property<double>("ChangeoverProjection")
+                        .HasColumnType("double precision")
+                        .HasColumnName("changeover_projection");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Explanation")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("explanation");
+
+                    b.Property<string>("Objective")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("objective");
+
+                    b.Property<double>("OtdProjection")
+                        .HasColumnType("double precision")
+                        .HasColumnName("otd_projection");
+
+                    b.Property<string>("PriorityRule")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("priority_rule");
+
+                    b.Property<string>("SacrificedObjectives")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("sacrificed_objectives");
+
+                    b.Property<string>("StrategyName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("strategy_name");
+
+                    b.Property<string>("TasksJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tasks_json");
+
+                    b.Property<double>("UtilizationProjection")
+                        .HasColumnType("double precision")
+                        .HasColumnName("utilization_projection");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentDecisionId");
+
+                    b.HasIndex("StrategyName");
+
+                    b.ToTable("agent_decision_scenarios", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentEvidenceLink", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentDecisionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("agent_decision_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EvidenceKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("evidence_key");
+
+                    b.Property<string>("EvidenceSummary")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("evidence_summary");
+
+                    b.Property<string>("EvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("evidence_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentDecisionId");
+
+                    b.HasIndex("EvidenceType", "EvidenceKey");
+
+                    b.ToTable("agent_evidence_links", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentTriggerEvent", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BusinessKeyType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("business_key_type");
+
+                    b.Property<string>("BusinessKeyValue")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("business_key_value");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("event_type");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("payload_json");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("SourceModule")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("source_module");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("EventType");
+
+                    b.HasIndex("BusinessKeyType", "BusinessKeyValue");
+
+                    b.ToTable("agent_trigger_events", (string)null);
                 });
 
             modelBuilder.Entity("MES.Domain.Entities.AiDecisionTraceEntity", b =>
@@ -181,6 +667,16 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("agent_version");
+
+                    b.Property<string>("BusinessKeyType")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("business_key_type");
+
+                    b.Property<string>("BusinessKeyValue")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("business_key_value");
 
                     b.Property<decimal?>("Confidence")
                         .HasColumnType("decimal(3,2)")
@@ -208,6 +704,11 @@ namespace MES.Infrastructure.Data.Migrations
                     b.Property<int>("LatencyMs")
                         .HasColumnType("integer")
                         .HasColumnName("latency_ms");
+
+                    b.Property<string>("LinkedAgentDecisionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("linked_agent_decision_id");
 
                     b.Property<string>("ModelName")
                         .IsRequired()
@@ -258,6 +759,10 @@ namespace MES.Infrastructure.Data.Migrations
                     b.HasIndex("AgentName");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("LinkedAgentDecisionId");
+
+                    b.HasIndex("BusinessKeyType", "BusinessKeyValue");
 
                     b.ToTable("ai_decision_traces", (string)null);
                 });
@@ -329,10 +834,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("title");
 
-                    b.Property<long>("Version")
+                    b.Property<uint>("Version")
                         .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("version");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -351,9 +857,25 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("action");
 
+                    b.Property<string>("BusinessKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("business_key");
+
+                    b.Property<string>("ContextHash")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("context_hash");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<string>("InitiatedBy")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("initiated_by");
 
                     b.Property<string>("IpAddress")
                         .HasMaxLength(100)
@@ -368,6 +890,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("old_values");
 
+                    b.Property<string>("PromptHash")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("prompt_hash");
+
                     b.Property<string>("Resource")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -378,6 +905,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("resource_id");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("trace_id");
 
                     b.Property<string>("UserAgent")
                         .HasMaxLength(500)
@@ -392,11 +924,15 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BusinessKey");
+
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Resource");
 
                     b.HasIndex("ResourceId");
+
+                    b.HasIndex("TraceId");
 
                     b.HasIndex("UserId");
 
@@ -641,6 +1177,12 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("workshop_name");
 
+                    b.Property<uint>("version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EquipmentCode")
@@ -858,6 +1400,8 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("MaterialCode");
 
+                    b.HasIndex("MaterialCode", "CreatedAt");
+
                     b.HasIndex("TransactionType");
 
                     b.ToTable("stock_transactions", (string)null);
@@ -991,6 +1535,12 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<uint>("version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MaterialCode")
@@ -1010,7 +1560,8 @@ namespace MES.Infrastructure.Data.Migrations
                             ReservedQuantity = 0,
                             SafetyStock = 100,
                             StorageLocation = "A-01-01",
-                            Unit = "KG"
+                            Unit = "KG",
+                            version = 0u
                         });
                 });
 
@@ -1090,10 +1641,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
-                    b.Property<long>("Version")
+                    b.Property<uint>("Version")
                         .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("version");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -1146,10 +1698,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("reported_quantity");
 
-                    b.Property<long>("Version")
+                    b.Property<uint>("Version")
                         .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("version");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -1245,6 +1798,12 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("workshop_id");
 
+                    b.Property<uint>("version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrderNumber")
@@ -1254,7 +1813,11 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("Status", "WorkshopId", "ProductCode", "PlannedStartDate", "PlannedEndDate");
+
                     b.HasIndex("WorkshopId");
+
+                    b.HasIndex("WorkshopId", "Priority", "PlannedStartDate");
 
                     b.ToTable("work_orders", (string)null);
                 });
@@ -1318,10 +1881,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
-                    b.Property<long>("Version")
+                    b.Property<uint>("Version")
                         .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("version");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -1453,7 +2017,11 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("ProductCode");
 
+                    b.HasIndex("ProductCode", "InspectedAt");
+
                     b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("WorkOrderId", "InspectedAt");
 
                     b.ToTable("quality_inspections", (string)null);
                 });
@@ -1503,6 +2071,99 @@ namespace MES.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("process_routes", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Scheduling.ScheduleAdoptionFeedback", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentDecisionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("agent_decision_id");
+
+                    b.Property<string>("AgentVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("agent_version");
+
+                    b.Property<string>("AiTraceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ai_trace_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("InitiatedByAgent")
+                        .HasColumnType("boolean")
+                        .HasColumnName("initiated_by_agent");
+
+                    b.Property<string>("ModifiedAssignmentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modified_assignments_json");
+
+                    b.Property<string>("MovedOrderIdsJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("moved_order_ids_json");
+
+                    b.Property<string>("OperatorUser")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operator_user");
+
+                    b.Property<string>("OptimizationObjective")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("optimization_objective");
+
+                    b.Property<string>("OriginalAssignmentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("original_assignments_json");
+
+                    b.Property<string>("ReasonCategory")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("reason_category");
+
+                    b.Property<string>("ReasonDetail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason_detail");
+
+                    b.Property<string>("SchedulePlanId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("schedule_plan_id");
+
+                    b.Property<string>("WorkshopId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("workshop_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentDecisionId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("OperatorUser");
+
+                    b.HasIndex("SchedulePlanId");
+
+                    b.HasIndex("WorkshopId");
+
+                    b.ToTable("schedule_adoption_feedbacks", (string)null);
                 });
 
             modelBuilder.Entity("MES.Domain.Entities.Scheduling.ScheduleItem", b =>
@@ -1597,13 +2258,33 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("plan_start_date");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<uint>("version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.ToTable("schedule_plans", (string)null);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentDecisionScenario", b =>
+                {
+                    b.HasOne("MES.Domain.Entities.Agent.AgentDecision", "AgentDecision")
+                        .WithMany("Scenarios")
+                        .HasForeignKey("AgentDecisionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AgentDecision");
                 });
 
             modelBuilder.Entity("MES.Domain.Entities.Anomalies.ProductionAnomaly", b =>
@@ -2327,6 +3008,11 @@ namespace MES.Infrastructure.Data.Migrations
                         .WithMany("Items")
                         .HasForeignKey("SchedulePlanId")
                         .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("MES.Domain.Entities.Agent.AgentDecision", b =>
+                {
+                    b.Navigation("Scenarios");
                 });
 
             modelBuilder.Entity("MES.Domain.Entities.Purchase.PurchaseOrder", b =>

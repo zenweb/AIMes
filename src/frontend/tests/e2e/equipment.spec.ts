@@ -6,7 +6,7 @@ test.describe('Equipment 设备管理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('equipment')
     await page.waitForSelector('.equipment-board', { timeout: 20000 })
@@ -28,7 +28,7 @@ test.describe('Equipment 设备管理', () => {
   })
 
   test('设备列表区域', async ({ page }) => {
-    await expect(page.getByText('设备列表')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '设备列表' })).toBeVisible()
     await expect(page.locator('.eq-grid')).toBeVisible()
   })
 
@@ -86,6 +86,36 @@ test.describe('Equipment 设备管理', () => {
     await expect(detail.getByText(/换设备、延后、加班和拆单建议是否被调度员复核/)).toBeVisible()
   })
 
+  test('设备故障 OTD 证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithEquipmentOtdEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium equipment OTD evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.equipment-impact-panel')
+    await panel.getByRole('button', { name: '标记故障并同步排产' }).click()
+
+    const alert = panel.locator('.sync-note[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('设备故障同步失败')
+    await expect(alert).toContainText('排产/OTD 证据未完整归档')
+    await expect(alert).toContainText('chromium equipment OTD evidence storage unavailable')
+    await expect(panel.getByText('设备故障已同步 AI 排产')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'equipment-downtime-CNC-001',
+        traceId: 'TRACE-EQ-DOWNTIME-CNC-001',
+      }),
+    ]))
+  })
+
   test('生成客户真实设备故障样例并回写排产事件', async ({ page }) => {
     const panel = page.locator('.equipment-impact-panel')
     const customerPanel = panel.locator('.customer-fault-panel')
@@ -110,6 +140,82 @@ test.describe('Equipment 设备管理', () => {
     const customerFaultEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '客户真实设备故障样例已映射' })
     await expect(customerFaultEvidence.getByText('设备实证')).toBeVisible()
     await expect(customerFaultEvidence.getByText('IMP-POC-EQ-FAULT-20260520-001')).toBeVisible()
+  })
+
+  test('客户设备故障样例 OTD 证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      let otdWriteCount = 0
+      Storage.prototype.setItem = function setItemWithCustomerFaultOtdEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          otdWriteCount += 1
+          if (otdWriteCount === 2) {
+            throw new Error('chromium customer equipment fault OTD evidence storage unavailable')
+          }
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.equipment-impact-panel')
+    const customerPanel = panel.locator('.customer-fault-panel')
+    await customerPanel.getByRole('button', { name: '生成客户设备故障样例' }).click()
+
+    const alert = panel.locator('.sync-note[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('客户设备故障样例同步失败')
+    await expect(alert).toContainText('POC/OTD 证据未完整归档')
+    await expect(alert).toContainText('chromium customer equipment fault OTD evidence storage unavailable')
+    await expect(panel.getByText('客户设备故障样例已接入')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'customer-equipment-fault-IMP-POC-EQ-FAULT-20260520-001',
+        traceId: 'IMP-POC-EQ-FAULT-20260520-001',
+      }),
+    ]))
+  })
+
+  test('异常分流维护复核单 OTD 证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.goto('anomaly')
+    await page.waitForSelector('.event-center', { timeout: 30000 })
+    const anomalyPanel = page.locator('.event-center')
+    const equipmentLane = anomalyPanel.locator('.event-lane').filter({ hasText: 'CNC-001 主轴温升异常' })
+    await equipmentLane.getByRole('button', { name: '确认分流' }).click()
+    await expect(anomalyPanel.locator('.dispatch-trace').getByText('设备分流已确认')).toBeVisible()
+
+    await page.goto('equipment', { waitUntil: 'commit' })
+    await page.waitForSelector('.equipment-impact-panel', { timeout: 30000 })
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithDispatchMaintenanceOtdEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain' && value.includes('equipment-maintenance-equipment-cnc001')) {
+          throw new Error('chromium dispatch maintenance OTD evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.equipment-impact-panel')
+    const maintenancePanel = panel.locator('.dispatch-maintenance-panel')
+    await expect(maintenancePanel.getByText('CNC-001 主轴温升异常已分流到设备维护与排产复核')).toBeVisible()
+    await maintenancePanel.getByRole('button', { name: '生成维护复核单' }).click()
+
+    const alert = panel.locator('.sync-note[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('异常分流维护单同步失败')
+    await expect(alert).toContainText('维护/OTD 证据未完整归档')
+    await expect(alert).toContainText('chromium dispatch maintenance OTD evidence storage unavailable')
+    await expect(panel.getByText('异常分流维护单已同步')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'equipment-maintenance-equipment-cnc001',
+        traceId: 'TRACE-ANOMALY-DISPATCH-EQUIPMENT-CNC001-20260521',
+      }),
+    ]))
   })
 
   test('设备卡片渲染', async ({ page }) => {
@@ -178,22 +284,17 @@ test.describe('Equipment 设备管理', () => {
 
   test('点击设备打开详情面板', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
-    const count = await eqCards.count()
 
-    if (count > 0) {
-      await eqCards.first().click()
-      await expect(page.locator('.detail-panel')).toBeVisible()
-      await expect(page.locator('.detail-header h4')).toBeVisible()
-    } else {
-      test.skip()
-    }
+    await expect(eqCards.first()).toBeVisible()
+    await eqCards.first().click()
+    await expect(page.locator('.detail-panel')).toBeVisible()
+    await expect(page.locator('.detail-header h4')).toBeVisible()
   })
 
   test('详情面板 — 概览 Tab', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
-    const count = await eqCards.count()
-    if (count === 0) { test.skip(); return }
 
+    await expect(eqCards.first()).toBeVisible()
     await eqCards.first().click()
     await page.waitForSelector('.detail-panel', { timeout: 5000 })
 
@@ -205,9 +306,8 @@ test.describe('Equipment 设备管理', () => {
 
   test('详情面板 — Tab 切换', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
-    const count = await eqCards.count()
-    if (count === 0) { test.skip(); return }
 
+    await expect(eqCards.first()).toBeVisible()
     await eqCards.first().click()
     await page.waitForSelector('.detail-panel', { timeout: 5000 })
 
@@ -225,9 +325,8 @@ test.describe('Equipment 设备管理', () => {
 
   test('详情面板 — 故障诊断输入', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
-    const count = await eqCards.count()
-    if (count === 0) { test.skip(); return }
 
+    await expect(eqCards.first()).toBeVisible()
     await eqCards.first().click()
     await page.waitForSelector('.detail-panel', { timeout: 5000 })
 
@@ -245,9 +344,8 @@ test.describe('Equipment 设备管理', () => {
 
   test('关闭详情面板', async ({ page }) => {
     const eqCards = page.locator('.eq-card')
-    const count = await eqCards.count()
-    if (count === 0) { test.skip(); return }
 
+    await expect(eqCards.first()).toBeVisible()
     await eqCards.first().click()
     await page.waitForSelector('.detail-panel', { timeout: 5000 })
 
@@ -257,6 +355,7 @@ test.describe('Equipment 设备管理', () => {
 
   test('空筛选结果显示空状态', async ({ page }) => {
     // 拦截设备列表 API 返回空
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
     await page.route('**/api/v1/equipment*', (route) => {
       route.fulfill({
         status: 200,

@@ -14,10 +14,10 @@ public static class AuditLogEndpoints
 
     private static async Task<IResult> GetAuditLogsAsync(
         string? action,
+        IAuditLogAppService auditLogService,
+        CancellationToken ct,
         int page = 1,
-        int pageSize = 20,
-        IAuditLogAppService auditLogService = default!,
-        CancellationToken ct = default)
+        int pageSize = 20)
     {
         var result = await auditLogService.GetAuditLogsAsync(action, page, pageSize, ct);
         return TypedResults.Ok(result);

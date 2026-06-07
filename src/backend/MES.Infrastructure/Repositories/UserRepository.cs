@@ -14,6 +14,13 @@ public class UserRepository : IUserRepository
         _context = context;
     }
 
+    public async Task<SystemUser?> GetByIdAsync(string id, CancellationToken ct = default)
+    {
+        return await _context.SystemUsers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == id, ct);
+    }
+
     public async Task<SystemUser?> GetByUsernameAsync(string username, CancellationToken ct = default)
     {
         return await _context.SystemUsers
@@ -23,10 +30,21 @@ public class UserRepository : IUserRepository
 
     public async Task<List<SystemUser>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _context.SystemUsers
-            .AsNoTracking()
-            .OrderBy(u => u.Username)
+        return await BuildListQuery()
             .ToListAsync(ct);
+    }
+
+    public async Task<List<SystemUser>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await BuildListQuery()
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.SystemUsers.CountAsync(ct);
     }
 
     public async Task<SystemUser> CreateAsync(SystemUser user, CancellationToken ct = default)
@@ -41,5 +59,13 @@ public class UserRepository : IUserRepository
         _context.SystemUsers.Update(user);
         await _context.SaveChangesAsync(ct);
         return user;
+    }
+
+    private IQueryable<SystemUser> BuildListQuery()
+    {
+        return _context.SystemUsers
+            .AsNoTracking()
+            .OrderBy(u => u.Username)
+            .ThenBy(u => u.Id);
     }
 }

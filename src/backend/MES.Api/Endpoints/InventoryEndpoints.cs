@@ -7,16 +7,18 @@ namespace MES.Api.Endpoints;
 
 public static class InventoryEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("inventory");
+
     public static RouteGroupBuilder MapInventoryEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/dashboard", GetDashboardAsync).WithTags("库存管理");
         group.MapGet("/transactions", GetTransactionsAsync).WithTags("库存管理");
         group.MapGet("/{materialCode}", GetByCodeAsync).WithTags("库存管理");
         group.MapGet("/", GetAllAsync).WithTags("库存管理");
-        group.MapPost("/stock-in", StockInAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/stock-out", StockOutAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/transfer", TransferAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/adjust", AdjustAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPost("/stock-in", StockInAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/stock-out", StockOutAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/transfer", TransferAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/adjust", AdjustAsync).WithTags("库存管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         return group;
     }
 
@@ -42,10 +44,10 @@ public static class InventoryEndpoints
 
     private static async Task<IResult> GetTransactionsAsync(
         string? materialCode,
+        IInventoryAppService inventoryService,
+        CancellationToken ct,
         int page = 1,
-        int pageSize = 20,
-        IInventoryAppService inventoryService = default!,
-        CancellationToken ct = default)
+        int pageSize = 20)
     {
         var result = await inventoryService.GetTransactionsAsync(materialCode, page, pageSize, ct);
         return TypedResults.Ok(result);

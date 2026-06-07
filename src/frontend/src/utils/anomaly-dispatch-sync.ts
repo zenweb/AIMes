@@ -35,9 +35,24 @@ function isRecord(item: Partial<AnomalyDispatchRecord> | null | undefined): item
   return !!item
     && typeof item.id === 'string'
     && typeof item.anomalyId === 'string'
-    && typeof item.type === 'string'
+    && (item.type === 'equipment' || item.type === 'quality' || item.type === 'material')
+    && typeof item.typeLabel === 'string'
     && typeof item.title === 'string'
+    && typeof item.workOrderNumber === 'string'
+    && typeof item.operationCode === 'string'
+    && typeof item.route === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.affectedOrders === 'string'
+    && typeof item.deliveryImpact === 'string'
+    && typeof item.scheduleWindow === 'string'
+    && typeof item.suggestedAction === 'string'
+    && typeof item.auditId === 'string'
     && typeof item.traceId === 'string'
+    && item.status === 'routed'
+    && typeof item.statusLabel === 'string'
+    && typeof item.createdAt === 'string'
+    && typeof item.summary === 'string'
 }
 
 function readRawRecords(): AnomalyDispatchRecord[] {
@@ -46,7 +61,16 @@ function readRawRecords(): AnomalyDispatchRecord[] {
     const raw = window.localStorage.getItem(ANOMALY_DISPATCH_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isRecord) : []
+    if (!Array.isArray(parsed)) return []
+    const records = parsed.filter(isRecord)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(ANOMALY_DISPATCH_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(ANOMALY_DISPATCH_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(ANOMALY_DISPATCH_KEY)
     return []
@@ -57,8 +81,23 @@ export function readAnomalyDispatchRecords(): AnomalyDispatchRecord[] {
   return readRawRecords()
 }
 
+export async function readAnomalyDispatchRecordsBackendFirst(): Promise<AnomalyDispatchRecord[]> {
+  try {
+    const { queryAnomalyDispatchRecords } = await import('../api/riskEvidence')
+    const records = await queryAnomalyDispatchRecords(12)
+    return records.length > 0 ? records : readAnomalyDispatchRecords()
+  } catch {
+    return readAnomalyDispatchRecords()
+  }
+}
+
 export function readAnomalyDispatchRecordByType(type: AnomalyDispatchType): AnomalyDispatchRecord | null {
   return readRawRecords().find(record => record.type === type) ?? null
+}
+
+export async function readAnomalyDispatchRecordByTypeBackendFirst(type: AnomalyDispatchType): Promise<AnomalyDispatchRecord | null> {
+  const records = await readAnomalyDispatchRecordsBackendFirst()
+  return records.find(record => record.type === type) ?? null
 }
 
 export function writeAnomalyDispatchRecord(input: Omit<AnomalyDispatchRecord, 'id' | 'status' | 'createdAt'> & Partial<Pick<AnomalyDispatchRecord, 'id' | 'createdAt'>>) {
@@ -72,6 +111,9 @@ export function writeAnomalyDispatchRecord(input: Omit<AnomalyDispatchRecord, 'i
   }
   const next = [record, ...readRawRecords().filter(item => item.id !== record.id)].slice(0, 12)
   window.localStorage.setItem(ANOMALY_DISPATCH_KEY, JSON.stringify(next))
+  void import('../api/riskEvidence')
+    .then(({ upsertAnomalyDispatchRecord }) => upsertAnomalyDispatchRecord(record))
+    .catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: '异常分流',

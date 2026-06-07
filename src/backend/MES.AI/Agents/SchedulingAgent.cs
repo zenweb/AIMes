@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using MES.AI.Core.Models;
 using MES.AI.Core.Scheduling;
+using MES.AI.Pro.Services;
 using MES.Domain.Entities.Scheduling;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
@@ -64,7 +65,7 @@ public class SchedulingAgent
         SchedulingResult result;
         try
         {
-            prompt = BuildSchedulingPrompt(request, context, ruleResult);
+            prompt = AiPromptBudget.Bound(BuildSchedulingPrompt(request, context, ruleResult));
             result = await _llmGateway.GenerateJsonAsync<SchedulingResult>(prompt, ct);
 
             // Step 4: 再验证 LLM 输出
@@ -234,6 +235,9 @@ public class SchedulingAgent
             ContextHash = ComputeSha256(contextJson),
             InputSummary = $"Workshop={request.WorkshopId}; Orders={request.Orders.Count}; Equipment={request.Equipment.Count}; Objective={request.OptimizationObjective ?? "due_date"}; RuleEngine={ruleResult.Assignments.Count}assignments/{ruleResult.UtilizationRate}%util",
             OutputSummary = $"Assignments={result.Assignments.Count}; Utilization={result.UtilizationRate}; OTD={result.OnTimeDeliveryRate}; Changeover={result.TotalChangeoverMinutes}min; Groups={result.GroupCount}",
+            Confidence = 0.78m,
+            TokensInput = AiTraceFactory.EstimateTokens(prompt),
+            TokensOutput = AiTraceFactory.EstimateTokens(result.OptimizationNotes ?? string.Empty),
             SourceReferences = "SchedulingRuleEngine+SchedulingContextSnapshot+ChangeoverMatrix",
             RelatedBusinessKeys = string.Join(',', request.Orders.Select(o => o.OrderNumber))
         };

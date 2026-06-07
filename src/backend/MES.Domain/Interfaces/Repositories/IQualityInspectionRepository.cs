@@ -13,7 +13,9 @@ public interface IQualityInspectionRepository
 {
     Task<List<QualityInspection>> GetAllAsync(CancellationToken ct = default);
     Task<QualityInspection?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<QualityInspection?> GetForUpdateAsync(string id, CancellationToken ct = default);
     Task<QualityInspection> CreateAsync(QualityInspection inspection, CancellationToken ct = default);
+    Task<QualityInspection> UpdateAsync(QualityInspection inspection, CancellationToken ct = default);
     Task<List<QualityInspection>> GetByWorkOrderAsync(string workOrderId, CancellationToken ct = default);
     Task<List<QualityInspection>> GetByProductAsync(string productCode, CancellationToken ct = default);
     Task<List<QualityInspection>> GetByDateRangeAsync(DateTime startDate, DateTime endDate, CancellationToken ct = default);

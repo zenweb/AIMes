@@ -17,7 +17,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # 仅挂载 seed.sql 用于演示数据；schema 由 API 启动时 EF Migrations 自动应用（MigrateAsync）。
+      # 仅挂载 seed.sql 用于演示数据；Production schema 由部署步骤显式执行 EF Migrations。
       # init.sql 已删除（与 EF Migrations 双轨易漂移，决定 EF Migrations 为唯一事实源）。
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
@@ -68,7 +68,7 @@ services:
     volumes:
       - qdrantdata:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:6333/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:6333/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5

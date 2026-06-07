@@ -1,14 +1,15 @@
 <template>
   <div class="admin-board">
     <h2 class="page-title">系统管理</h2>
+    <div v-if="notification" class="admin-alert" role="alert">{{ notification }}</div>
 
-    <div class="tabs">
-      <button class="tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">用户管理</button>
-      <button class="tab" :class="{ active: tab === 'roles' }" @click="tab = 'roles'">角色权限</button>
-      <button class="tab" :class="{ active: tab === 'configs' }" @click="tab = 'configs'">系统配置</button>
-      <button class="tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'">通知配置</button>
-      <button class="tab" :class="{ active: tab === 'agent' }" @click="tab = 'agent'">Agent 治理</button>
-      <button class="tab" :class="{ active: tab === 'llm' }" @click="tab = 'llm'; loadLlmStatus()">LLM 设置</button>
+    <div class="tabs" role="tablist" aria-label="系统管理分区">
+      <button role="tab" class="tab" :class="{ active: tab === 'users' }" :aria-selected="tab === 'users'" @click="tab = 'users'">用户管理</button>
+      <button role="tab" class="tab" :class="{ active: tab === 'roles' }" :aria-selected="tab === 'roles'" @click="tab = 'roles'">角色权限</button>
+      <button role="tab" class="tab" :class="{ active: tab === 'configs' }" :aria-selected="tab === 'configs'" @click="tab = 'configs'">系统配置</button>
+      <button role="tab" class="tab" :class="{ active: tab === 'notifications' }" :aria-selected="tab === 'notifications'" @click="tab = 'notifications'">通知配置</button>
+      <button role="tab" class="tab" :class="{ active: tab === 'agent' }" :aria-selected="tab === 'agent'" @click="tab = 'agent'">Agent 治理</button>
+      <button role="tab" class="tab" :class="{ active: tab === 'llm' }" :aria-selected="tab === 'llm'" @click="tab = 'llm'; loadLlmStatus()">LLM 设置</button>
     </div>
 
     <!-- 用户管理 -->
@@ -19,7 +20,7 @@
       </div>
       <table class="data-table">
         <thead>
-          <tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>最后登录</th><th>操作</th></tr>
+          <tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>密码</th><th>最后登录</th><th>操作</th></tr>
         </thead>
         <tbody>
           <tr v-for="u in paginatedUsers" :key="u.id">
@@ -27,6 +28,7 @@
             <td>{{ u.displayName }}</td>
             <td><span class="tag" :class="'role-' + u.role.toLowerCase()">{{ roleLabel(u.role) }}</span></td>
             <td><span class="tag" :class="u.isActive ? 'st-active' : 'st-inactive'">{{ u.isActive ? '启用' : '禁用' }}</span></td>
+            <td><span class="tag" :class="u.mustChangePassword ? 'st-warning' : 'st-active'">{{ u.mustChangePassword ? '需改密' : '已轮换' }}</span></td>
             <td class="muted">{{ u.lastLoginAt ? formatTime(u.lastLoginAt) : '-' }}</td>
             <td>
               <button class="btn-sm" @click="editUserTarget = u; editUserForm = { displayName: u.displayName, role: u.role }">编辑</button>
@@ -1376,7 +1378,7 @@
         <h3>新增用户</h3>
         <div class="form-group"><label>用户名</label><input v-model="createForm.username" class="form-input" /></div>
         <div class="form-group"><label>显示名</label><input v-model="createForm.displayName" class="form-input" /></div>
-        <div class="form-group"><label>初始密码</label><input v-model="createForm.password" type="password" class="form-input" placeholder="默认 aimes123" /></div>
+        <div class="form-group"><label>初始密码</label><input v-model="createForm.password" type="password" class="form-input" placeholder="请输入初始密码" /></div>
         <div class="form-group"><label>角色</label>
           <select v-model="createForm.role" class="form-input">
             <option value="Operator">操作员</option>
@@ -1388,7 +1390,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn btn-cancel" @click="showUserCreate = false">取消</button>
-          <button class="btn btn-ok" :disabled="!createForm.username || !createForm.displayName" @click="handleUserCreate">创建</button>
+          <button class="btn btn-ok" :disabled="!createForm.username || !createForm.displayName || !createForm.password" @click="handleUserCreate">创建</button>
         </div>
       </div>
     </div>
@@ -1492,27 +1494,28 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import type { SystemUser, SystemConfig, CreateUserRequest, UpdateUserRequest, UpdateConfigRequest, NotificationConfig } from '../../types/admin'
+import type { SystemUser, SystemConfig, CreateUserRequest, UpdateUserRequest, NotificationConfig } from '../../types/admin'
 import { getUsers, createUser, updateUser, getConfigs, updateConfig, getNotificationConfigs, updateNotificationConfig } from '../../api/admin'
 import { getLlmStatus, getLlmConfig } from '../../api/llm'
 import type { LlmStatus, LlmConfig } from '../../api/llm'
-import { readAssistantActionAudits, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
-import { readAssistantRecoveryPackages, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
-import { readPocEvidenceGovernanceRecords, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
-import { approvalStatusLabel, decideAgentConfigApproval, isApprovalOpen, readAgentConfigApprovals, readQualityExperimentExpansionGatePolicy, type AgentConfigApprovalRecord, type AgentConfigApprovalStatus, type QualityExperimentExpansionGatePolicy } from '../../utils/agent-config-approval-sync'
-import { readPocReviewSignoffRecord, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
-import { readPocRolloutPackageRecord, type PocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
-import { readPocPilotRunRecord, type PocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
-import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
-import { readRiskSlaReviewRecord, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+import { errorMessage } from '../../utils/error-message'
+import { readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
+import { readAssistantRecoveryPackagesBackendFirst, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
+import { readPocEvidenceGovernanceRecordsBackendFirst, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
+import { approvalStatusLabel, decideAgentConfigApproval, isApprovalOpen, readAgentConfigApprovalsBackendFirst, readQualityExperimentExpansionGatePolicy, type AgentConfigApprovalRecord, type AgentConfigApprovalStatus, type QualityExperimentExpansionGatePolicy } from '../../utils/agent-config-approval-sync'
+import { readPocReviewSignoffRecordBackendFirst, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
+import { readPocRolloutPackageRecordBackendFirst, type PocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
+import { readPocPilotRunRecordBackendFirst, type PocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
+import { readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityReworkImpact, type QualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readOutsourcingCommitmentPackages, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem, type OtdEvidenceStatus } from '../../utils/otd-evidence-chain-sync'
-import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readAnomalyDispatchRecordsBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
-  readLaborQualificationBlocks,
-  readLaborReassignments,
+  readLaborQualificationBlocksBackendFirst,
+  readLaborReassignmentsBackendFirst,
   type LaborQualificationBlockRecord,
   type LaborQualificationBlockStatus,
   type LaborReassignmentRecord,
@@ -1526,7 +1529,7 @@ import {
 } from '../../utils/engineering-change-sync'
 import {
   readKnowledgeGovernancePendingDocuments,
-  readKnowledgeGovernanceReviews,
+  readKnowledgeGovernanceReviewsBackendFirst,
   type KnowledgeGovernanceReviewRecord,
   type KnowledgeGovernanceSourceDocument,
   type KnowledgeIndexStatus,
@@ -1542,10 +1545,10 @@ import {
   closeQualityKnowledgeGrayReviewIssueWithNegativeSample,
   decideQualityKnowledgeGrayRelease,
   isQualityKnowledgeGrayRepublishEvidence,
-  readQualityKnowledgeGrayReleaseDecisionRecords,
-  readQualityKnowledgeRecommendationFeedbackRecords,
-  readQualityKnowledgeReviewQueueRecords,
-  readQualityKnowledgeRetrainingVersionRecords,
+  readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
+  readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
+  readQualityKnowledgeReviewQueueRecordsBackendFirst,
+  readQualityKnowledgeRetrainingVersionRecordsBackendFirst,
   reopenQualityKnowledgeGrayPrevalidationWithScopeAdjustment,
   type QualityKnowledgeGrayReleaseDecisionRecord,
   type QualityKnowledgeGrayReleaseDecisionType,
@@ -1563,6 +1566,7 @@ import {
 const router = useRouter()
 const tab = ref('users')
 const users = ref<SystemUser[]>([])
+const notification = ref('')
 const currentPage = ref(1)
 const pageSize = ref(15)
 const configs = ref<SystemConfig[]>([])
@@ -1932,9 +1936,36 @@ const configGroups = computed(() => {
 function roleLabel(r: string) { return { Admin: '管理员', Engineer: '工程师', Lead: '班组长', Operator: '操作员', QC: '质检员' }[r] || r }
 function groupLabel(g: string) { return { general: '通用', production: '生产', quality: '质量', inventory: '库存', ai: 'AI 设置' }[g] || g }
 
+function demoSystemUsers(): SystemUser[] {
+  return [
+    { id: 'u1', username: 'admin', displayName: '管理员', role: 'Admin', isActive: true, mustChangePassword: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: '2026-05-12T08:00:00' },
+    { id: 'u2', username: 'operator1', displayName: '张三', role: 'Operator', isActive: true, mustChangePassword: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: '2026-05-12T09:00:00' },
+    { id: 'u3', username: 'engineer1', displayName: '赵六', role: 'Engineer', isActive: true, mustChangePassword: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: null },
+  ]
+}
+
+async function refreshUsers(fallbackToDemo = false) {
+  try {
+    users.value = (await getUsers()).items
+    return true
+  } catch (error: unknown) {
+    if (fallbackToDemo) {
+      users.value = demoSystemUsers()
+      return false
+    }
+    notification.value = `用户列表刷新失败，当前列表可能不是后端最新状态：${errorMessage(error, '请稍后重试')}`
+    return false
+  }
+}
+
 async function handleUserCreate() {
   try { await createUser(createForm.value) }
-  catch { users.value.push({ id: 'new', ...createForm.value, isActive: true, createdAt: new Date().toISOString(), lastLoginAt: null }) }
+  catch (error: unknown) {
+    notification.value = `用户创建失败，未写入系统账号：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  const refreshed = await refreshUsers()
+  if (refreshed) notification.value = ''
   showUserCreate.value = false
   createForm.value = { username: '', displayName: '', password: '', role: 'Operator' }
 }
@@ -1942,24 +1973,42 @@ async function handleUserCreate() {
 async function handleUserUpdate() {
   if (!editUserTarget.value) return
   try { await updateUser(editUserTarget.value.id, editUserForm.value) }
-  catch { Object.assign(editUserTarget.value, editUserForm.value) }
+  catch (error: unknown) {
+    notification.value = `用户资料保存失败，未写入系统账号：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  const refreshed = await refreshUsers()
+  if (refreshed) notification.value = ''
   editUserTarget.value = null
 }
 
 async function toggleUserActive(u: SystemUser) {
   try { await updateUser(u.id, { isActive: !u.isActive }) }
-  catch { u.isActive = !u.isActive }
+  catch (error: unknown) {
+    notification.value = `用户启停失败，未写入系统账号：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  const refreshed = await refreshUsers()
+  if (refreshed) notification.value = ''
 }
 
 async function handleConfigSave(c: SystemConfig) {
   try { await updateConfig(c.id, { configValue: c.configValue, updatedBy: 'admin' }) }
-  catch { /* ok */ }
+  catch (error: unknown) {
+    notification.value = `系统配置保存失败，未写入系统配置：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  notification.value = ''
 }
 
 async function handleNotifToggle(nc: NotificationConfig) {
   const enabled = !nc.enabled
   try { await updateNotificationConfig(nc.id, { enabled }) }
-  catch { /* ok */ }
+  catch (error: unknown) {
+    notification.value = `通知配置保存失败，未写入系统配置：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  notification.value = ''
   nc.enabled = enabled
 }
 
@@ -2050,6 +2099,7 @@ function assistantActionTypeLabel(type: AssistantActionAuditRecord['type']) {
     engineering_constraint_package: '工程约束包',
     customer_commitment_package: '客户承诺包',
     bom_kitting_package: 'BOM齐套包',
+    equipment_downtime_package: '设备停机包',
   }[type]
 }
 
@@ -2089,9 +2139,19 @@ function laborQualificationStatusLabel(status: LaborQualificationBlockStatus) {
   }[status]
 }
 
-function handleApprovalDecision(id: string, decision: Extract<AgentConfigApprovalStatus, 'approved' | 'rejected'>) {
-  decideAgentConfigApproval(id, decision, 'admin')
-  agentApprovals.value = readAgentConfigApprovals()
+async function handleApprovalDecision(id: string, decision: Extract<AgentConfigApprovalStatus, 'approved' | 'rejected'>) {
+  try {
+    decideAgentConfigApproval(id, decision, 'admin')
+  } catch (error: unknown) {
+    notification.value = `关键配置审批失败，审批结果未写入 Agent 治理：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  try {
+    agentApprovals.value = await readAgentConfigApprovalsBackendFirst()
+    notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `关键配置审批已写入，但审批列表刷新失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function grayReleaseDecisionFor(record: QualityKnowledgeGrayReleaseMonitorRecord) {
@@ -2107,68 +2167,120 @@ function grayReleaseDecisionFor(record: QualityKnowledgeGrayReleaseMonitorRecord
   )
 }
 
-function handleGrayReleaseDecision(
+async function handleGrayReleaseDecision(
   record: QualityKnowledgeGrayReleaseMonitorRecord,
   decision: QualityKnowledgeGrayReleaseDecisionType
 ) {
-  decideQualityKnowledgeGrayRelease(record, decision, new Date().toISOString())
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  try {
+    decideQualityKnowledgeGrayRelease(record, decision, new Date().toISOString())
+  } catch (error: unknown) {
+    notification.value = `质量推荐灰度决策失败，决策结果未写入 Agent 治理：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  try {
+    qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+    notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `质量推荐灰度决策已写入，但灰度决策列表刷新失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function approveGrayReleaseExpansion(record: QualityKnowledgeGrayReleaseDecisionRecord) {
-  approveQualityKnowledgeGrayReleaseExpansion(record, new Date().toISOString())
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+async function approveGrayReleaseExpansion(record: QualityKnowledgeGrayReleaseDecisionRecord) {
+  try {
+    approveQualityKnowledgeGrayReleaseExpansion(record, new Date().toISOString())
+  } catch (error: unknown) {
+    notification.value = `质量推荐灰度扩大确认失败，确认结果未写入 Agent 治理：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  try {
+    qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+    notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `质量推荐灰度扩大确认已写入，但灰度决策列表刷新失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function closeGrayReviewIssueWithNegativeSample(record: QualityKnowledgeGrayReleaseDecisionRecord) {
-  closeQualityKnowledgeGrayReviewIssueWithNegativeSample(record, new Date().toISOString())
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+async function closeGrayReviewIssueWithNegativeSample(record: QualityKnowledgeGrayReleaseDecisionRecord) {
+  try {
+    closeQualityKnowledgeGrayReviewIssueWithNegativeSample(record, new Date().toISOString())
+  } catch (error: unknown) {
+    notification.value = `质量灰度复核问题单关闭失败，关闭结果未写入 Agent 治理：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  try {
+    qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+    notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `质量灰度复核问题单已关闭，但灰度决策列表刷新失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function reopenGrayPrevalidationWithScopeAdjustment(record: QualityKnowledgeGrayReleaseDecisionRecord) {
-  reopenQualityKnowledgeGrayPrevalidationWithScopeAdjustment(record, new Date().toISOString())
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+async function reopenGrayPrevalidationWithScopeAdjustment(record: QualityKnowledgeGrayReleaseDecisionRecord) {
+  try {
+    reopenQualityKnowledgeGrayPrevalidationWithScopeAdjustment(record, new Date().toISOString())
+  } catch (error: unknown) {
+    notification.value = `质量灰度前置校验重开失败，重开结果未写入 Agent 治理：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  try {
+    qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+    notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `质量灰度前置校验已重开，但灰度决策列表刷新失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function formatTime(t: string) { return t?.slice(0, 16).replace('T', ' ') || '' }
 
-onMounted(async () => {
-  pocEvidenceRecords.value = readPocEvidenceGovernanceRecords()
-  agentApprovals.value = readAgentConfigApprovals()
-  assistantActionAudits.value = readAssistantActionAudits()
-  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
-  pocReviewSignoff.value = readPocReviewSignoffRecord()
-  pocRolloutPackage.value = readPocRolloutPackageRecord()
-  pocPilotRun.value = readPocPilotRunRecord()
-  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
-  riskSlaReview.value = readRiskSlaReviewRecord()
-  qualityReworkImpact.value = readQualityReworkImpact()
-  qualityMrbDisposition.value = readQualityMrbDispositionRecord()
-  outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
-  anomalyDispatchRecords.value = readAnomalyDispatchRecords()
-  laborReassignmentRecords.value = readLaborReassignments()
-  laborQualificationBlockRecords.value = readLaborQualificationBlocks()
-  engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis()
-  routeCapabilityValidation.value = readRouteCapabilityValidation()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
-  knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
-  knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments()
-  qualityKnowledgeReviewRecords.value = readQualityKnowledgeReviewQueueRecords()
-  qualityRetrainingVersionRecords.value = readQualityKnowledgeRetrainingVersionRecords()
-  qualityRecommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  try { users.value = (await getUsers()).items }
-  catch {
-    users.value = [
-      { id: 'u1', username: 'admin', displayName: '管理员', role: 'Admin', isActive: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: '2026-05-12T08:00:00' },
-      { id: 'u2', username: 'operator1', displayName: '张三', role: 'Operator', isActive: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: '2026-05-12T09:00:00' },
-      { id: 'u3', username: 'engineer1', displayName: '赵六', role: 'Engineer', isActive: true, createdAt: '2026-01-01T00:00:00', lastLoginAt: null },
-    ]
+async function loadAdminEvidenceItem(
+  label: string,
+  load: () => Promise<void> | void,
+  errors: string[]
+) {
+  try {
+    await load()
+  } catch (error: unknown) {
+    errors.push(`${label}：${errorMessage(error, '请稍后重试')}`)
   }
+}
+
+onMounted(async () => {
+  const evidenceLoadErrors: string[] = []
+  await Promise.all([
+    loadAdminEvidenceItem('POC 证据治理', async () => { pocEvidenceRecords.value = await readPocEvidenceGovernanceRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('Agent 配置审批', async () => { agentApprovals.value = await readAgentConfigApprovalsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('AI 助手动作审计', async () => { assistantActionAudits.value = await readAssistantActionAuditsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('交期恢复包', async () => { assistantRecoveryPackages.value = await readAssistantRecoveryPackagesBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('POC 复盘签署', async () => { pocReviewSignoff.value = await readPocReviewSignoffRecordBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('POC 上线交付', async () => { pocRolloutPackage.value = await readPocRolloutPackageRecordBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('POC 试点运行', async () => { pocPilotRun.value = await readPocPilotRunRecordBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('POC Hypercare', async () => { pocHypercareAcceptance.value = await readPocHypercareAcceptanceRecordBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('风险 SLA 复核', async () => { riskSlaReview.value = await readRiskSlaReviewRecordBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量返工治理', () => { qualityReworkImpact.value = readQualityReworkImpact() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量 MRB 处置', () => { qualityMrbDisposition.value = readQualityMrbDispositionRecord() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('外协承诺包', () => { outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('异常分流治理', async () => { anomalyDispatchRecords.value = await readAnomalyDispatchRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('人员替班治理', async () => { laborReassignmentRecords.value = await readLaborReassignmentsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('人员资质阻断', async () => { laborQualificationBlockRecords.value = await readLaborQualificationBlocksBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('工程变更治理', () => { engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('工艺能力治理', () => { routeCapabilityValidation.value = readRouteCapabilityValidation() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('OTD 证据链', () => { otdEvidenceRecords.value = readOtdEvidenceChainRecords() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('知识治理复核', async () => { knowledgeReviewRecords.value = await readKnowledgeGovernanceReviewsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('知识待治理文档', () => { knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量知识复核队列', async () => { qualityKnowledgeReviewRecords.value = await readQualityKnowledgeReviewQueueRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量再训练版本', async () => { qualityRetrainingVersionRecords.value = await readQualityKnowledgeRetrainingVersionRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量推荐采纳反馈', async () => { qualityRecommendationFeedbackRecords.value = await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('质量灰度决策', async () => { qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst() }, evidenceLoadErrors),
+  ])
+  if (evidenceLoadErrors.length) {
+    const suffix = evidenceLoadErrors.length > 3 ? `；另有 ${evidenceLoadErrors.length - 3} 项` : ''
+    notification.value = `部分治理证据刷新失败，已保留其它可用证据：${evidenceLoadErrors.slice(0, 3).join('；')}${suffix}`
+  }
+  await refreshUsers(true)
   try { configs.value = await getConfigs() }
   catch {
     configs.value = [
@@ -2195,6 +2307,7 @@ onMounted(async () => {
 <style scoped>
 .admin-board { height: 100%; display: flex; flex-direction: column; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+.admin-alert { margin-bottom: 10px; padding: 8px 10px; border: 1px solid #ffccc7; border-radius: 4px; background: #fff2f0; color: #a8071a; font-size: 13px; }
 .tabs { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 2px solid #f0f0f0; }
 .tab { padding: 8px 20px; border: none; background: none; cursor: pointer; font-size: 14px; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .tab.active { color: #1890ff; border-bottom-color: #1890ff; font-weight: 600; }
@@ -2218,6 +2331,7 @@ onMounted(async () => {
 .role-qc { background: #fff7e6; color: #fa8c16; }
 .st-active { background: #f6ffed; color: #52c41a; }
 .st-inactive { background: #f5f5f5; color: #999; }
+.st-warning { background: #fffbe6; color: #ad6800; }
 .config-group { margin-bottom: 20px; }
 .config-group h4 { font-size: 14px; margin: 0 0 8px; color: #333; }
 .config-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #fafafa; border-radius: 4px; margin-bottom: 6px; }

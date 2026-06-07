@@ -32,6 +32,9 @@ public class ScheduleAdoptionFeedback
 
     /// <summary>AI 决策追踪 ID（关联 AiDecisionTraceEntity）</summary>
     public string? AiTraceId { get; set; }
+    public bool InitiatedByAgent { get; set; }
+    public string? AgentDecisionId { get; set; }
+    public string? AgentVersion { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

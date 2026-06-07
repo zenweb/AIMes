@@ -1,5 +1,35 @@
 <template>
   <div class="schedule-board">
+      <section class="scheduler-pro-hero" aria-label="调度员专业台">
+        <div>
+          <span class="scheduler-eyebrow">Scheduler Pro Workbench</span>
+          <h1>AI 调度员专业台</h1>
+          <p>把约束、风险、方案对比、采纳理由和执行交接集中到同一张调度工作面。</p>
+        </div>
+        <div class="scheduler-hero-metrics">
+          <div>
+            <span>当前目标</span>
+            <strong>{{ currentObjective }}</strong>
+            <em>{{ currentScale }} 粒度</em>
+          </div>
+          <div>
+            <span>OTD 预测</span>
+            <strong>{{ metrics.onTimeDelivery }}%</strong>
+            <em>{{ metrics.groupCount }} 组任务</em>
+          </div>
+          <div>
+            <span>换线成本</span>
+            <strong>{{ metrics.changeoverMinutes }}min</strong>
+            <em>{{ displayWarnings.length }} 条预警</em>
+          </div>
+          <div>
+            <span>Agent 状态</span>
+            <strong>{{ activeAgentSuggestion ? '待采纳' : '待生成' }}</strong>
+            <em>{{ latestFeedback ? '已有反馈' : '无反馈' }}</em>
+          </div>
+        </div>
+      </section>
+
       <GanttToolbar
         :scale="currentScale"
         :objective="currentObjective"
@@ -7,7 +37,7 @@
         :lock-period-hours="8"
         :loading="loading"
         @optimize="handleOptimize"
-        @refresh="loadData"
+        @refresh="refreshScheduleData"
         @feedback="showFeedbackForm = true"
         @compare="showParetoCompare = true"
         @export-csv="handleExportCsv"
@@ -44,6 +74,10 @@
         @decision="handleScheduleDecision"
       />
 
+      <p v-if="riskEventSyncNote" class="risk-event-sync-note" role="status" aria-live="polite">
+        {{ riskEventSyncNote }}
+      </p>
+
       <ScheduleEventQueuePanel
         :events="scheduleEvents"
         :active-suggestion="activeAgentSuggestion"
@@ -64,14 +98,14 @@
           <span>{{ loadingMessage }}</span>
         </div>
 
-        <div v-if="error" class="error-banner">
+        <div v-if="error" class="error-banner" role="alert" aria-live="assertive">
           {{ error }}
-          <button @click="loadData">重试</button>
+          <button @click="retryScheduleData">重试</button>
         </div>
 
-        <div v-if="warnings.length > 0" class="warnings-bar">
+        <div v-if="displayWarnings.length > 0" class="warnings-bar" role="status" aria-live="polite" aria-label="排产预警">
           <span class="warnings-icon">⚠</span>
-          <span v-for="(w, i) in warnings" :key="i" class="warning-item">{{ w }}</span>
+          <span v-for="(w, i) in displayWarnings" :key="i" class="warning-item">{{ w }}</span>
         </div>
 
         <div v-if="useDemoTaskShortcuts" class="task-explain-shortcuts" aria-label="演示排产任务">
@@ -166,20 +200,26 @@ import { useExport } from '../../composables/useExport'
 import {
   matchesShortageMaterial,
   readBomKittingPackage,
-  readShortageKittingEvent,
-  readShortageRiskResolution,
+  readBomKittingPackageBackendFirst,
+  readShortageKittingEventBackendFirst,
+  readShortageRiskResolutionBackendFirst,
   readSupplierNetworkDecision,
+  readSupplierNetworkDecisionBackendFirst,
   readSupplyRiskEscalation,
+  readSupplyRiskEscalationBackendFirst,
 } from '../../utils/shortage-risk-sync'
-import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
-import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
+import { readQualityReworkImpactBackendFirst } from '../../utils/quality-rework-sync'
+import { readQualityMrbDispositionRecord, readQualityMrbDispositionRecordBackendFirst } from '../../utils/quality-mrb-disposition-sync'
 import { readEquipmentDowntimeEvent } from '../../utils/equipment-risk-sync'
-import { readAnomalyDispatchRecords } from '../../utils/anomaly-dispatch-sync'
+import { readAnomalyDispatchRecords, readAnomalyDispatchRecordsBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import { writeScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
 import {
   readAlternateMaterialApproval,
+  readAlternateMaterialApprovalBackendFirst,
   readEngineeringChangeImpactAnalysis,
+  readEngineeringChangeImpactAnalysisBackendFirst,
   readRouteCapabilityValidation,
+  readRouteCapabilityValidationBackendFirst,
   type AlternateMaterialApproval,
   type EngineeringChangeImpactAnalysis,
   type RouteCapabilityValidation,
@@ -187,10 +227,12 @@ import {
 import {
   confirmOutsourcingScheduleRelease,
   readLatestOutsourcingCommitmentPackage,
+  readLatestOutsourcingCommitmentPackageBackendFirst,
   type OutsourcingCommitmentPackage,
 } from '../../utils/outsourcing-commitment-sync'
 import {
   readLatestOtdKpiCommitmentPackage,
+  readLatestOtdKpiCommitmentPackageBackendFirst,
   type OtdKpiCommitmentPackage,
 } from '../../utils/otd-kpi-commitment-sync'
 import {
@@ -200,21 +242,24 @@ import {
 import {
   closeAssistantRecoveryPackage,
   readAssistantRecoveryPackages,
+  readAssistantRecoveryPackagesBackendFirst,
   type AssistantRecoveryPackage,
 } from '../../utils/assistant-action-package-sync'
 import {
-  readAssistantEngineeringConstraintPackages,
+  readAssistantEngineeringConstraintPackagesBackendFirst,
   type AssistantEngineeringConstraintPackage,
 } from '../../utils/assistant-engineering-constraint-package-sync'
-import { readMonitoringSituationEscalations } from '../../utils/monitoring-situation-escalation-sync'
-import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
-import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+import { readMonitoringSituationEscalations, readMonitoringSituationEscalationsBackendFirst, type MonitoringSituationEscalation } from '../../utils/monitoring-situation-escalation-sync'
+import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-sync'
+import { readRiskSlaReviewRecord, readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import {
   readLaborQualificationBlock,
   readLaborReassignment,
   type LaborQualificationBlockRecord,
   type LaborReassignmentRecord,
 } from '../../utils/labor-assignment-sync'
+import { appAssetPath, isOfflineDemoError, logUnlessOfflineDemo } from '../../utils/offline-demo-mode'
+import { errorMessage } from '../../utils/error-message'
 
 const { csvFilename, downloadCsv } = useExport()
 import type {
@@ -252,6 +297,7 @@ const showFeedbackForm = ref(false)
 const showParetoCompare = ref(false)
 const feedbackSubmitting = ref(false)
 const feedbackSyncNote = ref('')
+const riskEventSyncNote = ref('')
 const latestFeedback = ref<ScheduleFeedbackRecord | null>(null)
 const activeAgentSuggestion = ref<ScheduleAgentSuggestion | null>(null)
 const alternateMaterialApproval = ref<AlternateMaterialApproval | null>(null)
@@ -264,6 +310,9 @@ const otdKpiCommitmentRecord = ref<OtdKpiCommitmentPackage | null>(null)
 const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
 const assistantRecoveryPackageRecords = ref<AssistantRecoveryPackage[]>([])
 const assistantEngineeringConstraintPackageRecords = ref<AssistantEngineeringConstraintPackage[]>([])
+const anomalyDispatchEvidenceRecords = ref<AnomalyDispatchRecord[]>([])
+const monitoringSituationEvidenceRecords = ref<MonitoringSituationEscalation[]>([])
+const riskSlaReviewRecord = ref<RiskSlaReviewRecord | null>(null)
 const engineeringConstraints = ref<EngineeringConstraintItem[]>([
   {
     id: 'eng-bom-al6061',
@@ -348,6 +397,17 @@ const demoScheduleEvents: ScheduleEventItem[] = [
 ]
 const scheduleEvents = ref<ScheduleEventItem[]>([...demoScheduleEvents])
 
+interface LatestAbReport {
+  datasetId: string
+  seed: number
+  sampleSize: number
+  baseline: { otd: number; delayed: number; changeoverMinutes: number }
+  agent: { otd: number; delayed: number; changeoverMinutes: number }
+  delta: { otd: number; delayedOrdersReduced: number; changeoverMinutesReduced: number }
+  confidence: { lower95: number; upper95: number; pValue: number; significantAt95: boolean }
+}
+const latestAbReport = ref<LatestAbReport | null>(null)
+
 const metrics = reactive({
   utilization: 0,
   onTimeDelivery: 0,
@@ -381,6 +441,11 @@ const rushOrderImpact = reactive<RushOrderImpact>({
   options: [],
 })
 const warnings = ref<string[]>([])
+const abReportWarning = ref('')
+const displayWarnings = computed(() => [
+  ...warnings.value,
+  ...(abReportWarning.value ? [abReportWarning.value] : []),
+])
 
 type ScenarioTemplate = Omit<ScheduleAgentScenario, 'id' | 'selected'>
 
@@ -743,6 +808,23 @@ function formatScenarioDecisionTrail(suggestion: ScheduleAgentSuggestion) {
   return `${suggestion.action} 推荐方案：${recommended.name}（${recommended.strategy}，OTD ${recommended.otdImpact}，延期 ${recommended.delayImpact}，换线 ${recommended.changeoverImpact}）。未选方案：${rejectedSummary}。决策依据：${suggestion.decisionRationale ?? recommended.rationale}`
 }
 
+function isSchedulePlanPayload(value: unknown): value is SchedulePlanDto {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<SchedulePlanDto>
+  return typeof candidate.id === 'string'
+    && typeof candidate.planName === 'string'
+    && Array.isArray(candidate.items)
+    && typeof candidate.overallUtilizationRate === 'number'
+    && Number.isFinite(candidate.overallUtilizationRate)
+    && typeof candidate.onTimeDeliveryRate === 'number'
+    && Number.isFinite(candidate.onTimeDeliveryRate)
+}
+
+function isEquipmentPagePayload(value: unknown): value is { items: EquipmentDto[] } {
+  if (!value || typeof value !== 'object') return false
+  return Array.isArray((value as { items?: unknown }).items)
+}
+
 watch(activeAgentSuggestion, (suggestion) => {
   const enriched = enrichSuggestionWithScenarioPackage(suggestion)
   if (enriched && enriched !== suggestion) {
@@ -750,17 +832,35 @@ watch(activeAgentSuggestion, (suggestion) => {
   }
 })
 
-async function loadData() {
+async function loadData(options: { preserveError?: boolean } = {}) {
   loading.value = true
   loadingMessage.value = '加载排产计划...'
-  error.value = ''
+  if (!options.preserveError) error.value = ''
+  let bottleneckWarning: string | undefined
 
   try {
     const [plan, equipment, apiBottleneckIds] = await Promise.all([
-      api.getCurrentPlan(),
-      api.getEquipmentList(),
-      getBottleneckEquipmentIds().catch(() => undefined as string[] | undefined),
+      api.getCurrentPlan().catch((e: unknown) => {
+        throw new Error(`后端排产计划载荷不完整，已切换演示排产数据：${errorMessage(e, '未知错误')}`)
+      }),
+      api.getEquipmentList().catch((e: unknown) => {
+        throw new Error(`后端设备列表载荷不完整，已切换演示排产数据：${errorMessage(e, '未知错误')}`)
+      }),
+      getBottleneckEquipmentIds().catch((e: unknown) => {
+        bottleneckWarning = `瓶颈设备识别失败，当前甘特图不会标记后端瓶颈设备：${errorMessage(e, '未知错误')}`
+        return undefined as string[] | undefined
+      }),
     ])
+
+    if (!isSchedulePlanPayload(plan)) {
+      throw new Error('后端排产计划载荷不完整，已切换演示排产数据')
+    }
+    if (plan.items.length === 0) {
+      throw new Error('后端排产计划缺少可执行任务，已切换演示排产数据')
+    }
+    if (!isEquipmentPagePayload(equipment)) {
+      throw new Error('后端设备列表载荷不完整，已切换演示排产数据')
+    }
 
     planData.value = plan
     equipmentList.value = equipment.items
@@ -777,17 +877,26 @@ async function loadData() {
     bottleneckIds.value = apiBottleneckIds ? new Set(apiBottleneckIds) : undefined
     ganttData.value = planToGanttData(plan, equipment.items, bottleneckIds.value)
     markConflicts(plan.items)
+    warnings.value = bottleneckWarning ? [bottleneckWarning] : []
     await loadRiskTriggeredEvents()
-  } catch (e: any) {
-    console.error('加载排产计划失败:', e)
-    applyDemoSchedule()
-    warnings.value = ['后端排产服务不可用，当前显示演示排产数据']
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('error', '加载排产计划失败:', e)
+    await applyDemoSchedule()
+    warnings.value = [`后端排产服务不可用，当前显示演示排产数据：${errorMessage(e, '未知错误')}`]
   } finally {
     loading.value = false
   }
 }
 
-function applyDemoSchedule() {
+function refreshScheduleData() {
+  void loadData()
+}
+
+function retryScheduleData() {
+  void loadData()
+}
+
+async function applyDemoSchedule() {
   const now = new Date()
   const start = addHours(now, 9)
   const end = addHours(now, 56)
@@ -886,49 +995,68 @@ function applyDemoSchedule() {
   applyImpactComparison(plan)
   bottleneckIds.value = new Set(['eq-cnc-01', 'eq-ht-01'])
   ganttData.value = planToGanttData(plan, equipment, bottleneckIds.value)
-  scheduleEvents.value = applyLaborQualificationBlockToEvents(applyLaborReassignmentToEvents(applyShortageResolutionToEvents(demoScheduleEvents)))
+  scheduleEvents.value = await enrichRiskEvents(demoScheduleEvents)
   error.value = ''
 }
 
 async function loadRiskTriggeredEvents() {
+  riskEventSyncNote.value = ''
   try {
     const riskDashboard = await getRiskDashboard()
-    scheduleEvents.value = applyLaborQualificationBlockToEvents(applyLaborReassignmentToEvents(applyShortageResolutionToEvents(mapRiskDashboardToScheduleEvents(riskDashboard))))
-  } catch (e: any) {
-    console.warn('加载风险触发事件失败，使用演示事件队列:', e)
-    scheduleEvents.value = applyLaborQualificationBlockToEvents(applyLaborReassignmentToEvents(applyShortageResolutionToEvents(demoScheduleEvents)))
+    scheduleEvents.value = await enrichRiskEvents(mapRiskDashboardToScheduleEvents(riskDashboard))
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', '加载风险触发事件失败，使用演示事件队列:', e)
+    scheduleEvents.value = await enrichRiskEvents(demoScheduleEvents)
+    riskEventSyncNote.value = `风险事件加载失败，已显示本地演示事件：${errorMessage(e, '未知错误')}`
   }
   activeAgentSuggestion.value = null
 }
 
-function applyShortageResolutionToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
-  const resolution = readShortageRiskResolution()
-  const kittingEvent = readShortageKittingEvent()
-  const bomKittingPackage = readBomKittingPackage()
+async function enrichRiskEvents(events: ScheduleEventItem[]): Promise<ScheduleEventItem[]> {
+  try {
+    return applyLaborQualificationBlockToEvents(
+      applyLaborReassignmentToEvents(
+        await applyShortageResolutionToEvents(events)
+      )
+    )
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', '风险事件增强失败，保留基础事件队列:', e)
+    riskEventSyncNote.value = `风险事件增强失败，已保留基础事件队列：${errorMessage(e, '未知错误')}`
+    return applyLaborQualificationBlockToEvents(applyLaborReassignmentToEvents(events))
+  }
+}
+
+async function applyShortageResolutionToEvents(events: ScheduleEventItem[]): Promise<ScheduleEventItem[]> {
+  const resolution = await readShortageRiskResolutionBackendFirst()
+  const kittingEvent = await readShortageKittingEventBackendFirst()
+  const bomKittingPackage = await readBomKittingPackageBackendFirst()
   const downtimeEvent = readEquipmentDowntimeEvent()
-  const qualityRework = readQualityReworkImpact()
-  const qualityMrbDisposition = readQualityMrbDispositionRecord()
+  const qualityRework = await readQualityReworkImpactBackendFirst()
+  const qualityMrbDisposition = await readQualityMrbDispositionRecordBackendFirst()
   const productionCloseoutReview = readOtdEvidenceChainRecords().find(record =>
     record.stage === '生产复核'
     && record.traceId.startsWith('TRACE-PROD-CLOSEOUT-')
   )
   const barcodeScheduleRelease = readBarcodeScheduleReleaseRecord()
-  const supplierNetworkDecision = readSupplierNetworkDecision()
-  const supplyRisk = readSupplyRiskEscalation()
-  const otdKpiCommitment = readLatestOtdKpiCommitmentPackage()
+  const supplierNetworkDecision = await readSupplierNetworkDecisionBackendFirst()
+  const supplyRisk = await readSupplyRiskEscalationBackendFirst()
+  const otdKpiCommitment = await readLatestOtdKpiCommitmentPackageBackendFirst()
   otdKpiCommitmentRecord.value = otdKpiCommitment
-  const outsourcingCommitment = readLatestOutsourcingCommitmentPackage()
+  const outsourcingCommitment = await readLatestOutsourcingCommitmentPackageBackendFirst()
   outsourcingCommitmentRecord.value = outsourcingCommitment
-  const engineeringImpact = readEngineeringChangeImpactAnalysis()
-  const routeCapability = readRouteCapabilityValidation()
-  const anomalyDispatchRecords = readAnomalyDispatchRecords()
-  const assistantPackages = readAssistantRecoveryPackages()
-  const assistantEngineeringPackages = readAssistantEngineeringConstraintPackages()
+  const engineeringImpact = await readEngineeringChangeImpactAnalysisBackendFirst()
+  const routeCapability = await readRouteCapabilityValidationBackendFirst()
+  const anomalyDispatchRecords = await readAnomalyDispatchRecordsBackendFirst()
+  anomalyDispatchEvidenceRecords.value = anomalyDispatchRecords
+  const assistantPackages = await readAssistantRecoveryPackagesBackendFirst()
+  const assistantEngineeringPackages = await readAssistantEngineeringConstraintPackagesBackendFirst()
   assistantRecoveryPackageRecords.value = assistantPackages
   assistantEngineeringConstraintPackageRecords.value = assistantEngineeringPackages
-  const monitoringSituationEscalations = readMonitoringSituationEscalations()
-  const pocPilotRun = readPocPilotRunRecord()
-  const riskSlaReview = readRiskSlaReviewRecord()
+  const monitoringSituationEscalations = await readMonitoringSituationEscalationsBackendFirst()
+  monitoringSituationEvidenceRecords.value = monitoringSituationEscalations
+  const pocPilotRun = await readPocPilotRunRecordBackendFirst()
+  const riskSlaReview = await readRiskSlaReviewRecordBackendFirst()
+  riskSlaReviewRecord.value = riskSlaReview
   const productionAnomalyRecords = readOtdEvidenceChainRecords()
     .filter(record =>
       record.stage === '生产异常'
@@ -1438,10 +1566,10 @@ function readBarcodeScheduleReleaseRecord() {
   ) ?? null
 }
 
-function applyEngineeringChangeApprovals() {
-  const approval = readAlternateMaterialApproval()
+async function applyEngineeringChangeApprovals() {
+  const approval = await readAlternateMaterialApprovalBackendFirst()
   alternateMaterialApproval.value = approval
-  const impact = readEngineeringChangeImpactAnalysis()
+  const impact = await readEngineeringChangeImpactAnalysisBackendFirst()
   engineeringChangeImpact.value = impact
   const bomKittingPackage = readBomKittingPackage()
 
@@ -1523,8 +1651,8 @@ function applyEngineeringChangeApprovals() {
   }
 }
 
-function applyRouteCapabilityValidation() {
-  const validation = readRouteCapabilityValidation()
+async function applyRouteCapabilityValidation() {
+  const validation = await readRouteCapabilityValidationBackendFirst()
   routeCapabilityValidation.value = validation
   if (!validation) return
 
@@ -1736,6 +1864,7 @@ async function handleOptimize() {
     })
 
     if (result.plan) {
+      error.value = ''
       planData.value = result.plan
       planName.value = result.plan.planName
       metrics.utilization = Math.round(result.plan.overallUtilizationRate * 100)
@@ -1746,9 +1875,9 @@ async function handleOptimize() {
       ganttData.value = planToGanttData(result.plan, equipmentList.value, bottleneckIds.value)
       warnings.value = result.warnings ?? result.plan.warnings ?? []
     }
-  } catch (e: any) {
-    console.error('排产优化失败:', e)
-    error.value = `优化失败: ${e?.response?.data?.message || e?.message || '未知错误'}`
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('error', '排产优化失败:', e)
+    error.value = isOfflineDemoError(e) ? '离线演示模式：已保留当前演示排产方案。' : `优化失败: ${errorMessage(e, '未知错误')}`
   } finally {
     loading.value = false
   }
@@ -1759,13 +1888,14 @@ async function handleTaskClick(taskId: string) {
   if (!task?.workOrderId) return
 
   openDemoTaskExplanation(task)
+  detailLoading.value = true
 
   try {
     const order = await api.getWorkOrderById(task.workOrderId)
     selectedOrder.value = order
-  } catch {
+  } catch (e: unknown) {
     selectedOrder.value = buildDemoWorkOrder(task)
-    detailError.value = ''
+    detailError.value = `工单详情加载失败，已显示本地排产解释兜底：${errorMessage(e, '未知错误')}`
   } finally {
     detailLoading.value = false
   }
@@ -1874,11 +2004,11 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
     task.start_date = newStart
     task.duration = (newEnd.getTime() - newStart.getTime()) / (1000 * 60 * 60 * 24)
     error.value = ''
-  }).catch((e: any) => {
-    console.error('重排保存失败:', e)
-    error.value = `保存失败: ${e?.response?.data?.message || e?.message || '未知错误'}`
+  }).catch((e: unknown) => {
+    logUnlessOfflineDemo('error', '重排保存失败:', e)
+    error.value = isOfflineDemoError(e) ? '离线演示模式：拖拽调整已保留在当前页面，未写入后端。' : `保存失败: ${errorMessage(e, '未知错误')}`
     // 重新加载以恢复原始状态
-    loadData()
+    loadData({ preserveError: true })
   })
 }
 
@@ -1899,7 +2029,8 @@ function applyImpactComparison(plan: SchedulePlanDto) {
   const agentOtd = Math.round(plan.onTimeDeliveryRate * 100)
   const agentUtilization = Math.round(plan.overallUtilizationRate * 100)
   const itemCount = Math.max(plan.items.length, 1)
-  const baselineOtd = clamp(agentOtd - 14, 50, 95)
+  const reportBase = latestAbReport.value?.baseline.otd
+  const baselineOtd = reportBase != null ? Math.round(reportBase * 100) : clamp(agentOtd - 14, 50, 95)
   const baselineDelayedOrders = Math.max(1, Math.ceil(itemCount * (100 - baselineOtd) / 100))
   const agentDelayedOrders = Math.max(0, Math.floor(itemCount * (100 - agentOtd) / 100))
 
@@ -1918,6 +2049,20 @@ function applyImpactComparison(plan: SchedulePlanDto) {
     '锁定期内任务不直接改动',
   ]
   applyRushOrderImpact(plan)
+}
+
+async function loadLatestAbReport() {
+  try {
+    const response = await fetch(appAssetPath('reports/latest-ab-report.json'), { cache: 'no-store' })
+    if (!response.ok) {
+      throw new Error(`latest A/B report HTTP ${response.status}`)
+    }
+    latestAbReport.value = await response.json()
+    abReportWarning.value = ''
+  } catch (e) {
+    latestAbReport.value = null
+    abReportWarning.value = `A/B 报告读取失败，基线 vs Agent OTD 对比暂用排产计划推导值：${errorMessage(e, '未知错误')}`
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -2005,16 +2150,16 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
       aiTraceId: `rush-impact-${rushOrderImpact.orderNumber || 'demo'}`,
     })
     feedbackSyncNote.value = '反馈已同步后台，可用于后续审计与模型复盘。'
-  } catch (e: any) {
-    console.warn('排产反馈同步失败:', e)
-    feedbackSyncNote.value = '后台反馈接口不可用，当前先保留本地复盘记录用于演示。'
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', '排产反馈同步失败:', e)
+    feedbackSyncNote.value = `后台反馈接口不可用，当前先保留本地复盘记录用于演示。原因：${errorMessage(e, '未知错误')}`
   } finally {
     feedbackSubmitting.value = false
   }
 }
 
 function generateAgentSuggestion(event: ScheduleEventItem) {
-  const riskSlaReview = readRiskSlaReviewRecord()
+  const riskSlaReview = riskSlaReviewRecord.value ?? readRiskSlaReviewRecord()
   if (riskSlaReview && event.id === `evt-risk-sla-${riskSlaReview.id}`) {
     const closed = riskSlaReview.status === 'closed'
     activeAgentSuggestion.value = {
@@ -2044,7 +2189,10 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     }
     return
   }
-  const monitoringSituation = readMonitoringSituationEscalations().find(record => event.id === `evt-monitoring-situation-${record.sourceEventId}`)
+  const monitoringSituation = (monitoringSituationEvidenceRecords.value.length
+    ? monitoringSituationEvidenceRecords.value
+    : readMonitoringSituationEscalations()
+  ).find(record => event.id === `evt-monitoring-situation-${record.sourceEventId}`)
   if (monitoringSituation) {
     const closed = monitoringSituation.status === 'closed'
     activeAgentSuggestion.value = {
@@ -2059,7 +2207,10 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     }
     return
   }
-  const assistantRecoveryPackage = readAssistantRecoveryPackages().find(record => event.id === `evt-assistant-recovery-${record.id}`)
+  const assistantRecoveryPackage = (assistantRecoveryPackageRecords.value.length
+    ? assistantRecoveryPackageRecords.value
+    : readAssistantRecoveryPackages()
+  ).find(record => event.id === `evt-assistant-recovery-${record.id}`)
   if (assistantRecoveryPackage) {
     const purchaseActionLine = assistantRecoveryPackage.purchaseActionSummary
       ? `采购责任动作：${assistantRecoveryPackage.purchaseActionSummary}${assistantRecoveryPackage.purchaseActionTraceId ? `（${assistantRecoveryPackage.purchaseActionTraceId}）` : ''}`
@@ -2081,7 +2232,10 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     }
     return
   }
-  const anomalyDispatch = readAnomalyDispatchRecords().find(record => event.id === `evt-anomaly-dispatch-${record.anomalyId}`)
+  const anomalyDispatch = (anomalyDispatchEvidenceRecords.value.length
+    ? anomalyDispatchEvidenceRecords.value
+    : readAnomalyDispatchRecords()
+  ).find(record => event.id === `evt-anomaly-dispatch-${record.anomalyId}`)
   if (anomalyDispatch) {
     activeAgentSuggestion.value = {
       eventId: event.id,
@@ -2425,7 +2579,7 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
     && activeOutsourcingCommitment.receiptTraceId
     && !activeOutsourcingCommitment.scheduleReleaseTraceId,
   )
-  handleScheduleDecision({
+  await handleScheduleDecision({
     decision: 'accepted',
     reasonCategory: sourceEvent ? `${sourceEvent.type}_event_agent` : 'event_agent',
     categoryLabel: sourceEvent ? sourceEvent.typeLabel : '事件建议',
@@ -2433,7 +2587,14 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
   })
   if (!shouldReleaseOutsourcing || !activeOutsourcingCommitment) return
 
-  const released = confirmOutsourcingScheduleRelease(activeOutsourcingCommitment.sourceKpiId, '调度员 李工')
+  let released: OutsourcingCommitmentPackage | null = null
+  try {
+    released = confirmOutsourcingScheduleRelease(activeOutsourcingCommitment.sourceKpiId, '调度员 李工')
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', '外协排产释放确认失败:', e)
+    feedbackSyncNote.value = `外协排产释放同步失败，采纳反馈已保留但释放审计未归档：${errorMessage(e, '未知错误')}`
+    return
+  }
   if (!released) return
   outsourcingCommitmentRecord.value = released
   await loadRiskTriggeredEvents()
@@ -2450,8 +2611,8 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
 async function closeAssistantRecoveryHandoff(id: string) {
   const closed = closeAssistantRecoveryPackage(id, '调度员 李工')
   if (!closed) return
-  assistantRecoveryPackageRecords.value = readAssistantRecoveryPackages()
-  assistantEngineeringConstraintPackageRecords.value = readAssistantEngineeringConstraintPackages()
+  assistantRecoveryPackageRecords.value = await readAssistantRecoveryPackagesBackendFirst()
+  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
   await loadRiskTriggeredEvents()
   const eventId = `evt-assistant-recovery-${closed.id}`
   activeAgentSuggestion.value = {
@@ -2474,25 +2635,32 @@ function onApplyObjective(objective: string) {
 
   // 记录方案采纳
   if (planData.value?.id) {
+    feedbackSyncNote.value = '批量方案采纳反馈正在同步后台。'
     api.submitAdoptionFeedback({
       schedulePlanId: planData.value.id,
       workshopId: 'workshop-1',
       optimizationObjective: objective,
       reasonCategory: 'batch_optimize_apply',
       reasonDetail: '从批量对比中选择此方案',
-    }).catch((e: any) => console.warn('采纳记录提交失败:', e))
+    }).then(() => {
+      feedbackSyncNote.value = '批量方案采纳反馈已同步后台，可用于后续审计与模型复盘。'
+    }).catch((e: unknown) => {
+      logUnlessOfflineDemo('warn', '采纳记录提交失败:', e)
+      feedbackSyncNote.value = `批量方案采纳反馈同步失败，当前仅保留本地目标切换：${errorMessage(e, '未知错误')}`
+    })
   }
 
   handleOptimize()
 }
 
-onMounted(() => {
-  applyEngineeringChangeApprovals()
-  applyRouteCapabilityValidation()
+onMounted(async () => {
+  await applyEngineeringChangeApprovals()
+  await applyRouteCapabilityValidation()
   applyLaborReassignmentClosure()
   applyLaborQualificationBlockClosure()
-  assistantEngineeringConstraintPackageRecords.value = readAssistantEngineeringConstraintPackages()
+  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
   loadData()
+  void loadLatestAbReport()
 })
 </script>
 
@@ -2501,15 +2669,93 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: calc(100vh - 60px);
+  height: auto;
+  min-height: calc(100vh - 124px);
   min-height: 1px;
   position: relative;
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.scheduler-pro-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(560px, 1.1fr);
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.96)),
+    #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.scheduler-eyebrow {
+  display: inline-flex;
+  margin-bottom: 6px;
+  color: #1368b4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.scheduler-pro-hero h1 {
+  margin: 0;
+  color: #0b1220;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.scheduler-pro-hero p {
+  margin: 7px 0 0;
+  color: #5c6b7c;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.scheduler-hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scheduler-hero-metrics div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #d8e2ee;
+  border-left: 3px solid #1368b4;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.scheduler-hero-metrics span,
+.scheduler-hero-metrics em {
+  color: #5c6b7c;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.scheduler-hero-metrics strong {
+  overflow: hidden;
+  color: #0b1220;
+  font-family: 'Fira Code', monospace;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gantt-wrapper {
+  min-height: 560px;
   flex: 1;
   position: relative;
   overflow: hidden;
+  border: 1px solid #d8e2ee;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 .task-explain-shortcuts {
@@ -2611,5 +2857,12 @@ onMounted(() => {
 
 .warning-item {
   padding: 2px 0;
+}
+
+@media (max-width: 1180px) {
+  .scheduler-pro-hero,
+  .scheduler-hero-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

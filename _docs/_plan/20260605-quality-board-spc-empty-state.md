@@ -1,0 +1,193 @@
+# 2026-06-05 QualityBoard SPC Empty State Plan
+
+## Plan
+
+- 目标：继续 A-track 精品化，修复 `QualityBoard.vue` 用户必经质量监控路径中“有响应但无数据”的静默空白问题。
+- 成功标准：SPC 后端返回空 `dataPoints` 时展示明确空态；有数据和报错 fallback 行为不被改动；目标测试、全量 coverage、lint 全绿。
+- 已执行：读取 `QualityBoard.vue` 当前实现和 `quality-board.test.ts`；选定 SPC 空数据缺口。
+- 已执行：按 TDD 新增红灯测试 `explains when SPC analysis returns no data points`。
+- 已执行：添加 `spc-empty-state` 空态和轻量样式。
+- 已验证：目标 unit `1 file / 8 tests passed`。
+- 已验证：全量前端 unit coverage `81 files / 361 tests passed`；总行覆盖率 `70.78%`，`QualityBoard.vue` 行覆盖率 `61.40%`。
+- 已验证：`npm run lint` 通过。
+- 已追加：根因分析 in-flight 请求复用小片，避免同一检验批次快速重复点击触发多次 `analyzeRootCause()`。
+- 已追加验证：目标 unit `1 file / 9 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 362 tests passed`；总行覆盖率 `70.81%`，`QualityBoard.vue` 行覆盖率 `62.82%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：根因分析跨检验批次竞态小片，慢请求后完成时不得覆盖用户最新点击的检验记录。
+- 已追加验证：目标 unit `1 file / 10 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 363 tests passed`；总行覆盖率 `70.83%`，`QualityBoard.vue` 行覆盖率 `63.44%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：SPC 参数快速切换竞态小片，旧参数慢请求不得覆盖当前参数图表、告警和建议。
+- 已追加验证：目标 unit `1 file / 11 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 364 tests passed`；总行覆盖率 `70.86%`，`QualityBoard.vue` 行覆盖率 `64.58%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：根因分析切换批次旧面板清理小片，未缓存新请求等待期间不再展示旧批次 dialog。
+- 已追加验证：目标 unit `1 file / 12 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 365 tests passed`；总行覆盖率 `70.86%`，`QualityBoard.vue` 行覆盖率 `64.73%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：转向 `ProductionBoard.vue` 生产报工路径，修复状态筛选刷新后右侧详情保留旧选中工单的问题。
+- 已追加验证：目标 unit `1 file / 12 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 366 tests passed`；总行覆盖率 `70.91%`，`ProductionBoard.vue` 行覆盖率 `60.45%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加核验：`gh auth` 已登录 `zenweb` 且 scope 含 `repo/workflow`；`origin` 仍指向腾讯工蜂，`gh repo view zenweb/AIMes` 仍失败，Hosted CI 暂不继续撞。
+- 已追加：继续 `ProductionBoard.vue` 状态筛选路径，修复旧慢请求覆盖新快请求的列表竞态。
+- 已追加验证：目标 unit `1 file / 13 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 367 tests passed`；总行覆盖率 `70.92%`，`ProductionBoard.vue` 行覆盖率 `60.75%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 扫码定位路径，修复旧慢扫码响应覆盖新快扫码响应的竞态。
+- 已追加验证：目标 unit `1 file / 14 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 368 tests passed`；总行覆盖率 `70.93%`，`ProductionBoard.vue` 行覆盖率 `61.04%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 点选工单路径，修复旧慢点选响应覆盖新快点选工序的竞态。
+- 已追加验证：目标 unit `1 file / 15 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 369 tests passed`；总行覆盖率 `70.96%`，`ProductionBoard.vue` 行覆盖率 `61.52%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 点选工单路径，修复新工序加载期间旧工序残留的问题。
+- 已追加验证：目标 unit `1 file / 16 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 370 tests passed`；总行覆盖率 `70.96%`，`ProductionBoard.vue` 行覆盖率 `61.59%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 跨入口定位路径，修复先点选慢工单再扫码快工单时旧点选响应覆盖扫码工序的问题。
+- 已追加验证：目标 unit `1 file / 17 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 371 tests passed`；总行覆盖率 `70.96%`，`ProductionBoard.vue` 行覆盖率 `61.66%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：按覆盖率杠杆转向 `ReportBoard.vue`，修复辅助证据读取失败会中断主报表 dashboard 加载的问题。
+- 已追加验证：目标 unit `1 file / 3 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 372 tests passed`；总行覆盖率 `70.98%`，`ReportBoard.vue` 行覆盖率 `62.17%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` OTD 证据链路径，修复排产采纳反馈后端失败时不读取本地快照的问题。
+- 已追加验证：目标 unit `1 file / 4 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 373 tests passed`；总行覆盖率 `71%`，`ReportBoard.vue` 行覆盖率 `62.63%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加核验：`gh auth status` 已登录 `zenweb` 且 scope 含 `repo/workflow`；`gh repo view zenweb/AIMes` 仍未解析到仓库，Hosted CI 仍等待真实 GitHub repo/remote/Actions run。
+- 已追加：继续 `ReportBoard.vue` POC 转上线路径，修复上线交付包写入空值时静默失败的问题。
+- 已追加验证：目标 unit `1 file / 5 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 374 tests passed`；总行覆盖率 `71.02%`，`ReportBoard.vue` 行覆盖率 `63.11%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` POC 真实工单试点路径，修复试点运行记录写入空值时静默失败的问题。
+- 已追加验证：目标 unit `1 file / 6 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 375 tests passed`；总行覆盖率 `71.06%`，`ReportBoard.vue` 行覆盖率 `63.75%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` POC 正式上线验收路径，修复 Hypercare 验收包写入空值时静默失败的问题。
+- 已追加验证：目标 unit `1 file / 7 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 376 tests passed`；总行覆盖率 `71.1%`，`ReportBoard.vue` 行覆盖率 `64.55%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` OTD KPI 钻取路径，修复客户交付恢复承诺包写入抛错时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 8 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 377 tests passed`；总行覆盖率 `71.18%`，`ReportBoard.vue` 行覆盖率 `65.84%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` 报表交付路径，修复 CSV 下载失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 9 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 378 tests passed`；总行覆盖率 `71.78%`，`ReportBoard.vue` 行覆盖率 `75.08%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ReportBoard.vue` 报表交付路径，修复 Excel/PDF 下载失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 11 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 380 tests passed`；总行覆盖率 `71.87%`，`ReportBoard.vue` 行覆盖率 `76.52%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：按覆盖率杠杆转向 `BarcodePrintBoard.vue`，补齐标签键盘选择证据、打印弹窗拦截 fail loud、QR 图片生成失败 fail loud。
+- 已追加验证：目标 unit `1 file / 3 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 382 tests passed`；总行覆盖率 `72.07%`，`BarcodePrintBoard.vue` 行覆盖率 `80.72%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续现场条码闭环到 `ScannerBoard.vue`，修复扫码证据写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 3 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 383 tests passed`；总行覆盖率 `72.13%`，`ScannerBoard.vue` 行覆盖率 `71.31%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ScannerBoard.vue` 扫码证据链，区分本地写入成功后的后端刷新失败，避免误报为写入失败。
+- 已追加验证：目标 unit `1 file / 4 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 384 tests passed`；总行覆盖率 `72.14%`，`ScannerBoard.vue` 行覆盖率 `72.22%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ScannerBoard.vue` 手动扫码路径，修复无效码查询后旧扫描结果残留的问题。
+- 已追加验证：目标 unit `1 file / 5 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 385 tests passed`；总行覆盖率 `72.2%`，`ScannerBoard.vue` 行覆盖率 `76.37%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ScannerBoard.vue` 摄像头扫码路径，修复扫码成功后摄像头停止失败被静默吞掉的问题。
+- 已追加验证：目标 unit `1 file / 6 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 386 tests passed`；总行覆盖率 `72.28%`，`ScannerBoard.vue` 行覆盖率 `82.03%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：按覆盖率杠杆转向 `EquipmentBoard.vue`，修复状态筛选刷新后详情保留旧设备的问题。
+- 已追加：补齐类型筛选隐藏当前设备时清空详情的同型正确性缺口。
+- 已追加验证：目标 unit `1 file / 3 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 388 tests passed`；总行覆盖率 `72.46%`，`EquipmentBoard.vue` 行覆盖率 `69.54%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加核验：`gh auth status` 已登录 `zenweb` 且 scope 含 `repo/workflow`；`origin` 仍指向腾讯工蜂，Hosted CI 仍缺真实 GitHub repo/Actions run。
+- 已追加：继续 `EquipmentBoard.vue` 健康监控路径，修复健康 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 4 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 389 tests passed`；总行覆盖率 `72.59%`，`EquipmentBoard.vue` 行覆盖率 `75.5%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `EquipmentBoard.vue` 维护记录路径，修复维护 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 5 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 390 tests passed`；总行覆盖率 `72.65%`，`EquipmentBoard.vue` 行覆盖率 `78.21%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `EquipmentBoard.vue` 故障诊断路径，修复诊断 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 6 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 391 tests passed`；总行覆盖率 `72.76%`，`EquipmentBoard.vue` 行覆盖率 `82.84%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `EquipmentBoard.vue` 设备列表入口，修复列表 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 7 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 392 tests passed`；总行覆盖率 `72.8%`，`EquipmentBoard.vue` 行覆盖率 `84.46%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `EquipmentBoard.vue` KPI 统计入口，修复统计 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 8 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 393 tests passed`；总行覆盖率 `72.82%`，`EquipmentBoard.vue` 行覆盖率 `85.23%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `EquipmentBoard.vue` KPI 统计入口，修复统计 fallback 告警被后续列表刷新成功误清的问题。
+- 已追加验证：目标 unit `1 file / 9 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 394 tests passed`；总行覆盖率 `72.83%`，`EquipmentBoard.vue` 行覆盖率 `85.44%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：按覆盖率杠杆转向 `ProductionBoard.vue`，修复扫码上下文开工后本地 OTD 开工证据写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 18 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 395 tests passed`；总行覆盖率 `73.44%`，`ProductionBoard.vue` 行覆盖率 `71.82%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 开工证据链，修正人员替班执行证据写入失败时的 fail-loud 归因。
+- 已追加验证：目标 unit `1 file / 19 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 396 tests passed`；总行覆盖率 `73.48%`，`ProductionBoard.vue` 行覆盖率 `72.37%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `ProductionBoard.vue` 生产报工初始化路径，修复 POC 试点运行证据读取失败时 mounted hook 未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 20 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 397 tests passed`；总行覆盖率 `73.48%`，`ProductionBoard.vue` 行覆盖率 `72.52%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：按覆盖率杠杆转向 `QualityBoard.vue`，修复 MRB 处置证据读取失败会中断质量页主数据初始化的问题。
+- 已追加验证：目标 unit `1 file / 13 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 398 tests passed`；总行覆盖率 `73.5%`，`QualityBoard.vue` 行覆盖率 `65.3%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 异常告警路径，修复异常 API 失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 14 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 399 tests passed`；总行覆盖率 `73.53%`，`QualityBoard.vue` 行覆盖率 `66.66%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` SPC 趋势分析路径，修复趋势接口失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 15 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 400 tests passed`；总行覆盖率 `73.68%`，`QualityBoard.vue` 行覆盖率 `72.17%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 根因分析路径，修复 AI 根因接口失败时静默展示 demo fallback 的问题。
+- 已追加验证：目标 unit `1 file / 16 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 401 tests passed`；总行覆盖率 `73.71%`，`QualityBoard.vue` 行覆盖率 `73.2%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` SPC 错误清理边界，修复 SPC 后续成功请求不能清理旧失败告警的问题。
+- 已追加验证：目标 unit `1 file / 17 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 402 tests passed`；总行覆盖率 `73.71%`，`QualityBoard.vue` 行覆盖率 `73.3%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 根因分析错误清理边界，修复后续成功分析不能清理旧失败告警的问题。
+- 已追加验证：目标 unit `1 file / 18 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 403 tests passed`；总行覆盖率 `73.72%`，`QualityBoard.vue` 行覆盖率 `73.51%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` MRB 证据归档边界，修复生成 MRB 决策写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 19 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 404 tests passed`；总行覆盖率 `73.78%`，`QualityBoard.vue` 行覆盖率 `75.78%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` MRB 闭环归档边界，修复关闭 MRB 处置写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 20 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 405 tests passed`；总行覆盖率 `73.8%`，`QualityBoard.vue` 行覆盖率 `76.44%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 扫码质量知识复用路径，修复沉淀 CAPA 知识样本写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 21 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 406 tests passed`；总行覆盖率 `73.92%`，`QualityBoard.vue` 行覆盖率 `80.53%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 扫码质量知识复用路径，修复生成同类缺陷处置草案写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 22 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 407 tests passed`；总行覆盖率 `74.01%`，`QualityBoard.vue` 行覆盖率 `83.39%`。
+- 已追加验证：`npm run lint` 通过。
+- 已追加：继续 `QualityBoard.vue` 扫码质量门闭环路径，修复复验释放证据写入失败时未处理异常和无提示的问题。
+- 已追加验证：目标 unit `1 file / 23 tests passed`。
+- 已追加验证：全量前端 unit coverage `81 files / 408 tests passed`；总行覆盖率 `74.2%`，`QualityBoard.vue` 行覆盖率 `89.55%`。
+- 已追加验证：`npm run lint` 通过。
+- 下一步：继续 A-track 时优先选择同类低覆盖且真实用户会遇到的质量、生产、报表路径；B-track 只在真实 GitHub remote/staging/人工签字或灰度观察证据到位后继续推进。

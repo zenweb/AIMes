@@ -16,7 +16,7 @@ public class NotificationConfigRepository : INotificationConfigRepository
 
     public async Task<List<NotificationConfig>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _context.NotificationConfigs!
+        return await _context.NotificationConfigs
             .AsNoTracking()
             .OrderBy(c => c.Category)
             .ToListAsync(ct);
@@ -24,14 +24,14 @@ public class NotificationConfigRepository : INotificationConfigRepository
 
     public async Task<NotificationConfig?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.NotificationConfigs!
+        return await _context.NotificationConfigs
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == id, ct);
     }
 
     public async Task<NotificationConfig> UpdateAsync(NotificationConfig config, CancellationToken ct = default)
     {
-        _context.NotificationConfigs!.Update(config);
+        _context.NotificationConfigs.Update(config);
         await _context.SaveChangesAsync(ct);
         return config;
     }

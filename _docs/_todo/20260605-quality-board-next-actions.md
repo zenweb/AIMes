@@ -1,0 +1,115 @@
+# 2026-06-05 QualityBoard Next Actions
+
+## A-track
+
+- 已完成：`QualityBoard.vue` SPC 后端返回空 `dataPoints` 时显示 `暂无 SPC 数据`，避免空图表误导用户。
+- 已完成：新增目标测试覆盖 SPC 空数据响应。
+- 已完成：`QualityBoard.vue` 根因分析同一检验批次 in-flight 请求复用，避免快速重复点击触发多次 AI 分析。
+- 已完成：新增目标测试覆盖重复点击时只调用一次 `analyzeRootCause()`。
+- 已完成：`QualityBoard.vue` 根因分析跨检验批次竞态修复，旧慢请求不会覆盖用户最新点击的检验记录。
+- 已完成：新增目标测试覆盖先点 slow 再点 fast 时 dialog 保持最新选择。
+- 已完成：`QualityBoard.vue` SPC 参数快速切换竞态修复，旧参数慢请求不会覆盖当前参数图表、告警和建议。
+- 已完成：新增目标测试覆盖先请求粗糙度、再切硬度时页面保持硬度结果。
+- 已完成：`QualityBoard.vue` 根因分析切换到未缓存新批次时清空旧 dialog，避免等待期间误读旧批次结果。
+- 已完成：新增目标测试覆盖旧批次 dialog 在新批次请求未返回前消失。
+- 已完成：`ProductionBoard.vue` 状态筛选刷新后同步右侧选中工单，避免新列表不含原工单时继续显示旧详情。
+- 已完成：新增目标测试覆盖生产中工单切到待生产筛选后清空 stale detail。
+- 已完成：`ProductionBoard.vue` 状态筛选请求增加最新请求门禁，避免旧慢响应覆盖新快响应。
+- 已完成：新增目标测试覆盖先切待生产慢请求、再切已完成快请求时页面保持最新已完成结果。
+- 已完成：`ProductionBoard.vue` 连续扫码增加最新请求门禁，避免旧慢扫码响应覆盖新快扫码定位。
+- 已完成：新增目标测试覆盖先扫慢工单、再扫快工单时页面保持最新工单/工序。
+- 已完成：`ProductionBoard.vue` 点选工单加载工序增加最新请求门禁，避免旧慢点选响应覆盖新快点选工序。
+- 已完成：新增目标测试覆盖先点慢工单、再点快工单时页面保持最新工单/工序。
+- 已完成：`ProductionBoard.vue` 点选新工单时立即清空旧工序，避免新工序加载期间显示上一工单可操作工序。
+- 已完成：新增目标测试覆盖等待新工序返回前旧 `.op-code` 不应继续显示。
+- 已完成：`ProductionBoard.vue` 扫码开始时使旧点选工序请求过期，避免点选慢响应覆盖扫码快响应。
+- 已完成：新增目标测试覆盖先点慢工单、再扫码快工单时页面保持扫码工单/工序。
+- 已完成：`ReportBoard.vue` 辅助证据读取失败时继续加载主 dashboard，并通过 alert 暴露证据加载失败。
+- 已完成：新增目标测试覆盖客户工单导入证据失败时 `getReportDashboard()` 仍被调用且主报表显示。
+- 已完成：`ReportBoard.vue` 排产采纳反馈后端失败时回退本地快照，避免 OTD 证据链丢失人工采纳记录。
+- 已完成：新增目标测试覆盖 `getLatestAdoptionFeedback()` 失败时 `readScheduleFeedbackSnapshot()` 被调用且“人工采纳”证据展示。
+- 已完成：`ReportBoard.vue` POC 上线交付包写入返回空值时 fail loud，避免交付动作证据静默缺失。
+- 已完成：新增目标测试覆盖 POC 已签署但交付包未写入时页面提示失败且不展示交付包内容。
+- 已完成：`ReportBoard.vue` POC 试点运行记录写入返回空值时 fail loud，避免首批真实工单验证证据静默缺失。
+- 已完成：新增目标测试覆盖已有上线交付包但试点运行记录未写入时页面提示失败且不展示试点运行结果。
+- 已完成：`ReportBoard.vue` POC Hypercare 验收包写入返回空值时 fail loud，避免正式上线稳定运行监控证据静默缺失。
+- 已完成：新增目标测试覆盖已有试点运行记录但 Hypercare 验收记录未写入时页面提示失败且不展示监控包内容。
+- 已完成：`ReportBoard.vue` OTD KPI 承诺包写入抛错时 fail loud，避免客户交付恢复承诺证据静默缺失。
+- 已完成：新增目标测试覆盖默认客户 KPI 承诺包写入失败时页面提示失败且不展示承诺包卡片。
+- 已完成：`ReportBoard.vue` CSV 下载失败时 fail loud，避免报表证据导出失败被误认为已完成。
+- 已完成：新增目标测试覆盖 `downloadCsv()` 抛错时页面提示“报表 CSV 导出失败”。
+- 已完成：`ReportBoard.vue` Excel/PDF 下载失败时 fail loud，避免线下报表交付文件未打开却被误认为已完成。
+- 已完成：新增目标测试覆盖 Excel/PDF anchor click 抛错时页面分别提示导出失败。
+- 已完成：`BarcodePrintBoard.vue` 标签卡片支持键盘选择和读屏选中状态，避免现场贴标只能依赖鼠标。
+- 已完成：新增目标测试覆盖 Enter 键选择标签并更新 `aria-checked`。
+- 已完成：`BarcodePrintBoard.vue` 打印弹窗打开失败时 fail loud，避免浏览器拦截后静默无反馈。
+- 已完成：新增目标测试覆盖 `window.open()` 返回 `null` 时页面提示“标签打印窗口打开失败”。
+- 已完成：`BarcodePrintBoard.vue` QR 图片生成失败时 fail loud，避免空白/半成品打印窗口被误认为可打印。
+- 已完成：新增目标测试覆盖 `QRCode.toDataURL()` 抛错时页面提示“标签二维码生成失败”且不调用 `print()`。
+- 已完成：`ScannerBoard.vue` 扫码证据写入失败时 fail loud，避免现场扫码到站证据未归档却被误认为已确认。
+- 已完成：新增目标测试覆盖 `writeBarcodeScanEvidenceRecord()` 抛错时页面提示“扫码证据写入失败”且保持未确认状态。
+- 已完成：`ScannerBoard.vue` 本地扫码证据写入成功后，后端刷新失败只提示“扫码证据刷新失败”，并保留已确认状态。
+- 已完成：新增目标测试覆盖 `readBarcodeScanEvidenceRecordsBackendFirst()` 抛错时仍显示已确认扫码证据。
+- 已完成：`ScannerBoard.vue` 无效码查询会清空上一条扫描结果，避免“未找到”错误旁边残留旧工单/设备/物料详情。
+- 已完成：新增目标测试覆盖先扫 `WO-RUSH-9001` 再查 `UNKNOWN-CODE` 时 `.scan-result` 消失。
+- 已完成：`ScannerBoard.vue` 摄像头扫码成功后，摄像头停止失败会 fail loud，避免页面状态和真实摄像头占用状态不一致。
+- 已完成：新增目标测试覆盖扫码回调识别 `WO-RUSH-9001` 后 `scanner.stop()` 抛错时页面提示“摄像头关闭失败”。
+- 已完成：`EquipmentBoard.vue` 状态筛选刷新后同步当前详情，避免新列表不含原设备时继续显示旧设备。
+- 已完成：新增目标测试覆盖打开 `CNC-001` 详情后切到 `idle` 筛选时详情消失。
+- 已完成：`EquipmentBoard.vue` 类型筛选变化后同步可见列表，避免隐藏当前设备时旧详情残留。
+- 已完成：新增目标测试覆盖打开 `ASM-001` 详情后切到 `CNC` 类型筛选时详情消失。
+- 已完成：`EquipmentBoard.vue` 健康数据后端不可用时 fail loud，避免 demo 健康分被误读为真实诊断。
+- 已完成：新增目标测试覆盖 `getHealthReport()` 抛错时页面提示“设备健康数据加载失败”并保留兜底健康展示。
+- 已完成：`EquipmentBoard.vue` 维护记录后端不可用时 fail loud，避免 demo 保养记录被误读为真实维护历史。
+- 已完成：新增目标测试覆盖 `getMaintenanceHistory()` 抛错时页面提示“设备维护记录加载失败”并保留兜底维护记录展示。
+- 已完成：`EquipmentBoard.vue` 故障诊断后端不可用时 fail loud，避免 demo 诊断步骤和备件建议被误读为真实 AI 诊断。
+- 已完成：新增目标测试覆盖 `diagnose()` 抛错时页面提示“设备故障诊断失败”并保留兜底诊断结果展示。
+- 已完成：`EquipmentBoard.vue` 设备列表后端不可用时 fail loud，避免 demo CNC 设备被误读为真实现场清单。
+- 已完成：新增目标测试覆盖 `getEquipmentList()` 抛错时页面提示“设备列表加载失败”并保留兜底设备列表展示。
+- 已完成：`EquipmentBoard.vue` KPI 统计后端不可用时 fail loud，避免 demo 运行设备数、利用率和可动率被误读为真实指标。
+- 已完成：新增目标测试覆盖 `getEquipmentStatistics()` 抛错时页面提示“设备统计加载失败”并保留兜底 KPI 展示。
+- 已完成：`EquipmentBoard.vue` 将统计、列表和详情错误状态拆分，避免统计 fallback 告警被后续列表刷新成功误清。
+- 已完成：新增目标测试覆盖统计失败后列表成功刷新时仍保留“设备统计加载失败”告警。
+- 已完成：`ProductionBoard.vue` 扫码上下文开工在后端开工成功后，如果扫码/OTD 开工证据写入失败，会 fail loud，避免生产中状态掩盖证据未归档。
+- 已完成：新增目标测试覆盖 `upsertOtdEvidenceChainRecord()` 抛错时页面提示“开工证据写入失败”且不显示成功通知。
+- 已完成：`ProductionBoard.vue` 人员替班开工证据写入失败时，告警明确包含“人员替班/扫码/OTD 证据未归档”，避免资质替班证据缺口被误读。
+- 已完成：新增目标测试覆盖 `writeLaborReassignmentExecutionEvidence()` 抛错时页面提示人员替班证据归档失败且不显示开工成功通知。
+- 已完成：`ProductionBoard.vue` POC 试点运行证据读取失败时 fail loud，且不阻断生产工单列表继续展示。
+- 已完成：新增目标测试覆盖 `readPocPilotRunRecordBackendFirst()` 抛错时页面提示“POC 试点运行证据加载失败”并保留工单。
+- 已完成：`QualityBoard.vue` MRB 处置证据读取失败时 fail loud，且不阻断质量统计、检验批次和 SPC 初始化。
+- 已完成：新增目标测试覆盖 `readQualityMrbDispositionRecordBackendFirst()` 抛错时页面提示“MRB 处置证据加载失败”并保留检验记录。
+- 已完成：`QualityBoard.vue` 异常告警 API 失败时 fail loud，避免 demo 异常列表被误读为真实质量告警。
+- 已完成：新增目标测试覆盖 `http.get('/anomaly')` 抛错时页面提示“质量异常告警加载失败”并继续显示 fallback 异常。
+- 已完成：`QualityBoard.vue` SPC 趋势分析 API 失败时 fail loud，避免 demo SPC 图表被误读为真实过程控制结果。
+- 已完成：新增目标测试覆盖 `analyzeSpcTrend()` 抛错时页面提示“SPC 趋势分析加载失败”并继续显示 fallback SPC 点位。
+- 已完成：`QualityBoard.vue` 根因分析 API 失败时 fail loud，避免 demo 根因、纠正措施和预防措施被误读为真实 AI 分析。
+- 已完成：新增目标测试覆盖 `analyzeRootCause()` 抛错时页面提示“根因分析加载失败”并继续显示 fallback 根因分析。
+- 已完成：`QualityBoard.vue` SPC 趋势分析后续成功时清理同类旧失败告警，避免有效图表旁残留过期错误。
+- 已完成：新增目标测试覆盖 SPC 先失败、再切换参数成功时 `[role="alert"]` 消失且图表点位正常。
+- 已完成：`QualityBoard.vue` 根因分析后续成功时清理同类旧失败告警，避免成功 dialog 旁残留过期错误。
+- 已完成：新增目标测试覆盖根因分析先失败、再选择另一个批次成功时 `[role="alert"]` 消失且 dialog 显示最新批次。
+- 已完成：`QualityBoard.vue` 生成 MRB 报废补料决策写入失败时 fail loud，避免关键质量处置证据未归档却被误认为已生成。
+- 已完成：新增目标测试覆盖 `writeQualityMrbDispositionRecord()` 抛错时页面提示“MRB 处置证据写入失败”且 `record` 保持为空。
+- 已完成：`QualityBoard.vue` 关闭 MRB 处置写入失败时 fail loud，避免关键质量闭环证据未归档却被误认为已闭环。
+- 已完成：新增目标测试覆盖 `closeQualityMrbDispositionRecord()` 抛错时页面提示“MRB 处置闭环写入失败”且原 `open` record 保持不变。
+- 已完成：`QualityBoard.vue` 沉淀扫码返工 CAPA 知识样本写入失败时 fail loud，避免质量知识证据未归档却被误认为已复用。
+- 已完成：新增目标测试覆盖 `writeQualityKnowledgeSample()` 抛错时页面提示“质量知识样本写入失败”且 `.sample-synced` 不渲染。
+- 已完成：`QualityBoard.vue` 生成同类缺陷处置草案写入失败时 fail loud，避免质量知识复用草案未归档却被误认为已生成。
+- 已完成：新增目标测试覆盖 `writeQualityKnowledgeReuseDraft()` 抛错时页面提示“质量知识复用草案写入失败”且 `.reuse-draft-result` 不渲染。
+- 已完成：`QualityBoard.vue` 复验通过并释放交接写入失败时 fail loud，避免质量门释放证据未归档却被误认为已放行。
+- 已完成：新增目标测试覆盖 `upsertOtdEvidenceChainRecord()` 抛错时页面提示“扫码质量门释放写入失败”且不显示 `.barcode-release-message`。
+- 继续：优先从 `QualityBoard.vue`、`ProductionBoard.vue`、`ReportBoard.vue` 等低覆盖且用户必经组件中选择真实 correctness / UX / reliability 缺口。
+- 继续：`QualityBoard.vue` 后续优先查异常告警成功后错误清理、MRB 成功闭环后的更多状态边界和扫码质量门释放成功后的显示完整性。
+- 继续：`ProductionBoard.vue` 后续优先查分页异常、扫码上下文完工证据和 POC 证据成功展示细节。
+- 继续：`EquipmentBoard.vue` 后续优先查分页和成功后错误清理边界。
+- 继续：避免 `LoginPage.vue` 等已 100% 覆盖组件插队，除非出现真实回归。
+
+## B-track
+
+- 仍需真实 GitHub remote / Actions run 证据。
+- 仍需 staging 镜像拉取和 rehearsal 证据。
+- 仍需 Attack Chain A/B/C 人工验证、安全签字、首次灰度和 14 天无 P0/P1 观察。
+- 已核验：GitHub CLI 已登录 `zenweb`，scope 含 `repo/workflow`。
+- 已核验：当前 `origin` 仍为 `https://git.code.tencent.com/zenweb/AIMes.git`，不是 GitHub remote。
+- 已核验：`gh repo view zenweb/AIMes` 仍未解析到仓库；Hosted CI 不继续空转。
+- 当前不重复撞 GitHub Actions 或 staging；等待真实 GitHub remote/repo、Docker proxy/镜像源或人工 gate 证据变化。

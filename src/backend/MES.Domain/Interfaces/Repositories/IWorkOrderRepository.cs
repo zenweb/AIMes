@@ -13,7 +13,24 @@ namespace MES.Domain.Interfaces.Repositories;
 public interface IWorkOrderRepository
 {
     Task<List<WorkOrder>> GetAllAsync(WorkOrderStatus? status = null, CancellationToken ct = default);
+    Task<List<WorkOrder>> GetPagedAsync(
+        WorkOrderStatus? status,
+        string? workshopId,
+        string? productCode,
+        DateTime? startDate,
+        DateTime? endDate,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+    Task<int> CountAsync(
+        WorkOrderStatus? status,
+        string? workshopId,
+        string? productCode,
+        DateTime? startDate,
+        DateTime? endDate,
+        CancellationToken ct = default);
     Task<WorkOrder?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<WorkOrder?> GetByCodeAsync(string code, CancellationToken ct = default);
     Task<WorkOrder> CreateAsync(WorkOrder workOrder, CancellationToken ct = default);
     Task<WorkOrder> UpdateAsync(WorkOrder workOrder, CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);

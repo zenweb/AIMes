@@ -23,7 +23,13 @@ public static class DomainEventDispatcher
 
         foreach (var domainEvent in events)
         {
-            await mediator.Publish(domainEvent, ct);
+            var notificationType = typeof(DomainEventNotification<>).MakeGenericType(domainEvent.GetType());
+            var notification = Activator.CreateInstance(notificationType, domainEvent)
+                ?? throw new InvalidOperationException($"Could not create notification for {domainEvent.GetType().FullName}.");
+            await mediator.Publish(notification, ct);
         }
     }
 }
+
+public sealed record DomainEventNotification<TDomainEvent>(TDomainEvent DomainEvent) : INotification
+    where TDomainEvent : IDomainEvent;

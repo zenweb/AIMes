@@ -33,9 +33,7 @@ public static class ScanEndpoints
             });
         }
 
-        var allEquipment = await equipmentRepo.GetAllAsync(ct);
-        var equipment = allEquipment.FirstOrDefault(e => e.EquipmentCode == code);
-
+        var equipment = await equipmentRepo.GetByCodeAsync(code, ct);
         if (equipment != null)
         {
             return TypedResults.Ok(new
@@ -50,9 +48,7 @@ public static class ScanEndpoints
             });
         }
 
-        var workOrders = await workOrderRepo.GetAllAsync(null, ct);
-        var workOrder = workOrders.FirstOrDefault(w => w.OrderNumber == code || w.Id == code);
-
+        var workOrder = await workOrderRepo.GetByCodeAsync(code, ct);
         if (workOrder != null)
         {
             return TypedResults.Ok(new

@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MediatR" />
-  </ItemGroup>
-
-  <ItemGroup>
     <InternalsVisibleTo Include="MES.Tests.Unit" />
     <InternalsVisibleTo Include="MES.Tests.Integration" />
   </ItemGroup>

@@ -5,7 +5,9 @@
         <span class="eyebrow">RAG 数据治理</span>
         <h3>分类、版本、索引状态与引用追踪</h3>
       </div>
-      <span class="risk-badge">{{ expiredCount }} 个过期风险</span>
+      <span class="risk-badge" role="status" aria-live="polite" aria-label="知识库过期风险数量">
+        {{ expiredCount }} 个过期风险
+      </span>
     </div>
 
     <div class="governance-grid">
@@ -35,6 +37,7 @@
           v-if="item.indexStatus !== 'indexed' || item.freshnessStatus !== '有效'"
           type="button"
           class="review-button"
+          :aria-label="`复核并重建索引：${item.title}`"
           @click="requestReview(item)"
         >
           复核并重建索引
@@ -86,6 +89,7 @@
               v-if="!retrainingVersionFor(asset)"
               type="button"
               class="review-button"
+              :aria-label="`批准进入训练集：${asset.title}`"
               @click="approveRetraining(asset)"
             >
               批准进入训练集
@@ -95,6 +99,7 @@
                 v-if="retrainingVersionFor(asset)?.status === 'approved'"
                 type="button"
                 class="review-button"
+                :aria-label="`运行发布前校验：${asset.title}`"
                 @click="validateRetraining(asset)"
               >
                 运行发布前校验
@@ -103,6 +108,7 @@
                 v-if="retrainingVersionFor(asset)?.status === 'validation_failed'"
                 type="button"
                 class="review-button"
+                :aria-label="`补齐字段并重新校验：${asset.title}`"
                 @click="passRetrainingValidation(asset)"
               >
                 补齐字段并重新校验
@@ -111,6 +117,7 @@
                 v-if="retrainingVersionFor(asset)?.status === 'validation_passed'"
                 type="button"
                 class="review-button publish"
+                :aria-label="`发布到 AI 推荐：${asset.title}`"
                 @click="publishRetraining(asset)"
               >
                 发布到 AI 推荐
@@ -119,6 +126,7 @@
                 v-if="retrainingVersionFor(asset)?.status !== 'published'"
                 type="button"
                 class="review-button rollback"
+                :aria-label="`回滚训练集版本：${asset.title}`"
                 @click="rollbackRetraining(asset)"
               >
                 回滚训练集版本
@@ -135,6 +143,7 @@
               v-if="!nextTrainingVersionFor(asset)"
               type="button"
               class="review-button"
+              :aria-label="`合并现场反馈：${asset.title}`"
               @click="mergeNextTrainingSet(asset)"
             >
               合并现场反馈
@@ -175,43 +184,46 @@
               v-if="asset.experimentCandidateType === 'negative_sample_patch' && !experimentCandidateVersionFor(asset)"
               type="button"
               class="review-button"
+              :aria-label="`合并 ${experimentCandidateVersionLabel(asset)} 负样本：${asset.title}`"
               @click="mergeExperimentCandidate(asset)"
             >
-              合并 R6 负样本
+              合并 {{ experimentCandidateVersionLabel(asset) }} 负样本
             </button>
             <button
               v-if="asset.experimentCandidateType === 'shadow_validation' && canRunShadowValidation(asset)"
               type="button"
               class="review-button publish"
+              :aria-label="`运行 ${experimentCandidateVersionLabel(asset)} 影子验证：${asset.title}`"
               @click="runShadowValidation(asset)"
             >
-              运行 R7 影子验证
+              运行 {{ experimentCandidateVersionLabel(asset) }} 影子验证
             </button>
             <button
               v-if="asset.experimentCandidateType === 'shadow_validation' && canPublishShadowGray(asset)"
               type="button"
               class="review-button publish"
+              :aria-label="`发布 ${experimentCandidateVersionLabel(asset)} 影子灰度：${asset.title}`"
               @click="publishShadowGray(asset)"
             >
-              发布 R7 影子灰度
+              发布 {{ experimentCandidateVersionLabel(asset) }} 影子灰度
             </button>
             <span
               v-if="asset.experimentCandidateType === 'negative_sample_patch' && experimentCandidateVersionFor(asset)"
               class="publish-note"
             >
-              R6 负样本已合并，等待 R7 影子验证。
+              {{ experimentCandidateVersionLabel(asset) }} 负样本已合并，等待影子验证。
             </span>
             <span
               v-if="asset.experimentCandidateType === 'shadow_validation' && experimentCandidateVersionFor(asset)?.status === 'validation_passed'"
               class="publish-note"
             >
-              R7 影子验证已通过，可准备扩大审批。
+              {{ experimentCandidateVersionLabel(asset) }} 影子验证已通过，可准备扩大审批。
             </span>
             <span
               v-if="asset.experimentCandidateType === 'shadow_validation' && experimentCandidateVersionFor(asset)?.status === 'gray_published'"
               class="publish-note"
             >
-              R7 影子灰度已发布，等待系统管理提交扩大并由质量主管确认。
+              {{ experimentCandidateVersionLabel(asset) }} 影子灰度已发布，等待系统管理提交扩大并由质量主管确认。
             </span>
           </div>
         </article>
@@ -399,6 +411,10 @@ function grayPublishNextTrainingSet(asset: QualityKnowledgeAssetGovernanceRecord
 
 function experimentCandidateIdFromAsset(asset: QualityKnowledgeAssetGovernanceRecord) {
   return asset.id.replace('quality-asset-', '')
+}
+
+function experimentCandidateVersionLabel(asset: QualityKnowledgeAssetGovernanceRecord) {
+  return asset.title.split(' ')[0]?.match(/R\d+$/)?.[0] ?? '候选'
 }
 
 function experimentCandidateVersionFor(asset: QualityKnowledgeAssetGovernanceRecord) {

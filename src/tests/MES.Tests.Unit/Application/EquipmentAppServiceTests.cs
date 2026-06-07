@@ -79,15 +79,67 @@ public class EquipmentAppServiceTests
     {
         var eq1 = Equipment.Create("CNC-001", "CNC Machine 1", "CNC", "WS-001", "Workshop A", 100);
         var eq2 = Equipment.Create("CNC-002", "CNC Machine 2", "CNC", "WS-001", "Workshop A", 100);
-        var eq3 = Equipment.Create("CNC-003", "CNC Machine 3", "CNC", "WS-002", "Workshop B", 100);
 
-        _equipmentRepoMock.Setup(r => r.GetByWorkshopAsync("WS-001", It.IsAny<CancellationToken>()))
+        _equipmentRepoMock.Setup(r => r.GetPagedAsync("WS-001", null, 1, 20, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Equipment> { eq1, eq2 });
+        _equipmentRepoMock.Setup(r => r.CountAsync("WS-001", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
 
         var result = await _sut.GetEquipmentsAsync("WS-001", null);
 
         result.Items.Should().HaveCount(2);
         result.Items.All(e => e.WorkshopId == "WS-001").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetEquipmentsAsync_ShouldUseRepositoryPagingForFilters()
+    {
+        var eq1 = Equipment.Create("CNC-001", "CNC Machine 1", "CNC", "WS-001", "Workshop A", 100);
+        var eq2 = Equipment.Create("CNC-002", "CNC Machine 2", "CNC", "WS-001", "Workshop A", 100);
+        eq2.StartWork("WO-001");
+        var ct = new CancellationTokenSource().Token;
+
+        _equipmentRepoMock
+            .Setup(r => r.GetPagedAsync("WS-001", EquipmentStatus.Running, 2, 1, ct))
+            .ReturnsAsync([eq2]);
+        _equipmentRepoMock
+            .Setup(r => r.CountAsync("WS-001", EquipmentStatus.Running, ct))
+            .ReturnsAsync(4);
+
+        var result = await _sut.GetEquipmentsAsync("WS-001", "Running", 2, 1, ct);
+
+        result.Items.Should().ContainSingle(e => e.EquipmentCode == "CNC-002");
+        result.TotalCount.Should().Be(4);
+        result.Page.Should().Be(2);
+        result.PageSize.Should().Be(1);
+        _equipmentRepoMock.Verify(r => r.GetPagedAsync("WS-001", EquipmentStatus.Running, 2, 1, ct), Times.Once);
+        _equipmentRepoMock.Verify(r => r.CountAsync("WS-001", EquipmentStatus.Running, ct), Times.Once);
+        _equipmentRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _equipmentRepoMock.Verify(r => r.GetByWorkshopAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(1, 0)]
+    public async Task GetEquipmentsAsync_WithInvalidPaging_ShouldRejectBeforeRepository(int page, int pageSize)
+    {
+        var act = () => _sut.GetEquipmentsAsync(page: page, pageSize: pageSize);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        _equipmentRepoMock.Verify(
+            r => r.GetPagedAsync(
+                It.IsAny<string?>(),
+                It.IsAny<EquipmentStatus?>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _equipmentRepoMock.Verify(
+            r => r.CountAsync(
+                It.IsAny<string?>(),
+                It.IsAny<EquipmentStatus?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

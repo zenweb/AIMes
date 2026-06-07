@@ -13,7 +13,10 @@ namespace MES.Domain.Interfaces.Repositories;
 public interface IEquipmentRepository
 {
     Task<List<Equipment>> GetAllAsync(CancellationToken ct = default);
+    Task<List<Equipment>> GetPagedAsync(string? workshopId, EquipmentStatus? status, int page, int pageSize, CancellationToken ct = default);
+    Task<int> CountAsync(string? workshopId, EquipmentStatus? status, CancellationToken ct = default);
     Task<Equipment?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<Equipment?> GetByCodeAsync(string equipmentCode, CancellationToken ct = default);
     Task<Equipment> CreateAsync(Equipment equipment, CancellationToken ct = default);
     Task<Equipment> UpdateAsync(Equipment equipment, CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);

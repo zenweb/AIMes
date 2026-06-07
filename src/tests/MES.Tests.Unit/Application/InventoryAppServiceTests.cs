@@ -3,6 +3,7 @@ using MES.Application.DTOs;
 using MES.Application.Services;
 using MES.Domain.Entities.Inventory;
 using MES.Domain.Entities.Production;
+using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
 using Moq;
@@ -15,6 +16,7 @@ public class InventoryAppServiceTests
     private readonly Mock<IMaterialRepository> _materialRepoMock;
     private readonly Mock<IStockTransactionRepository> _txRepoMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IAuditLogAppService> _auditLogMock;
     private readonly InventoryAppService _sut;
 
     public InventoryAppServiceTests()
@@ -22,12 +24,13 @@ public class InventoryAppServiceTests
         _materialRepoMock = new Mock<IMaterialRepository>();
         _txRepoMock = new Mock<IStockTransactionRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _auditLogMock = new Mock<IAuditLogAppService>();
         // lambda 模式：测试桩直接调用 action 跑过去（不真起事务，单测里不需要）
         _unitOfWorkMock
             .Setup(u => u.ExecuteAsync(It.IsAny<Func<CancellationToken, Task<StockTransactionDto>>>(), It.IsAny<CancellationToken>()))
             .Returns<Func<CancellationToken, Task<StockTransactionDto>>, CancellationToken>(
                 (action, ct) => action(ct));
-        _sut = new InventoryAppService(_materialRepoMock.Object, _txRepoMock.Object, _unitOfWorkMock.Object);
+        _sut = new InventoryAppService(_materialRepoMock.Object, _txRepoMock.Object, _unitOfWorkMock.Object, _auditLogMock.Object);
     }
 
     [Fact]
@@ -35,9 +38,9 @@ public class InventoryAppServiceTests
     {
         var materials = new List<Material>
         {
-            new() { Id = "m1", MaterialCode = "AL-6061", AvailableQuantity = 1000, ReservedQuantity = 0, SafetyStock = 100 },
-            new() { Id = "m2", MaterialCode = "STEEL-001", AvailableQuantity = 50, ReservedQuantity = 30, SafetyStock = 100 },
-            new() { Id = "m3", MaterialCode = "BRASS-001", AvailableQuantity = 0, ReservedQuantity = 0, SafetyStock = 50 },
+            Material.Create("AL-6061", "铝合金", "KG", safetyStock: 100, availableQuantity: 1000, id: "m1"),
+            CreateReservedMaterial("STEEL-001", "钢材", 50, 30, 100, "m2"),
+            Material.Create("BRASS-001", "黄铜", "KG", safetyStock: 50, availableQuantity: 0, id: "m3"),
         };
         _materialRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(materials);
         _txRepoMock.Setup(r => r.CountTodayAsync(It.IsAny<CancellationToken>())).ReturnsAsync(5);
@@ -55,8 +58,8 @@ public class InventoryAppServiceTests
     {
         var materials = new List<Material>
         {
-            new() { Id = "m1", MaterialCode = "AL-6061", MaterialName = "铝合金", MaterialType = "原材料", Unit = "KG", AvailableQuantity = 1000 },
-            new() { Id = "m2", MaterialCode = "STEEL-001", MaterialName = "钢材", Unit = "KG", AvailableQuantity = 500 },
+            Material.Create("AL-6061", "铝合金", "KG", materialType: "原材料", availableQuantity: 1000, id: "m1"),
+            Material.Create("STEEL-001", "钢材", "KG", availableQuantity: 500, id: "m2"),
         };
         _materialRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(materials);
 
@@ -69,7 +72,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task GetItemByCodeAsync_WhenExists_ShouldReturnItem()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", MaterialName = "铝合金" };
+        var material = Material.Create("AL-6061", "铝合金", "KG", id: "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
 
         var result = await _sut.GetItemByCodeAsync("AL-6061");
@@ -91,7 +94,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task StockInAsync_ShouldIncreaseQuantityAndCreateTransaction()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", MaterialName = "铝合金", AvailableQuantity = 100 };
+        var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
@@ -106,12 +109,23 @@ public class InventoryAppServiceTests
         result.Warehouse.Should().Be("WH-01");
         material.AvailableQuantity.Should().Be(150);
         _txRepoMock.Verify(r => r.AddAsync(It.IsAny<StockTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+        _auditLogMock.Verify(a => a.WriteAuditLogAsync(
+            "test-op",
+            "InventoryStockIn",
+            "Inventory",
+            It.IsAny<string>(),
+            null,
+            It.Is<string>(value => value.Contains("AL-6061", StringComparison.Ordinal)),
+            null,
+            null,
+            AuditInitiatedBy.User,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task StockOutAsync_ShouldDecreaseQuantityAndCreateTransaction()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", MaterialName = "铝合金", AvailableQuantity = 100, ReservedQuantity = 0 };
+        var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
@@ -128,7 +142,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task StockOutAsync_WhenInsufficientStock_ShouldThrow()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", AvailableQuantity = 20, ReservedQuantity = 10 };
+        var material = CreateReservedMaterial("AL-6061", "铝合金", 20, 10, 0, "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
 
         var act = () => _sut.StockOutAsync(new StockOutRequest { MaterialCode = "AL-6061", Quantity = 30 });
@@ -140,7 +154,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task TransferAsync_ShouldMoveStockAndUpdateLocation()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", AvailableQuantity = 100, ReservedQuantity = 0, StorageLocation = "WH-A" };
+        var material = Material.Create("AL-6061", "铝合金", "KG", storageLocation: "WH-A", availableQuantity: 100, id: "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
@@ -163,7 +177,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task AdjustAsync_ShouldSetExactQuantity()
     {
-        var material = new Material { Id = "m1", MaterialCode = "AL-6061", AvailableQuantity = 100 };
+        var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
         _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
@@ -183,5 +197,24 @@ public class InventoryAppServiceTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*不存在*");
+    }
+
+    private static Material CreateReservedMaterial(
+        string code,
+        string name,
+        int availableQuantity,
+        int reservedQuantity,
+        int safetyStock,
+        string id)
+    {
+        var material = Material.Create(
+            code,
+            name,
+            "KG",
+            safetyStock: safetyStock,
+            availableQuantity: availableQuantity,
+            id: id);
+        material.Reserve(reservedQuantity);
+        return material;
     }
 }

@@ -1,4 +1,5 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
+import { queryKnowledgeGovernanceReviews, upsertKnowledgeGovernanceReview } from '../api/knowledgeGovernanceEvidence'
 
 const STORAGE_KEY = 'aimes_knowledge_governance_reviews'
 
@@ -67,10 +68,33 @@ export function readKnowledgeGovernanceReviews(): KnowledgeGovernanceReviewRecor
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isKnowledgeGovernanceReviewRecord) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(STORAGE_KEY)
+      return []
+    }
+    const records = parsed.filter(isKnowledgeGovernanceReviewRecord)
+    if (records.length !== parsed.length) {
+      if (records.length === 0) {
+        window.localStorage.removeItem(STORAGE_KEY)
+      } else {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return []
+  }
+}
+
+export async function readKnowledgeGovernanceReviewsBackendFirst(): Promise<KnowledgeGovernanceReviewRecord[]> {
+  try {
+    const records = await queryKnowledgeGovernanceReviews()
+    return records.length > 0 ? records : readKnowledgeGovernanceReviews()
+  } catch (error: unknown) {
+    const localRecords = readKnowledgeGovernanceReviews()
+    if (localRecords.length > 0) return localRecords
+    throw error
   }
 }
 
@@ -186,6 +210,7 @@ export function writeKnowledgeGovernanceReview(record = createDefaultKnowledgeGo
     ...readKnowledgeGovernanceReviews().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  void upsertKnowledgeGovernanceReview(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `knowledge-governance-${record.documentId}`,
     stage: '知识治理',

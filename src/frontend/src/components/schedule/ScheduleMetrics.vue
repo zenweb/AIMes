@@ -1,5 +1,5 @@
 <template>
-  <div class="metrics-bar">
+  <div class="metrics-bar" role="status" aria-live="polite" aria-label="排产指标">
     <div class="metric-card">
       <span class="metric-label">设备利用率</span>
       <span class="metric-value" :style="{ color: utilizationColor }">

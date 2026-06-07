@@ -1,5 +1,10 @@
 <template>
-  <section class="start-qualification-panel" aria-label="开工资质校验">
+  <section
+    class="start-qualification-panel"
+    :aria-label="`开工资质校验：${check.statusLabel}`"
+    :role="panelRole"
+    :aria-live="panelAriaLive"
+  >
     <div class="qualification-header">
       <span>开工前校验</span>
       <strong :class="check.status">{{ check.statusLabel }}</strong>
@@ -39,16 +44,31 @@
       </div>
     </div>
     <div class="qualification-checklist">
-      <span v-for="item in check.gates" :key="item.label" :class="item.status">
+      <span
+        v-for="item in check.gates"
+        :key="item.label"
+        :class="item.status"
+        :aria-label="`${item.label}：${item.result}，${gateStatusLabel(item.status)}`"
+      >
         {{ item.label }}：{{ item.result }}
       </span>
     </div>
-    <div v-if="check.reassignmentAuditId" class="qualification-reassignment">
+    <div
+      v-if="check.reassignmentAuditId"
+      class="qualification-reassignment"
+      role="status"
+      :aria-label="`替班审计：${check.reassignmentAuditId}，${check.reassignmentTraceId}`"
+    >
       <span>替班审计</span>
       <strong>{{ check.reassignmentAuditId }}</strong>
       <p>原人员：{{ check.blockedOperator }}；复核：{{ check.replacementReviewer }}；追踪：{{ check.reassignmentTraceId }}</p>
     </div>
-    <div v-if="check.qualificationBlockAuditId" class="qualification-reassignment blocked">
+    <div
+      v-if="check.qualificationBlockAuditId"
+      class="qualification-reassignment blocked"
+      role="alert"
+      :aria-label="`阻断审计：${check.qualificationBlockAuditId}，${check.qualificationBlockTraceId}，${check.qualificationBlockReason || check.note}`"
+    >
       <span>阻断审计</span>
       <strong>{{ check.qualificationBlockAuditId }}</strong>
       <p>原人员：{{ check.blockedOperator }}；复核：{{ check.replacementReviewer }}；追踪：{{ check.qualificationBlockTraceId }}；{{ check.qualificationBlockReason }}</p>
@@ -58,6 +78,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+
 export interface StartQualificationCheck {
   status: 'pass' | 'warning' | 'blocked'
   statusLabel: string
@@ -87,9 +109,16 @@ export interface StartQualificationCheck {
   note: string
 }
 
-defineProps<{
+const props = defineProps<{
   check: StartQualificationCheck
 }>()
+
+const panelRole = computed(() => props.check.status === 'blocked' ? 'alert' : 'status')
+const panelAriaLive = computed(() => props.check.status === 'blocked' ? 'assertive' : 'polite')
+
+function gateStatusLabel(status: StartQualificationCheck['gates'][number]['status']) {
+  return status === 'blocked' ? '阻断' : status === 'warning' ? '告警' : '通过'
+}
 </script>
 
 <style scoped>

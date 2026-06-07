@@ -10,6 +10,10 @@
     <Project Path="../tests/MES.Tests.Integration/MES.Tests.Integration.csproj" />
     <Project Path="../tests/MES.Tests.Unit/MES.Tests.Unit.csproj" />
     <Project Path="../tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj" />
+    <Project Path="../tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj" />
     <Project Path="../tests/MES.Benchmarks/MES.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="../tools/MES.Tools.AbBenchmark/MES.Tools.AbBenchmark.csproj" />
   </Folder>
 </Solution>

@@ -13,6 +13,10 @@
       <div class="kpi-card"><label>今日操作</label><span class="num">{{ dashboard.todayTransactions }}</span></div>
     </div>
 
+    <div v-if="notification" class="inventory-notification" role="alert">
+      {{ notification }}
+    </div>
+
     <KittingClosurePanel />
 
     <div class="board-body">
@@ -32,13 +36,18 @@
             <option value="Auxiliary">辅料</option>
           </select>
         </div>
-        <div class="list-items">
+        <div class="list-items" role="listbox" aria-label="物料库存列表">
           <div
             v-for="item in filteredItems"
             :key="item.materialCode"
             class="list-item"
             :class="{ active: selected?.materialCode === item.materialCode }"
+            role="option"
+            tabindex="0"
+            :aria-selected="selected?.materialCode === item.materialCode"
             @click="selectItem(item)"
+            @keydown.enter="selectItem(item)"
+            @keydown.space.prevent="selectItem(item)"
           >
             <div class="item-title">{{ item.materialName }}</div>
             <div class="item-sub">
@@ -121,9 +130,17 @@
     </div>
 
     <!-- 操作对话框 -->
-    <div v-if="dialog" class="modal-overlay" @click.self="dialog = null">
-      <div class="modal-content">
-        <h3>{{ dialogTitle }}</h3>
+    <div v-if="dialog" class="modal-overlay" @click.self="closeDialog">
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="inventory-operation-dialog-title"
+        tabindex="-1"
+        data-inventory-operation-dialog
+        @keydown.escape="closeDialog"
+      >
+        <h3 id="inventory-operation-dialog-title">{{ dialogTitle }}</h3>
         <div class="form-group">
           <label>物料</label><span>{{ selected?.materialName }} ({{ selected?.materialCode }})</span>
         </div>
@@ -146,20 +163,21 @@
           <label>备注</label><input v-model="dialogRemark" class="form-input" />
         </div>
         <div class="modal-actions">
-          <button class="btn btn-cancel" @click="dialog = null">取消</button>
+          <button class="btn btn-cancel" @click="closeDialog">取消</button>
           <button class="btn btn-ok" @click="confirmDialog" :disabled="!dialogQty || dialogQty < 1">确认</button>
         </div>
-        <div v-if="dialogError" class="error-msg">{{ dialogError }}</div>
+        <div v-if="dialogError" class="error-msg" role="alert">{{ dialogError }}</div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import type { InventoryItem, StockTransaction, InventoryDashboard } from '../../types/inventory'
 import { getInventoryDashboard, getInventoryList, getStockTransactions, stockIn, stockOut, transferStock, adjustStock } from '../../api/inventory'
 import { exportToCsv } from '../../utils/export'
+import { errorMessage } from '../../utils/error-message'
 import KittingClosurePanel from './KittingClosurePanel.vue'
 
 const dashboard = ref<InventoryDashboard | null>(null)
@@ -174,6 +192,8 @@ const dialogWarehouse = ref('')
 const dialogFrom = ref('')
 const dialogRemark = ref('')
 const dialogError = ref('')
+const notification = ref('')
+const lastDialogTrigger = ref<HTMLElement | null>(null)
 
 const filteredItems = computed(() => {
   let list = items.value
@@ -224,10 +244,12 @@ const demoTx: StockTransaction[] = [
 
 async function selectItem(item: InventoryItem) {
   selected.value = item
+  notification.value = ''
   try {
     transactions.value = await getStockTransactions(item.materialCode)
-  } catch {
+  } catch (error: unknown) {
     transactions.value = demoTx.filter(t => t.materialCode === item.materialCode)
+    notification.value = `库存交易记录加载失败，已显示本地演示交易：${errorMessage(error, '请稍后重试')}`
   }
 }
 
@@ -237,13 +259,23 @@ function handleExport() {
   ]))
 }
 
-function openDialog(type: string) {
+async function openDialog(type: string) {
+  lastDialogTrigger.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
   dialog.value = type
   dialogQty.value = type === 'adjust' ? (selected.value?.availableQuantity || 0) : 1
   dialogWarehouse.value = ''
   dialogFrom.value = ''
   dialogRemark.value = ''
   dialogError.value = ''
+  await nextTick()
+  document.querySelector<HTMLElement>('[data-inventory-operation-dialog]')?.focus()
+}
+
+function closeDialog() {
+  dialog.value = null
+  nextTick(() => {
+    lastDialogTrigger.value?.focus()
+  })
 }
 
 async function confirmDialog() {
@@ -265,11 +297,11 @@ async function confirmDialog() {
         await adjustStock({ materialCode: code, newQuantity: dialogQty.value, remark: dialogRemark.value || undefined })
         break
     }
-  } catch (e: any) {
-    dialogError.value = e?.response?.data?.title || e?.message || '操作失败'
+  } catch (e: unknown) {
+    dialogError.value = errorMessage(e, '操作失败', 'title')
     return
   }
-  dialog.value = null
+  closeDialog()
   await loadData()
   if (selected.value) {
     const updated = items.value.find(i => i.materialCode === code)
@@ -297,8 +329,9 @@ async function loadData() {
   }
   try {
     items.value = await getInventoryList()
-  } catch {
+  } catch (error: unknown) {
     items.value = demoItems
+    notification.value = `库存列表加载失败，已显示本地演示物料：${errorMessage(error, '请稍后重试')}`
   }
 }
 
@@ -306,7 +339,7 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.inv-board { height: 100%; display: flex; flex-direction: column; padding: 16px; }
+.inv-board { height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 .kpi-row { display: flex; gap: 12px; margin-bottom: 12px; }
 .kpi-card { background: #fff; border-radius: 6px; padding: 12px 20px; flex: 1; border-left: 3px solid #1890ff; }
@@ -316,8 +349,9 @@ onMounted(loadData)
 .kpi-card .num { font-size: 24px; font-weight: 700; color: #333; }
 .kpi-card.warn .num { color: #faad14; }
 .kpi-card.danger .num { color: #ff4d4f; }
+.inventory-notification { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #ffccc7; border-radius: 6px; background: #fff2f0; color: #a8071a; font-size: 13px; }
 
-.board-body { flex: 1; display: flex; gap: 16px; overflow: hidden; }
+.board-body { flex: 0 0 auto; display: flex; gap: 16px; min-height: 420px; }
 .list-panel { width: 360px; flex-shrink: 0; background: #fff; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
 .panel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .badge-count { background: #1890ff; color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; }

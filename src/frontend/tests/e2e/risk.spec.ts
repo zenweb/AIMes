@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
+import type { RiskActionTrace } from '../../src/utils/risk-action-sync'
 
 test.describe('Risk 风险处置队列', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
       if (!location.pathname.includes('/risk')) {
         localStorage.removeItem('aimes_production_anomaly_event')
       }
@@ -48,8 +49,8 @@ test.describe('Risk 风险处置队列', () => {
     await expect(materialCard.getByText('已关闭')).toBeVisible()
     await expect(panel.locator('.queue-trace').getByText(/已关闭，处置结果将进入 OTD 复盘与审计日志/)).toBeVisible()
 
-    const traces = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_risk_action_traces') || '[]'))
-    expect(traces.some((trace: any) => trace.title === 'AL-6061 齐套缺口' && trace.status === 'closed')).toBeTruthy()
+    const traces = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_risk_action_traces') || '[]') as RiskActionTrace[])
+    expect(traces.some(trace => trace.title === 'AL-6061 齐套缺口' && trace.status === 'closed')).toBeTruthy()
 
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
@@ -136,7 +137,7 @@ test.describe('Risk 风险处置队列', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governance = page.locator('.risk-sla-governance-card')
     await expect(governance.getByText('风险 SLA 逾期晨会复核包')).toBeVisible()
     await expect(governance.getByText('RISK-DAILY-20260521-001')).toBeVisible()
@@ -162,5 +163,32 @@ test.describe('Risk 风险处置队列', () => {
     await expect(detail.getByText(/风险 SLA 复核 阶段生成晨会复核证据/)).toBeVisible()
     await expect(detail.getByText(/同步给 AI 排产、AI 生产助手、Agent 治理和报表 CSV/)).toBeVisible()
     await expect(detail.getByText(/核对排产保护、采购承诺、设备窗口和责任动作闭环是否支撑 OTD 恢复/)).toBeVisible()
+  })
+
+  test('风险 SLA 晨会复核包写入失败时真实浏览器展示 fail-loud 且不伪造复核卡', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.removeItem('aimes_risk_sla_review')
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithRiskSlaReviewFailure(key: string, value: string) {
+        if (key === 'aimes_risk_sla_review') {
+          throw new Error('risk sla review storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+    await page.goto('risk')
+    await page.waitForSelector('.risk-board', { timeout: 20000 })
+
+    const panel = page.locator('.risk-action-panel')
+    await panel.getByRole('button', { name: '生成 SLA 晨会复核包' }).click()
+
+    const alert = panel.locator('.action-error')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('风险 SLA 复核包生成失败')
+    await expect(alert).toContainText('risk sla review storage denied from chromium')
+    await expect(panel.locator('.sla-review-empty').getByText('等待生成晨会复核包')).toBeVisible()
+    await expect(panel.locator('.sla-review-card')).toHaveCount(0)
+    await expect(panel.locator('.queue-trace')).not.toContainText('风险 SLA 逾期晨会复核包 已生成')
   })
 })

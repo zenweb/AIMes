@@ -7,15 +7,17 @@ namespace MES.Api.Endpoints;
 
 public static class AdminEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("admin");
+
     public static RouteGroupBuilder MapAdminEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/users", GetUsersAsync).WithTags("系统管理");
-        group.MapPost("/users", CreateUserAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPut("/users/{id}", UpdateUserAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPost("/users", CreateUserAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPut("/users/{id}", UpdateUserAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         group.MapGet("/configs", GetConfigsAsync).WithTags("系统管理");
-        group.MapPut("/configs/{id}", UpdateConfigAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPut("/configs/{id}", UpdateConfigAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         group.MapGet("/notifications", GetNotificationConfigsAsync).WithTags("系统管理");
-        group.MapPut("/notifications/{id}", UpdateNotificationConfigAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPut("/notifications/{id}", UpdateNotificationConfigAsync).WithTags("系统管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         return group;
     }
 

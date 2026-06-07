@@ -2,8 +2,16 @@
   <Teleport to="body">
     <div class="toast-container">
       <TransitionGroup name="toast">
-        <div v-for="t in toasts" :key="t.id" class="toast-item" :class="t.type">
-          <div class="toast-icon">
+        <div
+          v-for="t in toasts"
+          :key="t.id"
+          class="toast-item"
+          :class="t.type"
+          :role="t.type === 'error' ? 'alert' : 'status'"
+          :aria-live="t.type === 'error' ? 'assertive' : 'polite'"
+          aria-atomic="true"
+        >
+          <div class="toast-icon" aria-hidden="true">
             <template v-if="t.type === 'error'">✕</template>
             <template v-else-if="t.type === 'warning'">⚠</template>
             <template v-else-if="t.type === 'info'">ℹ</template>

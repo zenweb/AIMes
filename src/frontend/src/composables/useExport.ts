@@ -8,8 +8,8 @@ export function useExport() {
   function downloadCsv(filename: string, headers: string[], rows: string[][]) {
     const bom = '﻿'
     const csv = bom + [
-      headers.join(','),
-      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(r => r.map(escapeCsvCell).join(',')),
     ].join('\r\n')
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -25,4 +25,8 @@ export function useExport() {
   }
 
   return { csvFilename, downloadCsv }
+}
+
+function escapeCsvCell(cell: string): string {
+  return `"${String(cell).replace(/"/g, '""')}"`
 }

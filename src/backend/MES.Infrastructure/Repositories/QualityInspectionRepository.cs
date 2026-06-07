@@ -25,12 +25,26 @@ public class QualityInspectionRepository : IQualityInspectionRepository
     public async Task<QualityInspection?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.QualityInspections
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == id, ct);
+    }
+
+    public async Task<QualityInspection?> GetForUpdateAsync(string id, CancellationToken ct = default)
+    {
+        return await _context.QualityInspections
             .FirstOrDefaultAsync(i => i.Id == id, ct);
     }
 
     public async Task<QualityInspection> CreateAsync(QualityInspection inspection, CancellationToken ct = default)
     {
         _context.QualityInspections.Add(inspection);
+        await _context.SaveChangesAsync(ct);
+        return inspection;
+    }
+
+    public async Task<QualityInspection> UpdateAsync(QualityInspection inspection, CancellationToken ct = default)
+    {
+        _context.QualityInspections.Update(inspection);
         await _context.SaveChangesAsync(ct);
         return inspection;
     }

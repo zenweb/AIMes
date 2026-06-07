@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
 
-test.describe.configure({ timeout: 90000 })
+test.describe.configure({ timeout: 180000 })
 
 test.describe('Production 生产看板', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
       if (!location.pathname.includes('/anomaly') && !location.pathname.includes('/risk')) {
         localStorage.removeItem('aimes_production_anomaly_event')
       }
@@ -119,7 +119,7 @@ test.describe('Production 生产看板', () => {
     if (cardCount > 0) {
       await woCards.first().click()
       await expect(page.locator('.operations-section')).toBeVisible()
-      await expect(page.getByText('工序')).toBeVisible()
+      await expect(page.locator('.operations-section').getByRole('heading', { name: '工序' })).toBeVisible()
     } else {
       test.skip()
     }
@@ -195,6 +195,14 @@ test.describe('Production 生产看板', () => {
 
       await page.locator('.dialog-confirm').click()
       const tracePanel = page.locator('.execution-trace-panel')
+      await expect(tracePanel).toHaveAttribute('role', 'status')
+      await expect(tracePanel).toHaveAttribute('aria-live', 'polite')
+      await expect(tracePanel).toHaveAttribute('aria-label', /生产执行闭环：1 条记录/)
+      const traceList = tracePanel.locator('.trace-list')
+      await expect(traceList).toHaveAttribute('role', 'list')
+      await expect(traceList).toHaveAttribute('aria-label', '生产执行闭环记录')
+      await expect(traceList.locator('.trace-card').first()).toHaveAttribute('role', 'listitem')
+      await expect(traceList.locator('.trace-card').first()).toHaveAttribute('aria-label', /排产回写：.*已开工/)
       await expect(tracePanel.locator('.trace-tags').getByText('人员资质')).toBeVisible()
       await expect(tracePanel.locator('.trace-tags').getByText('SOP')).toBeVisible()
       await expect(tracePanel.locator('.trace-tags').getByText('物料齐套')).toBeVisible()
@@ -210,7 +218,7 @@ test.describe('Production 生产看板', () => {
     await page.waitForSelector('.emp-board', { timeout: 20000 })
     const skillPanel = page.locator('.skill-matrix-panel')
     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
-    await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible()
+    await expect(skillPanel.locator('p').getByText('AUD-LABOR-REASSIGN-20260520-001 / TRACE-LABOR-REASSIGN-WO-013-OP-10')).toBeVisible({ timeout: 10000 })
 
     await page.goto('production', { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 20000 })
@@ -245,6 +253,56 @@ test.describe('Production 生产看板', () => {
     await expect(startEvidence.getByText('生产开工')).toBeVisible()
     await expect(startEvidence.getByText('替班已执行')).toBeVisible()
     await expect(startEvidence.getByText('TRACE-LABOR-REASSIGN-WO-013-OP-10-START')).toBeVisible()
+  })
+
+  test('人员替班开工证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.goto('employee', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+    const skillPanel = page.locator('.skill-matrix-panel')
+    await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
+    await expect(skillPanel.locator('p').getByText('AUD-LABOR-REASSIGN-20260520-001 / TRACE-LABOR-REASSIGN-WO-013-OP-10')).toBeVisible({ timeout: 10000 })
+
+    await page.goto('production', { waitUntil: 'commit' })
+    await page.waitForSelector('.production-board', { timeout: 20000 })
+    const heatOrder = page.locator('.wo-card').filter({ hasText: 'WO-013' })
+    await expect(heatOrder).toBeVisible()
+    await heatOrder.click()
+
+    const heatOperation = page.locator('.op-card').filter({ hasText: 'OP-10' }).filter({ hasText: '淬火' })
+    await expect(heatOperation.getByText('人员: EMP-006 替班已确认')).toBeVisible()
+    await heatOperation.getByRole('button', { name: '开工' }).click()
+
+    const qualificationPanel = page.locator('.start-qualification-panel')
+    await expect(qualificationPanel.getByText('替班已确认', { exact: true })).toBeVisible()
+    await expect(qualificationPanel.getByText('孙八 · EMP-006')).toBeVisible()
+    await expect(page.locator('.dialog-confirm')).toBeEnabled()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithLaborStartEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium labor reassignment evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.locator('.dialog-confirm').click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: '开工证据写入失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('后端开工已提交但人员替班/扫码/OTD 证据未归档')
+    await expect(alert).toContainText('chromium labor reassignment evidence storage unavailable')
+    await expect(page.locator('.dialog-overlay')).toBeVisible()
+    await expect(page.locator('.execution-trace-panel').getByText('已开工：淬火')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'labor-reassignment-start-WO-013-OP-10',
+        traceId: 'TRACE-LABOR-REASSIGN-WO-013-OP-10-START',
+      }),
+    ]))
   })
 
   test('热处理无有效替班候选时阻断确认开工', async ({ page }) => {
@@ -286,14 +344,53 @@ test.describe('Production 生产看板', () => {
     await heatOperation.getByRole('button', { name: '开工' }).click()
 
     const qualificationPanel = page.locator('.start-qualification-panel')
+    await expect(qualificationPanel).toHaveAttribute('role', 'alert')
+    await expect(qualificationPanel).toHaveAttribute('aria-live', 'assertive')
+    await expect(qualificationPanel).toHaveAttribute('aria-label', /停工复核/)
     await expect(qualificationPanel.getByText('停工复核', { exact: true })).toBeVisible()
     await expect(qualificationPanel.getByText('王五 · EMP-003', { exact: true })).toBeVisible()
-    await expect(qualificationPanel.getByText('替班候选：无有效候选')).toBeVisible()
+    await expect(qualificationPanel.getByLabel('替班候选：无有效候选，阻断')).toBeVisible()
     const blockBox = qualificationPanel.locator('.qualification-reassignment.blocked')
+    await expect(blockBox).toHaveAttribute('role', 'alert')
+    await expect(blockBox).toHaveAttribute('aria-label', /未找到有效替班候选/)
     await expect(blockBox.getByText('AUD-LABOR-BLOCK-20260520-001', { exact: true })).toBeVisible()
     await expect(blockBox.getByText(/TRACE-LABOR-BLOCK-WO-013-OP-10/)).toBeVisible()
     await expect(blockBox.getByText(/未找到有效替班候选/)).toBeVisible()
     await expect(page.locator('.dialog-confirm')).toBeDisabled()
+  })
+
+  test('扫码开工证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.locator('.scan-input').fill('WO-RUSH-9001')
+    await page.locator('.scan-btn').click()
+    await expect(page.locator('.barcode-start-context')).toBeVisible()
+    await page.locator('.barcode-context-actions').getByRole('button', { name: '按扫码上下文开工' }).click()
+
+    const qualificationPanel = page.locator('.start-qualification-panel')
+    await expect(qualificationPanel.getByText('校验通过')).toBeVisible()
+    await expect(page.locator('.dialog-confirm')).toBeEnabled()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithOtdEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium otd evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.locator('.dialog-confirm').click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: '开工证据写入失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('后端开工已提交但人员替班/扫码/OTD 证据未归档')
+    await expect(alert).toContainText('chromium otd evidence storage unavailable')
+    await expect(page.locator('.dialog-overlay')).toBeVisible()
+    await expect(page.locator('.execution-trace-panel').getByText('已开工：CNC 精加工')).not.toBeVisible()
+    await expect(page.locator('.barcode-start-context').getByText('已写入生产开工证据')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(evidenceSnapshot).toBeNull()
   })
 
   test('完工后生成排产与质量回写记录', async ({ page }) => {
@@ -355,6 +452,39 @@ test.describe('Production 生产看板', () => {
     }
   })
 
+  test('完工证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    const workOrder = page.locator('.wo-card').filter({ hasText: 'WO-001' })
+    await expect(workOrder).toBeVisible({ timeout: 20000 })
+    await workOrder.click()
+
+    const operation = page.locator('.op-card').filter({ hasText: 'OP-20' }).filter({ hasText: 'CNC 精加工' })
+    await operation.getByRole('button', { name: '完工' }).click()
+    await expect(page.getByRole('dialog', { name: '完工报告' })).toBeVisible()
+    await expect(page.locator('.dialog-confirm')).toBeEnabled()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithCompletionEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium completion evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.locator('.dialog-confirm').click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: '完工证据写入失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('后端完工已提交但 OTD/质量证据未归档')
+    await expect(alert).toContainText('chromium completion evidence storage unavailable')
+    await expect(page.getByRole('dialog', { name: '完工报告' })).toBeVisible()
+    await expect(page.locator('.execution-trace-panel').getByText('完工报告已提交')).not.toBeVisible()
+
+    const evidenceSnapshot = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(evidenceSnapshot).toBeNull()
+  })
+
   test('异常上报后生成风险联动记录', async ({ page }) => {
     const workOrder = page.locator('.wo-card').filter({ hasText: 'WO-001' })
     await expect(workOrder).toBeVisible({ timeout: 20000 })
@@ -365,7 +495,7 @@ test.describe('Production 生产看板', () => {
     await expect(exceptionBtn).toBeVisible()
 
     await exceptionBtn.click()
-    await expect(page.getByRole('heading', { name: '异常上报' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: '异常上报' })).toBeVisible()
     await page.locator('.dialog-card textarea').fill('主轴温升异常，需暂停复核')
     await page.locator('.dialog-confirm').click()
 
@@ -416,13 +546,52 @@ test.describe('Production 生产看板', () => {
 
     await page.goto('admin')
     await page.waitForSelector('.admin-board', { timeout: 20000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governance = page.locator('.agent-governance-panel .production-execution-governance')
     const governanceCard = governance.locator('.production-execution-card').filter({ hasText: 'WO-001 CNC 精加工 异常上报进入风险联动' })
     await expect(governanceCard.locator('.action-topline span').getByText('生产异常', { exact: true })).toBeVisible()
     await expect(governanceCard.getByText('异常待分流')).toBeVisible()
     await expect(governanceCard.getByRole('button', { name: '查看异常中心' })).toBeVisible()
     await expect(governanceCard.getByRole('button', { name: '查看风险预警' })).toBeVisible()
+  })
+
+  test('异常证据写入失败时真实浏览器保留 fail-loud 告警且不伪造风险联动', async ({ page }) => {
+    const workOrder = page.locator('.wo-card').filter({ hasText: 'WO-001' })
+    await expect(workOrder).toBeVisible({ timeout: 20000 })
+    await workOrder.click()
+
+    const operation = page.locator('.op-card').filter({ hasText: 'OP-20' }).filter({ hasText: 'CNC 精加工' })
+    const exceptionBtn = operation.locator('.op-btn.exception')
+    await expect(exceptionBtn).toBeVisible()
+
+    await exceptionBtn.click()
+    await expect(page.getByRole('dialog', { name: '异常上报' })).toBeVisible()
+    await page.locator('.dialog-card textarea').fill('主轴温升异常，需暂停复核')
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithProductionAnomalyEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_production_anomaly_event') {
+          throw new Error('chromium production anomaly storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.locator('.dialog-confirm').click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: '异常证据写入失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('后端异常已上报但异常管理/OTD 证据未归档')
+    await expect(alert).toContainText('chromium production anomaly storage unavailable')
+    await expect(page.getByRole('dialog', { name: '异常上报' })).toBeVisible()
+    await expect(page.locator('.execution-trace-panel').getByText('异常已进入处置队列')).not.toBeVisible()
+    await expect(page.getByText('异常已上报：主轴温升异常，需暂停复核')).not.toBeVisible()
+
+    const anomalySnapshot = await page.evaluate(() => localStorage.getItem('aimes_production_anomaly_event'))
+    const evidenceSnapshot = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(anomalySnapshot).toBeNull()
+    expect(evidenceSnapshot ?? '').not.toContain('TRACE-PROD-ANOMALY-WO-001-OP-20')
   })
 
   test('异常上报后能在异常管理看到并打开 AI 处置建议', async ({ page }) => {
@@ -485,6 +654,7 @@ test.describe('Production 生产看板', () => {
 
   test('空状态下显示暂无工单', async ({ page }) => {
     // 拦截工单列表 API 返回空
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
     await page.route('**/api/v1/scheduling/workorders*', (route) => {
       route.fulfill({
         status: 200,

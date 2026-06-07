@@ -3,6 +3,7 @@ using MES.AI.Pro.Configuration;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 
@@ -16,9 +17,10 @@ public class QdrantVectorStoreService : IVectorStoreService, IAsyncDisposable
     // 注册为 Singleton；用 ConcurrentDictionary 当 set 用，避免并发 EnsureCollection 的 HashSet 竞争
     private readonly ConcurrentDictionary<string, byte> _knownCollections = new();
 
-    public QdrantVectorStoreService(QdrantConfig config, ILogger<QdrantVectorStoreService> logger)
+    public QdrantVectorStoreService(IOptions<QdrantConfig> config, ILogger<QdrantVectorStoreService> logger)
     {
-        _client = new QdrantClient(config.Host, config.Port, https: false);
+        var qdrantConfig = config.Value;
+        _client = new QdrantClient(qdrantConfig.Host, qdrantConfig.Port, https: false);
         _logger = logger;
     }
 

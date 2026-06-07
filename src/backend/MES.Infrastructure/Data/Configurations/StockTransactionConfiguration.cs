@@ -28,5 +28,6 @@ public class StockTransactionConfiguration : IEntityTypeConfiguration<StockTrans
         entity.HasIndex(e => e.MaterialCode);
         entity.HasIndex(e => e.TransactionType);
         entity.HasIndex(e => e.CreatedAt);
+        entity.HasIndex(e => new { e.MaterialCode, e.CreatedAt });
     }
 }

@@ -6,6 +6,7 @@ using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class RoutingControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;

@@ -28,9 +28,22 @@ public class ProcessParameterAgent
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var similarCases = await SearchAsync("process-parameters", $"product={productCode};process={processName};constraints={JsonSerializer.Serialize(constraints)}", ct);
+        var modelName = "ProcessParameterReasoning";
+        string retrievalError = string.Empty;
+        List<DocumentChunk> similarCases;
+        try
+        {
+            similarCases = await SearchAsync("process-parameters", $"product={productCode};process={processName};constraints={JsonSerializer.Serialize(constraints)}", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            modelName = "ProcessParameterReasoningFallback";
+            retrievalError = $"检索失败（{ex.GetType().Name}），返回空参数建议。";
+            similarCases = [];
+        }
+
         var context = JsonSerializer.Serialize(similarCases.Select(ToContext));
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请基于相似产品和工序的历史参数推荐最优工艺参数。
 
             产品：{productCode}
@@ -39,10 +52,29 @@ public class ProcessParameterAgent
             相似参数案例：{context}
 
             请输出JSON，字段包括：OptimalParameters、SensitivityAnalysis、QualityControlPoints、RecommendationReason。
-            """;
+            """);
 
-        var result = await _llmGateway.GenerateJsonAsync<TracedProcessParameterRecommendation>(prompt, ct)
-            ?? new TracedProcessParameterRecommendation();
+        TracedProcessParameterRecommendation result;
+        if (!string.IsNullOrEmpty(retrievalError))
+        {
+            result = new TracedProcessParameterRecommendation { RecommendationReason = retrievalError };
+        }
+        else
+        {
+            try
+            {
+                result = await _llmGateway.GenerateJsonAsync<TracedProcessParameterRecommendation>(prompt, ct)
+                    ?? new TracedProcessParameterRecommendation();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                modelName = "ProcessParameterReasoningFallback";
+                result = new TracedProcessParameterRecommendation
+                {
+                    RecommendationReason = $"LLM 调用失败（{ex.GetType().Name}），返回空参数建议。"
+                };
+            }
+        }
 
         result.AiDecisionTrace = BuildTrace(
             prompt,
@@ -52,7 +84,8 @@ public class ProcessParameterAgent
             0.78m,
             sw.ElapsedMilliseconds,
             "process-parameters",
-            $"product={productCode};process={processName}");
+            $"product={productCode};process={processName}",
+            modelName);
 
         return result;
     }
@@ -66,7 +99,7 @@ public class ProcessParameterAgent
     {
         var sw = Stopwatch.StartNew();
         var context = JsonSerializer.Serialize(new { currentParameters, qualityResults });
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请根据当前工艺参数和质量结果提出参数优化建议。
 
             产品：{productCode}
@@ -75,7 +108,7 @@ public class ProcessParameterAgent
             {context}
 
             请输出JSON，字段包括：OptimalParameters、SensitivityAnalysis、QualityControlPoints、RecommendationReason。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<TracedProcessParameterRecommendation>(prompt, ct)
             ?? new TracedProcessParameterRecommendation();
@@ -126,7 +159,7 @@ public class ProcessParameterAgent
     private async Task<List<DocumentChunk>> SearchAsync(string collectionName, string query, CancellationToken ct)
     {
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        return await _vectorStore.SearchAsync(collectionName, embedding, 5);
+        return await _vectorStore.SearchAsync(collectionName, embedding, 5, ct);
     }
 
     private static object ToContext(DocumentChunk chunk)
@@ -158,13 +191,14 @@ public class ProcessParameterAgent
         decimal confidence,
         long latencyMs,
         string sourceReferences,
-        string relatedBusinessKeys)
+        string relatedBusinessKeys,
+        string modelName = "ProcessParameterReasoning")
     {
         return AiTraceFactory.Create(
             AgentName,
             AgentVersion,
             "ConfiguredLlmGateway",
-            "ProcessParameterReasoning",
+            modelName,
             "unknown",
             prompt,
             context,

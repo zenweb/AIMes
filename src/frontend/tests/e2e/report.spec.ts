@@ -1,13 +1,106 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 test.describe.configure({ timeout: 90000 })
+
+interface LatestAbReport {
+  baseline: { otd: number }
+  agent: { otd: number }
+  delta: { otd: number; delayedOrdersReduced: number }
+}
+
+const latestAbReport = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'public', 'reports', 'latest-ab-report.json'), 'utf8'),
+) as LatestAbReport
+const expectedBaselineOtd = formatPercent(latestAbReport.baseline.otd)
+const expectedAgentOtd = formatPercent(latestAbReport.agent.otd)
+const expectedOtdDelta = formatPoint(latestAbReport.delta.otd)
+const expectedDelayedOrdersReduced = `${latestAbReport.delta.delayedOrdersReduced} 单`
+
+type CapturedCsvDownload = {
+  filename: string
+  text: string
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function formatPoint(value: number) {
+  return `${(value * 100).toFixed(1)}`
+}
+
+async function captureCsvDownload(page: Page, trigger: () => Promise<void>) {
+  await page.evaluate(() => {
+    const w = window as typeof window & {
+      __aimesCsvDownloads?: Array<{ filename: string; text: string }>
+      __aimesCsvBlobTextByUrl?: Record<string, Promise<string>>
+      __aimesCsvDownloadHookInstalled?: boolean
+    }
+    w.__aimesCsvDownloads = []
+    w.__aimesCsvBlobTextByUrl = {}
+    if (w.__aimesCsvDownloadHookInstalled) return
+
+    const originalCreateObjectURL = URL.createObjectURL.bind(URL)
+    URL.createObjectURL = function createObjectURLWithCsvCapture(object: Blob | MediaSource) {
+      const url = originalCreateObjectURL(object)
+      if (object instanceof Blob && object.type.includes('text/csv')) {
+        w.__aimesCsvBlobTextByUrl ??= {}
+        w.__aimesCsvBlobTextByUrl[url] = object.text()
+      }
+      return url
+    }
+
+    const originalClick = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function clickWithCsvCapture() {
+      if (this.download && this.href.startsWith('blob:')) {
+        const filename = this.download
+        const textPromise = w.__aimesCsvBlobTextByUrl?.[this.href] ?? fetch(this.href)
+          .then(response => response.text())
+        void textPromise
+          .then(text => {
+            w.__aimesCsvDownloads?.push({ filename, text })
+          })
+        return
+      }
+
+      return originalClick.call(this)
+    }
+    w.__aimesCsvDownloadHookInstalled = true
+  })
+
+  await trigger()
+  await expect.poll(
+    async () => page.evaluate(() => {
+      const w = window as typeof window & {
+        __aimesCsvDownloads?: Array<{ filename: string; text: string }>
+      }
+      return w.__aimesCsvDownloads?.length ?? 0
+    }),
+    { timeout: 10000 },
+  ).toBeGreaterThan(0)
+
+  return await page.evaluate(() => {
+    const w = window as typeof window & {
+      __aimesCsvDownloads?: CapturedCsvDownload[]
+    }
+    return w.__aimesCsvDownloads?.at(-1)
+      ?? { filename: '报表-00000000-0000.csv', text: '' }
+  }) as CapturedCsvDownload
+}
+
+async function waitForReportExportReady(page: Page) {
+  await expect(page.locator('.report-board section').filter({ hasText: '生产概况' }).getByText('工单总数')).toBeVisible({ timeout: 60000 })
+  await expect(page.locator('.report-board section').filter({ hasText: '生产概况' }).locator('.num').first()).not.toBeEmpty({ timeout: 60000 })
+}
 
 test.describe('Report 报表中心', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.report-board', { timeout: 60000 })
@@ -18,16 +111,16 @@ test.describe('Report 报表中心', () => {
 
     await expect(panel.getByRole('heading', { name: 'OTD 改善复盘报告' })).toBeVisible()
     await expect(panel.locator('.dataset-badge').getByText('30 单演示数据集')).toBeVisible()
-    await expect(panel.getByText('+14%')).toBeVisible()
+    await expect(panel.getByText(`+${expectedOtdDelta}%`)).toBeVisible()
     await expect(panel.locator('.otd-card.baseline').getByText('人工基线')).toBeVisible()
-    await expect(panel.locator('.otd-card.baseline').getByText('82.0%')).toBeVisible()
+    await expect(panel.locator('.otd-card.baseline').getByText(expectedBaselineOtd)).toBeVisible()
     await expect(panel.locator('.otd-card.agent').getByText('Agent 推荐')).toBeVisible()
-    await expect(panel.locator('.otd-card.agent').getByText('96.0%')).toBeVisible()
+    await expect(panel.locator('.otd-card.agent').getByText(expectedAgentOtd)).toBeVisible()
     const reducedDelayMetric = panel.locator('.metric-tile').filter({ hasText: '延期减少' })
     await expect(reducedDelayMetric.getByText('延期减少')).toBeVisible()
-    await expect(reducedDelayMetric.getByText('4 单')).toBeVisible()
-    await expect(panel.locator('.reason-row strong').getByText('瓶颈设备合批')).toBeVisible()
-    await expect(panel.getByText(/M-AL-6061 加急采购收货/)).toBeVisible()
+    await expect(reducedDelayMetric.getByText(expectedDelayedOrdersReduced)).toBeVisible()
+    await expect(panel.locator('.reason-row strong').getByText('可重放基准')).toBeVisible()
+    await expect(panel.getByText(/当前样本未达到 95% 显著性/)).toBeVisible()
     await expect(panel.getByText('OTD 复盘证据链')).toBeVisible()
     const evidenceChain = panel.locator('.otd-evidence-chain')
     await expect(evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单 / 缺料 / 设备健康进入风险队列' }).getByText('风险触发')).toBeVisible()
@@ -107,12 +200,13 @@ test.describe('Report 报表中心', () => {
     await expect(detail.getByText('周窗口达标')).toBeVisible()
     await expect(detail.getByText('TRACE-KPI-TIME-WEEK-OTD-20260521')).toBeVisible()
 
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'CSV' }).click()
-    const download = await downloadPromise
-    const downloadPath = await download.path()
-    expect(downloadPath).toBeTruthy()
-    const csv = await readFile(downloadPath!, 'utf8')
+    await waitForReportExportReady(page)
+    const download = await captureCsvDownload(page, async () => {
+      await page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('.report-board .btn-export')?.click()
+      })
+    })
+    const csv = download.text
     expect(csv).toContain('OTD KPI多维钻取')
     expect(csv).toContain('客户 / 华东新能源')
     expect(csv).toContain('基线 76% / Agent 94% / 提升 +18% / 延期减少 3 单 / 已恢复')
@@ -134,12 +228,13 @@ test.describe('Report 报表中心', () => {
     await expect(evidenceChain.getByText('客户承诺包')).toBeVisible()
     await expect(evidenceChain.getByText('华东新能源 交付恢复承诺包')).toBeVisible()
 
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'CSV' }).click()
-    const download = await downloadPromise
-    const downloadPath = await download.path()
-    expect(downloadPath).toBeTruthy()
-    const csv = await readFile(downloadPath!, 'utf8')
+    await waitForReportExportReady(page)
+    const download = await captureCsvDownload(page, async () => {
+      await page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('.report-board .btn-export')?.click()
+      })
+    })
+    const csv = download.text
     expect(csv).toContain('客户交付恢复承诺包')
     expect(csv).toContain('华东新能源 交付恢复承诺包')
     expect(csv).toContain('AUD-KPI-COMMITMENT-HUADONG-20260521-001 / TRACE-KPI-COMMITMENT-HUADONG-20260521')
@@ -205,12 +300,16 @@ test.describe('Report 报表中心', () => {
     await expect(replay.getByText(/外协承诺、计划复核和厂外等待口径已归档/)).toBeVisible()
     await expect(replay.getByText(/不能把厂外等待误判为厂内恢复/)).toBeVisible()
 
-    const downloadPromise = page.waitForEvent('download')
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
-    await page.getByRole('button', { name: 'CSV' }).click()
-    const download = await downloadPromise
-    const csv = await readFile((await download.path())!, 'utf8')
+    await waitForReportExportReady(page)
+    const download = await captureCsvDownload(page, async () => {
+      await page.evaluate(() => {
+        const button = document.querySelector<HTMLButtonElement>('.report-board .btn-export')
+        button?.click()
+      })
+    })
+    const csv = download.text
     expect(csv).toContain('外协承诺包')
     expect(csv).toContain('法兰盘 DN100 外协承诺包')
     expect(csv).toContain('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001 / TRACE-OUTSOURCING-FLANGE-20260521')
@@ -346,8 +445,9 @@ test.describe('Report 报表中心', () => {
     const panel = page.locator('.poc-template-section')
 
     await panel.getByRole('link', { name: '准备导入样例' }).click()
-    await page.locator('.customer-import-panel').getByRole('button', { name: '生成客户工单导入样例' }).click()
-    await expect(page.getByText('IMP-POC-WO-20260520-001')).toBeVisible()
+    const customerImportPanel = page.getByRole('region', { name: '客户真实工单导入样例' })
+    await customerImportPanel.getByRole('button', { name: '生成客户工单导入样例' }).click()
+    await expect(customerImportPanel.getByText('IMP-POC-WO-20260520-001', { exact: true })).toBeVisible()
 
     await page.goto('report', { waitUntil: 'commit' })
     await page.locator('.poc-template-section').getByRole('link', { name: '准备设备故障样例' }).first().click()
@@ -382,10 +482,13 @@ test.describe('Report 报表中心', () => {
     await expect(refreshedPanel.locator('.hypercare-monitor-card').filter({ hasText: 'OTD 稳定性' }).getByText('97%')).toBeVisible()
     await expect(refreshedPanel.locator('.hypercare-monitor-card').filter({ hasText: '异常告警' }).getByText('0 个未关闭，1 个 P3 已派单')).toBeVisible()
 
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'CSV' }).click()
-    const download = await downloadPromise
-    const csv = await readFile((await download.path())!, 'utf8')
+    await waitForReportExportReady(page)
+    const download = await captureCsvDownload(page, async () => {
+      await page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('.report-board .btn-export')?.click()
+      })
+    })
+    const csv = download.text
     expect(csv).toContain('POC上线交付包')
     expect(csv).toContain('AUD-POC-ROLLOUT-20260521')
     expect(csv).toContain('TRACE-POC-ROLLOUT-DATA-MAPPING-20260521')
@@ -430,7 +533,7 @@ test.describe('Report 报表中心', () => {
     await expect(monitoringHypercare.locator('.hypercare-watch-card').filter({ hasText: 'AI 建议采纳率' }).getByText('89%')).toBeVisible()
 
     await page.goto('admin', { waitUntil: 'commit' })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const adminPanel = page.locator('.agent-governance-panel')
     const rolloutGovernanceCard = adminPanel.locator('.poc-evidence-card.rollout')
     await expect(rolloutGovernanceCard.getByText('POC 上线交付')).toBeVisible()
@@ -536,15 +639,16 @@ test.describe('Report 报表中心', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
+    await waitForReportExportReady(page)
 
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'CSV' }).click()
-    const download = await downloadPromise
-    const downloadPath = await download.path()
+    const download = await captureCsvDownload(page, async () => {
+      await page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('.report-board .btn-export')?.click()
+      })
+    })
 
-    expect(download.suggestedFilename()).toMatch(/^报表-\d{8}-\d{4}\.csv$/)
-    expect(downloadPath).toBeTruthy()
-    const csv = await readFile(downloadPath!, 'utf8')
+    expect(download.filename).toMatch(/^报表-\d{8}-\d{4}\.csv$/)
+    const csv = download.text
     expect(csv).toContain('OTD复盘证据链')
     expect(csv).toContain('TRACE-SCH-20260520-001')
     expect(csv).toContain('采购回写 / M-AL-6061 加急采购收货已释放缺料风险')

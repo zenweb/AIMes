@@ -1,6 +1,8 @@
 using FluentValidation;
 using MassTransit;
 using MES.AI.Core.Scheduling;
+using MES.Api.Configuration;
+using MES.Api.Services;
 #if !AIMES_OPEN_SOURCE
 using MES.AI.Adapters;
 using MES.AI.Pro.Agents;
@@ -9,7 +11,6 @@ using MES.AI.Pro.Services;
 using Microsoft.SemanticKernel;
 #endif
 using MES.Application.Services;
-using MES.Domain.Interfaces.Integration;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
 using MES.Infrastructure.Data;
@@ -18,7 +19,10 @@ using MES.Infrastructure.Persistence;
 using MES.Infrastructure.Repositories;
 using MES.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
+using InfrastructureExportAppService = MES.Infrastructure.Services.ExportAppService;
 
 namespace MES.Api.Extensions;
 
@@ -32,20 +36,21 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDatabaseServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var provider = DatabaseProvider.Resolve(configuration["Database:Provider"]);
-        Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", provider);
+        services.AddSingleton(configuration);
+        services.AddOptions<DatabaseOptions>()
+            .Configure<IConfiguration>(DatabaseOptions.BindFromConfiguration)
+            .ValidateDataAnnotations()
+            .Validate(DatabaseOptions.HasSupportedProvider, "Database:Provider must be PostgreSQL, SqlServer, or InMemory.")
+            .Validate(DatabaseOptions.HasDefaultConnection, "ConnectionStrings:DefaultConnection is required.")
+            .ValidateOnStart();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrWhiteSpace(connectionString))
+        services.AddDbContext<MesDbContext>((sp, options) =>
         {
-            throw new InvalidOperationException(
-                "ConnectionStrings:DefaultConnection is required. Set it via environment variable " +
-                "ConnectionStrings__DefaultConnection or appsettings.{Environment}.json. " +
-                "See docker-compose.yml for the open-source demo example.");
-        }
+            var databaseOptions = sp.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+            var provider = databaseOptions.GetResolvedProvider();
+            var connectionString = databaseOptions.DefaultConnection;
+            Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", provider);
 
-        services.AddDbContext<MesDbContext>(options =>
-        {
             if (DatabaseProvider.IsSqlServer(provider))
             {
                 options.UseSqlServer(connectionString, sqlServerOptions =>
@@ -67,6 +72,10 @@ public static class ServiceCollectionExtensions
                     errorCodesToAdd: null);
             });
         });
+
+        services.AddScoped<IDatabaseSchemaState, EfDatabaseSchemaState>();
+        services.AddScoped<IDemoDataSeeder, EfDemoDataSeeder>();
+        services.AddScoped<IDatabaseStartupValidator, DatabaseStartupValidator>();
 
         return services;
     }
@@ -94,6 +103,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmployeeRepository, EmployeeRepository>();
         services.AddScoped<IStockTransactionRepository, StockTransactionRepository>();
         services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
+        services.AddScoped<IAgentDecisionRepository, AgentDecisionRepository>();
+        services.AddSingleton<ISchedulingContextCache, SchedulingContextCache>();
         services.AddScoped<ISchedulingContextProvider, SchedulingContextProvider>();
         services.AddScoped<IBomExplosionService, BomExplosionService>();
         services.AddScoped<IMaterialKittingChecker, MaterialKittingChecker>();
@@ -108,6 +119,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         services.AddScoped<ISchedulingAppService, SchedulingAppService>();
+        services.AddScoped<IScheduleAgentService, ScheduleAgentService>();
         services.AddScoped<IQualityAppService, QualityAppService>();
         services.AddScoped<IEquipmentAppService, EquipmentAppService>();
         services.AddScoped<IKnowledgeAppService, KnowledgeAppService>();
@@ -122,13 +134,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRiskAppService, RiskAppService>();
         services.AddScoped<IOperationService, OperationService>();
         services.AddScoped<AdoptionFeedbackService>();
-        services.AddScoped<IErpService, ErpServiceStub>();
-        services.AddScoped<IWmsService, WmsServiceStub>();
-        services.AddScoped<IMaterialCallService, MaterialCallServiceStub>();
-        services.AddScoped<IMaterialDeliveryTracker, MaterialDeliveryTrackerStub>();
         services.AddScoped<IDashboardKpiService, DashboardKpiService>();
-        services.AddScoped<IExportAppService, ExportAppService>();
-        services.AddScoped<IEquipmentCommandService, EquipmentCommandServiceStub>();
+        services.AddScoped<IExportAppService, InfrastructureExportAppService>();
 
         return services;
     }
@@ -167,11 +174,18 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection("AI:Llm"))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        // 保留 singleton 供现有直接注入 LlmConfig 的代码使用
-        var llmConfig = new LlmConfig();
-        configuration.GetSection("AI:Llm").Bind(llmConfig);
-        services.AddSingleton(llmConfig);
-        services.AddHttpClient();
+        services.AddSingleton<ILlmConcurrencyGate>(sp =>
+            new LlmConcurrencyGate(sp.GetRequiredService<IOptions<LlmConfig>>().Value.MaxConcurrency));
+        services.AddHttpClient("azure-openai").AddStandardResilienceHandler();
+        services.AddHttpClient("openai").AddStandardResilienceHandler();
+        services.AddHttpClient("ollama", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(5);
+        }).AddStandardResilienceHandler();
+        services.AddHttpClient("qdrant-health", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(2);
+        }).AddStandardResilienceHandler();
         services.AddSingleton<ILlmGateway, LlmGatewayService>();
 
         // 注册向量存储服务
@@ -179,30 +193,23 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection("AI:VectorStore"))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-
-        // 根据配置选择 Qdrant 或 InMemory，在Options变更时也需动态判断
-        var vectorStoreConfig = new VectorStoreConfig();
-        configuration.GetSection("AI:VectorStore").Bind(vectorStoreConfig);
-        services.AddSingleton(vectorStoreConfig);
-        services.AddSingleton(vectorStoreConfig.Qdrant);
-
-        if (vectorStoreConfig.Provider.Equals("Qdrant", StringComparison.OrdinalIgnoreCase))
+        services.AddSingleton<IOptions<QdrantConfig>>(sp =>
+            Options.Create(sp.GetRequiredService<IOptions<VectorStoreConfig>>().Value.Qdrant));
+        services.AddSingleton<QdrantVectorStoreService>();
+        services.AddSingleton<VectorStoreService>();
+        services.AddSingleton<IVectorStoreService>(sp =>
         {
-            services.AddSingleton<IVectorStoreService, QdrantVectorStoreService>();
-        }
-        else
-        {
-            services.AddSingleton<IVectorStoreService, VectorStoreService>();
-        }
+            var vectorStoreOptions = sp.GetRequiredService<IOptions<VectorStoreConfig>>();
+            return vectorStoreOptions.Value.Provider.Equals("Qdrant", StringComparison.OrdinalIgnoreCase)
+                ? sp.GetRequiredService<QdrantVectorStoreService>()
+                : sp.GetRequiredService<VectorStoreService>();
+        });
 
         // 注册ONNX推理服务
         services.AddOptions<OnnxConfig>()
             .Bind(configuration.GetSection("AI:Onnx"))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        var onnxConfig = new OnnxConfig();
-        configuration.GetSection("AI:Onnx").Bind(onnxConfig);
-        services.AddSingleton(onnxConfig);
         services.AddSingleton<IOnnxModelService, OnnxInferenceService>();
 
         // 注册Semantic Kernel（AI Agents 依赖 Kernel 注入）
@@ -258,14 +265,19 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCacheServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddMemoryCache();
+        services.AddSingleton(configuration);
+        services.AddOptions<CacheOptions>()
+            .Configure<IConfiguration>(CacheOptions.BindFromConfiguration)
+            .ValidateOnStart();
+        var cacheOptions = new CacheOptions();
+        CacheOptions.BindFromConfiguration(cacheOptions, configuration);
 
-        var redisConn = configuration.GetConnectionString("Redis");
-        if (!string.IsNullOrWhiteSpace(redisConn))
+        if (cacheOptions.HasRedisConnection)
         {
             services.AddStackExchangeRedisCache(options =>
             {
-                options.Configuration = redisConn;
-                options.InstanceName = "aimes:";
+                options.Configuration = cacheOptions.RedisConnection;
+                options.InstanceName = cacheOptions.RedisInstanceName;
             });
         }
         else
@@ -279,10 +291,16 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddMessagingServices(this IServiceCollection services, IConfiguration configuration)
     {
-        if (string.Equals(
-                configuration["Messaging:Transport"],
-                "Disabled",
-                StringComparison.OrdinalIgnoreCase))
+        services.AddSingleton(configuration);
+        services.AddOptions<MessagingOptions>()
+            .Configure<IConfiguration>(MessagingOptions.BindFromConfiguration)
+            .ValidateDataAnnotations()
+            .Validate(MessagingOptions.HasSupportedTransport, "Messaging:Transport must be Disabled, InMemory, or RabbitMQ.")
+            .Validate(MessagingOptions.HasRequiredConnection, "ConnectionStrings:RabbitMQ is required when Messaging:Transport is RabbitMQ.")
+            .ValidateOnStart();
+        var messagingOptions = new MessagingOptions();
+        MessagingOptions.BindFromConfiguration(messagingOptions, configuration);
+        if (messagingOptions.IsDisabled)
         {
             return services;
         }
@@ -292,10 +310,7 @@ public static class ServiceCollectionExtensions
             x.AddConsumer<OperationReportedIntegrationEventConsumer>();
             x.AddConsumer<SchedulePlanCreatedIntegrationEventConsumer>();
 
-            if (string.Equals(
-                    configuration["Messaging:Transport"],
-                    "InMemory",
-                    StringComparison.OrdinalIgnoreCase))
+            if (messagingOptions.IsInMemory)
             {
                 x.UsingInMemory((context, cfg) =>
                 {
@@ -306,8 +321,7 @@ public static class ServiceCollectionExtensions
 
             x.UsingRabbitMq((context, cfg) =>
             {
-                var connectionString = configuration.GetConnectionString("RabbitMQ") ?? "rabbitmq://localhost";
-                cfg.Host(new Uri(connectionString));
+                cfg.Host(new Uri(messagingOptions.RabbitMqConnection));
                 cfg.ConfigureEndpoints(context);
             });
         });
@@ -320,6 +334,15 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddCorsServices(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddOptions<CorsOptions>(CorsOptions.OptionsName)
+            .Bind(configuration)
+            .ValidateDataAnnotations()
+            .Validate(CorsOptions.HasAllowedOrigins, "AllowedOrigins must contain at least one origin for the Production CORS policy.")
+            .ValidateOnStart();
+        var productionCorsOptions = new CorsOptions();
+        configuration.Bind(productionCorsOptions);
+        var allowedOrigins = productionCorsOptions.GetNormalizedAllowedOrigins();
+
         services.AddCors(options =>
         {
             options.AddPolicy("AllowAll", builder =>
@@ -331,14 +354,10 @@ public static class ServiceCollectionExtensions
 
             options.AddPolicy("Production", builder =>
             {
-                var allowedOrigins = configuration.GetSection("AllowedOrigins").Get<string[]>();
-                if (allowedOrigins != null && allowedOrigins.Length > 0)
-                {
-                    builder.WithOrigins(allowedOrigins)
-                           .AllowAnyMethod()
-                           .AllowAnyHeader()
-                           .AllowCredentials();
-                }
+                builder.WithOrigins(allowedOrigins)
+                       .AllowAnyMethod()
+                       .AllowAnyHeader()
+                       .AllowCredentials();
             });
         });
 

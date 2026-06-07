@@ -39,11 +39,24 @@ export function readRiskActionTraces(): RiskActionTrace[] {
   return readRawTraces()
 }
 
+export async function readRiskActionTracesBackendFirst(): Promise<RiskActionTrace[]> {
+  try {
+    const { queryRiskActionTraces } = await import('../api/riskEvidence')
+    const traces = await queryRiskActionTraces(12)
+    return traces.length > 0 ? traces : readRiskActionTraces()
+  } catch {
+    return readRiskActionTraces()
+  }
+}
+
 export function appendRiskActionTrace(trace: RiskActionTrace) {
   if (!canUseStorage()) return []
   const existing = readRawTraces().filter(item => item.id !== trace.id || item.status !== trace.status)
   const next = [trace, ...existing].slice(0, 12)
   window.localStorage.setItem(RISK_ACTION_TRACE_KEY, JSON.stringify(next))
+  void import('../api/riskEvidence')
+    .then(({ upsertRiskActionTrace }) => upsertRiskActionTrace(trace))
+    .catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `risk-action-${trace.id}`,
     stage: '现场处置',

@@ -1,5 +1,6 @@
 using MES.Domain.Entities;
 using MES.Domain.Entities.Admin;
+using MES.Domain.Entities.Agent;
 using MES.Domain.Entities.Anomalies;
 using MES.Domain.Entities.Bom;
 using MES.Domain.Entities.Employee;
@@ -66,6 +67,15 @@ public class MesDbContext : DbContext
     // 排产方案采纳反馈
     public DbSet<ScheduleAdoptionFeedback> ScheduleAdoptionFeedbacks => Set<ScheduleAdoptionFeedback>();
 
+#if !EXCLUDE_AGENT_DECISION_MODELS
+    // Agent 决策与证据
+    public DbSet<AgentTriggerEvent> AgentTriggerEvents => Set<AgentTriggerEvent>();
+    public DbSet<AgentDecision> AgentDecisions => Set<AgentDecision>();
+    public DbSet<AgentDecisionScenario> AgentDecisionScenarios => Set<AgentDecisionScenario>();
+    public DbSet<AgentEvidenceLink> AgentEvidenceLinks => Set<AgentEvidenceLink>();
+    public DbSet<AgentActionResult> AgentActionResults => Set<AgentActionResult>();
+#endif
+
     // 库存交易
     public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
 
@@ -92,6 +102,15 @@ public class MesDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(MesDbContext).Assembly);
+
+        if (string.Equals(Environment.GetEnvironmentVariable("AIMES_EXCLUDE_AGENT_DECISION_MODELS"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            modelBuilder.Ignore<AgentTriggerEvent>();
+            modelBuilder.Ignore<AgentDecision>();
+            modelBuilder.Ignore<AgentDecisionScenario>();
+            modelBuilder.Ignore<AgentEvidenceLink>();
+            modelBuilder.Ignore<AgentActionResult>();
+        }
 
         DataSeeder.Seed(modelBuilder);
     }

@@ -21,6 +21,14 @@ public class EmployeeAppServiceTests
 
         _employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => [.. _store]);
+        _employeeRepoMock.Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int page, int pageSize, CancellationToken _) => _store
+                .OrderBy(e => e.EmployeeNumber)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList());
+        _employeeRepoMock.Setup(r => r.CountAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => _store.Count);
         _employeeRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, CancellationToken _) => _store.FirstOrDefault(e => e.Id == id));
         _employeeRepoMock.Setup(r => r.GetByTeamAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))

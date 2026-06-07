@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test'
 test.describe.configure({ timeout: 90000 })
 
 async function routeNoCandidateEmployees(page: Page) {
+  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
   await page.route('**/api/v1/employee**', (route) => {
     route.fulfill({
       status: 200,
@@ -25,6 +27,8 @@ async function routeNoCandidateEmployees(page: Page) {
 }
 
 async function routeAvailabilityEmployees(page: Page) {
+  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
   await page.route('**/api/v1/employee**', (route) => {
     route.fulfill({
       status: 200,
@@ -50,7 +54,7 @@ test.describe('Employee 人员能力约束', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('employee')
     await page.waitForSelector('.emp-board', { timeout: 20000 })
@@ -66,6 +70,42 @@ test.describe('Employee 人员能力约束', () => {
     await expect(panel.getByText('热处理上岗证 · 2026-05-25')).toBeVisible()
     await expect(panel.getByText('夜班排班')).toBeVisible()
     await expect(panel.getByText('加班窗口', { exact: true })).toBeVisible()
+  })
+
+  test('员工卡片打开可命名编辑对话框', async ({ page }) => {
+    const employeeCard = page.getByRole('button', { name: '查看员工详情：EMP-001 张三' })
+    await employeeCard.focus()
+    await page.keyboard.press('Enter')
+
+    const dialog = page.getByRole('dialog', { name: '编辑员工' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('textbox').first()).toHaveValue('EMP-001')
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(employeeCard).toBeFocused()
+  })
+
+  test('鼠标点击员工卡片打开可命名编辑对话框', async ({ page }) => {
+    await page.getByRole('button', { name: '查看员工详情：EMP-001 张三' }).click()
+
+    const dialog = page.getByRole('dialog', { name: '编辑员工' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('textbox').first()).toHaveValue('EMP-001')
+  })
+
+  test('新增员工弹窗支持 Escape 关闭并回到新增按钮', async ({ page }) => {
+    const addButton = page.getByRole('button', { name: '+ 新增' })
+    await addButton.focus()
+    await page.keyboard.press('Enter')
+
+    const dialog = page.getByRole('dialog', { name: '新增员工' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(addButton).toBeFocused()
   })
 
   test('按技能班组班次证书和排班可用性推荐替班候选', async ({ page }) => {
@@ -117,7 +157,7 @@ test.describe('Employee 人员能力约束', () => {
 
     const panel = page.locator('.skill-matrix-panel')
     await expect(panel.getByText('未找到有效替班候选，需阻断开工并升级主管复核')).toBeVisible()
-    await expect(panel.getByText('无有效替班候选')).toBeVisible()
+    await expect(panel.locator('strong').getByText('无有效替班候选', { exact: true })).toBeVisible()
 
     await panel.getByRole('button', { name: '生成替班建议' }).click()
     await expect(panel.getByText('停工复核已同步生产开工与 OTD 复盘')).toBeVisible()
@@ -131,6 +171,7 @@ test.describe('Employee 人员能力约束', () => {
     const reassignment = await page.evaluate(() => localStorage.getItem('aimes_labor_reassignment'))
     expect(reassignment).toBeNull()
 
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'true'))
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
@@ -179,6 +220,7 @@ test.describe('Employee 人员能力约束', () => {
     expect(releaseReassignment.replacementEmployeeNumber).toBe('EMP-006')
     expect(releaseReassignment.replacementSkill).toContain('补证改派')
 
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'true'))
     await page.goto('production', { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 20000 })
     await page.locator('.wo-card').filter({ hasText: 'WO-013' }).click()
@@ -224,7 +266,7 @@ test.describe('Employee 人员能力约束', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governancePanel = page.locator('.agent-governance-panel')
     await expect(governancePanel.locator('.agent-metric').filter({ hasText: 'OTD 复盘证据' }).getByText('7')).toBeVisible()
     const governanceLane = governancePanel.locator('.otd-evidence-governance')
@@ -242,6 +284,30 @@ test.describe('Employee 人员能力约束', () => {
     const detail = auditPanel.locator('.replay-detail')
     await expect(detail.getByText(/技能、资质有效期、排班窗口、可用工时和排班来源/)).toBeVisible()
     await expect(detail.getByText(/是否可进入开工、替班或停工复核/)).toBeVisible()
+  })
+
+  test('人员证据同步写入失败时真实浏览器展示 fail-loud 且不伪造 OTD 证据', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.removeItem('aimes_otd_evidence_chain')
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithOtdFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('otd evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.skill-matrix-panel')
+    await panel.getByRole('button', { name: '同步人员证据' }).click()
+
+    const alert = panel.getByRole('alert').filter({ hasText: '人员证据同步失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('otd evidence storage unavailable')
+    await expect(panel.getByText('人员能力证据已同步 OTD 复盘')).toBeHidden()
+
+    const evidenceChain = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(evidenceChain).toBeNull()
   })
 
   test('资质临期生成替班建议并进入报表与审计回放', async ({ page }) => {

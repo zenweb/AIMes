@@ -27,6 +27,8 @@ public class QualityInspectionConfiguration : IEntityTypeConfiguration<QualityIn
         entity.HasIndex(e => e.WorkOrderId);
         entity.HasIndex(e => e.ProductCode);
         entity.HasIndex(e => e.InspectedAt);
+        entity.HasIndex(e => new { e.WorkOrderId, e.InspectedAt });
+        entity.HasIndex(e => new { e.ProductCode, e.InspectedAt });
 
         entity.OwnsMany(e => e.Defects, d =>
         {

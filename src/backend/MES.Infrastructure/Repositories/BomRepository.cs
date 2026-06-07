@@ -23,9 +23,26 @@ public class BomRepository : IBomRepository
             .ToListAsync(ct);
     }
 
+    public async Task<List<BillOfMaterial>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.BillsOfMaterial
+            .AsNoTracking()
+            .OrderBy(e => e.BomCode)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.BillsOfMaterial.CountAsync(ct);
+    }
+
     public async Task<BillOfMaterial?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.BillsOfMaterial.FirstOrDefaultAsync(e => e.Id == id, ct);
+        return await _context.BillsOfMaterial
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<List<BillOfMaterial>> GetByProductCodeAsync(ProductCode productCode, CancellationToken ct = default)
@@ -35,7 +52,7 @@ public class BomRepository : IBomRepository
 
     public async Task<BillOfMaterial?> GetByBomCodeAsync(string bomCode, CancellationToken ct = default)
     {
-        return await _context.BillsOfMaterial.FirstOrDefaultAsync(e => e.BomCode == bomCode, ct);
+        return await _context.BillsOfMaterial.AsNoTracking().FirstOrDefaultAsync(e => e.BomCode == bomCode, ct);
     }
 
     public async Task<BillOfMaterial> AddAsync(BillOfMaterial bom, CancellationToken ct = default)

@@ -42,9 +42,22 @@ public class QualityAgent
     {
         var sw = Stopwatch.StartNew();
         var query = $"quality visual inspection product={productCode} point={inspectionPoint} imageBytes={imageData.Length}";
-        var similarCases = await SearchSimilarAsync("quality-defects", query, ct);
+        var modelName = "QualityReasoning";
+        string retrievalError = string.Empty;
+        List<DocumentChunk> similarCases;
+        try
+        {
+            similarCases = await SearchSimilarAsync("quality-defects", query, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            modelName = "QualityReasoningFallback";
+            retrievalError = $"检索失败（{ex.GetType().Name}），返回人工复核前的保守不通过结果。";
+            similarCases = [];
+        }
+
         var context = JsonSerializer.Serialize(similarCases.Select(ToSimilarCase));
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             你是MES视觉质检专家。请结合历史缺陷案例判断当前图片是否可能通过质检。
 
             当前检验：
@@ -58,13 +71,34 @@ public class QualityAgent
             ONNX视觉模型仍为占位能力，当前判断以历史案例和LLM推理为主。
 
             请输出JSON，字段包括：IsPassed、Defects、SimilarHistoricalCases、Recommendation。
-            """;
+            """);
 
         // TODO: Replace this placeholder with ONNX tensor preprocessing and model inference.
         _ = _onnxService;
 
-        var result = await _llmGateway.GenerateJsonAsync<TracedInspectionResult>(prompt, ct)
-            ?? new TracedInspectionResult { IsPassed = true };
+        TracedInspectionResult result;
+        if (!string.IsNullOrEmpty(retrievalError))
+        {
+            result = BuildManualReviewResult(retrievalError);
+        }
+        else
+        {
+            try
+            {
+                result = await _llmGateway.GenerateJsonAsync<TracedInspectionResult>(prompt, ct);
+                if (result is null)
+                {
+                    modelName = "QualityReasoningFallback";
+                    result = BuildManualReviewResult("LLM 返回空结果，需人工复核。");
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                modelName = "QualityReasoningFallback";
+                result = BuildManualReviewResult(
+                    $"LLM 调用失败（{ex.GetType().Name}），返回人工复核前的保守不通过结果。");
+            }
+        }
 
         result.SimilarHistoricalCases = similarCases.Select(ToSimilarCase).ToList();
         result.AiDecisionTrace = BuildTrace(
@@ -75,7 +109,8 @@ public class QualityAgent
             0.78m,
             sw.ElapsedMilliseconds,
             "quality-defects",
-            $"product={productCode};inspectionPoint={inspectionPoint}");
+            $"product={productCode};inspectionPoint={inspectionPoint}",
+            modelName);
 
         return result;
     }
@@ -93,7 +128,7 @@ public class QualityAgent
         var similarIncidents = await SearchSimilarAsync("quality-incidents", query, ct);
         var context = JsonSerializer.Serialize(similarIncidents.Select(ToSimilarCase));
 
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             你是质量工程专家。请结合相似历史质量事故分析以下质量异常的可能根因。
 
             不良品信息：
@@ -108,7 +143,7 @@ public class QualityAgent
             {context}
 
             请输出JSON，字段包括：RootCauses、CorrectiveActions、PreventiveMeasures。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<TracedRootCauseAnalysis>(prompt, ct)
             ?? new TracedRootCauseAnalysis();
@@ -141,7 +176,7 @@ public class QualityAgent
         var dataJson = JsonSerializer.Serialize(data);
         var statsJson = JsonSerializer.Serialize(stats);
 
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请基于已计算SPC统计量分析异常趋势，并给出管控建议。
 
             数据序列：{dataJson}
@@ -151,7 +186,7 @@ public class QualityAgent
             {statsJson}
 
             请输出JSON，字段包括：HasTrend、HasDrift、HasCycle、IsNearLimit、TrendDirection、RecommendedAction。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<TracedSpcAlert>(prompt, ct)
             ?? new TracedSpcAlert();
@@ -183,7 +218,7 @@ public class QualityAgent
         var historicalCases = await SearchSimilarAsync("quality-root-causes", query, ct);
         var context = JsonSerializer.Serialize(historicalCases.Select(ToSimilarCase));
 
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请汇总相同产品和缺陷类型的历史根因，输出可执行的根因排序。
 
             缺陷类型：{defectType}
@@ -193,7 +228,7 @@ public class QualityAgent
             {context}
 
             请输出JSON，字段包括：DefectType、ProductCode、RootCauses、Evidence。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<DefectRootCauseSummary>(prompt, ct)
             ?? new DefectRootCauseSummary();
@@ -216,7 +251,7 @@ public class QualityAgent
     private async Task<List<DocumentChunk>> SearchSimilarAsync(string collectionName, string query, CancellationToken ct)
     {
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        return await _vectorStore.SearchAsync(collectionName, embedding, 5);
+        return await _vectorStore.SearchAsync(collectionName, embedding, 5, ct);
     }
 
     private static SimilarCase ToSimilarCase(DocumentChunk chunk)
@@ -227,6 +262,15 @@ public class QualityAgent
             CaseId = chunk.Id,
             Description = chunk.Content,
             CorrectiveAction = correctiveAction ?? string.Empty
+        };
+    }
+
+    private static TracedInspectionResult BuildManualReviewResult(string recommendation)
+    {
+        return new TracedInspectionResult
+        {
+            IsPassed = false,
+            Recommendation = recommendation
         };
     }
 
@@ -296,13 +340,14 @@ public class QualityAgent
         decimal confidence,
         long latencyMs,
         string sourceReferences,
-        string relatedBusinessKeys)
+        string relatedBusinessKeys,
+        string modelName = "QualityReasoning")
     {
         return AiTraceFactory.Create(
             AgentName,
             AgentVersion,
             ModelProvider,
-            "QualityReasoning",
+            modelName,
             "unknown",
             prompt,
             context,

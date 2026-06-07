@@ -17,9 +17,28 @@ export interface ProductionAnomalyEvent {
   suggestedAction: string
 }
 
+function isProductionAnomalyEvent(value: Partial<ProductionAnomalyEvent> | null | undefined): value is ProductionAnomalyEvent {
+  return !!value
+    && typeof value.id === 'string'
+    && typeof value.workOrderNumber === 'string'
+    && typeof value.operationCode === 'string'
+    && typeof value.operationName === 'string'
+    && (typeof value.equipmentId === 'string' || value.equipmentId === null)
+    && typeof value.anomalyType === 'string'
+    && typeof value.severity === 'string'
+    && typeof value.title === 'string'
+    && typeof value.description === 'string'
+    && typeof value.detectedAt === 'string'
+    && typeof value.detectedBy === 'string'
+    && typeof value.suggestedAction === 'string'
+}
+
 export function writeProductionAnomalyEvent(event: ProductionAnomalyEvent) {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(STORAGE_KEY, JSON.stringify(event))
+  void import('../api/riskEvidence')
+    .then(({ upsertProductionAnomalyEvent }) => upsertProductionAnomalyEvent(event))
+    .catch(() => undefined)
 }
 
 export function readProductionAnomalyEvent(): ProductionAnomalyEvent | null {
@@ -27,9 +46,22 @@ export function readProductionAnomalyEvent(): ProductionAnomalyEvent | null {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as ProductionAnomalyEvent
-  } catch {
+    const parsed = JSON.parse(raw)
+    if (isProductionAnomalyEvent(parsed)) return parsed
+    localStorage.removeItem(STORAGE_KEY)
     return null
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+    return null
+  }
+}
+
+export async function readProductionAnomalyEventBackendFirst(): Promise<ProductionAnomalyEvent | null> {
+  try {
+    const { getLatestProductionAnomalyEvent } = await import('../api/riskEvidence')
+    return await getLatestProductionAnomalyEvent() ?? readProductionAnomalyEvent()
+  } catch {
+    return readProductionAnomalyEvent()
   }
 }
 

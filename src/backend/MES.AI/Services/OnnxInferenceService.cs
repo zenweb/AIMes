@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using MES.AI.Pro.Configuration;
 using MES.Domain.Interfaces.Services;
+using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
@@ -17,9 +18,9 @@ public class OnnxInferenceService : IOnnxModelService, IDisposable
     private readonly OnnxConfig _config;
     private bool _disposed;
 
-    public OnnxInferenceService(OnnxConfig config)
+    public OnnxInferenceService(IOptions<OnnxConfig> config)
     {
-        _config = config;
+        _config = config.Value;
     }
 
     public async Task<float[]> PredictAsync(string modelName, float[] input, CancellationToken ct = default)

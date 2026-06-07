@@ -35,6 +35,12 @@ internal static class ConcurrencyConfigurationExtensions
         where T : class
     {
         var provider = DatabaseProvider.Resolve(Environment.GetEnvironmentVariable("AIMES_DATABASE_PROVIDER"));
+
+        if (DatabaseProvider.IsInMemory(provider))
+        {
+            return;
+        }
+
         var version = entity.Property<uint>("version");
 
         if (DatabaseProvider.IsPostgreSql(provider))

@@ -7,7 +7,7 @@
       </div>
 
       <!-- 错误提示 -->
-      <div v-if="error" class="error-banner">
+      <div v-if="error" class="error-banner" role="alert" aria-live="assertive">
         <span>{{ error }}（已加载演示数据）</span>
       </div>
 
@@ -155,12 +155,10 @@ import { ref, computed, onMounted } from 'vue'
 import { getRiskDashboard } from '../../api/risk'
 import type {
   RiskDashboardDto,
-  OrderRiskDto,
-  EquipmentRiskDto,
-  MaterialRiskDto,
-  BottleneckRiskDto,
 } from '../../types/risk'
 import RiskActionQueuePanel from './RiskActionQueuePanel.vue'
+import { isOfflineDemoError, logUnlessOfflineDemo } from '../../utils/offline-demo-mode'
+import { errorMessage } from '../../utils/error-message'
 
 const loading = ref(true)
 const error = ref('')
@@ -247,9 +245,9 @@ async function loadData() {
   try {
     const data = await getRiskDashboard()
     dashboard.value = data
-  } catch (e: any) {
-    console.error('加载风险数据失败:', e)
-    error.value = `加载失败: ${e?.message || '未知错误'}`
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('error', '加载风险数据失败:', e)
+    error.value = isOfflineDemoError(e) ? '' : `加载失败: ${errorMessage(e, '未知错误')}`
     loadDemoData()
   } finally {
     loading.value = false

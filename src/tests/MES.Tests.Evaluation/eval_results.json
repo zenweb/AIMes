@@ -1,23 +1,32 @@
 {
-  "timestamp": "2026-05-11T21:29:19Z",
+  "gate_pass": true,
   "agents": {
+    "SchedulingAgent": {
+      "adoptability": 1.0,
+      "recall": 1.0,
+      "precision": 1.0,
+      "pass": true
+    },
+    "MaintenanceAgent": {
+      "adoptability": 1.0,
+      "recall": 1.0,
+      "precision": 1.0,
+      "pass": true
+    },
     "KnowledgeAgent": {
       "adoptability": 1.0,
-      "note": "skipped-no-data",
       "recall": 1.0,
       "precision": 1.0,
       "pass": true
     },
     "AnomalyAgent": {
       "adoptability": 1.0,
-      "note": "skipped-no-data",
       "recall": 1.0,
       "precision": 1.0,
       "pass": true
     },
     "ProcessParameterAgent": {
       "adoptability": 1.0,
-      "note": "skipped-no-data",
       "recall": 1.0,
       "precision": 1.0,
       "pass": true
@@ -27,21 +36,7 @@
       "recall": 1.0,
       "precision": 1.0,
       "pass": true
-    },
-    "SchedulingAgent": {
-      "adoptability": 1.0,
-      "note": "skipped-no-data",
-      "recall": 1.0,
-      "precision": 1.0,
-      "pass": true
-    },
-    "MaintenanceAgent": {
-      "adoptability": 1.0,
-      "note": "skipped-no-data",
-      "recall": 1.0,
-      "precision": 1.0,
-      "pass": true
     }
   },
-  "gate_pass": true
+  "timestamp": "2026-05-30T16:58:11Z"
 }

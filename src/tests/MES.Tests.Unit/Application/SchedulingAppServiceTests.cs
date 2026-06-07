@@ -22,6 +22,9 @@ public class SchedulingAppServiceTests
     private readonly Mock<IScheduleOptimizationService> _optimizationMock;
     private readonly Mock<IAdoptionFeedbackService> _feedbackMock;
     private readonly Mock<IBomRepository> _bomRepoMock;
+    private readonly Mock<ISchedulingContextProvider> _contextProviderMock;
+    private readonly Mock<IAgentDecisionRepository> _agentDecisionRepoMock;
+    private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly SchedulingAppService _sut;
 
     public SchedulingAppServiceTests()
@@ -33,6 +36,9 @@ public class SchedulingAppServiceTests
         _optimizationMock = new Mock<IScheduleOptimizationService>();
         _feedbackMock = new Mock<IAdoptionFeedbackService>();
         _bomRepoMock = new Mock<IBomRepository>();
+        _contextProviderMock = new Mock<ISchedulingContextProvider>();
+        _agentDecisionRepoMock = new Mock<IAgentDecisionRepository>();
+        _auditLogRepoMock = new Mock<IAuditLogRepository>();
 
         _sut = new SchedulingAppService(
             _workOrderRepoMock.Object,
@@ -41,7 +47,10 @@ public class SchedulingAppServiceTests
             _scheduleRepoMock.Object,
             _optimizationMock.Object,
             _feedbackMock.Object,
-            _bomRepoMock.Object);
+            _bomRepoMock.Object,
+            _contextProviderMock.Object,
+            _agentDecisionRepoMock.Object,
+            _auditLogRepoMock.Object);
     }
 
     [Fact]
@@ -100,6 +109,71 @@ public class SchedulingAppServiceTests
             a => a.OptimizeAsync(It.IsAny<ScheduleOptimizationRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _scheduleRepoMock.Verify(r => r.CreateAsync(It.IsAny<SchedulePlan>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task OptimizeScheduleAsync_WithHistoricalData_ShouldPassSerializedContextToOptimizer()
+    {
+        var now = new DateTime(2026, 5, 12, 8, 0, 0, DateTimeKind.Utc);
+        var request = new OptimizeScheduleRequest
+        {
+            WorkshopId = "WS-001",
+            ConsiderHistoricalData = true
+        };
+
+        var workOrder = WorkOrder.Create("WO-003", "PROD-C1", "Product C", 30,
+            now, now.AddDays(4), "WS-001", 9, "R003");
+
+        var equipments = new List<Equipment>
+        {
+            Equipment.Create("CNC-001", "CNC Machine 1", "CNC", "WS-001", "Workshop A", 100)
+        };
+
+        var context = new SchedulingContextSnapshot
+        {
+            WorkshopId = "WS-001",
+            SnapshotTime = now,
+            WorkOrders = [new WorkOrderSummary("WO-003", "PROD-C1", "Product C", 30, 10, "Created", now, now.AddDays(4), "R003", 9, "WS-001")],
+            WipItems = [new WipSummary("WO-003", "OP-10", 10, 1, 30)],
+            CurrentExecutions = [new ExecutionStatusSummary("WO-003", "OP-10", "eq-001", "Running", now, 10, 30)],
+            ChangeoverMatrix = [new ChangeoverEntry("PROD-C1", "PROD-C2", 60, ChangeoverType.SimilarMaterial)],
+        };
+
+        var scheduleResult = new ScheduleOptimizationResult(
+            [new ScheduleAssignmentData(workOrder.Id, "eq-001", now, now.AddHours(6), [], null, 0, false)],
+            now.AddHours(6),
+            60.0,
+            80.0,
+            30.0,
+            1,
+            null,
+            "含历史数据的排产结果",
+            [],
+            []);
+
+        _workOrderRepoMock.Setup(r => r.GetAllAsync(WorkOrderStatus.Created, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WorkOrder> { workOrder });
+        _workOrderRepoMock.Setup(r => r.GetAllAsync(WorkOrderStatus.Scheduled, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WorkOrder>());
+        _equipmentRepoMock.Setup(r => r.GetByWorkshopAsync("WS-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(equipments);
+        _bomRepoMock.Setup(r => r.GetByProductCodeAsync(It.IsAny<MES.Domain.ValueObjects.ProductCode>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BillOfMaterial>());
+        _contextProviderMock.Setup(r => r.GetContextAsync("WS-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        _optimizationMock
+            .Setup(a => a.OptimizeAsync(
+                It.Is<ScheduleOptimizationRequest>(r => r.HistoricalData != null && r.HistoricalData.Contains("WO-003") && r.HistoricalData.Contains("ChangeoverMatrix")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(scheduleResult);
+        _scheduleRepoMock.Setup(r => r.CreateAsync(It.IsAny<SchedulePlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SchedulePlan p, CancellationToken _) => p);
+
+        var result = await _sut.OptimizeScheduleAsync(request);
+
+        result.Should().NotBeNull();
+        result.OptimizationReason.Should().Be("含历史数据的排产结果");
+        _contextProviderMock.Verify(r => r.GetContextAsync("WS-001", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -207,6 +281,73 @@ public class SchedulingAppServiceTests
     }
 
     [Fact]
+    public async Task GetWorkOrdersAsync_ShouldUseRepositoryPagingWithFilters()
+    {
+        var plannedStart = new DateTime(2026, 5, 1, 8, 0, 0, DateTimeKind.Utc);
+        var plannedEnd = plannedStart.AddDays(7);
+        var workOrders = new List<WorkOrder>
+        {
+            WorkOrder.Create("WO-101", "PROD-A", "Product A", 10, plannedStart, plannedEnd, "WS-001", 8),
+            WorkOrder.Create("WO-102", "PROD-A", "Product A", 20, plannedStart.AddHours(1), plannedEnd, "WS-001", 7)
+        };
+        var parameters = new WorkOrderQueryParameters
+        {
+            Status = "Created",
+            WorkshopId = "WS-001",
+            ProductCode = "PROD-A",
+            StartDate = plannedStart,
+            EndDate = plannedEnd,
+            Page = 2,
+            PageSize = 2
+        };
+
+        _workOrderRepoMock
+            .Setup(r => r.GetPagedAsync(
+                WorkOrderStatus.Created,
+                parameters.WorkshopId,
+                parameters.ProductCode,
+                parameters.StartDate,
+                parameters.EndDate,
+                parameters.Page,
+                parameters.PageSize,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workOrders);
+        _workOrderRepoMock
+            .Setup(r => r.CountAsync(
+                WorkOrderStatus.Created,
+                parameters.WorkshopId,
+                parameters.ProductCode,
+                parameters.StartDate,
+                parameters.EndDate,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5);
+
+        var result = await _sut.GetWorkOrdersAsync(parameters);
+
+        result.Items.Should().HaveCount(2);
+        result.TotalCount.Should().Be(5);
+        result.Page.Should().Be(2);
+        result.PageSize.Should().Be(2);
+        _workOrderRepoMock.Verify(r => r.GetAllAsync(It.IsAny<WorkOrderStatus?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _workOrderRepoMock.Verify(r => r.GetPagedAsync(
+            WorkOrderStatus.Created,
+            parameters.WorkshopId,
+            parameters.ProductCode,
+            parameters.StartDate,
+            parameters.EndDate,
+            parameters.Page,
+            parameters.PageSize,
+            It.IsAny<CancellationToken>()), Times.Once);
+        _workOrderRepoMock.Verify(r => r.CountAsync(
+            WorkOrderStatus.Created,
+            parameters.WorkshopId,
+            parameters.ProductCode,
+            parameters.StartDate,
+            parameters.EndDate,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task UpdateWorkOrderStatusAsync_ShouldUpdateStatus()
     {
         var workOrder = WorkOrder.Create("WO-001", "PROD-001", "Test Product", 100,
@@ -246,7 +387,7 @@ public class SchedulingAppServiceTests
             SchedulePlan.Create("Plan 2", DateTime.UtcNow, DateTime.UtcNow.AddDays(14)),
         };
 
-        _scheduleRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _scheduleRepoMock.Setup(r => r.GetAllAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(plans);
 
         var result = await _sut.GetAllPlansAsync();

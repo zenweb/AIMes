@@ -1,16 +1,23 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using MES.Domain.Entities.Production;
+using MES.Domain.Enums;
+using MES.Infrastructure.Data;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
 
     public ReportControllerTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -55,6 +62,48 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
 
         response.Anomaly!.OpenCount.Should().BeGreaterThanOrEqualTo(0);
         response.Anomaly.AvgResolveHours.Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task GetDashboard_WithoutAnomalies_ShouldNotReturnFabricatedAnomalyDistribution()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+            db.ProductionAnomalies.RemoveRange(db.ProductionAnomalies);
+            db.SaveChanges();
+        }
+
+        var response = await _client.GetFromJsonAsync<ReportDashboardResponse>("/api/v1/report/dashboard");
+
+        response.Should().NotBeNull();
+        response!.Anomaly!.TotalAnomalies.Should().Be(0);
+        response.Anomaly.OpenCount.Should().Be(0);
+        response.Anomaly.ResolvedCount.Should().Be(0);
+        response.Anomaly.AnomalyByType.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetDashboard_OnTimeRate_ShouldCountOverdueUnfinishedWorkOrdersInDenominator()
+    {
+        var now = DateTime.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+            db.WorkOrders.RemoveRange(db.WorkOrders);
+
+            db.WorkOrders.Add(CreateWorkOrder("WO-ONTIME", now.AddDays(-3), now.AddDays(1), WorkOrderStatus.Completed));
+            db.WorkOrders.Add(CreateWorkOrder("WO-LATE", now.AddDays(-4), now.AddDays(-1), WorkOrderStatus.Completed));
+            db.WorkOrders.Add(CreateWorkOrder("WO-OVERDUE", now.AddDays(-5), now.AddDays(-2), WorkOrderStatus.InProgress));
+            db.WorkOrders.Add(CreateWorkOrder("WO-FUTURE", now, now.AddDays(2), WorkOrderStatus.InProgress));
+
+            db.SaveChanges();
+        }
+
+        var response = await _client.GetFromJsonAsync<ReportDashboardResponse>("/api/v1/report/dashboard");
+
+        response.Should().NotBeNull();
+        response!.Production!.OnTimeRate.Should().Be(0.333);
     }
 
     [Fact]
@@ -117,5 +166,33 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
         public int OpenCount { get; set; }
         public int ResolvedCount { get; set; }
         public double AvgResolveHours { get; set; }
+        public List<ChartDataPointResponse> AnomalyByType { get; set; } = new();
+    }
+
+    private class ChartDataPointResponse
+    {
+        public string Label { get; set; } = string.Empty;
+        public double Value { get; set; }
+    }
+
+    private static WorkOrder CreateWorkOrder(
+        string orderNumber,
+        DateTime plannedStart,
+        DateTime plannedEnd,
+        WorkOrderStatus status)
+    {
+        var workOrder = WorkOrder.Create(orderNumber, "PROD-A", "Product A", 10, plannedStart, plannedEnd, "WS-001");
+        if (status is WorkOrderStatus.InProgress)
+        {
+            workOrder.Start();
+        }
+
+        if (status is WorkOrderStatus.Completed)
+        {
+            workOrder.Start();
+            workOrder.Complete(10);
+        }
+
+        return workOrder;
     }
 }

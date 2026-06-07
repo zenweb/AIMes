@@ -14,6 +14,16 @@ public class LoginRequestDtoValidator : AbstractValidator<LoginRequestDto>
     }
 }
 
+public class ChangePasswordRequestDtoValidator : AbstractValidator<ChangePasswordRequestDto>
+{
+    public ChangePasswordRequestDtoValidator()
+    {
+        RuleFor(x => x.Username).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CurrentPassword).NotEmpty();
+        RuleFor(x => x.NewPassword).NotEmpty().MinimumLength(8).MaximumLength(128);
+    }
+}
+
 public class CreateWorkOrderRequestValidator : AbstractValidator<CreateWorkOrderRequest>
 {
     public CreateWorkOrderRequestValidator()

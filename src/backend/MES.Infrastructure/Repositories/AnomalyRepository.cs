@@ -18,8 +18,16 @@ public class AnomalyRepository : IAnomalyRepository
     public async Task<ProductionAnomaly?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.ProductionAnomalies
+            .AsNoTracking()
             .Include(e => e.Responses)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    public async Task<List<ProductionAnomaly>> GetAllAsync(CancellationToken ct = default)
+    {
+        return await _context.ProductionAnomalies
+            .AsNoTracking()
+            .ToListAsync(ct);
     }
 
     public async Task<List<ProductionAnomaly>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
@@ -35,6 +43,23 @@ public class AnomalyRepository : IAnomalyRepository
     public async Task<int> CountAsync(CancellationToken ct = default)
     {
         return await _context.ProductionAnomalies.CountAsync(ct);
+    }
+
+    public async Task<List<ProductionAnomaly>> GetOpenPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.ProductionAnomalies
+            .AsNoTracking()
+            .Where(e => e.Status == AnomalyStatus.Open || e.Status == AnomalyStatus.Acknowledged)
+            .OrderByDescending(e => e.DetectedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountOpenAsync(CancellationToken ct = default)
+    {
+        return await _context.ProductionAnomalies
+            .CountAsync(e => e.Status == AnomalyStatus.Open || e.Status == AnomalyStatus.Acknowledged, ct);
     }
 
     public async Task<List<ProductionAnomaly>> GetOpenByWorkOrderAsync(WorkOrderNumber workOrderNumber, CancellationToken ct = default)

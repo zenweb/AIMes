@@ -4,7 +4,7 @@ test.describe('Monitoring 现场态势图', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('monitoring', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('.shopfloor-situation')).toBeVisible()
@@ -119,5 +119,59 @@ test.describe('Monitoring 现场态势图', () => {
     const detail = auditPanel.locator('.replay-detail')
     await expect(detail.locator('li').filter({ hasText: '关闭留痕：CNC-001 现场态势升级处置包 已关闭' })).toBeVisible()
     await expect(detail.locator('li').filter({ hasText: '当前状态为 已闭环' })).toBeVisible()
+  })
+
+  test('初始化治理证据加载失败时真实浏览器展示 fail-loud 且保留现场态势入口', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/scheduling/poc-hypercare-acceptance/latest', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium monitoring hypercare backend unavailable' }),
+    }))
+    await page.route(/\/api\/v1\/scheduling\/monitoring-situation-escalations(?:\?|$)/, route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium monitoring escalation backend unavailable' }),
+    }))
+
+    await page.goto('monitoring', { waitUntil: 'domcontentloaded' })
+    const panel = page.locator('.shopfloor-situation')
+    await expect(panel).toBeVisible()
+
+    await expect(panel.getByText('现场态势初始化读取失败')).toBeVisible()
+    await expect(panel.getByText(/Hypercare 与现场处置包记录暂未加载/)).toBeVisible()
+    await expect(panel.getByText('chromium monitoring hypercare backend unavailable')).toBeVisible()
+    await expect(panel.getByText('同步态势证据')).toBeVisible()
+    await expect(panel.getByText('升级为跨模块处置包')).toBeVisible()
+  })
+
+  test('SignalR 启动失败时真实浏览器展示失败原因并回落演示设备数据', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/scheduling/poc-hypercare-acceptance/latest', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: 'null',
+    }))
+    await page.route(/\/api\/v1\/scheduling\/monitoring-situation-escalations(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '[]',
+    }))
+    await page.route(/\/hubs\/monitoring\/negotiate(?:\?|$)/, route => route.fulfill({
+      status: 503,
+      contentType: 'text/plain',
+      body: 'chromium signalr gateway unavailable',
+    }))
+
+    await page.goto('monitoring', { waitUntil: 'domcontentloaded' })
+
+    await expect(page.locator('.live-badge')).toContainText('已断开')
+    await expect(page.getByText('实时连接失败，使用演示数据')).toBeVisible()
+    await expect(page.getByText(/503|Service Unavailable|signalr gateway unavailable/)).toBeVisible()
+    await expect(page.getByText('CNC-001 加工中心')).toBeVisible()
   })
 })

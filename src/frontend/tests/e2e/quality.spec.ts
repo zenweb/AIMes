@@ -6,7 +6,7 @@ test.describe('Quality 质量闭环', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
   })
 
@@ -21,8 +21,8 @@ test.describe('Quality 质量闭环', () => {
     await expect(qualityPanel.getByText('WO-003 · 热处理')).toBeVisible()
     await expect(qualityPanel.getByText(/检验结果 返工 已自动生成返工排产事件/)).toBeVisible()
 
-    await qualityPanel.getByRole('button', { name: '生成返工排产事件' }).click()
-    await expect(qualityPanel.getByText(/返工排产事件已生成/)).toBeVisible()
+    await qualityPanel.getByRole('button', { name: '生成 WO-003 INS-003 返工排产事件' }).click()
+    await expect(qualityPanel.getByRole('status').getByText(/返工排产事件已生成/)).toBeVisible()
 
     await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.event-queue-panel', { timeout: 60000 })
@@ -34,7 +34,9 @@ test.describe('Quality 质量闭环', () => {
     await eventPanel.locator('.event-card').filter({ hasText: 'WO-003 返工插入' }).getByRole('button', { name: '生成重排建议' }).click()
     await expect(eventPanel.getByText('质量返工插入建议')).toBeVisible()
     await expect(eventPanel.getByText(/插入返工与复验窗口/)).toBeVisible()
-    await expect(eventPanel.getByText(/-1 单风险/)).toBeVisible()
+    const agentSuggestion = eventPanel.locator('.agent-suggestion')
+    await expect(agentSuggestion.getByText('质量返工插入建议')).toBeVisible()
+    await expect(agentSuggestion.locator('.suggestion-metrics').getByText('延期 -1 单风险', { exact: true })).toBeVisible()
 
     await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.report-board', { timeout: 60000 })
@@ -93,6 +95,282 @@ test.describe('Quality 质量闭环', () => {
     await expect(reportPanel.getByText(/热处理返工风险从 \+1 单延期/)).toBeVisible()
   })
 
+  test('根因分析加载失败时真实浏览器展示 fail-loud 且保留 fallback 分析', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/quality/statistics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalInspections: 1,
+          passedCount: 0,
+          failedCount: 1,
+          reworkCount: 0,
+          passRate: 0,
+          defectRate: 100,
+          reworkRate: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/quality/inspections', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'INS-ROOT-FAIL',
+            workOrderId: 'WO-ROOT-FAIL',
+            productCode: 'PRD-ROOT',
+            processName: 'CNC精加工',
+            inspectionPoint: '尺寸检验',
+            inspectionQuantity: 10,
+            qualifiedQuantity: 8,
+            defectQuantity: 2,
+            result: 'fail',
+            inspectorId: 'USR-001',
+            inspectedAt: '2026-05-12T09:00:00',
+            passRate: 80,
+          },
+        ]),
+      })
+    })
+    await page.route('**/api/v1/anomaly', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [] }),
+      })
+    })
+    await page.route('**/api/v1/quality/spc/analyze**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          processParameter: 'surface_roughness',
+          hasTrend: false,
+          hasDrift: false,
+          hasCycle: false,
+          isNearLimit: false,
+          trendDirection: 'stable',
+          recommendedAction: '',
+          dataPoints: [12, 14, 13],
+        }),
+      })
+    })
+    await page.route('**/api/v1/quality/inspections/INS-ROOT-FAIL/analyze', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ title: 'root cause API unavailable from chromium' }),
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const inspectionRow = qualityBoard.locator('.ins-row').filter({ hasText: 'WO-ROOT-FAIL' })
+    await expect(inspectionRow.getByText('WO-ROOT-FAIL')).toBeVisible()
+    await inspectionRow.getByRole('button', { name: '查看 INS-ROOT-FAIL 根因分析' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('根因分析加载失败')
+    await expect(alert).toContainText('Request failed with status code 503')
+
+    const dialog = qualityBoard.getByRole('dialog', { name: /根因分析/ })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText('根因分析 — INS-ROOT-FAIL')).toBeVisible()
+    await expect(dialog.getByText('刀具磨损超差')).toBeVisible()
+    await expect(dialog.getByText('冷却液温度偏高')).toBeVisible()
+    await expect(dialog.getByText('来料硬度波动')).toBeVisible()
+    await expect(dialog.getByText(/主要根因为刀具磨损导致表面粗糙度超差/)).toBeVisible()
+  })
+
+  test('CAPA 验证同步失败时真实浏览器展示 fail-loud 且不伪造验证留痕', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithCapaClosureFailure(key: string, value: string) {
+        if (key === 'aimes_quality_capa_closure') {
+          throw new Error('CAPA closure storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const spcTask = capaPanel.locator('.task-card').filter({ hasText: '新增热处理硬度 SPC 预警点' })
+    await expect(spcTask.locator('.task-topline em').getByText('执行中', { exact: true })).toBeVisible()
+    await expect(spcTask.getByRole('button', { name: '推进处置' })).toBeVisible()
+
+    await spcTask.getByRole('button', { name: '推进处置' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('CAPA 验证同步失败')
+    await expect(alert).toContainText('CAPA closure storage unavailable from chromium')
+    await expect(spcTask.locator('.task-topline em').getByText('执行中', { exact: true })).toBeVisible()
+    await expect(spcTask.getByRole('button', { name: '推进处置' })).toBeVisible()
+    await expect(spcTask.getByRole('button', { name: '已验证' })).toBeHidden()
+    await expect(capaPanel.getByText(/已完成验证：SPC 连续 6 点无上升风险/)).toBeHidden()
+    await expect(capaPanel.getByText(/已同步到审计回放与 OTD 复盘/)).toBeHidden()
+    await expect(capaPanel.getByText('TRACE-QA-CAPA-20260520-CAPA-SPC-MONITOR')).toBeHidden()
+
+    const capaClosure = await page.evaluate(() => localStorage.getItem('aimes_quality_capa_closure'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(capaClosure).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QA-CAPA-20260520-CAPA-SPC-MONITOR')
+  })
+
+  test('质量异常告警加载失败时真实浏览器展示 fail-loud 且保留本地告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/quality/statistics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalInspections: 45,
+          passedCount: 42,
+          failedCount: 2,
+          reworkCount: 1,
+          passRate: 93.3,
+          defectRate: 4.4,
+          reworkRate: 2.2,
+        }),
+      })
+    })
+    await page.route('**/api/v1/quality/inspections', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      })
+    })
+    await page.route('**/api/v1/quality/spc/analyze**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          processParameter: 'surface_roughness',
+          hasTrend: false,
+          hasDrift: false,
+          hasCycle: false,
+          isNearLimit: false,
+          trendDirection: 'stable',
+          recommendedAction: '',
+          dataPoints: [12, 14, 13, 15, 14, 16],
+        }),
+      })
+    })
+    await page.route('**/api/v1/anomaly', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ title: 'anomaly API unavailable from chromium' }),
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量异常告警加载失败')
+    await expect(alert).toContainText('Request failed with status code 503')
+
+    const anomaliesBody = qualityBoard.locator('.anomalies-body')
+    await expect(anomaliesBody.getByText('装配后轴孔配合间隙 0.12mm，超过 0.08mm 标准上限')).toBeVisible()
+    await expect(anomaliesBody.getByText('热处理后硬度 HB89，低于 HB95 标准下限')).toBeVisible()
+    await expect(anomaliesBody.getByText('Ra 3.6μm，接近 3.2μm 标准上限，建议监控')).toBeVisible()
+    await expect(qualityBoard.getByText('异常告警 (3)')).toBeVisible()
+    await expect(anomaliesBody.getByText('暂无异常告警')).toBeHidden()
+  })
+
+  test('SPC 趋势分析加载失败后真实浏览器展示 fallback 并在后续成功时清理告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/quality/statistics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalInspections: 45,
+          passedCount: 42,
+          failedCount: 2,
+          reworkCount: 1,
+          passRate: 93.3,
+          defectRate: 4.4,
+          reworkRate: 2.2,
+        }),
+      })
+    })
+    await page.route('**/api/v1/quality/inspections', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      })
+    })
+    await page.route('**/api/v1/anomaly', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [] }),
+      })
+    })
+    await page.route('**/api/v1/quality/spc/analyze**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('processParameter') === 'hardness') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            processParameter: 'hardness',
+            hasTrend: false,
+            hasDrift: false,
+            hasCycle: false,
+            isNearLimit: false,
+            trendDirection: 'stable',
+            recommendedAction: '',
+            dataPoints: [10, 20, 30],
+          }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ title: 'SPC backend unavailable from chromium' }),
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const spcCard = qualityBoard.locator('.spc-card')
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('SPC 趋势分析加载失败')
+    await expect(alert).toContainText('Request failed with status code 503')
+    await expect(spcCard.locator('.spc-chart circle')).toHaveCount(24)
+    await expect(spcCard.locator('.spc-empty-state')).toBeHidden()
+
+    await spcCard.locator('.param-select').selectOption('hardness')
+
+    await expect(qualityBoard.getByRole('alert')).toBeHidden()
+    await expect(spcCard.locator('.spc-chart circle')).toHaveCount(3)
+  })
+
   test('质量 MRB 报废补料决策联动排产和 OTD 复盘', async ({ page }) => {
     await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.quality-board', { timeout: 60000 })
@@ -104,10 +382,10 @@ test.describe('Quality 质量闭环', () => {
     await expect(mrbPanel.getByText('WO-004 · 装配')).toBeVisible()
     await expect(mrbPanel.getByText('WO-004 延期 +2 单风险，需补料与重排')).toBeVisible()
 
-    await mrbPanel.getByRole('button', { name: '生成 MRB 报废补料决策' }).click()
+    await mrbPanel.getByRole('button', { name: '生成 WO-004 INS-004 MRB 报废补料决策' }).click()
     await expect(mrbPanel.getByText('AUD-QA-MRB-DISPOSITION-20260521')).toBeVisible()
     await expect(mrbPanel.getByText('TRACE-QA-WO-004-MRB-DISPOSITION-20260521')).toBeVisible()
-    await expect(mrbPanel.getByText(/MRB 报废补料决策已生成/)).toBeVisible()
+    await expect(mrbPanel.getByRole('status').getByText(/MRB 报废补料决策已生成/)).toBeVisible()
 
     await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.event-queue-panel', { timeout: 60000 })
@@ -140,7 +418,7 @@ test.describe('Quality 质量闭环', () => {
 
     await page.goto('admin', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.admin-board', { timeout: 60000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governanceSection = page.locator('.quality-mrb-governance')
     await expect(governanceSection.getByText('质量 MRB 处置治理')).toBeVisible()
     const governanceCard = governanceSection.locator('.quality-mrb-governance-card')
@@ -157,7 +435,7 @@ test.describe('Quality 质量闭环', () => {
 
     await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.quality-board', { timeout: 60000 })
-    await page.locator('.quality-mrb-panel').getByRole('button', { name: '确认 MRB 处置闭环' }).click()
+    await page.locator('.quality-mrb-panel').getByRole('button', { name: '确认 WO-004 MRB 处置闭环' }).click()
     await expect(page.locator('.quality-mrb-panel').getByText('AUD-QA-MRB-CLOSURE-20260521')).toBeVisible()
     await expect(page.locator('.quality-mrb-panel').getByText('TRACE-QA-WO-004-MRB-CLOSURE-20260521')).toBeVisible()
 
@@ -167,6 +445,146 @@ test.describe('Quality 质量闭环', () => {
     await expect(closedMrbEvent.getByText('已缓解')).toBeVisible()
     await closedMrbEvent.getByRole('button', { name: '复核排产影响' }).click()
     await expect(page.locator('.event-queue-panel').getByText('MRB 处置闭环后的排产复核建议')).toBeVisible()
+  })
+
+  test('MRB 处置证据写入失败时真实浏览器展示 fail-loud 且不伪造 MRB 决策', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithMrbDispositionFailure(key: string, value: string) {
+        if (key === 'aimes_quality_mrb_disposition') {
+          throw new Error('MRB disposition storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const mrbPanel = page.locator('.quality-mrb-panel')
+    await expect(mrbPanel).toBeVisible()
+    await expect(mrbPanel.getByText('待 MRB 判定')).toBeVisible()
+    await expect(mrbPanel.getByText('INS-004')).toBeVisible()
+    await expect(mrbPanel.getByText('WO-004 · 装配')).toBeVisible()
+    await expect(mrbPanel.getByRole('button', { name: '生成 WO-004 INS-004 MRB 报废补料决策' })).toBeVisible()
+
+    await mrbPanel.getByRole('button', { name: '生成 WO-004 INS-004 MRB 报废补料决策' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('MRB 处置证据写入失败')
+    await expect(alert).toContainText('MRB disposition storage unavailable from chromium')
+    await expect(mrbPanel.getByText('待 MRB 判定')).toBeVisible()
+    await expect(mrbPanel.getByRole('button', { name: '生成 WO-004 INS-004 MRB 报废补料决策' })).toBeVisible()
+    await expect(mrbPanel.getByText(/MRB 报废补料决策已生成/)).toBeHidden()
+    await expect(mrbPanel.getByRole('button', { name: '确认 WO-004 MRB 处置闭环' })).toBeHidden()
+
+    const mrbRecord = await page.evaluate(() => localStorage.getItem('aimes_quality_mrb_disposition'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(mrbRecord).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QA-WO-004-MRB-DISPOSITION-20260521')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QA-WO-004-MRB-SCHEDULE-IMPACT-20260521')
+  })
+
+  test('MRB 处置闭环写入失败时真实浏览器展示 fail-loud 且不伪造闭环结论', async ({ page }) => {
+    await page.addInitScript(() => {
+      const activeMrbRecord = {
+        id: 'quality-mrb-disposition-20260521',
+        title: 'WO-004 装配间隙超差 MRB 处置决策',
+        inspectionId: 'INS-004',
+        workOrderId: 'WO-004',
+        productCode: 'PRD-001',
+        processName: '装配',
+        equipmentCode: 'ASM-01',
+        materialBatchCode: 'MAT-STEEL-A12',
+        batchCode: 'WO-004-ASM',
+        inspectionPoint: '功能测试',
+        defectPattern: '装配间隙超差 / 功能测试不合格',
+        defectQuantity: 4,
+        disposition: 'scrap_rebuild',
+        dispositionLabel: '报废补料重建',
+        status: 'active',
+        statusLabel: 'MRB 已判定报废补料',
+        owner: '质量经理 / 生产经理 / 采购主管',
+        dueAt: '今日 15:00',
+        otdImpact: 'WO-004 延期 +2 单风险，需补料与重排',
+        scheduleImpact: '冻结 WO-004 原装配窗口，插入 MAT-STEEL-A12 补料 ETA、返工替代工单和终检复验窗口。',
+        recommendedAction: '建议先隔离 4 件不合格品并判废，采购补齐 MAT-STEEL-A12，排产重建 WO-004 装配与复检窗口，同时把客户交付说明纳入 OTD 复盘。',
+        auditId: 'AUD-QA-MRB-DISPOSITION-20260521',
+        traceId: 'TRACE-QA-WO-004-MRB-DISPOSITION-20260521',
+        scheduleTraceId: 'TRACE-QA-WO-004-MRB-SCHEDULE-IMPACT-20260521',
+        createdAt: '2026-05-21T09:30:00.000Z',
+        actions: [
+          {
+            module: '质量',
+            owner: '质量经理',
+            action: '隔离 4 件装配间隙超差品并完成 MRB 判废',
+            dueAt: '今日 11:30',
+            evidence: 'Q-HOLD-ASM-WO-004',
+          },
+          {
+            module: '采购',
+            owner: '采购主管',
+            action: '补料 MAT-STEEL-A12 4 件并确认 ETA',
+            dueAt: '今日 13:30',
+            evidence: 'PO-MRB-WO-004-MAT-STEEL-A12',
+          },
+          {
+            module: '排产',
+            owner: '生产经理',
+            action: '冻结原装配窗口并重排补料后装配/复检',
+            dueAt: '今日 15:00',
+            evidence: 'SCHED-MRB-WO-004-REBUILD',
+          },
+          {
+            module: '客户',
+            owner: '客服主管',
+            action: '准备 WO-004 延期 +2 单风险说明和恢复承诺',
+            dueAt: '今日 16:00',
+            evidence: 'CS-MRB-WO-004-OTD-NOTE',
+          },
+        ],
+      }
+      localStorage.setItem('aimes_quality_mrb_disposition', JSON.stringify(activeMrbRecord))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithMrbClosureFailure(key: string, value: string) {
+        if (key === 'aimes_quality_mrb_disposition') {
+          throw new Error('MRB closure storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const mrbPanel = page.locator('.quality-mrb-panel')
+    await expect(mrbPanel).toBeVisible()
+    await expect(mrbPanel.getByText('MRB 已判定报废补料')).toBeVisible()
+    await expect(mrbPanel.getByText('TRACE-QA-WO-004-MRB-DISPOSITION-20260521')).toBeVisible()
+    await expect(mrbPanel.getByRole('button', { name: '确认 WO-004 MRB 处置闭环' })).toBeVisible()
+
+    await mrbPanel.getByRole('button', { name: '确认 WO-004 MRB 处置闭环' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('MRB 处置闭环写入失败')
+    await expect(alert).toContainText('MRB closure storage unavailable from chromium')
+    await expect(mrbPanel.getByText('MRB 已判定报废补料')).toBeVisible()
+    await expect(mrbPanel.getByRole('button', { name: '确认 WO-004 MRB 处置闭环' })).toBeVisible()
+    await expect(mrbPanel.getByText(/MRB 处置闭环已确认/)).toBeHidden()
+    await expect(mrbPanel.getByText('AUD-QA-MRB-CLOSURE-20260521')).toBeHidden()
+    await expect(mrbPanel.getByText('TRACE-QA-WO-004-MRB-CLOSURE-20260521')).toBeHidden()
+
+    const mrbRecord = await page.evaluate(() => localStorage.getItem('aimes_quality_mrb_disposition'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(mrbRecord ?? '').toContain('"status":"active"')
+    expect(mrbRecord ?? '').not.toContain('"status":"closed"')
+    expect(mrbRecord ?? '').not.toContain('TRACE-QA-WO-004-MRB-CLOSURE-20260521')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QA-WO-004-MRB-CLOSURE-20260521')
   })
 
   test('扫码返工复验放行进入审计回放和 OTD 复盘', async ({ page }) => {
@@ -263,6 +681,95 @@ test.describe('Quality 质量闭环', () => {
     await expect(labelCard.locator('.decision-topline').getByText('质量复验释放证据')).toBeVisible()
   })
 
+  test('扫码质量门释放写入失败时真实浏览器展示 fail-loud 且不伪造放行证据', async ({ page }) => {
+    await page.addInitScript(() => {
+      const createdAt = '2026-05-21T10:00:00.000Z'
+      localStorage.setItem('aimes_otd_evidence_chain', JSON.stringify([
+        {
+          id: 'barcode-rework-WO-RUSH-9001-OP-10',
+          stage: '扫码返工',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+          summary: '扫码首件巡检不合格，冻结 OP-20 接收。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+          status: 'active',
+          statusLabel: '返工待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-hold-WO-RUSH-9001-OP-10-OP-20',
+          stage: '交接冻结',
+          title: 'WO-RUSH-9001 OP-10 到 OP-20 交接冻结',
+          summary: '质量冻结期间下道接收暂不可用。',
+          object: 'WO-RUSH-9001 / OP-10 / OP-20',
+          source: '质量闭环 / 工序交接',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-HOLD-OP-20',
+          status: 'active',
+          statusLabel: '交接冻结中',
+          createdAt,
+        },
+        {
+          id: 'barcode-capa-WO-RUSH-9001-OP-10',
+          stage: '质量CAPA',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码 CAPA 处置',
+          summary: '复验前需要核对返工、隔离和标签冻结。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '质量闭环 / CAPA',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-CAPA',
+          status: 'active',
+          statusLabel: 'CAPA 待验证',
+          createdAt,
+        },
+        {
+          id: 'barcode-label-hold-WO-RUSH-9001-OP-10',
+          stage: '标签状态',
+          title: 'WO-RUSH-9001 流转卡标签冻结',
+          summary: '实物流转卡标签状态已从可交接更新为质量冻结。',
+          object: 'WO-RUSH-9001',
+          source: '条码 / QR 打印 / 质量冻结',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD',
+          status: 'active',
+          statusLabel: '质量冻结中',
+          createdAt,
+        },
+      ]))
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItem(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('barcode release storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const releasePanel = page.locator('.barcode-quality-gate-panel')
+    await expect(releasePanel.getByText('返工复验待放行')).toBeVisible()
+    await expect(releasePanel.getByRole('button', { name: '复验通过并释放交接' })).toBeVisible()
+
+    await releasePanel.getByRole('button', { name: '复验通过并释放交接' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('扫码质量门释放写入失败')
+    await expect(alert).toContainText('barcode release storage unavailable from chromium')
+    await expect(releasePanel.getByText('返工复验待放行')).toBeVisible()
+    await expect(releasePanel.getByRole('button', { name: '复验通过并释放交接' })).toBeVisible()
+    await expect(releasePanel.getByText('返工复验已放行', { exact: true })).toBeHidden()
+    await expect(page.locator('.barcode-release-message')).toBeHidden()
+
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(evidenceRecords ?? '').toContain('"status":"active"')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QR-WO-RUSH-9001-OP-10-RECHECK')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE')
+  })
+
   test('扫码返工样本沉淀为 CAPA 知识并被助手复用', async ({ page }) => {
     await page.addInitScript(() => {
       const createdAt = '2026-05-21T10:00:00.000Z'
@@ -352,6 +859,170 @@ test.describe('Quality 质量闭环', () => {
     await expect(auditCard).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(page.locator('.replay-detail').getByText('TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE', { exact: true })).toBeVisible()
+  })
+
+  test('质量知识样本写入失败时真实浏览器展示 fail-loud 且不伪造样本入库', async ({ page }) => {
+    await page.addInitScript(() => {
+      const createdAt = '2026-05-21T10:00:00.000Z'
+      localStorage.setItem('aimes_otd_evidence_chain', JSON.stringify([
+        {
+          id: 'barcode-rework-WO-RUSH-9001-OP-10',
+          stage: '扫码返工',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+          summary: '扫码首件巡检不合格，冻结 OP-20 接收。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+          status: 'active',
+          statusLabel: '返工待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-isolation-WO-RUSH-9001-OP-10',
+          stage: '质量隔离',
+          title: 'WO-RUSH-9001 CNC 精加工 AL-202605 批次隔离',
+          summary: 'AL-202605 已进入 Q-HOLD-01 隔离区，等待复验释放。',
+          object: 'WO-RUSH-9001 / AL-202605 / Q-HOLD-01',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION',
+          status: 'active',
+          statusLabel: '隔离待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-rework-cost-WO-RUSH-9001-OP-10',
+          stage: '返工成本',
+          title: 'WO-RUSH-9001 CNC 精加工 返工工时成本预估',
+          summary: '预计返工 2h，成本约 360 元。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 成本预估',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST',
+          status: 'active',
+          statusLabel: '成本待结算',
+          createdAt,
+        },
+      ]))
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithKnowledgeSampleFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_samples') {
+          throw new Error('quality knowledge sample storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const samplePanel = page.locator('.barcode-knowledge-sample-panel')
+    await expect(samplePanel).toBeVisible()
+    await expect(samplePanel.getByText('扫码返工样本沉淀为 CAPA 推荐')).toBeVisible()
+    await expect(samplePanel.getByRole('button', { name: '沉淀为 CAPA 知识样本' })).toBeVisible()
+
+    await samplePanel.getByRole('button', { name: '沉淀为 CAPA 知识样本' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识样本写入失败')
+    await expect(alert).toContainText('quality knowledge sample storage unavailable from chromium')
+    await expect(samplePanel.getByRole('button', { name: '沉淀为 CAPA 知识样本' })).toBeVisible()
+    await expect(samplePanel.locator('.sample-synced')).toBeHidden()
+    await expect(samplePanel.getByText('AUD-KG-QA-REWORK-20260521-001')).toBeHidden()
+    await expect(samplePanel.getByText('TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE')).toBeHidden()
+    await expect(page.locator('.barcode-release-message')).toBeHidden()
+
+    const sampleRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_samples'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(sampleRecords).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE')
+  })
+
+  test('质量知识复用草案写入失败时真实浏览器展示 fail-loud 且不伪造草案证据', async ({ page }) => {
+    await page.addInitScript(() => {
+      const createdAt = '2026-05-21T10:00:00.000Z'
+      localStorage.setItem('aimes_otd_evidence_chain', JSON.stringify([
+        {
+          id: 'barcode-rework-WO-RUSH-9001-OP-10',
+          stage: '扫码返工',
+          title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+          summary: '扫码首件巡检不合格，冻结 OP-20 接收。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+          status: 'active',
+          statusLabel: '返工待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-isolation-WO-RUSH-9001-OP-10',
+          stage: '质量隔离',
+          title: 'WO-RUSH-9001 CNC 精加工 AL-202605 批次隔离',
+          summary: 'AL-202605 已进入 Q-HOLD-01 隔离区，等待复验释放。',
+          object: 'WO-RUSH-9001 / AL-202605 / Q-HOLD-01',
+          source: '生产报工 / 扫码质检',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION',
+          status: 'active',
+          statusLabel: '隔离待复验',
+          createdAt,
+        },
+        {
+          id: 'barcode-rework-cost-WO-RUSH-9001-OP-10',
+          stage: '返工成本',
+          title: 'WO-RUSH-9001 CNC 精加工 返工工时成本预估',
+          summary: '预计返工 2h，成本约 360 元。',
+          object: 'WO-RUSH-9001 / OP-10',
+          source: '生产报工 / 成本预估',
+          traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST',
+          status: 'active',
+          statusLabel: '成本待结算',
+          createdAt,
+        },
+      ]))
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const qualityBoard = page.locator('.quality-board')
+    const samplePanel = page.locator('.barcode-knowledge-sample-panel')
+    await samplePanel.getByRole('button', { name: '沉淀为 CAPA 知识样本' }).click()
+    await expect(samplePanel.getByText('TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithKnowledgeReuseDraftFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_reuse_drafts') {
+          throw new Error('quality reuse draft storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const draftCard = samplePanel.locator('.reuse-draft-card')
+    await expect(draftCard.getByText('WO-DEMO-1012 命中扫码返工样本')).toBeVisible()
+    await expect(draftCard.getByRole('button', { name: '生成同类缺陷处置草案' })).toBeVisible()
+
+    await draftCard.getByRole('button', { name: '生成同类缺陷处置草案' }).click()
+
+    const alert = qualityBoard.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识复用草案写入失败')
+    await expect(alert).toContainText('quality reuse draft storage unavailable from chromium')
+    await expect(draftCard.getByText('WO-DEMO-1012 命中扫码返工样本')).toBeVisible()
+    await expect(draftCard.getByRole('button', { name: '生成同类缺陷处置草案' })).toBeVisible()
+    await expect(draftCard.locator('.reuse-draft-result')).toBeHidden()
+    await expect(draftCard.getByText('WO-DEMO-1012 处置草案')).toBeHidden()
+    await expect(draftCard.getByText('AUD-KG-QA-REUSE-20260521-001')).toBeHidden()
+    await expect(draftCard.getByText('TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT')).toBeHidden()
+    await expect(page.locator('.barcode-release-message').getByText(/同类缺陷处置草案已生成/)).toBeHidden()
+
+    const sampleRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_samples'))
+    const draftRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_reuse_drafts'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(sampleRecords ?? '').toContain('TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE')
+    expect(draftRecords).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT')
   })
 
   test('同类缺陷命中质量知识后生成处置草案和复用评分', async ({ page }) => {
@@ -508,6 +1179,469 @@ test.describe('Quality 质量闭环', () => {
     await retrainingAuditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(detail.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE', { exact: true })).toBeVisible()
     await expect(detail.getByText(/降低跨工序扫码返工样本的召回权重/)).toBeVisible()
+  })
+
+  test('质量知识复用转正式 CAPA 写入失败时真实浏览器展示 fail-loud 且不伪造正式 CAPA', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithReuseClosureFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_reuse_closures') {
+          throw new Error('reuse closure storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+
+      const sample = {
+        id: 'quality-knowledge-sample-qr-rework-wo-rush-9001-op-10',
+        workOrderId: 'WO-RUSH-9001',
+        operationCode: 'OP-10',
+        processName: 'CNC 精加工',
+        equipmentCode: 'CNC-002',
+        materialBatch: 'AL-202605',
+        defectPattern: '首件尺寸偏差 + Ra 粗糙度复检',
+        documentId: 'kg-quality-barcode-rework',
+        documentTitle: '扫码返工 CAPA 样本库',
+        version: 'QK-20260521',
+        validUntil: '2026-12-31',
+        auditId: 'AUD-KG-QA-REWORK-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE',
+        createdAt: '2026-05-21T10:00:00.000Z',
+        summary: 'WO-RUSH-9001 OP-10 扫码质检不合格已沉淀为可复用样本。',
+        capaRecommendations: ['同类 CNC 首件尺寸偏差先冻结下道交接并隔离 AL 批次。'],
+        reuseTargets: ['质量根因分析', 'AI 生产助手', '文档上传', '报表中心', '审计日志'],
+        evidenceTraceIds: ['TRACE-QR-WO-RUSH-9001-OP-10-REWORK'],
+      }
+      const draft = {
+        id: 'quality-knowledge-reuse-draft-wo-demo-1012-op-10',
+        sourceSampleId: sample.id,
+        sourceTraceId: sample.traceId,
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        targetProcessName: 'CNC 精加工',
+        targetEquipmentCode: 'CNC-002',
+        targetMaterialBatch: 'AL-202605-B',
+        targetDefectPattern: '首件尺寸偏差',
+        matchScore: 92,
+        effectScore: 88,
+        auditId: 'AUD-KG-QA-REUSE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        createdAt: '2026-05-21T10:10:00.000Z',
+        summary: 'WO-DEMO-1012 OP-10 命中扫码返工 CAPA 样本，同设备、同工序、同 AL 批次族和同类首件尺寸偏差均匹配。',
+        matchDimensions: [
+          { label: '工序', source: 'CNC 精加工', target: 'CNC 精加工', matched: true },
+          { label: '设备', source: 'CNC-002', target: 'CNC-002', matched: true },
+          { label: '材料族', source: 'AL-202605', target: 'AL-202605-B', matched: true },
+          { label: '缺陷模式', source: '首件尺寸偏差', target: '首件尺寸偏差', matched: true },
+        ],
+        dispositionDraft: ['冻结 WO-DEMO-1012 OP-10 到 OP-20 的下道交接。'],
+        effectMetrics: [{ label: '分析节省', value: '45 分钟' }],
+        evidenceTraceIds: [sample.traceId],
+      }
+      localStorage.setItem('aimes_quality_knowledge_samples', JSON.stringify([sample]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_drafts', JSON.stringify([draft]))
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const draftReuseCard = capaPanel.locator('.draft-reuse-card')
+    await expect(draftReuseCard.getByText('知识命中草案')).toBeVisible()
+    await expect(draftReuseCard.getByText('WO-DEMO-1012 匹配 92%')).toBeVisible()
+
+    const formalFlow = draftReuseCard.locator('.formal-capa-flow')
+    await expect(formalFlow.getByText('草案待质量工程师复核')).toBeVisible()
+    await formalFlow.getByRole('button', { name: '复核草案并转正式 CAPA' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识复用转正式 CAPA 失败')
+    await expect(alert).toContainText('reuse closure storage unavailable from chromium')
+    await expect(formalFlow.getByText('草案待质量工程师复核')).toBeVisible()
+    await expect(formalFlow.getByRole('button', { name: '复核草案并转正式 CAPA' })).toBeVisible()
+    await expect(formalFlow.getByText('TRACE-KG-QA-WO-DEMO-1012-OP-10-FORMAL-CAPA')).toBeHidden()
+    await expect(capaPanel.getByText(/已转正式 CAPA/)).toBeHidden()
+
+    const closureRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_reuse_closures'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(closureRecords).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1012-OP-10-FORMAL-CAPA')
+  })
+
+  test('质量知识复用效果验证写入失败时真实浏览器展示 fail-loud 且不伪造效果回写', async ({ page }) => {
+    await page.addInitScript(() => {
+      const sample = {
+        id: 'quality-knowledge-sample-qr-rework-wo-rush-9001-op-10',
+        workOrderId: 'WO-RUSH-9001',
+        operationCode: 'OP-10',
+        processName: 'CNC 精加工',
+        equipmentCode: 'CNC-002',
+        materialBatch: 'AL-202605',
+        defectPattern: '首件尺寸偏差 + Ra 粗糙度复检',
+        documentId: 'kg-quality-barcode-rework',
+        documentTitle: '扫码返工 CAPA 样本库',
+        version: 'QK-20260521',
+        validUntil: '2026-12-31',
+        auditId: 'AUD-KG-QA-REWORK-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE',
+        createdAt: '2026-05-21T10:00:00.000Z',
+        summary: 'WO-RUSH-9001 OP-10 扫码质检不合格已沉淀为可复用样本。',
+        capaRecommendations: ['同类 CNC 首件尺寸偏差先冻结下道交接并隔离 AL 批次。'],
+        reuseTargets: ['质量根因分析', 'AI 生产助手', '文档上传', '报表中心', '审计日志'],
+        evidenceTraceIds: ['TRACE-QR-WO-RUSH-9001-OP-10-REWORK'],
+      }
+      const draft = {
+        id: 'quality-knowledge-reuse-draft-wo-demo-1012-op-10',
+        sourceSampleId: sample.id,
+        sourceTraceId: sample.traceId,
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        targetProcessName: 'CNC 精加工',
+        targetEquipmentCode: 'CNC-002',
+        targetMaterialBatch: 'AL-202605-B',
+        targetDefectPattern: '首件尺寸偏差',
+        matchScore: 92,
+        effectScore: 88,
+        auditId: 'AUD-KG-QA-REUSE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        createdAt: '2026-05-21T10:10:00.000Z',
+        summary: 'WO-DEMO-1012 OP-10 命中扫码返工 CAPA 样本，同设备、同工序、同 AL 批次族和同类首件尺寸偏差均匹配。',
+        matchDimensions: [
+          { label: '工序', source: 'CNC 精加工', target: 'CNC 精加工', matched: true },
+          { label: '设备', source: 'CNC-002', target: 'CNC-002', matched: true },
+          { label: '材料族', source: 'AL-202605', target: 'AL-202605-B', matched: true },
+          { label: '缺陷模式', source: '首件尺寸偏差', target: '首件尺寸偏差', matched: true },
+        ],
+        dispositionDraft: ['冻结 WO-DEMO-1012 OP-10 到 OP-20 的下道交接。'],
+        effectMetrics: [{ label: '分析节省', value: '45 分钟' }],
+        evidenceTraceIds: [sample.traceId],
+      }
+      const closure = {
+        id: 'quality-knowledge-reuse-closure-wo-demo-1012-op-10',
+        draftId: draft.id,
+        draftTraceId: draft.traceId,
+        targetWorkOrderId: draft.targetWorkOrderId,
+        targetOperationCode: draft.targetOperationCode,
+        formalCapaTitle: 'WO-DEMO-1012 OP-10 同类首件尺寸偏差正式 CAPA',
+        owner: '质量工程师 周工 / 工艺工程师 陈工',
+        dueAt: '今日 17:30',
+        verification: '复验尺寸 Cpk >= 1.33，OP-20 首件接收无返修',
+        auditId: 'AUD-KG-QA-REUSE-CAPA-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-FORMAL-CAPA',
+        effectTraceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-EFFECT',
+        approvedAt: '2026-05-21T10:20:00.000Z',
+        status: 'approved',
+        statusLabel: '待验证',
+        effectScoreBefore: 88,
+        effectScoreAfter: 94,
+        effectReview: '复用扫码返工样本后，根因确认、隔离、返工成本和排产复核不再重复拆解。',
+        feedbackActions: ['复验通过后把草案命中、正式 CAPA 和效果评分写回知识样本。'],
+        feedbackMetrics: [{ label: '重复分析节省', value: '45 分钟' }],
+      }
+      localStorage.setItem('aimes_quality_knowledge_samples', JSON.stringify([sample]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_drafts', JSON.stringify([draft]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_closures', JSON.stringify([closure]))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithReuseEffectFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_reuse_closures') {
+          throw new Error('reuse effect verification storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const formalFlow = capaPanel.locator('.draft-reuse-card .formal-capa-flow')
+    await expect(formalFlow.getByText('WO-DEMO-1012 OP-10 同类首件尺寸偏差正式 CAPA')).toBeVisible()
+    await expect(formalFlow.getByText('AUD-KG-QA-REUSE-CAPA-20260521-001')).toBeVisible()
+    await expect(formalFlow.getByRole('button', { name: '验证复用效果并回写' })).toBeVisible()
+
+    await formalFlow.getByRole('button', { name: '验证复用效果并回写' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识复用效果验证失败')
+    await expect(alert).toContainText('reuse effect verification storage unavailable from chromium')
+    await expect(formalFlow).not.toHaveClass(/verified/)
+    await expect(formalFlow.getByRole('button', { name: '验证复用效果并回写' })).toBeVisible()
+    await expect(formalFlow.getByText('TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-EFFECT')).toBeHidden()
+    await expect(capaPanel.getByText(/已验证并回写复用效果/)).toBeHidden()
+
+    const closureRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_reuse_closures'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(closureRecords ?? '').toContain('"status":"approved"')
+    expect(closureRecords ?? '').not.toContain('"status":"verified"')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-EFFECT')
+  })
+
+  test('低分样本复核队列生成失败时真实浏览器展示 fail-loud 且不伪造复核队列', async ({ page }) => {
+    await page.addInitScript(() => {
+      const sample = {
+        id: 'quality-knowledge-sample-qr-rework-wo-rush-9001-op-10',
+        workOrderId: 'WO-RUSH-9001',
+        operationCode: 'OP-10',
+        processName: 'CNC 精加工',
+        equipmentCode: 'CNC-002',
+        materialBatch: 'AL-202605',
+        defectPattern: '首件尺寸偏差 + Ra 粗糙度复检',
+        documentId: 'kg-quality-barcode-rework',
+        documentTitle: '扫码返工 CAPA 样本库',
+        version: 'QK-20260521',
+        validUntil: '2026-12-31',
+        auditId: 'AUD-KG-QA-REWORK-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE',
+        createdAt: '2026-05-21T10:00:00.000Z',
+        summary: 'WO-RUSH-9001 OP-10 扫码质检不合格已沉淀为可复用样本。',
+        capaRecommendations: ['同类 CNC 首件尺寸偏差先冻结下道交接并隔离 AL 批次。'],
+        reuseTargets: ['质量根因分析', 'AI 生产助手', '文档上传', '报表中心', '审计日志'],
+        evidenceTraceIds: ['TRACE-QR-WO-RUSH-9001-OP-10-REWORK'],
+      }
+      const draft = {
+        id: 'quality-knowledge-reuse-draft-wo-demo-1012-op-10',
+        sourceSampleId: sample.id,
+        sourceTraceId: sample.traceId,
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        targetProcessName: 'CNC 精加工',
+        targetEquipmentCode: 'CNC-002',
+        targetMaterialBatch: 'AL-202605-B',
+        targetDefectPattern: '首件尺寸偏差',
+        matchScore: 92,
+        effectScore: 88,
+        auditId: 'AUD-KG-QA-REUSE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        createdAt: '2026-05-21T10:10:00.000Z',
+        summary: 'WO-DEMO-1012 OP-10 命中扫码返工 CAPA 样本，同设备、同工序、同 AL 批次族和同类首件尺寸偏差均匹配。',
+        matchDimensions: [
+          { label: '工序', source: 'CNC 精加工', target: 'CNC 精加工', matched: true },
+          { label: '设备', source: 'CNC-002', target: 'CNC-002', matched: true },
+          { label: '材料族', source: 'AL-202605', target: 'AL-202605-B', matched: true },
+          { label: '缺陷模式', source: '首件尺寸偏差', target: '首件尺寸偏差', matched: true },
+        ],
+        dispositionDraft: ['冻结 WO-DEMO-1012 OP-10 到 OP-20 的下道交接。'],
+        effectMetrics: [{ label: '分析节省', value: '45 分钟' }],
+        evidenceTraceIds: [sample.traceId],
+      }
+      const closure = {
+        id: 'quality-knowledge-reuse-closure-wo-demo-1012-op-10',
+        draftId: draft.id,
+        draftTraceId: draft.traceId,
+        targetWorkOrderId: draft.targetWorkOrderId,
+        targetOperationCode: draft.targetOperationCode,
+        formalCapaTitle: 'WO-DEMO-1012 OP-10 同类首件尺寸偏差正式 CAPA',
+        owner: '质量工程师 周工 / 工艺工程师 陈工',
+        dueAt: '今日 17:30',
+        verification: '复验尺寸 Cpk >= 1.33，OP-20 首件接收无返修',
+        auditId: 'AUD-KG-QA-REUSE-CAPA-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-FORMAL-CAPA',
+        effectTraceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-EFFECT',
+        approvedAt: '2026-05-21T10:20:00.000Z',
+        verifiedAt: '2026-05-21T10:30:00.000Z',
+        status: 'verified',
+        statusLabel: '复用效果已回写',
+        effectScoreBefore: 88,
+        effectScoreAfter: 94,
+        effectReview: '复用扫码返工样本后，根因确认、隔离、返工成本和排产复核不再重复拆解。',
+        feedbackActions: ['复验通过后把草案命中、正式 CAPA 和效果评分写回知识样本。'],
+        feedbackMetrics: [{ label: '重复分析节省', value: '45 分钟' }],
+      }
+      localStorage.setItem('aimes_quality_knowledge_samples', JSON.stringify([sample]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_drafts', JSON.stringify([draft]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_closures', JSON.stringify([closure]))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithReviewQueueFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_review_queue') {
+          throw new Error('review queue storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const rankingPanel = capaPanel.locator('.draft-reuse-card .reuse-ranking-panel')
+    await expect(rankingPanel.getByText('质量知识复用排序')).toBeVisible()
+    await expect(rankingPanel.locator('.ranking-card').filter({ hasText: 'WO-DEMO-1018 OP-20 装配扭矩偏移复用尝试' }).getByText('低分复核')).toBeVisible()
+    await expect(rankingPanel.getByRole('button', { name: '生成低分样本复核队列' })).toBeVisible()
+
+    await rankingPanel.getByRole('button', { name: '生成低分样本复核队列' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('低分样本复核队列生成失败')
+    await expect(alert).toContainText('review queue storage unavailable from chromium')
+    await expect(rankingPanel.getByRole('button', { name: '生成低分样本复核队列' })).toBeVisible()
+    await expect(rankingPanel.locator('.low-score-review-card')).toBeHidden()
+    await expect(rankingPanel.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-REVIEW')).toBeHidden()
+    await expect(capaPanel.getByText(/已进入低分样本复核队列/)).toBeHidden()
+
+    const reviewQueueRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_review_queue'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(reviewQueueRecords).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-REVIEW')
+  })
+
+  test('低分样本复核队列关闭失败时真实浏览器展示 fail-loud 且不伪造关闭结论', async ({ page }) => {
+    await page.addInitScript(() => {
+      const draft = {
+        id: 'quality-knowledge-reuse-draft-wo-demo-1012-op-10',
+        sourceSampleId: 'quality-knowledge-sample-qr-rework-wo-rush-9001-op-10',
+        sourceTraceId: 'TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE',
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        targetProcessName: 'CNC 精加工',
+        targetEquipmentCode: 'CNC-002',
+        targetMaterialBatch: 'AL-202605-B',
+        targetDefectPattern: '首件尺寸偏差',
+        matchScore: 92,
+        effectScore: 88,
+        auditId: 'AUD-KG-QA-REUSE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        createdAt: '2026-05-21T10:10:00.000Z',
+        summary: 'WO-DEMO-1012 OP-10 命中扫码返工 CAPA 样本，同设备、同工序、同 AL 批次族和同类首件尺寸偏差均匹配。',
+        matchDimensions: [
+          { label: '工序', source: 'CNC 精加工', target: 'CNC 精加工', matched: true },
+          { label: '设备', source: 'CNC-002', target: 'CNC-002', matched: true },
+          { label: '材料族', source: 'AL-202605', target: 'AL-202605-B', matched: true },
+          { label: '缺陷模式', source: '首件尺寸偏差', target: '首件尺寸偏差', matched: true },
+        ],
+        dispositionDraft: ['冻结 WO-DEMO-1012 OP-10 到 OP-20 的下道交接。'],
+        effectMetrics: [{ label: '分析节省', value: '45 分钟' }],
+        evidenceTraceIds: ['TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE'],
+      }
+      const reviewQueue = {
+        id: 'quality-knowledge-review-low-score-wo-demo-1018-op-20',
+        sourceRankingId: 'reuse-rank-low-score-torque',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        title: 'WO-DEMO-1018 OP-20 低分复用样本复核',
+        reason: '装配扭矩偏移与扫码返工源样本跨工序、跨设备，复用效果 61 分，低于 70 分阈值，需复核是否新建独立 CAPA 样本。',
+        owner: '质量主管 刘工 / 知识库管理员',
+        dueAt: '明日 10:00',
+        auditId: 'AUD-KG-QA-LOW-SCORE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-REVIEW',
+        createdAt: '2026-05-21T10:40:00.000Z',
+        status: 'open',
+        statusLabel: '复核中',
+        effectScore: 61,
+        reviewActions: [
+          '复核 OP-20 装配扭矩偏移是否属于扫码返工样本的有效泛化范围。',
+          '若跨工序差异无法解释，生成独立装配扭矩 CAPA 样本并标记原复用尝试为低分。',
+          '把低分样本加入后续知识检索降权策略，避免 AI 助手直接引用。',
+        ],
+      }
+      localStorage.setItem('aimes_quality_knowledge_reuse_drafts', JSON.stringify([draft]))
+      localStorage.setItem('aimes_quality_knowledge_review_queue', JSON.stringify([reviewQueue]))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithReviewQueueClosureFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_review_queue') {
+          throw new Error('review queue closure storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const reviewCard = capaPanel.locator('.low-score-review-card')
+    await expect(reviewCard).toBeVisible()
+    await expect(reviewCard.getByText('WO-DEMO-1018 OP-20 低分复用样本复核')).toBeVisible()
+    await expect(reviewCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-REVIEW')).toBeVisible()
+    await expect(reviewCard.getByRole('button', { name: '完成复核并禁用直接复用' })).toBeVisible()
+
+    await reviewCard.getByRole('button', { name: '完成复核并禁用直接复用' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('低分样本复核队列关闭失败')
+    await expect(alert).toContainText('review queue closure storage unavailable from chromium')
+    await expect(reviewCard.getByRole('button', { name: '完成复核并禁用直接复用' })).toBeVisible()
+    await expect(reviewCard.getByText(/禁止 AI 助手把该低分候选作为直接 CAPA 推荐/)).toBeHidden()
+    await expect(reviewCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-DECISION')).toBeHidden()
+    await expect(reviewCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE')).toBeHidden()
+    await expect(capaPanel.getByText(/已完成复核/)).toBeHidden()
+
+    const reviewQueueRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_review_queue'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(reviewQueueRecords ?? '').toContain('"status":"open"')
+    expect(reviewQueueRecords ?? '').not.toContain('"status":"closed"')
+    expect(reviewQueueRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-DECISION')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-DECISION')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE')
   })
 
   test('已发布再训练版本提升 OP-20 推荐排序并进入助手引用', async ({ page }) => {
@@ -834,6 +1968,325 @@ test.describe('Quality 质量闭环', () => {
     const nextTrainingEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '下一轮训练集' })
     await expect(nextTrainingEvidence.getByText('QK-TRAIN-20260521-R3 推荐采纳效果已入池')).toBeVisible()
     await expect(nextTrainingEvidence.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3')).toBeVisible()
+  })
+
+  test('发布推荐采纳写入失败时真实浏览器展示 fail-loud 且不伪造采纳反馈', async ({ page }) => {
+    await page.addInitScript(() => {
+      const sample = {
+        id: 'quality-knowledge-sample-qr-rework-wo-rush-9001-op-10',
+        workOrderId: 'WO-RUSH-9001',
+        operationCode: 'OP-10',
+        processName: 'CNC 精加工',
+        equipmentCode: 'CNC-002',
+        materialBatch: 'AL-202605',
+        defectPattern: '首件尺寸偏差 + Ra 粗糙度复检',
+        documentId: 'kg-quality-barcode-rework',
+        documentTitle: '扫码返工 CAPA 样本库',
+        version: 'QK-20260521',
+        validUntil: '2026-12-31',
+        auditId: 'AUD-KG-QA-REWORK-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-RUSH-9001-OP-10-REWORK-SAMPLE',
+        createdAt: '2026-05-21T10:00:00.000Z',
+        summary: 'WO-RUSH-9001 OP-10 扫码质检不合格已沉淀为可复用样本。',
+        capaRecommendations: ['冻结下道交接并隔离批次。'],
+        reuseTargets: ['质量根因分析', 'AI 生产助手', '审计日志'],
+        evidenceTraceIds: ['TRACE-QR-WO-RUSH-9001-OP-10-REWORK'],
+      }
+      const draft = {
+        id: 'quality-knowledge-reuse-draft-wo-demo-1012-op-10',
+        sourceSampleId: sample.id,
+        sourceTraceId: sample.traceId,
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        targetProcessName: 'CNC 精加工',
+        targetEquipmentCode: 'CNC-002',
+        targetMaterialBatch: 'AL-202605-B',
+        targetDefectPattern: '首件尺寸偏差',
+        matchScore: 92,
+        effectScore: 88,
+        auditId: 'AUD-KG-QA-REUSE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        createdAt: '2026-05-21T10:10:00.000Z',
+        summary: 'WO-DEMO-1012 OP-10 命中扫码返工 CAPA 样本。',
+        matchDimensions: [{ label: '工序', source: 'CNC 精加工', target: 'CNC 精加工', matched: true }],
+        dispositionDraft: ['冻结 WO-DEMO-1012 OP-10 到 OP-20 的下道交接。'],
+        effectMetrics: [{ label: '分析节省', value: '45 分钟' }],
+        evidenceTraceIds: [sample.traceId],
+      }
+      const closure = {
+        id: 'quality-knowledge-reuse-closure-wo-demo-1012-op-10',
+        draftId: draft.id,
+        draftTraceId: draft.traceId,
+        targetWorkOrderId: 'WO-DEMO-1012',
+        targetOperationCode: 'OP-10',
+        formalCapaTitle: 'WO-DEMO-1012 OP-10 同类首件尺寸偏差正式 CAPA',
+        owner: '质量工程师 周工 / 工艺工程师 陈工',
+        dueAt: '今日 17:30',
+        verification: '复验尺寸 Cpk >= 1.33',
+        auditId: 'AUD-KG-QA-REUSE-CAPA-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-FORMAL-CAPA',
+        effectTraceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-EFFECT',
+        approvedAt: '2026-05-21T10:20:00.000Z',
+        verifiedAt: '2026-05-21T10:40:00.000Z',
+        status: 'verified',
+        statusLabel: '复用效果已回写',
+        effectScoreBefore: 88,
+        effectScoreAfter: 94,
+        effectReview: '复用扫码返工样本后，根因确认和复验不再重复拆解。',
+        feedbackActions: ['复验通过后回写知识样本。'],
+        feedbackMetrics: [{ label: '重复分析节省', value: '45 分钟' }],
+      }
+      const reviewQueue = {
+        id: 'quality-knowledge-review-low-score-wo-demo-1018-op-20',
+        sourceRankingId: 'reuse-rank-low-score-torque',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        title: 'WO-DEMO-1018 OP-20 低分复用样本复核',
+        reason: '装配扭矩偏移与扫码返工源样本跨工序、跨设备。',
+        owner: '质量主管 刘工 / 知识库管理员',
+        dueAt: '明日 10:00',
+        auditId: 'AUD-KG-QA-LOW-SCORE-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-REVIEW',
+        createdAt: '2026-05-21T10:30:00.000Z',
+        status: 'closed',
+        statusLabel: '直接复用已禁用',
+        effectScore: 61,
+        reviewActions: ['复核 OP-20 装配扭矩偏移是否属于扫码返工样本的有效泛化范围。'],
+        closedAt: '2026-05-21T10:50:00.000Z',
+        decisionAuditId: 'AUD-KG-QA-LOW-SCORE-DECISION-20260521-001',
+        decisionTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-LOW-SCORE-DECISION',
+        decisionLabel: '禁用直接复用',
+        decisionSummary: '人工复核确认 OP-20 装配扭矩偏移与 CNC 扫码返工样本不属于同一泛化族。',
+        disabledReuseRule: 'matchScore < 70 或跨工序缺陷模式不一致时，只能进入复核/再训练队列。',
+        retrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE',
+        retrainingPlan: ['把本次 61 分低分尝试作为负样本。'],
+      }
+      const publishedVersion = {
+        id: 'quality-retraining-version-quality-knowledge-review-low-score-wo-demo-1018-op-20',
+        sourceReviewQueueId: reviewQueue.id,
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        candidateTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE',
+        trainingSetVersion: 'QK-TRAIN-20260521-R2',
+        trainingSetName: '装配扭矩偏移 CAPA 再训练样本集',
+        status: 'published',
+        statusLabel: '已发布到 AI 推荐',
+        approvedBy: '知识库管理员 / 质量主管 刘工',
+        approvedAt: '2026-05-21T12:00:00.000Z',
+        approvalAuditId: 'AUD-KG-QA-RETRAINING-APPROVAL-20260521-001',
+        approvalTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-APPROVED',
+        positiveSampleCount: 18,
+        negativeSampleCount: 3,
+        featurePolicy: '工序、设备族、缺陷模式、验证效果分必须同时参与召回排序。',
+        changeSummary: ['新增 OP-20 装配扭矩偏移独立 CAPA 正样本。'],
+        validationGates: ['离线 Top-3 召回不得推荐跨工序扫码返工样本。'],
+        validationStatus: 'passed',
+        validatedAt: '2026-05-21T12:30:00.000Z',
+        validationAuditId: 'AUD-KG-QA-RETRAINING-VALIDATION-PASS-20260521-001',
+        validationTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-VALIDATION-PASSED',
+        validationSummary: 'OP-20 扭矩工具校准字段已补齐。',
+        validationFindings: ['低分负样本召回权重下降 36%。'],
+        publishedAt: '2026-05-21T12:40:00.000Z',
+        publishAuditId: 'AUD-KG-QA-RETRAINING-PUBLISH-20260521-001',
+        publishTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-PUBLISHED',
+        publishSummary: '训练集版本通过发布前校验后进入质量知识复用排序。',
+        recommendationScope: ['质量知识复用排序', 'AI 生产助手引用链', 'CAPA 草案推荐'],
+      }
+      localStorage.setItem('aimes_quality_knowledge_samples', JSON.stringify([sample]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_drafts', JSON.stringify([draft]))
+      localStorage.setItem('aimes_quality_knowledge_reuse_closures', JSON.stringify([closure]))
+      localStorage.setItem('aimes_quality_knowledge_review_queue', JSON.stringify([reviewQueue]))
+      localStorage.setItem('aimes_quality_knowledge_retraining_versions', JSON.stringify([publishedVersion]))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithRecommendationFeedbackFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_recommendation_feedback') {
+          throw new Error('published recommendation adoption storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const rankingPanel = capaPanel.locator('.reuse-ranking-panel')
+    const publishedCard = rankingPanel.locator('.ranking-card').filter({ hasText: 'WO-DEMO-1018 OP-20 装配扭矩偏移独立 CAPA 推荐' })
+    await expect(publishedCard.getByText('已发布训练集')).toBeVisible()
+    await expect(publishedCard.getByText('89 分')).toBeVisible()
+    await expect(publishedCard.getByRole('button', { name: '采纳发布推荐并回写效果' })).toBeVisible()
+
+    await publishedCard.getByRole('button', { name: '采纳发布推荐并回写效果' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识发布推荐采纳失败')
+    await expect(alert).toContainText('published recommendation adoption storage unavailable from chromium')
+    await expect(publishedCard.getByRole('button', { name: '采纳发布推荐并回写效果' })).toBeVisible()
+    await expect(publishedCard.locator('.ranking-feedback')).toBeHidden()
+    await expect(publishedCard.getByText('已采纳推荐')).toBeHidden()
+    await expect(publishedCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED')).toBeHidden()
+    await expect(publishedCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3')).toBeHidden()
+    await expect(capaPanel.getByText(/已采纳 QK-TRAIN-20260521-R2 推荐/)).toBeHidden()
+
+    const feedbackRecords = await page.evaluate(() => localStorage.getItem('aimes_quality_knowledge_recommendation_feedback'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(feedbackRecords).toBeNull()
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3')
+  })
+
+  test('助手执行包质量责任闭环失败时真实浏览器展示 fail-loud 且不伪造质量闭环', async ({ page }) => {
+    await page.addInitScript(() => {
+      const recoveryPackage = {
+        id: 'wo-rush-9001-delivery-recovery',
+        title: 'WO-RUSH-9001 交期恢复执行包',
+        auditCode: 'AUD-CHAT-RECOVERY-PACKAGE-20260521-001',
+        traceId: 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521',
+        actor: 'AI 生产助手',
+        role: 'Assistant',
+        workOrders: 'WO-RUSH-9001 / WO-DEMO-1002 / WO-2026-0042',
+        priority: 'critical',
+        owner: '生产经理审批',
+        dueAt: '今日 15:30',
+        scheduleWindow: '锁定期后第一个 CNC 空窗 + 夜班加班',
+        scheduleAction: '保护 8h 锁定期，释放 M-AL-6061B 替代料复核，把 WO-RUSH-9001 插入 CNC-003 夜班窗口。',
+        riskImpact: '急单、缺料和 CNC-001 维护窗口叠加。',
+        riskSuggestion: '风险队列转生产经理审批，采购确认替代批次，质量保留首件复核。',
+        otdImpact: '+3.33pt / p=0.7745',
+        delayImpact: '-4 单延期风险',
+        changeoverImpact: '+20min 可控',
+        status: 'active',
+        statusLabel: '待跨模块复核',
+        purchaseActionStatus: 'closed',
+        purchaseActionAuditCode: 'AUD-CHAT-RECOVERY-PURCHASE-CLOSURE-20260521-001',
+        purchaseActionTraceId: 'TRACE-CHAT-RECOVERY-PURCHASE-M-AL-6061-RECEIVED-20260521',
+        purchaseActionSummary: '采购 王工 已确认 PO-RUSH-20260519 加急收货，M-AL-6061 齐套缺口清零。',
+        qualityActionStatus: 'pending',
+        qualityActionTraceId: 'TRACE-QA-RECOVERY-FIRST-ARTICLE',
+        qualityActionAuditCode: 'AUD-QA-RECOVERY-FIRST-ARTICLE',
+        firstArticleRecord: 'FAI-WO-RUSH-9001-OP20-20260521',
+        summary: 'AI 生产助手把最高风险工单、缺料、设备维护和质量复核合并成一张可执行动作包。',
+        dispatchSteps: [
+          {
+            module: 'AI 排产',
+            owner: '调度员 李工',
+            action: '生成锁定期后插入 + CNC-003 分流 + 夜班加班建议',
+            evidence: 'TRACE-SCH-RECOVERY-WO-RUSH-9001',
+            status: 'pending',
+          },
+          {
+            module: '风险预警',
+            owner: '生产经理审批',
+            action: '把急单、缺料、设备维护窗口升级为跨部门处置项',
+            evidence: 'TRACE-RISK-RECOVERY-WO-RUSH-9001',
+            status: 'pending',
+          },
+          {
+            module: '采购协同',
+            owner: '采购 王工',
+            action: '确认 M-AL-6061B 替代批次和到料承诺',
+            evidence: 'TRACE-CHAT-RECOVERY-PURCHASE-M-AL-6061-RECEIVED-20260521',
+            status: 'closed',
+          },
+          {
+            module: '质量闭环',
+            owner: '质量工程师 周工',
+            action: '保留替代料首件检验与 OP-20 装配扭矩复核窗口',
+            evidence: 'TRACE-QA-RECOVERY-FIRST-ARTICLE',
+            status: 'pending',
+          },
+        ],
+        createdAt: '2026-05-21T09:00:00.000Z',
+      }
+      localStorage.setItem('aimes_assistant_recovery_packages', JSON.stringify([recoveryPackage]))
+
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithAssistantQualityClosureFailure(key: string, value: string) {
+        if (key === 'aimes_assistant_recovery_packages') {
+          throw new Error('assistant quality action closure unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+    await page.route('**/api/v1/assistant-evidence/recovery-packages**', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      })
+    })
+
+    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.quality-board', { timeout: 60000 })
+
+    const capaPanel = page.locator('.quality-capa-panel')
+    const assistantCard = capaPanel.locator('.assistant-quality-closure-card')
+    await expect(assistantCard).toBeVisible()
+    await expect(assistantCard.getByText('助手执行包质量责任')).toBeVisible()
+    await expect(assistantCard.getByText('WO-RUSH-9001 交期恢复执行包')).toBeVisible()
+    await expect(assistantCard.getByText('TRACE-QA-RECOVERY-FIRST-ARTICLE')).toBeVisible()
+    await expect(assistantCard.getByRole('button', { name: '确认首件复核闭环' })).toBeVisible()
+
+    await assistantCard.getByRole('button', { name: '确认首件复核闭环' }).click()
+
+    const alert = capaPanel.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('助手执行包质量责任闭环失败')
+    await expect(alert).toContainText('assistant quality action closure unavailable from chromium')
+    await expect(assistantCard.getByRole('button', { name: '确认首件复核闭环' })).toBeVisible()
+    await expect(assistantCard.locator('.assistant-quality-result')).toBeHidden()
+    await expect(assistantCard.getByText('AUD-CHAT-RECOVERY-QUALITY-CLOSURE-20260521-001')).toBeHidden()
+    await expect(assistantCard.getByText('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521')).toBeHidden()
+    await expect(capaPanel.getByText(/交期恢复执行包质量责任动作已闭合/)).toBeHidden()
+
+    const recoveryRecords = await page.evaluate(() => localStorage.getItem('aimes_assistant_recovery_packages'))
+    const evidenceRecords = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(recoveryRecords ?? '').toContain('"qualityActionStatus":"pending"')
+    expect(recoveryRecords ?? '').not.toContain('"qualityActionStatus":"closed"')
+    expect(recoveryRecords ?? '').not.toContain('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521')
+    expect(evidenceRecords ?? '').not.toContain('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521')
   })
 
   test('R3 灰度发布后优先进入质量推荐排序和助手引用', async ({ page }) => {
@@ -1308,7 +2761,7 @@ test.describe('Quality 质量闭环', () => {
 
     await page.goto('admin', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const r7Monitor = page.locator('.quality-gray-monitor-card').filter({ hasText: 'QK-TRAIN-20260521-R7 灰度监控' })
     await expect(r7Monitor.locator('.action-topline span').getByText('跨线 OP-20 扭矩偏移影子灰度', { exact: true })).toBeVisible()
     await r7Monitor.getByRole('button', { name: '扩大灰度' }).click()
@@ -1322,7 +2775,7 @@ test.describe('Quality 质量闭环', () => {
 
     await page.goto('admin', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await page.locator('.quality-gray-monitor-card').filter({ hasText: 'QK-TRAIN-20260521-R7 灰度监控' }).getByRole('button', { name: '质量主管确认扩大' }).click()
 
     await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })

@@ -28,9 +28,14 @@ public class AiDecisionTraceEntityConfiguration : IEntityTypeConfiguration<AiDec
         entity.Property(e => e.HumanAdoptionStatus).HasColumnName("human_adoption_status").HasConversion<string>();
         entity.Property(e => e.SourceReferences).HasColumnName("source_references");
         entity.Property(e => e.RelatedBusinessKeys).HasColumnName("related_business_keys");
+        entity.Property(e => e.BusinessKeyType).HasColumnName("business_key_type").HasMaxLength(80);
+        entity.Property(e => e.BusinessKeyValue).HasColumnName("business_key_value").HasMaxLength(160);
+        entity.Property(e => e.LinkedAgentDecisionId).HasColumnName("linked_agent_decision_id").HasMaxLength(100);
         entity.Property(e => e.CreatedAt).HasColumnName("created_at");
 
         entity.HasIndex(e => e.AgentName);
+        entity.HasIndex(e => new { e.BusinessKeyType, e.BusinessKeyValue });
+        entity.HasIndex(e => e.LinkedAgentDecisionId);
         entity.HasIndex(e => e.CreatedAt);
     }
 }

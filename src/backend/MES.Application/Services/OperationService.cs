@@ -31,25 +31,35 @@ public class OperationService : IOperationService
     public async Task<OperationInfoDto> ScanAsync(ScanOperationRequest request, CancellationToken ct = default)
     {
         var execution = await _operationRepository.GetExecutionByCodeAsync(request.Code, ct);
+        WorkOrder? relatedWorkOrder = null;
         if (execution == null)
         {
-            var workOrder = (await _workOrderRepository.GetAllAsync())
-                .FirstOrDefault(w => w.OrderNumber == request.Code || w.Id == request.Code);
+            execution = await _unitOfWork.ExecuteAsync(async innerCt =>
+            {
+                var workOrder = await _workOrderRepository.GetByCodeAsync(request.Code, innerCt);
 
-            if (workOrder == null)
-                throw new InvalidOperationException("Operation or work order was not found.");
+                if (workOrder == null)
+                    throw new InvalidOperationException("Operation or work order was not found.");
 
-            execution = new OperationExecution(workOrder.Id, workOrder.RouteCode, string.IsNullOrWhiteSpace(workOrder.RouteCode) ? "Default Operation" : workOrder.RouteCode);
-            await _operationRepository.AddExecutionAsync(execution, ct);
+                relatedWorkOrder = workOrder;
+                var createdExecution = new OperationExecution(workOrder.Id, workOrder.RouteCode, string.IsNullOrWhiteSpace(workOrder.RouteCode) ? "Default Operation" : workOrder.RouteCode);
+                if (!string.IsNullOrWhiteSpace(request.OperatorId) && !string.IsNullOrWhiteSpace(request.StationId))
+                {
+                    createdExecution.BindOperatorAndStation(request.OperatorId, request.StationId);
+                }
+
+                await _operationRepository.AddExecutionAsync(createdExecution, innerCt);
+                return createdExecution;
+            }, ct);
         }
 
-        var relatedWorkOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId)
+        relatedWorkOrder ??= await _workOrderRepository.GetByIdAsync(execution.WorkOrderId, ct)
             ?? throw new InvalidOperationException("Related work order was not found.");
 
         if (!string.IsNullOrWhiteSpace(request.OperatorId) && !string.IsNullOrWhiteSpace(request.StationId))
         {
             execution.BindOperatorAndStation(request.OperatorId, request.StationId);
-            await _operationRepository.UpdateExecutionAsync(execution, ct);
+            await _unitOfWork.ExecuteAsync(innerCt => _operationRepository.UpdateExecutionAsync(execution, innerCt), ct);
         }
 
         return ToInfoDto(execution, relatedWorkOrder);
@@ -60,6 +70,13 @@ public class OperationService : IOperationService
         var execution = await GetExecution(operationId, ct);
         execution.BindOperatorAndStation(request.OperatorId, request.StationId, request.EquipmentId);
         execution.Start();
+        var workOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId, ct)
+            ?? throw new InvalidOperationException("Related work order was not found.");
+        if (workOrder.CanStart)
+        {
+            workOrder.Start();
+            await _workOrderRepository.UpdateAsync(workOrder, ct);
+        }
         await _operationRepository.UpdateExecutionAsync(execution, ct);
 
         return new OperationResultDto { OperationId = execution.Id, Status = execution.Status.ToString(), Message = "Operation started." };
@@ -82,14 +99,14 @@ public class OperationService : IOperationService
                 request.InspectionResult,
                 request.ReportedBy);
 
-            var workOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId)
+            var workOrder = await _workOrderRepository.GetByIdAsync(execution.WorkOrderId, innerCt)
                 ?? throw new InvalidOperationException("Related work order was not found.");
             workOrder.AddCompletedQuantity(request.Quantity);
             if (workOrder.CompletedQuantity >= workOrder.PlannedQuantity)
             {
                 workOrder.Complete(workOrder.CompletedQuantity);
             }
-            await _workOrderRepository.UpdateAsync(workOrder);
+            await _workOrderRepository.UpdateAsync(workOrder, innerCt);
 
             await _operationRepository.UpdateExecutionAsync(execution, innerCt);
             await _operationRepository.AddReportAsync(report, innerCt);

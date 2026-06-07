@@ -11,6 +11,10 @@
 
 AIMes V1 是一个智能制造执行系统，用于验证“传统 MES + 规则排程 + AI 辅助决策”的完整产品形态。它不是单一看板，而是一套包含后端 API、前端操作台、数据持久化、实时通知、AI 服务接口、测试工程和 Docker 编排的端到端工程。
 
+V1.5 当前主线是把 2026-05-19 以来的前端 AI 演示状态机逐步后端化。当前可复现量化口径（真实 .NET 跑出，无 PowerShell 硬编码）：在 `DEMO-OTD-30-202605` 30 单数据集、seed `20260523` 上，规则基线最佳策略（WeightedComposite）OTD `26.67%`，Agent 方案 OTD `30.00%`，改善 `+3.33` 个百分点（12.49% 相对改善），95% CI `[-19.46%, +26.12%]`，p-value `0.7745`——**30 单样本量下不显著（significantAt95: false）**，明确遵循 v3.0 路线图"不吹牛"原则。
+
+报告由 `scripts/run-ab-comparison.ps1` 调用 `src/tools/MES.Tools.AbBenchmark` 真跑生成到 `src/frontend/public/reports/latest-ab-report.json` 和 `_docs/_reports/20260524-demo-otd-30-ab-report.md`。同 seed 重跑保持单次 A/B 结果一致，`generatedAt` 和 Monte Carlo 抽样摘要会刷新；当前 100 次扰动 Monte Carlo 均值为 `+7.67` 个百分点，95% CI `[6.92, 8.41]`。要让单次 +3.33 pts 真显著的下一步：把有效样本扩大到 1000+ 或接入 POC 现场数据，而不是把 demo 数据集包装成显著结论。
+
 项目主要解决这些现场问题：
 
 - 工单排产依赖人工经验，插单、设备故障、物料短缺后重排成本高。
@@ -252,6 +256,21 @@ npm run dev
 
 这些账号仅用于本地演示。生产环境必须修改默认密码，并通过环境变量配置强随机 `Jwt__SigningKey`。
 
+### V1.5 Agent 权限矩阵
+
+调度员 Agent 的写入动作（采纳/拒绝排产方案、跨域执行包）受 `MES.Domain/Authorization/AgentPermissionPolicy` 集中管控，原则是"AI 能建议，但不能越权执行"。当前实现遵循 [`_docs/_design/20260524-v15-agent-permission-policy.md`](_docs/_design/20260524-v15-agent-permission-policy.md) 角色矩阵：
+
+| 角色 | 排产采纳/拒绝 | 质量处置 | 采购动作 | 维护动作 |
+|------|:---:|:---:|:---:|:---:|
+| `Admin` | ✅ | ✅ | ✅ | ✅ |
+| `Planner` | ✅ | ❌ | ❌ | ❌ |
+| `Quality` | ❌ | ✅ | ❌ | ❌ |
+| `Purchase` | ❌ | ❌ | ✅ | ❌ |
+| `Maintenance` | ❌ | ❌ | ❌ | ✅ |
+| `Operator` | ❌ | ❌ | ❌ | ❌ |
+
+非授权角色调用对应 API 会得到 `403 Forbidden`，并在 `agent_action_results` 写入 `RejectedByPolicy` 行，在 `audit_logs` 写入 `AgentPolicyRejected` 行（含 `actor` / `role` / `business_key` / `trace_id` / `prompt_hash` / `context_hash`）。验收用例见 `MES.Tests.Unit.Authorization.AgentPermissionPolicyTests`（37 单元）和 `MES.Tests.Integration.Controllers.SchedulingControllerTests`（41 集成，含 5 角色 × 5 动作矩阵）。
+
 ## 预览与排查
 
 `npm run preview` 只会启动前端预览服务，默认监听 `http://localhost:4173/scheduling/`，不会自动拉起后端。它依赖后端 API `http://localhost:5147`，所以如果没有先启动 `MES.Api`，登录和业务请求都会失败。
@@ -348,9 +367,21 @@ dotnet ef database update `
 
 现有 EF 迁移文件按 PostgreSQL 生成。Development + SQL Server 路径使用 EF `EnsureCreated` 初始化本地演示库；正式迁移仍以 PostgreSQL 迁移为准。
 
+## V1.5 深化功能
+
+除核心 MES 功能外，V1.5 主线新增以下 AI 深化能力（点击查看详情）：
+
+- **[能力目录](_docs/_capability/)**：OTD 量化基准、Agent 决策治理、质量知识链、异常事件中心、可执行助手等 15+ 模块
+- **[Sprint 推进索引](_docs/_changelog/README.md)**：60+ 份 changelog 按 P0/P1/P2/P3 + 模块分类索引
+- **[排产基准报告](_docs/_reports/20260524-demo-otd-30-ab-report.md)**：真实 .NET 跑出的 A/B 对比，含蒙特卡洛模拟、95% 置信区间与显著性检验
+- **[权限矩阵](_docs/_design/20260524-v15-agent-permission-policy.md)**：5 角色 × 5 动作的 Agent 动作权限集中管控
+- **[运行脚本](scripts/)**：`run-ab-comparison.ps1`（一键 OTD 对比）、`clean-nuxt.ps1`（Windows 构建锁清理）
+
 ## 文档
 
 - [`CHANGELOG.md`](CHANGELOG.md): 面向用户的发布变更
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): 贡献方式、PR 要求和本地检查
+- [`SECURITY.md`](SECURITY.md): 漏洞报告、安全响应和披露规则
 - [`_docs/SOP.md`](_docs/SOP.md): 部署、备份、回滚和运维 SOP
 - [`_docs/quickstart.md`](_docs/quickstart.md): 快速上手
 - [`_docs/troubleshooting.md`](_docs/troubleshooting.md): 常见问题排查

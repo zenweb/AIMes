@@ -1,5 +1,6 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
 import type { PocRolloutPackageRecord } from './poc-rollout-package-sync'
+import { getLatestPocPilotRun, upsertPocPilotRun } from '../api/pocEvidence'
 
 const STORAGE_KEY = 'aimes_poc_pilot_run'
 
@@ -47,6 +48,29 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isPocPilotRunWorkOrder(
+  workOrder: Partial<PocPilotRunWorkOrder> | null | undefined
+): workOrder is PocPilotRunWorkOrder {
+  return !!workOrder
+    && typeof workOrder.workOrderNumber === 'string'
+    && typeof workOrder.productName === 'string'
+    && typeof workOrder.quantity === 'number'
+    && typeof workOrder.route === 'string'
+    && typeof workOrder.scheduleDecision === 'string'
+    && typeof workOrder.executionStatus === 'string'
+}
+
+function isPocPilotRunCheckpoint(
+  checkpoint: Partial<PocPilotRunCheckpoint> | null | undefined
+): checkpoint is PocPilotRunCheckpoint {
+  return !!checkpoint
+    && typeof checkpoint.module === 'string'
+    && typeof checkpoint.owner === 'string'
+    && checkpoint.status === 'closed'
+    && typeof checkpoint.evidence === 'string'
+    && typeof checkpoint.summary === 'string'
+}
+
 function isPocPilotRunRecord(record: Partial<PocPilotRunRecord> | null | undefined): record is PocPilotRunRecord {
   return !!record
     && typeof record.id === 'string'
@@ -63,7 +87,9 @@ function isPocPilotRunRecord(record: Partial<PocPilotRunRecord> | null | undefin
     && typeof record.actualOtd === 'string'
     && typeof record.owner === 'string'
     && Array.isArray(record.workOrders)
+    && record.workOrders.every(isPocPilotRunWorkOrder)
     && Array.isArray(record.checkpoints)
+    && record.checkpoints.every(isPocPilotRunCheckpoint)
     && Array.isArray(record.acceptanceCriteria)
     && typeof record.auditId === 'string'
     && typeof record.traceId === 'string'
@@ -77,11 +103,18 @@ export function readPocPilotRunRecord(): PocPilotRunRecord | null {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return isPocPilotRunRecord(parsed) ? parsed : null
+    if (isPocPilotRunRecord(parsed)) return parsed
+    window.localStorage.removeItem(STORAGE_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return null
   }
+}
+
+export async function readPocPilotRunRecordBackendFirst(): Promise<PocPilotRunRecord | null> {
+  const record = await getLatestPocPilotRun()
+  return record ?? readPocPilotRunRecord()
 }
 
 export function writePocPilotRunRecord(rollout: PocRolloutPackageRecord) {
@@ -161,6 +194,7 @@ export function writePocPilotRunRecord(rollout: PocRolloutPackageRecord) {
     summary: `${rollout.targetCustomer} 首批 30 单真实工单已跑通排产建议采纳、生产执行、异常回写和审计复盘，POC 进入上线验收确认。`,
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record))
+  void upsertPocPilotRun(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: 'POC 试点运行',

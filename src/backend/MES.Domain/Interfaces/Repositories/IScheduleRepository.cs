@@ -11,11 +11,12 @@ namespace MES.Domain.Interfaces.Repositories;
 /// </summary>
 public interface IScheduleRepository
 {
-    Task<List<SchedulePlan>> GetAllAsync(CancellationToken ct = default);
+    Task<List<SchedulePlan>> GetAllAsync(int page = 1, int pageSize = 20, CancellationToken ct = default);
     Task<SchedulePlan?> GetByIdAsync(string id, CancellationToken ct = default);
     Task<SchedulePlan> CreateAsync(SchedulePlan plan, CancellationToken ct = default);
     Task<SchedulePlan> UpdateAsync(SchedulePlan plan, CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);
     Task<SchedulePlan?> GetCurrentPlanAsync(CancellationToken ct = default);
     Task SaveFeedbackAsync(ScheduleAdoptionFeedback feedback, CancellationToken ct = default);
+    Task<ScheduleAdoptionFeedback?> GetLatestFeedbackAsync(CancellationToken ct = default);
 }

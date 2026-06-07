@@ -1,5 +1,5 @@
-using System.ComponentModel.DataAnnotations.Schema;
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 
 namespace MES.Domain.Entities.Production;
 
@@ -26,7 +26,6 @@ public class WorkOrder
     public string RouteCode { get; private set; } = string.Empty;
     public int Priority { get; private set; } = 0;
 
-    [NotMapped]
     public Dictionary<string, object> CustomFields { get; private set; } = new();
 
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
@@ -67,7 +66,7 @@ public class WorkOrder
     public void Start()
     {
         if (!CanStart)
-            throw new InvalidOperationException($"工单当前状态 {Status} 不允许启动");
+            throw new DomainRuleViolationException($"工单当前状态 {Status} 不允许启动");
 
         Status = WorkOrderStatus.InProgress;
         ActualStartDate = DateTime.UtcNow;
@@ -77,7 +76,7 @@ public class WorkOrder
     public void Complete(int completedQuantity)
     {
         if (!CanComplete)
-            throw new InvalidOperationException($"工单当前状态 {Status} 不允许完成");
+            throw new DomainRuleViolationException($"工单当前状态 {Status} 不允许完成");
 
         CompletedQuantity = completedQuantity;
         Status = WorkOrderStatus.Completed;
@@ -88,7 +87,7 @@ public class WorkOrder
     public void Cancel()
     {
         if (Status == WorkOrderStatus.Completed || Status == WorkOrderStatus.Cancelled)
-            throw new InvalidOperationException($"工单当前状态 {Status} 不允许取消");
+            throw new DomainRuleViolationException($"工单当前状态 {Status} 不允许取消");
 
         Status = WorkOrderStatus.Cancelled;
         UpdatedAt = DateTime.UtcNow;
@@ -97,7 +96,7 @@ public class WorkOrder
     public void Pause()
     {
         if (Status != WorkOrderStatus.InProgress)
-            throw new InvalidOperationException("只有运行中的工单可以暂停");
+            throw new DomainRuleViolationException("只有运行中的工单可以暂停");
 
         Status = WorkOrderStatus.Paused;
         UpdatedAt = DateTime.UtcNow;
@@ -106,7 +105,7 @@ public class WorkOrder
     public void Hold()
     {
         if (Status != WorkOrderStatus.InProgress && Status != WorkOrderStatus.Paused)
-            throw new InvalidOperationException("只有运行中或已暂停的工单可以挂起");
+            throw new DomainRuleViolationException("只有运行中或已暂停的工单可以挂起");
 
         Status = WorkOrderStatus.OnHold;
         UpdatedAt = DateTime.UtcNow;
@@ -115,7 +114,7 @@ public class WorkOrder
     public void Resume()
     {
         if (Status != WorkOrderStatus.Paused && Status != WorkOrderStatus.OnHold)
-            throw new InvalidOperationException("只有已暂停或挂起的工单可以恢复");
+            throw new DomainRuleViolationException("只有已暂停或挂起的工单可以恢复");
 
         Status = WorkOrderStatus.InProgress;
         UpdatedAt = DateTime.UtcNow;
@@ -153,7 +152,7 @@ public class WorkOrder
                 Cancel();
                 break;
             default:
-                throw new InvalidOperationException($"不支持转换到状态 {target}");
+                throw new DomainRuleViolationException($"不支持转换到状态 {target}");
         }
     }
 
@@ -162,7 +161,7 @@ public class WorkOrder
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(nameof(quantity), "完成数量必须为正数");
         if (Status != WorkOrderStatus.InProgress)
-            throw new InvalidOperationException("只有运行中的工单可以报告完成数量");
+            throw new DomainRuleViolationException("只有运行中的工单可以报告完成数量");
 
         CompletedQuantity += quantity;
         UpdatedAt = DateTime.UtcNow;

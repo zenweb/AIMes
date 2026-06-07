@@ -7,6 +7,12 @@
       <div
         class="drop-zone"
         :class="{ dragover: dragOver, 'has-error': error }"
+        role="button"
+        tabindex="0"
+        aria-label="选择或拖拽上传知识文档"
+        @click="openFilePicker"
+        @keydown.enter.prevent="openFilePicker"
+        @keydown.space.prevent="openFilePicker"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="handleDrop"
@@ -45,7 +51,7 @@
       </div>
 
       <!-- 错误信息 -->
-      <div v-if="error" class="error-msg">{{ error }}</div>
+      <div v-if="error" class="error-msg" role="alert" aria-live="assertive">{{ error }}</div>
 
       <!-- 文件队列 -->
       <div v-if="queue.length" class="file-queue">
@@ -57,7 +63,7 @@
           </div>
           <div class="queue-status">
             <span v-if="f.status === 'done'" class="status-done">已上传</span>
-            <span v-else-if="f.status === 'error'" class="status-err">{{ f.errorMsg }}</span>
+            <span v-else-if="f.status === 'error'" class="status-err" role="alert" aria-live="assertive">{{ f.errorMsg }}</span>
             <div v-else-if="f.status === 'uploading'" class="status-progress">
               <div class="progress-track">
                 <div class="progress-fill" :style="{ width: f.progress + '%' }"></div>
@@ -83,7 +89,11 @@
         <h3>客户真实工单导入样例</h3>
         <p>把客户 ERP 导出的 30 单样例映射到 AIMes 字段，回写到 POC 验收证据和执行闭环评分。</p>
       </div>
-      <div class="import-metrics">
+      <div v-if="customerImportLoadError" class="error-msg customer-import-error" role="alert" aria-live="assertive">
+        <span>{{ customerImportLoadError }}</span>
+        <button type="button" class="btn btn-retry" @click="refreshCustomerOrderImportEvidence">重试加载</button>
+      </div>
+      <div class="import-metrics" role="status" aria-live="polite">
         <span>{{ customerOrderImport?.batchId ?? '待生成导入批次' }}</span>
         <strong>{{ customerOrderImport?.importedOrders ?? 0 }} 单</strong>
         <em>{{ customerOrderImport ? `${customerOrderImport.highRiskOrders} 单高风险已识别` : '尚未准备客户样例' }}</em>
@@ -121,10 +131,11 @@
       <h4>上传记录</h4>
       <table class="history-table">
         <thead>
-          <tr><th>文件名</th><th>分类</th><th>分块数</th><th>状态</th><th>时间</th></tr>
+          <tr><th>审计编号</th><th>文件名</th><th>分类</th><th>分块数</th><th>状态</th><th>时间</th></tr>
         </thead>
         <tbody>
           <tr v-for="r in history" :key="r.documentId">
+            <td><code>{{ r.documentId }}</code></td>
             <td>{{ r.fileName }}</td>
             <td>{{ r.category }}</td>
             <td>{{ r.chunkCount }}</td>
@@ -132,7 +143,7 @@
             <td>{{ formatTime(r.uploadedAt) }}</td>
           </tr>
           <tr v-if="!history.length">
-            <td colspan="5" class="empty-row">暂无上传记录</td>
+            <td colspan="6" class="empty-row">暂无上传记录</td>
           </tr>
         </tbody>
       </table>
@@ -141,11 +152,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { uploadDocument } from '../../api/knowledge'
 import type { DocumentUploadResponse } from '../../types/knowledge'
+import { errorMessage } from '../../utils/error-message'
 import {
   readCustomerOrderImportEvidence,
+  readCustomerOrderImportEvidenceBackendFirst,
   writeCustomerOrderImportEvidence,
   type CustomerOrderImportEvidence,
 } from '../../utils/customer-order-import-sync'
@@ -164,10 +177,15 @@ import {
   grayPublishQualityExperimentShadowValidationVersion,
   mergeQualityExperimentNegativeSampleCandidate,
   readQualityKnowledgeGrayReleaseDecisionRecords,
+  readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
   readQualityKnowledgeRecommendationFeedbackRecords,
+  readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
   readQualityKnowledgeRetrainingVersionRecords,
+  readQualityKnowledgeRetrainingVersionRecordsBackendFirst,
   readQualityKnowledgeReviewQueueRecords,
+  readQualityKnowledgeReviewQueueRecordsBackendFirst,
   readQualityKnowledgeSamples,
+  readQualityKnowledgeSamplesBackendFirst,
   grayPublishQualityKnowledgeNextTrainingSetVersion,
   isQualityKnowledgeGrayRepublishEvidence,
   mergeQualityKnowledgeNextTrainingSetCandidate,
@@ -194,21 +212,57 @@ const fileInput = ref<HTMLInputElement>()
 const dragOver = ref(false)
 const category = ref('')
 const error = ref('')
+const customerImportLoadError = ref('')
 const queue = ref<QueueFile[]>([])
 const uploading = ref(false)
 const history = ref<(DocumentUploadResponse & { category: string })[]>([])
 const customerOrderImport = ref<CustomerOrderImportEvidence | null>(readCustomerOrderImportEvidence())
+const qualityKnowledgeSamples = ref(readQualityKnowledgeSamples())
+const qualityKnowledgeReviewRecords = ref(readQualityKnowledgeReviewQueueRecords())
+const qualityRecommendationFeedbackRecords = ref(readQualityKnowledgeRecommendationFeedbackRecords())
 const qualityRetrainingVersions = ref<QualityKnowledgeRetrainingVersionRecord[]>(readQualityKnowledgeRetrainingVersionRecords())
 const qualityGrayReleaseDecisionRecords = ref(readQualityKnowledgeGrayReleaseDecisionRecords())
 const qualityKnowledgeAssets = computed(() =>
   buildQualityKnowledgeAssetGovernanceRecords(
-    readQualityKnowledgeSamples(),
-    readQualityKnowledgeReviewQueueRecords(),
+    qualityKnowledgeSamples.value,
+    qualityKnowledgeReviewRecords.value,
     qualityRetrainingVersions.value,
-    readQualityKnowledgeRecommendationFeedbackRecords(),
+    qualityRecommendationFeedbackRecords.value,
     qualityGrayReleaseDecisionRecords.value
   )
 )
+
+function isDocumentUploadResponse(value: unknown): value is DocumentUploadResponse {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<DocumentUploadResponse>
+  return typeof candidate.documentId === 'string'
+    && typeof candidate.fileName === 'string'
+    && typeof candidate.chunkCount === 'number'
+    && Number.isFinite(candidate.chunkCount)
+    && typeof candidate.uploadedAt === 'string'
+    && typeof candidate.status === 'string'
+}
+
+function isCustomerOrderImportEvidence(value: unknown): value is CustomerOrderImportEvidence {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<CustomerOrderImportEvidence>
+  return typeof candidate.batchId === 'string'
+    && candidate.batchId.trim().length > 0
+    && typeof candidate.fileName === 'string'
+    && candidate.fileName.trim().length > 0
+    && typeof candidate.source === 'string'
+    && candidate.source.trim().length > 0
+    && typeof candidate.importedOrders === 'number'
+    && Number.isFinite(candidate.importedOrders)
+    && typeof candidate.highRiskOrders === 'number'
+    && Number.isFinite(candidate.highRiskOrders)
+    && Array.isArray(candidate.mappedFields)
+    && candidate.mappedFields.length > 0
+    && candidate.mappedFields.every(field => typeof field === 'string' && field.trim().length > 0)
+    && typeof candidate.preparedAt === 'string'
+    && candidate.preparedAt.trim().length > 0
+}
+
 const governanceDocuments = ref<KnowledgeGovernanceSourceDocument[]>(([
   ...qualityKnowledgeSampleDocuments(),
   ...readKnowledgeGovernanceDocuments(),
@@ -216,6 +270,23 @@ const governanceDocuments = ref<KnowledgeGovernanceSourceDocument[]>(([
 
 const canUpload = computed(() => queue.value.some(f => f.status === 'pending'))
 const importMappedFields = computed(() => customerOrderImport.value?.mappedFields ?? ['工单号', '产品', '交期', '工艺路线', '物料缺口', '设备约束'])
+
+function openFilePicker() {
+  fileInput.value?.click()
+}
+
+async function refreshCustomerOrderImportEvidence() {
+  try {
+    const record = await readCustomerOrderImportEvidenceBackendFirst()
+    if (record !== null && !isCustomerOrderImportEvidence(record)) {
+      throw new Error('后端返回非客户工单导入证据载荷')
+    }
+    customerOrderImport.value = record
+    customerImportLoadError.value = ''
+  } catch (e: unknown) {
+    customerImportLoadError.value = `客户工单导入证据刷新失败，已保留本地导入样例状态：${errorMessage(e, '请稍后重试')}`
+  }
+}
 
 function handleDrop(e: DragEvent) {
   dragOver.value = false
@@ -265,6 +336,9 @@ async function startUpload() {
 
     try {
       const result = await uploadDocument(item.file, category.value || undefined)
+      if (!isDocumentUploadResponse(result)) {
+        throw new Error('后端返回非文档上传载荷')
+      }
       clearInterval(progressInterval)
       item.progress = 100
       item.status = 'done'
@@ -283,10 +357,10 @@ async function startUpload() {
         recommendedAction: '确认文档分类、有效期和引用范围后再重建索引。',
         auditHint: '待生成审计编号',
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearInterval(progressInterval)
       item.status = 'error'
-      item.errorMsg = e?.response?.data?.message || e?.message || '上传失败'
+      item.errorMsg = errorMessage(e, '上传失败')
     }
   }
 
@@ -298,7 +372,7 @@ function applyKnowledgeReview(document: KnowledgeGovernanceSourceDocument): Know
 }
 
 function qualityKnowledgeSampleDocuments(): KnowledgeGovernanceSourceDocument[] {
-  return readQualityKnowledgeSamples().map(sample => ({
+  return qualityKnowledgeSamples.value.map(sample => ({
     id: sample.documentId,
     title: sample.documentTitle,
     category: '质量文档',
@@ -315,11 +389,17 @@ function qualityKnowledgeSampleDocuments(): KnowledgeGovernanceSourceDocument[] 
 }
 
 function handleKnowledgeReview(document: KnowledgeGovernanceSourceDocument) {
-  const review = writeKnowledgeGovernanceReview(createDefaultKnowledgeGovernanceReview(new Date().toISOString(), {
-    documentId: document.id,
-    documentTitle: document.title,
-    version: document.version,
-  }))
+  let review: ReturnType<typeof writeKnowledgeGovernanceReview>
+  try {
+    review = writeKnowledgeGovernanceReview(createDefaultKnowledgeGovernanceReview(new Date().toISOString(), {
+      documentId: document.id,
+      documentTitle: document.title,
+      version: document.version,
+    }))
+  } catch (e: unknown) {
+    error.value = `知识文档索引复核失败，当前文档仍未进入可审计治理闭环：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   governanceDocuments.value = governanceDocuments.value.map(item =>
     item.id === document.id ? applyKnowledgeReview(item) : item
   )
@@ -334,9 +414,15 @@ function handleKnowledgeReview(document: KnowledgeGovernanceSourceDocument) {
 }
 
 function handleQualityRetrainingApproval(reviewQueueId: string) {
-  const reviewRecord = readQualityKnowledgeReviewQueueRecords().find(item => item.id === reviewQueueId)
+  const reviewRecord = qualityKnowledgeReviewRecords.value.find(item => item.id === reviewQueueId)
   if (!reviewRecord) return
-  const version = approveQualityKnowledgeRetrainingCandidate(reviewRecord)
+  let version: QualityKnowledgeRetrainingVersionRecord
+  try {
+    version = approveQualityKnowledgeRetrainingCandidate(reviewRecord)
+  } catch (e: unknown) {
+    error.value = `质量知识审批失败，当前训练集仍未进入发布前校验链路：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: version.approvalAuditId,
@@ -351,7 +437,13 @@ function handleQualityRetrainingApproval(reviewQueueId: string) {
 function handleQualityRetrainingValidation(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const validated = runQualityKnowledgeRetrainingValidation(version)
+  let validated: QualityKnowledgeRetrainingVersionRecord
+  try {
+    validated = runQualityKnowledgeRetrainingValidation(version)
+  } catch (e: unknown) {
+    error.value = `质量知识发布前校验失败，当前训练集仍停留在审批后状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: validated.validationAuditId ?? validated.approvalAuditId,
@@ -366,7 +458,13 @@ function handleQualityRetrainingValidation(versionId: string) {
 function handleQualityRetrainingValidationPass(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const validated = rerunQualityKnowledgeRetrainingValidationPass(version)
+  let validated: QualityKnowledgeRetrainingVersionRecord
+  try {
+    validated = rerunQualityKnowledgeRetrainingValidationPass(version)
+  } catch (e: unknown) {
+    error.value = `质量知识发布前校验通过写入失败，当前训练集仍未进入可发布状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: validated.validationAuditId ?? validated.approvalAuditId,
@@ -381,7 +479,13 @@ function handleQualityRetrainingValidationPass(versionId: string) {
 function handleQualityRetrainingPublish(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const published = publishQualityKnowledgeRetrainingVersion(version)
+  let published: QualityKnowledgeRetrainingVersionRecord
+  try {
+    published = publishQualityKnowledgeRetrainingVersion(version)
+  } catch (e: unknown) {
+    error.value = `质量知识正式发布失败，当前训练集仍未进入 AI 推荐链路：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: published.publishAuditId ?? published.approvalAuditId,
@@ -396,7 +500,13 @@ function handleQualityRetrainingPublish(versionId: string) {
 function handleQualityRetrainingRollback(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const rolledBack = rollbackQualityKnowledgeRetrainingVersion(version)
+  let rolledBack: QualityKnowledgeRetrainingVersionRecord
+  try {
+    rolledBack = rollbackQualityKnowledgeRetrainingVersion(version)
+  } catch (e: unknown) {
+    error.value = `质量知识回滚失败，当前训练集仍保留在发布状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: rolledBack.rollbackAuditId ?? rolledBack.approvalAuditId,
@@ -409,9 +519,15 @@ function handleQualityRetrainingRollback(versionId: string) {
 }
 
 function handleQualityNextTrainingMerge(recommendationFeedbackId: string) {
-  const feedbackRecord = readQualityKnowledgeRecommendationFeedbackRecords().find(item => item.id === recommendationFeedbackId)
+  const feedbackRecord = qualityRecommendationFeedbackRecords.value.find(item => item.id === recommendationFeedbackId)
   if (!feedbackRecord) return
-  const version = mergeQualityKnowledgeNextTrainingSetCandidate(feedbackRecord)
+  let version: QualityKnowledgeRetrainingVersionRecord
+  try {
+    version = mergeQualityKnowledgeNextTrainingSetCandidate(feedbackRecord)
+  } catch (e: unknown) {
+    error.value = `质量知识下一训练集合并失败，当前现场反馈仍未进入灰度前审批链路：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: version.approvalAuditId,
@@ -426,7 +542,13 @@ function handleQualityNextTrainingMerge(recommendationFeedbackId: string) {
 function handleQualityNextTrainingApproval(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const approved = approveQualityKnowledgeNextTrainingSetVersion(version)
+  let approved: QualityKnowledgeRetrainingVersionRecord
+  try {
+    approved = approveQualityKnowledgeNextTrainingSetVersion(version)
+  } catch (e: unknown) {
+    error.value = `质量知识下一训练集审批失败，当前训练集仍未进入灰度前校验链路：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: approved.approvalAuditId,
@@ -450,7 +572,13 @@ function handleQualityNextTrainingValidation(versionId: string) {
   const reopenedPending = !!reopenedDecision
     && version.status === 'gray_published'
     && !isQualityKnowledgeGrayRepublishEvidence(version)
-  const validated = runQualityKnowledgeNextTrainingSetValidationPass(version, new Date().toISOString(), reopenedPending ? 'reopened' : 'initial')
+  let validated: QualityKnowledgeRetrainingVersionRecord
+  try {
+    validated = runQualityKnowledgeNextTrainingSetValidationPass(version, new Date().toISOString(), reopenedPending ? 'reopened' : 'initial')
+  } catch (e: unknown) {
+    error.value = `质量知识下一训练集灰度前校验失败，当前训练集仍未进入灰度发布前可用状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: validated.validationAuditId ?? validated.approvalAuditId,
@@ -471,7 +599,13 @@ function handleQualityNextTrainingGrayPublish(versionId: string) {
     && decision.operationCode === version.operationCode
     && decision.reviewIssueStatus === 'prevalidation_reopened'
   )
-  const published = grayPublishQualityKnowledgeNextTrainingSetVersion(version, new Date().toISOString(), reopenedDecision ? 'reopened' : 'initial')
+  let published: QualityKnowledgeRetrainingVersionRecord
+  try {
+    published = grayPublishQualityKnowledgeNextTrainingSetVersion(version, new Date().toISOString(), reopenedDecision ? 'reopened' : 'initial')
+  } catch (e: unknown) {
+    error.value = `质量知识灰度发布失败，当前训练集仍停留在灰度前校验状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: published.publishAuditId ?? published.approvalAuditId,
@@ -486,7 +620,7 @@ function handleQualityNextTrainingGrayPublish(versionId: string) {
 function qualityExperimentCandidates() {
   return buildQualityKnowledgeRecommendationExperimentCandidateRecords(
     qualityRetrainingVersions.value,
-    readQualityKnowledgeRecommendationFeedbackRecords(),
+    qualityRecommendationFeedbackRecords.value,
     qualityGrayReleaseDecisionRecords.value
   )
 }
@@ -494,7 +628,13 @@ function qualityExperimentCandidates() {
 function handleQualityExperimentCandidateMerge(candidateId: string) {
   const candidate = qualityExperimentCandidates().find(item => item.id === candidateId)
   if (!candidate) return
-  const version = mergeQualityExperimentNegativeSampleCandidate(candidate)
+  let version: QualityKnowledgeRetrainingVersionRecord
+  try {
+    version = mergeQualityExperimentNegativeSampleCandidate(candidate)
+  } catch (e: unknown) {
+    error.value = `质量实验候选合并失败，当前 R6 补样实验仍未进入影子验证准备链路：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: version.approvalAuditId,
@@ -509,7 +649,13 @@ function handleQualityExperimentCandidateMerge(candidateId: string) {
 function handleQualityExperimentShadowValidation(candidateId: string) {
   const candidate = qualityExperimentCandidates().find(item => item.id === candidateId)
   if (!candidate) return
-  const version = runQualityExperimentShadowValidationCandidate(candidate)
+  let version: QualityKnowledgeRetrainingVersionRecord
+  try {
+    version = runQualityExperimentShadowValidationCandidate(candidate)
+  } catch (e: unknown) {
+    error.value = `质量实验影子验证失败，当前 R7 影子验证仍未进入可灰度发布状态：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   history.value.unshift({
     documentId: version.validationAuditId ?? version.approvalAuditId,
@@ -524,7 +670,13 @@ function handleQualityExperimentShadowValidation(candidateId: string) {
 function handleQualityExperimentShadowGrayPublish(versionId: string) {
   const version = qualityRetrainingVersions.value.find(item => item.id === versionId)
   if (!version) return
-  const published = grayPublishQualityExperimentShadowValidationVersion(version)
+  let published: QualityKnowledgeRetrainingVersionRecord
+  try {
+    published = grayPublishQualityExperimentShadowValidationVersion(version)
+  } catch (e: unknown) {
+    error.value = `质量实验影子灰度发布失败，当前 R7 影子验证仍未发布到灰度范围：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
   qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
   history.value.unshift({
@@ -546,8 +698,17 @@ function clearQueue() {
 }
 
 function prepareCustomerOrderImport() {
-  const evidence = writeCustomerOrderImportEvidence()
-  if (!evidence) return
+  let evidence: CustomerOrderImportEvidence
+  try {
+    const written = writeCustomerOrderImportEvidence()
+    if (!written) {
+      throw new Error('客户工单导入样例未写入本地证据存储')
+    }
+    evidence = written
+  } catch (e: unknown) {
+    error.value = `客户工单导入样例生成失败，当前样例仍未进入 POC 验收证据链：${errorMessage(e, '请稍后重试')}`
+    return
+  }
   customerOrderImport.value = evidence
   history.value.unshift({
     documentId: evidence.batchId,
@@ -594,6 +755,28 @@ function formatSize(bytes: number): string {
 function formatTime(t: string) {
   return t?.slice(0, 16).replace('T', ' ') || ''
 }
+
+async function refreshQualityKnowledgeEvidence() {
+  try {
+    qualityKnowledgeSamples.value = await readQualityKnowledgeSamplesBackendFirst()
+    qualityKnowledgeReviewRecords.value = await readQualityKnowledgeReviewQueueRecordsBackendFirst()
+    qualityRecommendationFeedbackRecords.value = await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst()
+    qualityRetrainingVersions.value = await readQualityKnowledgeRetrainingVersionRecordsBackendFirst()
+    qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+    governanceDocuments.value = [
+      ...qualityKnowledgeSampleDocuments(),
+      ...readKnowledgeGovernanceDocuments(),
+    ]
+  } catch (e: unknown) {
+    error.value = `质量知识证据刷新失败，已保留本地治理数据：${errorMessage(e, '请稍后重试')}`
+  }
+}
+
+onMounted(async () => {
+  await refreshCustomerOrderImportEvidence()
+})
+
+onMounted(refreshQualityKnowledgeEvidence)
 </script>
 
 <style scoped>
@@ -612,6 +795,13 @@ function formatTime(t: string) {
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   background: #f8fbff;
+}
+
+.customer-import-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .eyebrow {
@@ -774,6 +964,7 @@ function formatTime(t: string) {
 .btn-upload { background: #1890ff; border: none; color: #fff; }
 .btn-upload:hover { background: #40a9ff; }
 .btn-upload:disabled { background: #91d5ff; cursor: not-allowed; }
+.btn-retry { padding: 4px 10px; border: 1px solid #ffccc7; border-radius: 4px; background: #fff; color: #a8071a; font-size: 12px; }
 
 /* 上传记录 */
 .history-section { max-width: 800px; margin-top: 32px; }

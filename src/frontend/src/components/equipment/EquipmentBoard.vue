@@ -32,7 +32,17 @@
         </div>
       </div>
 
+      <section v-if="auditFocus" class="audit-focus-banner" aria-label="审计对象定位">
+        <div>
+          <span>来自审计回放</span>
+          <strong>{{ auditFocus.label }}</strong>
+          <p>对象 {{ auditFocus.objectId }} 已定位到设备详情，追踪号 {{ auditFocus.traceId }}。</p>
+        </div>
+        <code>{{ auditFocus.objectType }}</code>
+      </section>
+
       <EquipmentScheduleImpactPanel />
+      <div v-if="equipmentError" class="equipment-error" role="alert" aria-live="assertive">{{ equipmentError }}</div>
 
       <!-- 设备列表 -->
       <div class="card">
@@ -215,10 +225,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getEquipmentList, getEquipmentStatistics, getHealthReport, getMaintenanceHistory, diagnose } from '../../api/equipment'
 import type { EquipmentDto, EquipmentStatisticsDto, EquipmentHealthDto, DiagnosticReportDto, MaintenanceRecordDto } from '../../types/equipment'
 import { formatDate } from '../../utils/date'
+import { errorMessage } from '../../utils/error-message'
 import EquipmentScheduleImpactPanel from './EquipmentScheduleImpactPanel.vue'
 
 const stats = reactive<EquipmentStatisticsDto>({
@@ -228,6 +240,7 @@ const stats = reactive<EquipmentStatisticsDto>({
 })
 
 const equipment = ref<EquipmentDto[]>([])
+const route = useRoute()
 const typeFilter = ref('')
 const statusFilter = ref('')
 const selectedId = ref<string | null>(null)
@@ -241,6 +254,22 @@ const maintLoading = ref(false)
 const diagnosis = ref<DiagnosticReportDto | null>(null)
 const diagLoading = ref(false)
 const errorCode = ref('')
+const equipmentStatisticsError = ref<string | null>(null)
+const equipmentListError = ref<string | null>(null)
+const equipmentDetailError = ref<string | null>(null)
+const equipmentError = computed(() => {
+  const message = [equipmentStatisticsError.value, equipmentListError.value, equipmentDetailError.value].filter(Boolean).join('；')
+  return message || null
+})
+
+const auditFocus = computed(() => {
+  const objectType = String(route.query.auditObjectType ?? '')
+  const objectId = String(route.query.auditObjectId ?? '')
+  const traceId = String(route.query.auditTraceId ?? '')
+  const label = String(route.query.auditObjectLabel ?? objectId)
+  if (objectType !== 'equipment' || !objectId || !traceId) return null
+  return { objectType, objectId, traceId, label }
+})
 
 // 分页状态
 const currentPage = ref(1)
@@ -277,7 +306,7 @@ const equipmentTypes = computed(() => {
 
 const filteredEquipment = computed(() => {
   if (!typeFilter.value) return equipment.value
-  return equipment.value.filter(e => e.equipmentType !== typeFilter.value)
+  return equipment.value.filter(e => e.equipmentType === typeFilter.value)
 })
 
 function goToPage(page: number) {
@@ -289,17 +318,44 @@ function goToPage(page: number) {
 async function loadEquipment() {
   try {
     const result = await getEquipmentList(undefined, statusFilter.value || undefined, currentPage.value, pageSize.value)
+    if (!Array.isArray(result.items)) throw new Error('后端返回非数组设备载荷')
     equipment.value = result.items
-    totalCount.value = result.totalCount
-  } catch {
+    totalCount.value = Number.isFinite(result.totalCount) ? result.totalCount : result.items.length
+    equipmentListError.value = null
+    syncSelectedEquipmentWithVisibleList()
+  } catch (error) {
+    equipmentListError.value = `设备列表加载失败：${errorMessage(error, '后端设备列表不可用，已显示演示兜底数据')}`
     // fallback demo data
     equipment.value = [
       { id: 'EQ-001', equipmentCode: 'CNC-001', equipmentName: 'CNC-001 加工中心', equipmentType: 'CNC', workshopId: 'WS-001', workshopName: '机加工车间', status: 'running', capacity: 100, utilizationRate: 85, currentWorkOrderId: 'WO-001', createdAt: '2025-01-01T00:00:00' },
       { id: 'EQ-002', equipmentCode: 'CNC-002', equipmentName: 'CNC-002 加工中心', equipmentType: 'CNC', workshopId: 'WS-001', workshopName: '机加工车间', status: 'running', capacity: 100, utilizationRate: 75, currentWorkOrderId: 'WO-005', createdAt: '2025-01-01T00:00:00' },
     ]
     totalCount.value = equipment.value.length
+    syncSelectedEquipmentWithVisibleList()
   }
 }
+
+function clearSelectedEquipment() {
+  selectedId.value = null
+  selectedEq.value = null
+  health.value = null
+  maintenanceRecords.value = []
+  diagnosis.value = null
+}
+
+function syncSelectedEquipmentWithVisibleList() {
+  if (!selectedId.value) return
+  const latest = filteredEquipment.value.find(e => e.id === selectedId.value)
+  if (!latest) {
+    clearSelectedEquipment()
+    return
+  }
+  selectedEq.value = latest
+}
+
+watch(filteredEquipment, () => {
+  syncSelectedEquipmentWithVisibleList()
+})
 
 // 状态变更时重置到第一页
 function onFilterChange() { currentPage.value = 1; loadEquipment() }
@@ -326,6 +382,30 @@ function selectEquipment(id: string) {
   diagnosis.value = null
 }
 
+function applyAuditFocus() {
+  const focus = auditFocus.value
+  if (!focus) return
+  let target = equipment.value.find(item => item.id === focus.objectId || item.equipmentCode === focus.label || item.equipmentCode === focus.objectId)
+  if (!target) {
+    target = {
+      id: focus.objectId,
+      equipmentCode: focus.label || focus.objectId,
+      equipmentName: `${focus.label || focus.objectId} 审计定位设备`,
+      equipmentType: 'Agent 维护',
+      workshopId: 'AUDIT',
+      workshopName: '审计回放来源',
+      status: 'maintenance',
+      capacity: 0,
+      utilizationRate: 0,
+      currentWorkOrderId: focus.traceId,
+      createdAt: new Date().toISOString(),
+    }
+    equipment.value = [target, ...equipment.value]
+    totalCount.value = Math.max(totalCount.value, equipment.value.length)
+  }
+  selectEquipment(target.id)
+}
+
 async function switchTab(tab: string) {
   activeTab.value = tab
   if (!selectedEq.value) return
@@ -337,7 +417,9 @@ async function loadHealth(id: string) {
   healthLoading.value = true
   try {
     health.value = await getHealthReport(id)
-  } catch {
+    equipmentDetailError.value = null
+  } catch (error) {
+    equipmentDetailError.value = `设备健康数据加载失败：${errorMessage(error, '后端健康数据不可用，已显示演示兜底数据')}`
     health.value = {
       equipmentId: id, equipmentName: selectedEq.value?.equipmentName || '',
       healthScore: 78, healthStatus: 'warning',
@@ -362,7 +444,9 @@ async function loadMaintenance(id: string) {
   maintLoading.value = true
   try {
     maintenanceRecords.value = await getMaintenanceHistory(id)
-  } catch {
+    equipmentDetailError.value = null
+  } catch (error) {
+    equipmentDetailError.value = `设备维护记录加载失败：${errorMessage(error, '后端维护记录不可用，已显示演示兜底数据')}`
     maintenanceRecords.value = [
       { id: 'MT-001', equipmentId: id, maintenanceType: 'preventive', description: '季度保养：更换润滑油、清洁滤网、检查传动系统', startTime: '2026-04-15T08:00:00', endTime: '2026-04-15T12:00:00', performedBy: '张工', result: 'completed', cost: 3500, sparePartsUsed: ['润滑油 HL-32', '空气滤芯'] },
       { id: 'MT-002', equipmentId: id, maintenanceType: 'preventive', description: '月度检查：电气系统检测、紧固件检查', startTime: '2026-03-20T09:00:00', endTime: '2026-03-20T11:00:00', performedBy: '李工', result: 'completed', cost: 1200, sparePartsUsed: [] },
@@ -378,7 +462,9 @@ async function runDiagnose() {
   diagnosis.value = null
   try {
     diagnosis.value = await diagnose(selectedEq.value.id, errorCode.value || undefined)
-  } catch {
+    equipmentDetailError.value = null
+  } catch (error) {
+    equipmentDetailError.value = `设备故障诊断失败：${errorMessage(error, '后端故障诊断不可用，已显示演示兜底数据')}`
     diagnosis.value = {
       equipmentId: selectedEq.value.id,
       equipmentName: selectedEq.value.equipmentName,
@@ -395,13 +481,17 @@ async function runDiagnose() {
 }
 
 onMounted(async () => {
+  applyAuditFocus()
   try {
     const s = await getEquipmentStatistics()
     Object.assign(stats, s)
-  } catch {
+    equipmentStatisticsError.value = null
+  } catch (error) {
     Object.assign(stats, { totalCount: 8, runningCount: 4, idleCount: 3, maintenanceCount: 0, faultCount: 1, offlineCount: 0, utilizationRate: 72, availabilityRate: 95 })
+    equipmentStatisticsError.value = `设备统计加载失败：${errorMessage(error, '后端设备统计不可用，已显示演示兜底数据')}`
   }
   await loadEquipment()
+  applyAuditFocus()
 })
 </script>
 
@@ -412,6 +502,31 @@ onMounted(async () => {
   margin: 0 auto;
   overflow-y: auto;
   height: 100%;
+}
+.audit-focus-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+}
+.audit-focus-banner span { display: block; color: #4338ca; font-size: 12px; font-weight: 700; }
+.audit-focus-banner strong { display: block; color: #111827; font-size: 14px; }
+.audit-focus-banner p { margin: 2px 0 0; color: #4b5563; font-size: 12px; }
+.audit-focus-banner code { color: #3730a3; font-size: 12px; }
+.equipment-error {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff1f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* KPI */

@@ -7,15 +7,17 @@ namespace MES.Api.Endpoints;
 
 public static class PurchaseEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("purchase");
+
     public static RouteGroupBuilder MapPurchaseEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/{id}", GetByIdAsync).WithTags("采购管理");
         group.MapGet("/", GetAllAsync).WithTags("采购管理");
-        group.MapPost("/", CreateAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/{id}/submit", SubmitAsync).WithTags("采购管理");
-        group.MapPost("/{id}/confirm", ConfirmAsync).WithTags("采购管理");
-        group.MapPost("/{id}/receive", ReceiveAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/{id}/cancel", CancelAsync).WithTags("采购管理");
+        group.MapPost("/", CreateAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/{id}/submit", SubmitAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/{id}/confirm", ConfirmAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/{id}/receive", ReceiveAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/{id}/cancel", CancelAsync).WithTags("采购管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         return group;
     }
 

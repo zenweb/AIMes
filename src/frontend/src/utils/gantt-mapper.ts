@@ -39,6 +39,7 @@ export function planToGanttData(
   const bottleneckSet = bottlenecks ?? new Set(
     equipment.filter(e => e.utilizationRate >= 0.8 || e.equipmentType === 'HeatTreatment').map(e => e.id)
   )
+  const conflicts = detectConflicts(plan.items)
 
   for (const eqId of usedEqIds) {
     const eq = eqMap.get(eqId)
@@ -67,8 +68,12 @@ export function planToGanttData(
     const durationHours =
       (end.getTime() - start.getTime()) / (1000 * 60 * 60)
     const durationDays = Math.max(durationHours / 24, 0.01)
+    const invalidTimeWindow = end.getTime() <= start.getTime()
 
     const isBottleneck = bottleneckSet.has(item.equipmentId)
+    const conflictMessage = invalidTimeWindow
+      ? '计划结束时间早于计划开始时间'
+      : conflicts.get(item.id)
     const task: GanttTask = {
       id: item.id,
       text: item.workOrderNumber,
@@ -82,6 +87,8 @@ export function planToGanttData(
       setupMinutes: parseSetupTime(item.setupTime),
       isOnBottleneck: isBottleneck,
       status: 'scheduled',
+      hasConflict: !!conflictMessage,
+      conflictMessage,
     }
 
     tasks.push(task)
@@ -89,12 +96,16 @@ export function planToGanttData(
   }
 
   // 3. 依赖关系
+  const linkIds = new Set<string>()
   for (const item of plan.items) {
     if (item.dependentItems && item.dependentItems.length > 0) {
       for (const depId of item.dependentItems) {
         if (itemMap.has(depId)) {
+          const linkId = `link-${depId}-${item.id}`
+          if (linkIds.has(linkId)) continue
+          linkIds.add(linkId)
           links.push({
-            id: `link-${depId}-${item.id}`,
+            id: linkId,
             source: depId,
             target: item.id,
             type: '0', // 完成-开始
@@ -118,6 +129,7 @@ export function itemsToFlatTasks(items: ScheduleItemDto[]): GanttTask[] {
     const durationHours =
       (end.getTime() - start.getTime()) / (1000 * 60 * 60)
     const durationDays = Math.max(durationHours / 24, 0.01)
+    const invalidTimeWindow = end.getTime() <= start.getTime()
 
     return {
       id: item.id,
@@ -129,7 +141,10 @@ export function itemsToFlatTasks(items: ScheduleItemDto[]): GanttTask[] {
       workOrderId: item.workOrderId,
       equipmentId: item.equipmentId,
       equipmentName: item.equipmentName,
+      setupMinutes: parseSetupTime(item.setupTime),
       isOnBottleneck: false,
+      hasConflict: invalidTimeWindow,
+      conflictMessage: invalidTimeWindow ? '计划结束时间早于计划开始时间' : undefined,
     }
   })
 }
@@ -156,19 +171,26 @@ export function detectConflicts(
         new Date(b.plannedStartTime).getTime()
     )
 
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1]
-      const curr = sorted[i]
-      const prevEnd = new Date(prev.plannedEndTime).getTime()
-      const currStart = new Date(curr.plannedStartTime).getTime()
+    let activeItem = sorted[0]
+    let activeEnd = new Date(activeItem.plannedEndTime).getTime()
 
-      if (currStart < prevEnd) {
-        const overlap = prevEnd - currStart
+    for (let i = 1; i < sorted.length; i++) {
+      const curr = sorted[i]
+      const currStart = new Date(curr.plannedStartTime).getTime()
+      const currEnd = new Date(curr.plannedEndTime).getTime()
+
+      if (currStart < activeEnd) {
+        const overlap = activeEnd - currStart
         const overlapMin = Math.round(overlap / 60000)
         conflicts.set(
           curr.id,
-          `与工单 ${prev.workOrderNumber} 重叠 ${overlapMin} 分钟`
+          `与工单 ${activeItem.workOrderNumber} 重叠 ${overlapMin} 分钟`
         )
+      }
+
+      if (currEnd > activeEnd) {
+        activeItem = curr
+        activeEnd = currEnd
       }
     }
   }
@@ -177,9 +199,16 @@ export function detectConflicts(
 }
 
 function parseSetupTime(setupTime: string): number {
-  // "30 分钟" -> 30
-  const match = setupTime.match(/(\d+)/)
-  return match ? parseInt(match[1], 10) : 0
+  const hourMatch = setupTime.match(/(\d+(?:\.\d+)?)\s*(?:小时|h)/i)
+  const minuteMatch = setupTime.match(/(\d+(?:\.\d+)?)\s*(?:分钟|分|min|m)/i)
+  if (hourMatch || minuteMatch) {
+    const hours = hourMatch ? Number.parseFloat(hourMatch[1]) * 60 : 0
+    const minutes = minuteMatch ? Number.parseFloat(minuteMatch[1]) : 0
+    return Math.round(hours + minutes)
+  }
+
+  const match = setupTime.match(/(\d+(?:\.\d+)?)/)
+  return match ? Math.round(Number.parseFloat(match[1])) : 0
 }
 
 // dhtmlx-gantt 日期格式工具

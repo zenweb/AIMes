@@ -8,6 +8,10 @@
       <button class="btn" :class="{ active: filter === 'open' }" @click="filter = 'open'">待处理 ({{ openCount }})</button>
     </div>
 
+    <div v-if="notification" class="anomaly-notification" role="alert">
+      {{ notification }}
+    </div>
+
     <section class="event-center" aria-label="现场事件中心">
       <div class="event-center-head">
         <div>
@@ -16,8 +20,15 @@
         </div>
         <span class="event-center-status">{{ openCount }} 个待闭环</span>
       </div>
-      <div class="event-lanes">
-        <div v-for="lane in eventLanes" :key="lane.title" class="event-lane" :class="lane.level">
+      <div class="event-lanes" role="list" :aria-label="eventLaneListLabel">
+        <div
+          v-for="lane in eventLanes"
+          :key="lane.title"
+          class="event-lane"
+          :class="lane.level"
+          role="listitem"
+          :aria-label="eventLaneLabel(lane)"
+        >
           <span>{{ lane.type }}</span>
           <strong>{{ lane.title }}</strong>
           <p>{{ lane.detail }}</p>
@@ -41,13 +52,18 @@
     </section>
 
     <div class="anomaly-content">
-      <div class="anomaly-list">
+      <div class="anomaly-list" role="listbox" aria-label="异常记录列表">
         <div
           v-for="a in filteredAnomalies"
           :key="a.id"
           class="anomaly-card"
           :class="'sev-' + a.severity.toLowerCase()"
+          role="option"
+          tabindex="0"
+          :aria-selected="detail?.id === a.id"
           @click="selectAnomaly(a)"
+          @keydown.enter="selectAnomaly(a)"
+          @keydown.space.prevent="selectAnomaly(a)"
         >
           <div class="card-left">
             <div class="sev-badge" :class="'sev-' + a.severity.toLowerCase()">{{ sevLabel(a.severity) }}</div>
@@ -81,10 +97,10 @@
 
     <!-- 详情滑出面板 -->
     <div v-if="detail" class="slide-panel" @click.self="detail = null">
-      <div class="panel-content">
+      <div class="panel-content" role="dialog" aria-modal="true" aria-labelledby="anomaly-detail-title">
         <div class="panel-header">
-          <h3>{{ detail.title }}</h3>
-          <button class="close-btn" @click="detail = null">✕</button>
+          <h3 id="anomaly-detail-title">{{ detail.title }}</h3>
+          <button class="close-btn" aria-label="关闭异常详情" @click="detail = null">✕</button>
         </div>
 
         <div class="detail-grid">
@@ -148,14 +164,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import type { ProductionAnomaly, ProductionAnomalyDetail, AnalyzeAnomalyResult } from '../../types/anomaly'
-import { getAnomalyList, getCriticalAnomalies, getAnomalyById, analyzeAnomaly } from '../../api/anomaly'
+import { getAnomalyList, getAnomalyById, analyzeAnomaly } from '../../api/anomaly'
+import { errorMessage } from '../../utils/error-message'
 import {
-  readProductionAnomalyEvent,
+  readProductionAnomalyEventBackendFirst,
   toProductionAnomaly,
   toProductionAnomalyDetail,
 } from '../../utils/production-anomaly-sync'
 import {
-  readAnomalyDispatchRecords,
+  readAnomalyDispatchRecordsBackendFirst,
   writeAnomalyDispatchRecord,
   type AnomalyDispatchRecord,
 } from '../../utils/anomaly-dispatch-sync'
@@ -189,6 +206,7 @@ const analysis = ref<AnalyzeAnomalyResult | null>(null)
 const analyzing = ref(false)
 const latestDispatch = ref<AnomalyDispatchRecord | null>(null)
 const dispatchedLaneIds = ref<string[]>([])
+const notification = ref('')
 
 const eventLanes = [
   {
@@ -217,6 +235,12 @@ const eventLanes = [
   },
 ]
 
+const eventLaneListLabel = computed(() => `异常分流事件队列：${eventLanes.length} 条`)
+
+function eventLaneLabel(lane: typeof eventLanes[number]) {
+  return `${lane.type}：${lane.title}，${lane.route}`
+}
+
 const demoAnomalies: ProductionAnomaly[] = [
   { id: 'a-1', workOrderNumber: 'WO-20260501', operationCode: 'OP-020', equipmentId: 'CNC-001', anomalyType: 'equipment', severity: 'Critical', title: 'CNC-001 主轴温升异常', description: '主轴温度持续上升至 85°C，超过警戒线 75°C，可能导致轴承烧毁', detectedAt: '2026-05-12T09:30:00', detectedBy: 'operator1', status: 'Open', rootCause: null, resolution: null, responseCount: 1 },
   { id: 'a-2', workOrderNumber: 'WO-20260502', operationCode: 'OP-030', equipmentId: null, anomalyType: 'quality', severity: 'High', title: '装配间隙超差', description: '精密轴承组件 A 装配后径向间隙 0.05mm，超出规格上限 0.03mm', detectedAt: '2026-05-12T10:15:00', detectedBy: 'qc1', status: 'Acknowledged', rootCause: null, resolution: null, responseCount: 0 },
@@ -224,7 +248,7 @@ const demoAnomalies: ProductionAnomaly[] = [
   { id: 'a-4', workOrderNumber: 'WO-20260503', operationCode: 'OP-010', equipmentId: null, anomalyType: 'process', severity: 'Low', title: '作业指导书版本不符', description: '现场使用的作业指导书版本为 V1.2，最新版本为 V2.0', detectedAt: '2026-05-10T08:00:00', detectedBy: 'auditor', status: 'Resolved', rootCause: '文件更新后未及时替换现场版本', resolution: '已替换为最新版本，并对操作员进行培训', responseCount: 1 },
 ]
 
-const demoDetail: Record<string, any> = {
+const demoDetail: Record<string, ProductionAnomalyDetail> = {
   'a-1': {
     id: 'a-1', workOrderNumber: 'WO-20260501', operationCode: 'OP-020', equipmentId: 'CNC-001', anomalyType: 'equipment', severity: 'Critical', title: 'CNC-001 主轴温升异常', description: '主轴温度持续上升至 85°C，超过警戒线 75°C，可能导致轴承烧毁', detectedAt: '2026-05-12T09:30:00', detectedBy: 'operator1', status: 'Open', rootCause: null, resolution: null, resolvedAt: null, resolvedBy: null,
     responses: [{ id: 'r1', responseType: 'AiSuggestion', description: '设备异常建议', suggestedAction: '立即停机检查主轴冷却系统，检查冷却液流量和温度', suggestedBy: 'AI Agent', status: 'Pending', executedAt: null, executedBy: null, createdAt: '2026-05-12T09:30:30' }],
@@ -242,8 +266,8 @@ const demoDetail: Record<string, any> = {
   },
 }
 
-function currentProductionAnomalyDetail() {
-  const event = readProductionAnomalyEvent()
+async function currentProductionAnomalyDetail() {
+  const event = await readProductionAnomalyEventBackendFirst()
   return event ? toProductionAnomalyDetail(event) : null
 }
 
@@ -269,15 +293,17 @@ function formatTime(t: string) {
 
 async function selectAnomaly(a: ProductionAnomaly) {
   analysis.value = null
-  const eventDetail = currentProductionAnomalyDetail()
+  notification.value = ''
+  const eventDetail = await currentProductionAnomalyDetail()
   if (eventDetail?.id === a.id) {
     detail.value = eventDetail
     return
   }
   try {
     detail.value = await getAnomalyById(a.id)
-  } catch {
+  } catch (error: unknown) {
     detail.value = demoDetail[a.id] || null
+    notification.value = `异常详情加载失败，已显示本地演示详情：${errorMessage(error, '请稍后重试')}`
   }
 }
 
@@ -285,9 +311,11 @@ async function handleAnalyze() {
   if (!detail.value) return
   analyzing.value = true
   analysis.value = null
+  notification.value = ''
   try {
     analysis.value = await analyzeAnomaly(detail.value.id)
-  } catch {
+  } catch (error: unknown) {
+    notification.value = `AI 分析加载失败，已显示本地演示建议：${errorMessage(error, '请稍后重试')}`
     // demo AI analysis
     const type = detail.value.anomalyType
     if (type === 'equipment') {
@@ -326,18 +354,19 @@ async function handleAnalyze() {
 
 async function loadAnomalies() {
   loading.value = true
-  const event = readProductionAnomalyEvent()
+  const event = await readProductionAnomalyEventBackendFirst()
   try {
     const result = await getAnomalyList(currentPage.value, pageSize.value)
     anomalies.value = event
       ? [toProductionAnomaly(event), ...result.items.filter(item => item.id !== event.id)]
       : result.items
     totalCount.value = event ? result.totalCount + 1 : result.totalCount
-  } catch {
+  } catch (error: unknown) {
     anomalies.value = event
       ? [toProductionAnomaly(event), ...demoAnomalies.filter(item => item.id !== event.id)]
       : demoAnomalies
     totalCount.value = anomalies.value.length
+    notification.value = `异常列表加载失败，已显示本地演示异常：${errorMessage(error, '请稍后重试')}`
   }
   loading.value = false
 }
@@ -345,8 +374,18 @@ async function loadAnomalies() {
 function dispatchEventLane(laneId: string) {
   const lane = eventLanes.find(item => item.id === laneId)
   if (!lane) return
-  const record = writeAnomalyDispatchRecord(dispatchRecordForLane(laneId))
-  if (!record) return
+  notification.value = ''
+  let record: AnomalyDispatchRecord | null = null
+  try {
+    record = writeAnomalyDispatchRecord(dispatchRecordForLane(laneId))
+  } catch (error: unknown) {
+    notification.value = `异常分流确认失败，未写入下游处置证据：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  if (!record) {
+    notification.value = '异常分流确认失败，未写入下游处置证据：浏览器存储不可用'
+    return
+  }
   latestDispatch.value = record
   dispatchedLaneIds.value = Array.from(new Set([record.anomalyId, ...dispatchedLaneIds.value]))
 }
@@ -415,15 +454,15 @@ function dispatchRecordForLane(laneId: string): Omit<AnomalyDispatchRecord, 'id'
   }
 }
 
-function applyStoredDispatchRecords() {
-  const records = readAnomalyDispatchRecords()
+async function applyStoredDispatchRecords() {
+  const records = await readAnomalyDispatchRecordsBackendFirst()
   latestDispatch.value = records[0] ?? null
   dispatchedLaneIds.value = records.map(record => record.anomalyId)
 }
 
-onMounted(() => {
-  applyStoredDispatchRecords()
-  loadAnomalies()
+onMounted(async () => {
+  await applyStoredDispatchRecords()
+  await loadAnomalies()
 })
 </script>
 
@@ -433,6 +472,7 @@ onMounted(() => {
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .btn { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn.active { background: #1890ff; color: #fff; border-color: #1890ff; }
+.anomaly-notification { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #ffccc7; border-radius: 6px; background: #fff2f0; color: #a8071a; font-size: 13px; }
 .event-center { background: #fff; border: 1px solid #e6edf5; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
 .event-center-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .eyebrow { display: block; font-size: 11px; color: #1677ff; font-weight: 700; margin-bottom: 3px; }

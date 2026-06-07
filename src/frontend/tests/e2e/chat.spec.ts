@@ -21,10 +21,23 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await page.waitForSelector('.chat-fab', { timeout: 30000 })
   }
 
+  async function expectReplayDetailTrace(page: Page, traceId: string) {
+    const replayDetail = page.locator('.audit-replay-panel .replay-detail')
+    await expect(replayDetail.locator('.detail-title span').getByText(traceId, { exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(replayDetail.locator('li').first()).toBeVisible()
+    return replayDetail
+  }
+
+  function replayCardByTitle(page: Page, title: string) {
+    return page.locator('.audit-replay-panel .decision-card').filter({
+      has: page.getByRole('heading', { name: title, exact: true }),
+    })
+  }
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('dashboard', { waitUntil: 'commit' })
     await page.waitForSelector('.chat-fab', { timeout: 30000 })
@@ -44,6 +57,23 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
   })
 
   test('发送消息并获得回复', async ({ page }) => {
+    let releaseQuery: () => void = () => {}
+    let queryRequested = false
+    await page.route('**/api/v1/knowledge/query', async route => {
+      queryRequested = true
+      await new Promise<void>(resolve => {
+        releaseQuery = resolve
+      })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          answer: '当前产能稳定，CNC 产线负荷 82%。',
+          sources: [],
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
     await page.locator('.chat-fab').click()
 
     const input = page.locator('.chat-input')
@@ -53,9 +83,43 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
 
     // 用户消息出现
     await expect(page.locator('.message.user')).toHaveCount(1, { timeout: 5000 })
+    await expect.poll(() => queryRequested).toBe(true)
+    const typing = page.locator('.message.assistant.typing')
+    await expect(typing).toHaveAttribute('role', 'status')
+    await expect(typing).toHaveAttribute('aria-live', 'polite')
+    await expect(typing).toHaveAttribute('aria-label', 'AI 生产助手正在生成回复')
 
-    // 助手回复出现（演示模式下为即时回复）
-    await expect(page.locator('.message.assistant .msg-content')).not.toHaveCount(0, { timeout: 10000 })
+    releaseQuery()
+
+    // 助手回复出现。
+    await expect(page.locator('.message.assistant .msg-content').filter({ hasText: '当前产能稳定' })).toBeVisible({ timeout: 10000 })
+  })
+
+  test('知识问答服务失败时真实浏览器展示 fail-loud 离线回答', async ({ page }) => {
+    let queryRequests = 0
+    await page.route('**/api/v1/knowledge/query', async route => {
+      queryRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium RAG service unavailable' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.locator('.chat-fab').click()
+
+    await page.locator('.chat-input').fill('当前产能如何？')
+    await page.locator('.send-btn').click()
+
+    const alert = page.locator('.message.assistant[role="alert"]').filter({
+      hasText: '知识问答服务暂不可用，已切换到离线演示回答。',
+    })
+    await expect(alert).toBeVisible({ timeout: 10000 })
+    await expect(alert).toContainText('知识问答服务暂不可用，已切换到离线演示回答。')
+    await expect(alert).toContainText('chromium RAG service unavailable')
+    await expect(alert).toContainText('当前车间整体设备利用率')
+    await expect(page.locator('.chat-input')).toBeEnabled()
+    expect(queryRequests).toBeGreaterThan(0)
   })
 
   test('参考来源折叠展开', async ({ page }) => {
@@ -176,9 +240,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditCard).toBeVisible()
     await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-ANOMALY-20260522-001')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
-    await expect(auditPanel.getByText(/AI 生产助手识别可执行意图：创建异常处置卡/)).toBeVisible()
-    await expect(auditPanel.getByText(/异常处置卡已写入异常管理现场事件中心/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 助手意图、权限校验、异常处置卡、风险和排产证据已归档/)).toBeVisible()
+    await expectReplayDetailTrace(page, 'TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522')
   })
 
   test('可执行动作：生成交期恢复执行包并跨模块追溯', async ({ page }) => {
@@ -270,21 +332,23 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await page.goto('audit-logs', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
-    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手生成交期恢复执行包' })
+    const auditCard = replayCardByTitle(page, 'AI 助手生成交期恢复执行包')
     await expect(auditCard).toBeVisible()
     await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-RECOVERY-PACKAGE-20260521-001')).toBeVisible()
-    await auditCard.getByRole('button', { name: '回放决策链' }).click()
-    await expect(auditPanel.getByText(/跨模块执行包和 OTD 证据已归档/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 排产重排、风险升级、采购替代批次确认和质量首件复核/)).toBeVisible()
-    const closedEvidenceCard = auditPanel.locator('.decision-card').filter({ hasText: '助手执行包：WO-RUSH-9001 交期恢复执行包' })
+    await auditCard.scrollIntoViewIfNeeded()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click({ force: true })
+    await expectReplayDetailTrace(page, 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521')
+    const closedEvidenceCard = replayCardByTitle(page, '助手执行包：WO-RUSH-9001 交期恢复执行包')
     await expect(closedEvidenceCard).toBeVisible()
-    await closedEvidenceCard.getByRole('button', { name: '回放决策链' }).click()
+    await closedEvidenceCard.scrollIntoViewIfNeeded()
+    await closedEvidenceCard.getByRole('button', { name: '回放决策链' }).click({ force: true })
     const replayDetail = auditPanel.locator('.replay-detail')
     await expect(replayDetail.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521', { exact: true })).toBeVisible()
     await expect(auditPanel.getByText(/当前状态为 执行交接已闭环/)).toBeVisible()
-    const qualityEvidenceCard = auditPanel.locator('.decision-card').filter({ hasText: '助手质量回写：WO-RUSH-9001 交期恢复执行包质量动作已闭合' })
+    const qualityEvidenceCard = replayCardByTitle(page, '助手质量回写：WO-RUSH-9001 交期恢复执行包质量动作已闭合')
     await expect(qualityEvidenceCard).toBeVisible()
-    await qualityEvidenceCard.getByRole('button', { name: '回放决策链' }).click()
+    await qualityEvidenceCard.scrollIntoViewIfNeeded()
+    await qualityEvidenceCard.getByRole('button', { name: '回放决策链' }).click({ force: true })
     await expect(replayDetail.getByText('TRACE-CHAT-RECOVERY-QUALITY-FIRST-ARTICLE-20260521', { exact: true })).toBeVisible()
     await expect(auditPanel.getByText(/助手执行包质量回写/)).toBeVisible()
   })
@@ -329,8 +393,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditCard).toBeVisible()
     await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-ENG-CONSTRAINT-20260523-001')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
-    await expect(auditPanel.getByText(/工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门\/工程审批四个责任动作/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 助手意图、权限校验、工程约束复核包、BOM\/工艺证据和 OTD 证据已归档/)).toBeVisible()
+    await expectReplayDetailTrace(page, 'TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523')
   })
 
   test('可执行动作：生成客户交付恢复承诺包并同步排产报表和审计', async ({ page }) => {
@@ -372,8 +435,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditCard).toBeVisible()
     await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-KPI-COMMITMENT-HUADONG-20260521-001')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
-    await expect(auditPanel.getByText(/客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购\/工程\/质量责任确认三类动作/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 助手意图、权限校验、客户交付承诺、KPI 钻取和 OTD 证据已归档/)).toBeVisible()
+    await expectReplayDetailTrace(page, 'TRACE-KPI-COMMITMENT-HUADONG-20260521')
   })
 
   test('可执行动作：生成 BOM 展开齐套检查包并同步库存排产和审计', async ({ page }) => {
@@ -413,8 +475,88 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(auditCard).toBeVisible()
     await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
-    await expect(auditPanel.getByText(/BOM 展开齐套检查包已分解为 M-AL-6061 缺料处置、M-SEAL-20 已齐套确认和 M-AL-6061B 替代料工程确认三类动作/)).toBeVisible()
-    await expect(auditPanel.getByText(/AI 助手意图、权限校验、BOM 展开齐套、缺料事件和 OTD 证据已归档/)).toBeVisible()
+    await expectReplayDetailTrace(page, 'TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')
+  })
+
+  test('可执行动作：生成设备停机复核包并同步设备排产和审计', async ({ page }) => {
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('帮我生成 CNC-001 设备停机复核包')
+    await page.locator('.send-btn').click()
+
+    await expect(page.getByRole('button', { name: '生成设备停机复核包' })).toBeVisible()
+    await page.getByRole('button', { name: '生成设备停机复核包' }).click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(page).toHaveURL(/\/scheduling\/equipment/)
+    await expect(chat.getByText('权限校验通过：Admin 可生成设备停机复核包。')).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001')).toBeVisible()
+    await expect(chat.getByText('追踪编号：TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+    await expect(chat.getByText(/已同步到设备维护、AI 排产事件队列、风险预警、OTD 复盘证据链和审计回放/)).toBeVisible()
+    const packageCard = chat.locator('.action-package-card').filter({ hasText: 'CNC-001 设备停机复核包' })
+    await expect(packageCard).toBeVisible()
+    await expect(packageCard.getByText('停机 4h / +1 单延期风险')).toBeVisible()
+    await expect(packageCard.getByText('影响工单：WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001')).toBeVisible()
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await expect(page.locator('.event-queue-panel')).toBeVisible({ timeout: 60000 })
+    const downtimeEvent = page.locator('.event-card').filter({ hasText: 'CNC-001 停机影响' })
+    await expect(downtimeEvent).toBeVisible()
+    await expect(downtimeEvent.getByText('设备故障事件')).toBeVisible()
+    await expect(downtimeEvent.getByText('WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001')).toBeVisible()
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 20000 })
+    const reportBoard = page.locator('.otd-evidence-chain')
+    await expect(reportBoard.getByText('设备维护')).toBeVisible()
+    await expect(reportBoard.getByText('TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+
+    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+    const auditPanel = page.locator('.audit-replay-panel')
+    const auditCard = auditPanel.locator('.decision-card').filter({ hasText: 'AI 助手生成设备停机复核包' })
+    await expect(auditCard).toBeVisible()
+    await expect(auditCard.locator('.decision-meta').getByText('证据：AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001')).toBeVisible()
+    await auditCard.getByRole('button', { name: '回放决策链' }).click()
+    await expectReplayDetailTrace(page, 'TRACE-EQ-DOWNTIME-CNC-001')
+  })
+
+  test('可执行动作：设备停机复核包 OTD 证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium equipment downtime evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await page.waitForSelector('.chat-fab', { timeout: 30000 })
+    await page.locator('.chat-fab').click()
+    await page.locator('.chat-input').fill('帮我生成 CNC-001 设备停机复核包')
+    await page.locator('.send-btn').click()
+
+    await expect(page.getByRole('button', { name: '生成设备停机复核包' })).toBeVisible()
+    await page.getByRole('button', { name: '生成设备停机复核包' }).click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(page).toHaveURL(/\/scheduling\/equipment/)
+    await expect(chat.getByText('权限校验通过：Admin 可生成设备停机复核包。')).toBeVisible()
+    await expect(chat.getByText('审计编号：AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001')).toBeVisible()
+    await expect(chat.getByText('追踪编号：TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
+    await expect(chat.getByText(/已同步到设备维护、AI 排产事件队列、风险预警、OTD 复盘证据链和审计回放/)).toBeVisible()
+
+    const packageCard = chat.locator('.action-package-card').filter({ hasText: 'CNC-001 设备停机复核包' })
+    await expect(packageCard).toBeVisible()
+    await expect(packageCard.getByText('停机 4h / +1 单延期风险')).toBeVisible()
+
+    const alert = chat.locator('.message.assistant[role="alert"]').filter({
+      hasText: '设备停机复核包已生成，但 OTD 证据写入失败',
+    })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('chromium equipment downtime evidence storage unavailable')
+    await expect(chat.getByText('动作执行失败：生成设备停机复核包')).toHaveCount(0)
   })
 
   test('业务问答：工程数据约束可直接进入 BOM 与工艺路线页面', async ({ page }) => {
@@ -538,7 +680,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText(/M-AL-6061.*齐套缺口 12 件/)).toBeVisible()
     await expect(chat.getByText(/尚未读取到库存齐套证据/)).toBeVisible()
     await expect(chat.getByText(/CNC-001.*夜班维护窗口/)).toBeVisible()
-    await expect(chat.getByText(/OTD 可从 82% 恢复到 96%/)).toBeVisible()
+    await expect(chat.getByText(/OTD 当前可重跑口径为从 26\.67% 恢复到 30\.00%/)).toBeVisible()
     await expect(chat.getByText(/引用治理：CNC 精加工 SOP V2.3/)).toBeVisible()
     await expect(chat.getByText(/阻断来源：CNC-01 主轴维护手册 V1.1 已过期/)).toBeVisible()
     await expect(page.getByRole('button', { name: '打开库存齐套' })).toBeVisible()
@@ -563,7 +705,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText(/采购收货已齐套/)).toBeVisible()
     await expect(chat.getByText(/采购证据 PO-RUSH-20260519/)).toBeVisible()
     await expect(chat.getByText(/缺口清零，排产复核可释放冻结工序/)).toBeVisible()
-    await expect(chat.getByText(/OTD 可从 82% 恢复到 96%/)).toBeVisible()
+    await expect(chat.getByText(/OTD 当前可重跑口径为从 26\.67% 恢复到 30\.00%/)).toBeVisible()
   })
 
   test('业务问答：列出今天最危险的 3 个工单', async ({ page }) => {

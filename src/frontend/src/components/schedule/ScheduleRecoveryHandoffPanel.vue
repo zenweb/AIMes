@@ -1,5 +1,11 @@
 <template>
-  <section v-if="activePackage" class="recovery-handoff-panel" aria-label="交期恢复执行包交接">
+  <section
+    v-if="activePackage"
+    class="recovery-handoff-panel"
+    role="status"
+    aria-live="polite"
+    aria-label="交期恢复执行包交接"
+  >
     <div class="handoff-heading">
       <div>
         <span class="eyebrow">交付恢复交接</span>

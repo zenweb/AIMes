@@ -8,12 +8,14 @@
       <span class="queue-count">{{ events.length }} 个待评估事件</span>
     </div>
 
-    <div class="event-grid">
+    <div class="event-grid" role="list" :aria-label="eventListLabel(events.length)">
       <article
         v-for="event in events"
         :key="event.id"
         class="event-card"
         :class="[event.severity, { active: activeSuggestion?.eventId === event.id, resolved: event.resolved }]"
+        role="listitem"
+        :aria-label="eventItemLabel(event)"
       >
         <div class="event-topline">
           <span class="event-type">{{ event.typeLabel }}</span>
@@ -36,7 +38,13 @@
       </article>
     </div>
 
-    <div class="agent-suggestion" :class="{ empty: !activeSuggestion }">
+    <div
+      class="agent-suggestion"
+      :class="{ empty: !activeSuggestion }"
+      role="status"
+      aria-live="polite"
+      aria-label="当前 Agent 建议"
+    >
       <template v-if="activeSuggestion">
         <span class="record-label">当前 Agent 建议</span>
         <strong>{{ activeSuggestion.title }}</strong>
@@ -140,6 +148,15 @@ defineEmits<{
   generate: [event: ScheduleEventItem]
   adopt: [suggestion: ScheduleAgentSuggestion]
 }>()
+
+function eventListLabel(count: number) {
+  return `排产事件重排队列：${count} 个待评估事件`
+}
+
+function eventItemLabel(event: ScheduleEventItem) {
+  const resolved = event.resolved ? '，已缓解' : ''
+  return `${event.typeLabel}：${event.title}，${event.severityLabel}，${event.affectedOrders}，${event.window}${resolved}`
+}
 </script>
 
 <style scoped>

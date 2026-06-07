@@ -1,6 +1,7 @@
 using FluentAssertions;
 using MES.AI.Pro.Agents;
 using MES.AI.Pro.Models;
+using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 using Moq;
 
@@ -23,7 +24,7 @@ public class ProcessParameterAgentTests
         var constraints = new Dictionary<string, double> { ["max_temp"] = 200, ["max_pressure"] = 50 };
         _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new float[] { 0.1f });
-        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5))
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _llmMock.Setup(x => x.GenerateJsonAsync<TracedProcessParameterRecommendation>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TracedProcessParameterRecommendation
@@ -65,7 +66,7 @@ public class ProcessParameterAgentTests
         var targets = new Dictionary<string, double> { ["hardness"] = 45, ["tensile"] = 600 };
         _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new float[] { 0.1f });
-        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5))
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
         var result = await _agent.FindBestProcessMatchAsync("PROD-A1", targets);
@@ -73,5 +74,89 @@ public class ProcessParameterAgentTests
         result.Should().NotBeNull();
         result.ProductCode.Should().Be("PROD-A1");
         result.Confidence.Should().Be(0.5); // No matches found
+    }
+
+    [Fact]
+    public async Task FindBestProcessMatchAsync_PassesCancellationTokenToVectorSearch()
+    {
+        using var cts = new CancellationTokenSource();
+        var targets = new Dictionary<string, double> { ["hardness"] = 45 };
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        await _agent.FindBestProcessMatchAsync("PROD-A1", targets, cts.Token);
+
+        _vectorMock.Verify(
+            x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, cts.Token),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RecommendParametersAsync_WhenLlmReturnsNull_FallsBackToEmptyRecommendationWithTrace()
+    {
+        var constraints = new Dictionary<string, double> { ["max_temp"] = 200 };
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var result = await _agent.RecommendParametersAsync("PROD-A1", "注塑", constraints);
+
+        result.OptimalParameters.Should().BeEmpty();
+        result.As<TracedProcessParameterRecommendation>().AiDecisionTrace.Confidence.Should().Be(0.78m);
+    }
+
+    [Fact]
+    public async Task RecommendParametersAsync_WhenLlmThrows_FallsBackToEmptyRecommendationWithTrace()
+    {
+        var constraints = new Dictionary<string, double> { ["max_temp"] = 200 };
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _llmMock.Setup(x => x.GenerateJsonAsync<TracedProcessParameterRecommendation>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("LLM unavailable"));
+
+        var result = await _agent.RecommendParametersAsync("PROD-A1", "注塑", constraints);
+
+        result.RecommendationReason.Should().Contain("LLM 调用失败");
+        result.As<TracedProcessParameterRecommendation>().AiDecisionTrace.ModelName.Should().Be("ProcessParameterReasoningFallback");
+    }
+
+    [Fact]
+    public async Task RecommendParametersAsync_WhenRetrievalThrows_FallsBackToEmptyRecommendationWithTrace()
+    {
+        var constraints = new Dictionary<string, double> { ["max_temp"] = 200 };
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("embedding unavailable"));
+
+        var result = await _agent.RecommendParametersAsync("PROD-A1", "注塑", constraints);
+
+        result.RecommendationReason.Should().Contain("检索失败");
+        result.As<TracedProcessParameterRecommendation>().AiDecisionTrace.ModelName.Should().Be("ProcessParameterReasoningFallback");
+    }
+
+    [Fact]
+    public async Task RecommendParametersAsync_WhenPromptWouldOverflow_SendsBoundedPromptAndTraceTokens()
+    {
+        string? capturedPrompt = null;
+        var constraints = new Dictionary<string, double> { ["max_temp"] = 200 };
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("process-parameters", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new DocumentChunk { Id = "case-1", Content = new string('P', 24000), Source = "长工艺案例" }
+            ]);
+        _llmMock.Setup(x => x.GenerateJsonAsync<TracedProcessParameterRecommendation>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((prompt, _) => capturedPrompt = prompt)
+            .ReturnsAsync(new TracedProcessParameterRecommendation { RecommendationReason = "基于截断案例" });
+
+        var result = await _agent.RecommendParametersAsync(new string('C', 12000), "注塑", constraints);
+
+        capturedPrompt.Should().NotBeNull();
+        (capturedPrompt ?? string.Empty).Length.Should().BeLessThanOrEqualTo(16_000);
+        result.As<TracedProcessParameterRecommendation>().AiDecisionTrace.TokensInput.Should().BeLessThanOrEqualTo(4000);
     }
 }

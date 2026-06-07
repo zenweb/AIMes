@@ -19,9 +19,24 @@ public class EmployeeRepository : IEmployeeRepository
         return await _context.Employees.AsNoTracking().OrderBy(e => e.EmployeeNumber).ToListAsync(ct);
     }
 
+    public async Task<List<Employee>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.Employees
+            .AsNoTracking()
+            .OrderBy(e => e.EmployeeNumber)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.Employees.CountAsync(ct);
+    }
+
     public async Task<Employee?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.Employees.FirstOrDefaultAsync(e => e.Id == id, ct);
+        return await _context.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<List<Employee>> GetByTeamAsync(string team, CancellationToken ct = default)

@@ -5,7 +5,7 @@
         <span class="eyebrow">CAPA 闭环</span>
         <h3>根因证据转纠正措施任务</h3>
       </div>
-      <span class="status-badge">{{ openCount }} 个待验证</span>
+      <span class="status-badge" role="status" aria-live="polite">{{ openCount }} 个待验证</span>
     </div>
 
     <div class="root-cause-strip">
@@ -292,7 +292,8 @@
 
     <div class="capa-trace">
       <h4>处置与验证留痕</h4>
-      <p v-if="latestClosureMessage" class="closure-sync-message">{{ latestClosureMessage }}</p>
+      <p v-if="latestClosureMessage" class="closure-sync-message" role="status" aria-live="polite">{{ latestClosureMessage }}</p>
+      <p v-if="closureErrorMessage" class="closure-sync-error" role="alert" aria-live="assertive">{{ closureErrorMessage }}</p>
       <ul>
         <li v-for="record in records" :key="record">{{ record }}</li>
       </ul>
@@ -303,10 +304,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { RootCauseItemDto } from '../../types/quality'
+import { errorMessage } from '../../utils/error-message'
 import { writeQualityCapaClosure } from '../../utils/quality-capa-sync'
 import {
   closeAssistantRecoveryQualityAction,
   readAssistantRecoveryPackages,
+  readAssistantRecoveryPackagesBackendFirst,
   type AssistantRecoveryPackage,
 } from '../../utils/assistant-action-package-sync'
 import {
@@ -315,9 +318,13 @@ import {
   closeLowScoreQualityKnowledgeReviewQueueRecord,
   createBarcodeQualityReuseClosure,
   readQualityKnowledgeGrayReleaseDecisionRecords,
+  readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
   readLatestQualityKnowledgeReuseClosure,
+  readQualityKnowledgeReuseClosuresBackendFirst,
   readLatestQualityKnowledgeReviewQueueRecord,
+  readQualityKnowledgeReviewQueueRecordsBackendFirst,
   readQualityKnowledgeRecommendationFeedbackRecords,
+  readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
   verifyQualityKnowledgeReuseClosure,
   writeQualityKnowledgeReviewQueueRecord,
   writeQualityKnowledgeReuseClosure,
@@ -392,6 +399,7 @@ const records = ref<string[]>([
 ])
 
 const latestClosureMessage = ref('')
+const closureErrorMessage = ref('')
 const reuseClosure = ref<QualityKnowledgeReuseClosureRecord | null>(readLatestQualityKnowledgeReuseClosure())
 const reviewQueue = ref<QualityKnowledgeReviewQueueRecord | null>(readLatestQualityKnowledgeReviewQueueRecord())
 const recommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>(readQualityKnowledgeRecommendationFeedbackRecords())
@@ -440,6 +448,7 @@ function statusText(status: CapaStatus) {
 function advanceTask(id: string) {
   const task = tasks.value.find(item => item.id === id)
   if (!task || task.status === 'verified') return
+  closureErrorMessage.value = ''
 
   if (task.status === 'open') {
     task.status = 'doing'
@@ -447,32 +456,45 @@ function advanceTask(id: string) {
     return
   }
 
+  try {
+    writeQualityCapaClosure({
+      inspectionId: 'INS-003',
+      workOrderId: 'WO-003',
+      traceId: `TRACE-QA-CAPA-20260520-${task.id.toUpperCase()}`,
+      rootCause: primaryCause.value.cause,
+      evidenceStrength: primaryCause.value.probability,
+      taskTitle: task.title,
+      taskKind: task.kind,
+      owner: task.owner,
+      dueAt: task.dueAt,
+      verification: task.verification,
+      verifiedAt: new Date().toISOString(),
+      auditState: 'CAPA 已验证，根因证据、责任人、验证标准和 OTD 复盘已归档',
+      otdImpact: 'WO-003 热处理返工风险从 +1 单延期降为待复验观察',
+      reviewAction: '报表中心需在 OTD 复盘中标注质量 CAPA 验证结果，并复核同批 WO-DEMO-1007 热处理窗口。',
+    })
+  } catch (error) {
+    closureErrorMessage.value = `CAPA 验证同步失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+
   task.status = 'verified'
-  writeQualityCapaClosure({
-    inspectionId: 'INS-003',
-    workOrderId: 'WO-003',
-    traceId: `TRACE-QA-CAPA-20260520-${task.id.toUpperCase()}`,
-    rootCause: primaryCause.value.cause,
-    evidenceStrength: primaryCause.value.probability,
-    taskTitle: task.title,
-    taskKind: task.kind,
-    owner: task.owner,
-    dueAt: task.dueAt,
-    verification: task.verification,
-    verifiedAt: new Date().toISOString(),
-    auditState: 'CAPA 已验证，根因证据、责任人、验证标准和 OTD 复盘已归档',
-    otdImpact: 'WO-003 热处理返工风险从 +1 单延期降为待复验观察',
-    reviewAction: '报表中心需在 OTD 复盘中标注质量 CAPA 验证结果，并复核同批 WO-DEMO-1007 热处理窗口。',
-  })
   latestClosureMessage.value = `${task.title} 已同步到审计回放与 OTD 复盘。`
   records.value.unshift(`${task.title} 已完成验证：${task.verification}，结果进入质量审计与 OTD 复盘。`)
 }
 
 function approveReuseDraft() {
   if (!props.qualityKnowledgeReuseDraft) return
-  const closure = writeQualityKnowledgeReuseClosure(
-    createBarcodeQualityReuseClosure(props.qualityKnowledgeReuseDraft, new Date().toISOString())
-  )
+  closureErrorMessage.value = ''
+  let closure: QualityKnowledgeReuseClosureRecord
+  try {
+    closure = writeQualityKnowledgeReuseClosure(
+      createBarcodeQualityReuseClosure(props.qualityKnowledgeReuseDraft, new Date().toISOString())
+    )
+  } catch (error) {
+    closureErrorMessage.value = `质量知识复用转正式 CAPA 失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   reuseClosure.value = closure
   latestClosureMessage.value = `${closure.formalCapaTitle} 已转正式 CAPA，等待按 ${closure.verification} 验证。`
   records.value.unshift(`${closure.auditId} 复核通过：草案 ${closure.draftTraceId} 已转正式 CAPA，负责人 ${closure.owner}。`)
@@ -480,14 +502,28 @@ function approveReuseDraft() {
 
 function verifyReuseEffect() {
   if (!reuseClosure.value) return
-  const closure = verifyQualityKnowledgeReuseClosure(reuseClosure.value, new Date().toISOString())
+  closureErrorMessage.value = ''
+  let closure: QualityKnowledgeReuseClosureRecord
+  try {
+    closure = verifyQualityKnowledgeReuseClosure(reuseClosure.value, new Date().toISOString())
+  } catch (error) {
+    closureErrorMessage.value = `质量知识复用效果验证失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   reuseClosure.value = closure
   latestClosureMessage.value = `${closure.formalCapaTitle} 已验证并回写复用效果，评分 ${closure.effectScoreBefore} -> ${closure.effectScoreAfter} 分。`
   records.value.unshift(`${closure.effectTraceId} 已回写：${closure.effectReview}`)
 }
 
 function createLowScoreReviewQueue() {
-  const record = writeQualityKnowledgeReviewQueueRecord()
+  closureErrorMessage.value = ''
+  let record: QualityKnowledgeReviewQueueRecord
+  try {
+    record = writeQualityKnowledgeReviewQueueRecord()
+  } catch (error) {
+    closureErrorMessage.value = `低分样本复核队列生成失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   reviewQueue.value = record
   latestClosureMessage.value = `${record.title} 已进入低分样本复核队列，${record.owner} 需在 ${record.dueAt} 前处理。`
   records.value.unshift(`${record.auditId} 已生成低分复核：${record.reason}`)
@@ -495,34 +531,55 @@ function createLowScoreReviewQueue() {
 
 function closeLowScoreReviewQueue() {
   if (!reviewQueue.value) return
-  const record = closeLowScoreQualityKnowledgeReviewQueueRecord(reviewQueue.value, new Date().toISOString())
+  closureErrorMessage.value = ''
+  let record: QualityKnowledgeReviewQueueRecord
+  try {
+    record = closeLowScoreQualityKnowledgeReviewQueueRecord(reviewQueue.value, new Date().toISOString())
+  } catch (error) {
+    closureErrorMessage.value = `低分样本复核队列关闭失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   reviewQueue.value = record
   latestClosureMessage.value = `${record.title} 已完成复核：${record.decisionLabel}，并进入知识再训练候选。`
   records.value.unshift(`${record.decisionAuditId} 已回写低分复核结论：${record.decisionSummary}`)
 }
 
 function acceptPublishedRecommendation(item: QualityKnowledgeReuseRankingItem) {
-  const feedback = acceptQualityKnowledgeRecommendation(item, new Date().toISOString())
+  closureErrorMessage.value = ''
+  let feedback: QualityKnowledgeRecommendationFeedbackRecord
+  try {
+    feedback = acceptQualityKnowledgeRecommendation(item, new Date().toISOString())
+  } catch (error) {
+    closureErrorMessage.value = `质量知识发布推荐采纳失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   recommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
   latestClosureMessage.value = `${feedback.targetWorkOrderId} ${feedback.operationCode} 已采纳 ${feedback.trainingSetVersion} 推荐，效果趋势 ${feedback.effectTrendLabel}，进入 ${feedback.nextTrainingSetVersion}。`
   records.value.unshift(`${feedback.auditId} 已回写推荐采纳：${feedback.traceId}，下一轮训练 ${feedback.nextTrainingTraceId}。`)
 }
 
-function closeAssistantQualityAction() {
+async function closeAssistantQualityAction() {
   if (!assistantRecoveryPackage.value) return
-  const updated = closeAssistantRecoveryQualityAction(assistantRecoveryPackage.value.id)
+  closureErrorMessage.value = ''
+  let updated: AssistantRecoveryPackage | null
+  try {
+    updated = closeAssistantRecoveryQualityAction(assistantRecoveryPackage.value.id)
+  } catch (error) {
+    closureErrorMessage.value = `助手执行包质量责任闭环失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   if (!updated) return
-  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
+  assistantRecoveryPackages.value = await readAssistantRecoveryPackagesBackendFirst()
   latestClosureMessage.value = updated.qualityActionSummary ?? '交期恢复执行包质量责任动作已闭合。'
   records.value.unshift(`${updated.qualityActionAuditCode} 已回写助手执行包质量责任动作：${updated.qualityActionTraceId}`)
 }
 
-onMounted(() => {
-  reuseClosure.value = readLatestQualityKnowledgeReuseClosure()
-  reviewQueue.value = readLatestQualityKnowledgeReviewQueueRecord()
-  recommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
-  grayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  assistantRecoveryPackages.value = readAssistantRecoveryPackages()
+onMounted(async () => {
+  reuseClosure.value = (await readQualityKnowledgeReuseClosuresBackendFirst())[0] ?? readLatestQualityKnowledgeReuseClosure()
+  reviewQueue.value = (await readQualityKnowledgeReviewQueueRecordsBackendFirst())[0] ?? readLatestQualityKnowledgeReviewQueueRecord()
+  recommendationFeedbackRecords.value = await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst()
+  grayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
+  assistantRecoveryPackages.value = await readAssistantRecoveryPackagesBackendFirst()
 })
 </script>
 
@@ -1149,6 +1206,15 @@ h3 {
   border-radius: 4px;
   background: #ecfdf5;
   color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.closure-sync-error {
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: #b91c1c;
   font-size: 12px;
   font-weight: 700;
 }

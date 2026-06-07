@@ -41,7 +41,7 @@ public class BomExplosionService : IBomExplosionService
 
     private static void ExplodeItem(Domain.Entities.Bom.BomItem item, decimal parentQuantity, List<BomRequirementSummary> result)
     {
-        var totalQuantity = parentQuantity * item.Quantity;
+        var totalQuantity = parentQuantity * ApplyLossRate(item.Quantity, item.LossRate);
 
         if (item.Children.Count > 0)
         {
@@ -60,6 +60,11 @@ public class BomExplosionService : IBomExplosionService
                 item.Unit,
                 item.LossRate));
         }
+    }
+
+    private static decimal ApplyLossRate(decimal quantity, decimal? lossRate)
+    {
+        return lossRate is > 0 ? quantity * (1 + lossRate.Value) : quantity;
     }
 
     /// <summary>批量展开多个产品的 BOM</summary>

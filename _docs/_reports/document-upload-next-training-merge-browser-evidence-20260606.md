@@ -1,0 +1,34 @@
+# DocumentUpload 下一训练集合并失败真实浏览器证据报告
+
+日期：2026-06-06
+
+## 范围
+
+- A 轨质量切片：质量知识 R3 下一训练集候选合并写入失败。
+- 目标：真实 Chromium 中必须 fail loud，且不能伪造合并历史或合并审计号。
+
+## 变更
+
+- `src/frontend/tests/e2e/knowledge.spec.ts`
+  - 新增真实 Chromium 用例：`下一轮训练集合并写入失败时真实浏览器展示 fail-loud 且不伪造历史`。
+  - 拦截 `aimes_quality_knowledge_retraining_versions` 中 R3 merge 写入，模拟本地证据落盘失败。
+
+## Verification
+
+- `npm.cmd run test:e2e -- tests/e2e/knowledge.spec.ts -g "下一轮训练集合并写入失败"`
+- 结果：Nuxt production build passed，Chromium 1/1 passed。
+
+## 覆盖
+
+- 页面展示 `质量知识下一训练集合并失败`。
+- 错误包含 `next training merge storage denied from chromium`。
+- R3 卡片仍停留在 `下一轮训练集`，仍可见 `合并现场反馈`。
+- 历史表不出现：
+  - `QK-TRAIN-20260521-R3_现场反馈合并`
+  - `AUD-KG-QA-RETRAINING-R3-MERGE-20260521-001`
+
+## 结论
+
+- `DocumentUpload` 下一训练集合并失败路径现在具备真实浏览器 fail-loud 证据。
+- 本片未修改生产代码，只补齐既有行为的 Chromium 证据。
+- B 轨发布闸门仍未关闭：hosted CI、PostgreSQL/staging、Attack Chain 人工验证、安全签字、首次灰度和 14 天观察仍需单独证据。

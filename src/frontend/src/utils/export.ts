@@ -1,17 +1,9 @@
 /** 将表格数据导出为 CSV 文件并下载 */
 export function exportToCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]): void {
   const csvContent = [
-    headers.join(','),
+    headers.map(escapeCsvCell).join(','),
     ...rows.map(row =>
-      row.map(cell => {
-        if (cell == null) return ''
-        const str = String(cell)
-        // 转义引号和逗号
-        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-          return `"${str.replace(/"/g, '""')}"`
-        }
-        return str
-      }).join(',')
+      row.map(escapeCsvCell).join(',')
     ),
   ].join('\n')
 
@@ -25,4 +17,13 @@ export function exportToCsv(filename: string, headers: string[], rows: (string |
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+function escapeCsvCell(cell: string | number | null | undefined): string {
+  if (cell == null) return ''
+  const str = String(cell)
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`
+  }
+  return str
 }

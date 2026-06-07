@@ -12,6 +12,7 @@ export interface LoginResponse {
   displayName: string
   role: string
   expiresAt: string
+  mustChangePassword: boolean
 }
 
 export interface RefreshTokenResponse {
@@ -20,9 +21,19 @@ export interface RefreshTokenResponse {
   expiresAt: string
 }
 
+export interface ChangePasswordRequest {
+  username: string
+  currentPassword: string
+  newPassword: string
+}
+
 export async function login(request: LoginRequest): Promise<LoginResponse> {
   const { data } = await http.post<LoginResponse>('/auth/login', request)
   return data
+}
+
+export async function changePassword(request: ChangePasswordRequest): Promise<void> {
+  await http.post('/auth/change-password', request)
 }
 
 /**

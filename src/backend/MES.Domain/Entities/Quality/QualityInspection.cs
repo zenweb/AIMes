@@ -1,5 +1,5 @@
-using System.ComponentModel.DataAnnotations.Schema;
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 
 namespace MES.Domain.Entities.Quality;
 
@@ -21,7 +21,6 @@ public class QualityInspection
     public string InspectorId { get; private set; } = string.Empty;
     public DateTime InspectedAt { get; private set; } = DateTime.UtcNow;
 
-    [NotMapped]
     public Dictionary<string, object> MeasurementData { get; private set; } = new();
 
     public static QualityInspection Create(
@@ -59,14 +58,14 @@ public class QualityInspection
     public void Approve()
     {
         if (!CanApprove)
-            throw new InvalidOperationException($"当前结果 {Result} 不允许通过");
+            throw new DomainRuleViolationException($"当前结果 {Result} 不允许通过");
         Result = InspectionResult.Pass;
     }
 
     public void Reject(string defectType, int quantity, string severity)
     {
         if (!CanReject)
-            throw new InvalidOperationException($"当前结果 {Result} 不允许拒收");
+            throw new DomainRuleViolationException($"当前结果 {Result} 不允许拒收");
 
         Result = InspectionResult.Fail;
         _defects.Add(DefectRecord.Create(defectType, quantity, 0, severity));

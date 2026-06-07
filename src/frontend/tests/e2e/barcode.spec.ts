@@ -6,7 +6,7 @@ test.describe('Barcode 条码打印追溯标签', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('barcode', { waitUntil: 'commit' })
     await expect(page.getByRole('heading', { name: '条码 / QR 打印' })).toBeVisible({ timeout: 30000 })

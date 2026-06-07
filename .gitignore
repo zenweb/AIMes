@@ -11,6 +11,7 @@ obj/
 # Node / Frontend
 src/frontend/node_modules/
 src/frontend/dist/
+src/frontend/coverage/
 src/frontend/.nuxt/
 src/frontend/.output/
 src/frontend/.nuxt-e2e*/
@@ -42,6 +43,7 @@ BenchmarkDotNet.Artifacts/
 
 # Playwright test results
 test-results/
+TestResults/
 src/frontend/test-results/
 
 # Build

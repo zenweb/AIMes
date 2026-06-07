@@ -1,6 +1,10 @@
 <template>
   <div class="routing-board">
     <h2 class="page-title">工艺路线管理</h2>
+    <div v-if="routingError || capabilityValidationError" class="routing-error" role="alert" aria-live="assertive">
+      <div v-if="routingError">{{ routingError }}</div>
+      <div v-if="capabilityValidationError">{{ capabilityValidationError }}</div>
+    </div>
 
     <div class="board-body">
       <!-- 路线列表 -->
@@ -10,13 +14,18 @@
           <span class="badge-count">{{ routes.length }}</span>
         </div>
         <div v-if="loading" class="loading">加载中...</div>
-        <div v-else class="list-items">
+        <div v-else class="list-items" role="listbox" aria-label="工艺路线列表">
           <div
             v-for="r in routes"
             :key="r.id"
             class="list-item"
             :class="{ active: selected?.id === r.id }"
+            role="option"
+            tabindex="0"
+            :aria-selected="selected?.id === r.id"
             @click="selectRoute(r)"
+            @keydown.enter="selectRoute(r)"
+            @keydown.space.prevent="selectRoute(r)"
           >
             <div class="item-title">{{ r.routeName }}</div>
             <div class="item-sub">
@@ -86,7 +95,7 @@
               <div class="validation-actions">
                 <span class="validation-status" :class="routeCapabilityDecision">{{ routeCapabilityStatusText }}</span>
                 <button type="button" @click="handleValidateRouteCapability">运行能力校验</button>
-                <button type="button" :disabled="routeCapabilityDecision === 'released'" @click="handleReleaseRouteCapability">确认分流/合批方案</button>
+                <button type="button" :disabled="routeCapabilityDecision !== 'validated'" @click="handleReleaseRouteCapability">确认分流/合批方案</button>
               </div>
               <div v-if="routeCapabilityRecord" class="validation-trace">
                 <span>{{ routeCapabilityRecord.auditId }}</span>
@@ -131,16 +140,19 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { ProcessRoute, RouteDetail } from '../../types/routing'
+import type { ProcessRoute, RouteDetail, RoutingStep } from '../../types/routing'
 import { getRouteList, getRouteById } from '../../api/routing'
 import {
-  readRouteCapabilityValidation,
+  readRouteCapabilityValidationBackendFirst,
   writeRouteCapabilityValidation,
   type RouteCapabilityValidation,
 } from '../../utils/engineering-change-sync'
+import { errorMessage } from '../../utils/error-message'
 
 const loading = ref(false)
 const routes = ref<ProcessRoute[]>([])
+const routingError = ref('')
+const capabilityValidationError = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalCount = ref(0)
@@ -231,7 +243,7 @@ const demoRoutes: ProcessRoute[] = [
   { id: 'r-3', routeCode: 'R-C300', routeName: '液压阀体工艺路线', productCode: 'PROD-C1', productName: '液压阀体 C', version: 'V1.0', status: 'Draft', totalLeadTimeMinutes: 90, stepCount: 5 },
 ]
 
-const demoSteps: Record<string, any[]> = {
+const demoSteps: Record<string, RoutingStep[]> = {
   'r-1': [
     { id: 's1', stepSequence: 1, operationCode: 'OP-010', operationName: '来料检验', workstationType: '质检台', standardSetupMinutes: 5, standardRunMinutesPerUnit: 0.5, equipmentType: '测量仪', inspectionRequired: true, parameters: [] },
     { id: 's2', stepSequence: 2, operationCode: 'OP-020', operationName: '车削加工', workstationType: '车床', standardSetupMinutes: 15, standardRunMinutesPerUnit: 3, equipmentType: 'CNC', inspectionRequired: false, parameters: [{ parameterCode: 'P01', parameterName: '主轴转速', defaultValue: '1200', unit: 'rpm', upperLimit: 1500, lowerLimit: 800, isMandatory: true }] },
@@ -257,17 +269,20 @@ const demoSteps: Record<string, any[]> = {
 
 function demoRouteDetail(r: ProcessRoute): RouteDetail {
   return {
-    ...r as any, steps: demoSteps[r.id] || [],
+    ...r,
+    steps: demoSteps[r.id] || [],
   }
 }
 
 async function selectRoute(r: ProcessRoute) {
   try {
     selected.value = await getRouteById(r.id)
-  } catch {
+    routingError.value = ''
+  } catch (err: unknown) {
     selected.value = demoRouteDetail(r)
+    routingError.value = `工艺路线详情加载失败：${errorMessage(err, '请稍后重试')}。已显示本地演示详情，真实工序数据可能不是最新。`
   }
-  applyStoredRouteCapabilityValidation()
+  await applyStoredRouteCapabilityValidation()
 }
 
 async function loadRoutes() {
@@ -276,9 +291,11 @@ async function loadRoutes() {
     const result = await getRouteList(currentPage.value, pageSize.value)
     routes.value = result.items
     totalCount.value = result.totalCount
-  } catch {
+    routingError.value = ''
+  } catch (err: unknown) {
     routes.value = demoRoutes
     totalCount.value = demoRoutes.length
+    routingError.value = `工艺路线列表加载失败：${errorMessage(err, '请稍后重试')}。已显示本地演示路线，真实路线数据可能不是最新。`
   }
   loading.value = false
 }
@@ -289,7 +306,11 @@ function handleValidateRouteCapability() {
     decision: 'validated',
     statusLabel: '瓶颈已校验',
   })
-  if (!record) return
+  if (!record) {
+    capabilityValidationError.value = '能力校验证据保存失败：无法写入本地或后端证据链。已保持待校验状态，避免把未留痕的校验当成已完成。'
+    return
+  }
+  capabilityValidationError.value = ''
   routeCapabilityRecord.value = record
   routeCapabilityDecision.value = 'validated'
 }
@@ -300,24 +321,35 @@ function handleReleaseRouteCapability() {
     decision: 'released',
     statusLabel: '分流已确认',
   })
-  if (!record) return
+  if (!record) {
+    capabilityValidationError.value = '分流/合批证据保存失败：无法写入本地或后端证据链。已保持当前校验状态，避免把未留痕的释放方案当成已确认。'
+    return
+  }
+  capabilityValidationError.value = ''
   routeCapabilityRecord.value = record
   routeCapabilityDecision.value = 'released'
 }
 
-function applyStoredRouteCapabilityValidation() {
-  const record = readRouteCapabilityValidation()
-  if (!record) {
+async function applyStoredRouteCapabilityValidation() {
+  try {
+    const record = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
+    capabilityValidationError.value = ''
+    if (!record) {
+      routeCapabilityRecord.value = null
+      routeCapabilityDecision.value = 'open'
+      return
+    }
+    routeCapabilityRecord.value = record
+    routeCapabilityDecision.value = record.decision
+  } catch (err: unknown) {
+    capabilityValidationError.value = `能力校验记录加载失败：${errorMessage(err, '请稍后重试')}。已保持待校验状态，避免使用不可信的历史校验结论。`
     routeCapabilityRecord.value = null
     routeCapabilityDecision.value = 'open'
-    return
   }
-  routeCapabilityRecord.value = record
-  routeCapabilityDecision.value = record.decision
 }
 
 onMounted(() => {
-  applyStoredRouteCapabilityValidation()
+  void applyStoredRouteCapabilityValidation()
   loadRoutes()
 })
 </script>

@@ -47,39 +47,26 @@ public class EquipmentAppService : IEquipmentAppService
             request.WorkshopName ?? string.Empty,
             request.Capacity);
 
-        var created = await _equipmentRepo.CreateAsync(equipment);
+        var created = await _equipmentRepo.CreateAsync(equipment, ct);
         return MapToEquipmentDto(created);
     }
 
     public async Task<EquipmentDto?> GetEquipmentByIdAsync(string id, CancellationToken ct = default)
     {
-        var equipment = await _equipmentRepo.GetByIdAsync(id);
+        var equipment = await _equipmentRepo.GetByIdAsync(id, ct);
         return equipment != null ? MapToEquipmentDto(equipment) : null;
     }
 
     public async Task<PagedResult<EquipmentDto>> GetEquipmentsAsync(string? workshopId = null, string? status = null, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        List<Equipment> equipments;
+        ValidatePaging(page, pageSize);
 
-        if (!string.IsNullOrEmpty(workshopId))
-        {
-            equipments = await _equipmentRepo.GetByWorkshopAsync(workshopId);
-        }
-        else
-        {
-            equipments = await _equipmentRepo.GetAllAsync();
-        }
-
-        if (!string.IsNullOrEmpty(status) && Enum.TryParse<EquipmentStatus>(status, out var equipmentStatus))
-        {
-            equipments = equipments.Where(e => e.Status == equipmentStatus).ToList();
-        }
-
-        var total = equipments.Count;
+        var equipmentStatus = !string.IsNullOrEmpty(status) && Enum.TryParse<EquipmentStatus>(status, out var parsedStatus)
+            ? parsedStatus
+            : (EquipmentStatus?)null;
+        var equipments = await _equipmentRepo.GetPagedAsync(workshopId, equipmentStatus, page, pageSize, ct);
+        var total = await _equipmentRepo.CountAsync(workshopId, equipmentStatus, ct);
         var items = equipments
-            .OrderBy(e => e.EquipmentCode)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
             .Select(MapToEquipmentDto)
             .ToList();
 
@@ -95,8 +82,8 @@ public class EquipmentAppService : IEquipmentAppService
     public async Task<EquipmentStatisticsDto> GetStatisticsAsync(string? workshopId = null, CancellationToken ct = default)
     {
         var equipments = string.IsNullOrEmpty(workshopId)
-            ? await _equipmentRepo.GetAllAsync()
-            : await _equipmentRepo.GetByWorkshopAsync(workshopId);
+            ? await _equipmentRepo.GetAllAsync(ct)
+            : await _equipmentRepo.GetByWorkshopAsync(workshopId, ct);
 
         var total = equipments.Count;
         var running = equipments.Count(e => e.Status == EquipmentStatus.Running);
@@ -120,18 +107,18 @@ public class EquipmentAppService : IEquipmentAppService
 
     public async Task<EquipmentDto> UpdateStatusAsync(string id, string status, CancellationToken ct = default)
     {
-        var equipment = await _equipmentRepo.GetByIdAsync(id);
+        var equipment = await _equipmentRepo.GetByIdAsync(id, ct);
         if (equipment == null)
             throw new InvalidOperationException($"设备 {id} 不存在");
 
         equipment.TransitionTo(Enum.Parse<EquipmentStatus>(status));
-        var updated = await _equipmentRepo.UpdateAsync(equipment);
+        var updated = await _equipmentRepo.UpdateAsync(equipment, ct);
         return MapToEquipmentDto(updated);
     }
 
     public async Task<EquipmentHealthDto> GetHealthReportAsync(string equipmentId, CancellationToken ct = default)
     {
-        var equipment = await _equipmentRepo.GetByIdAsync(equipmentId);
+        var equipment = await _equipmentRepo.GetByIdAsync(equipmentId, ct);
         if (equipment == null)
             throw new InvalidOperationException($"设备 {equipmentId} 不存在");
 
@@ -153,11 +140,11 @@ public class EquipmentAppService : IEquipmentAppService
 
     public async Task<DiagnosticReportDto> DiagnoseAsync(string equipmentId, string? errorCode = null, CancellationToken ct = default)
     {
-        var equipment = await _equipmentRepo.GetByIdAsync(equipmentId);
+        var equipment = await _equipmentRepo.GetByIdAsync(equipmentId, ct);
         if (equipment == null)
             throw new InvalidOperationException($"设备 {equipmentId} 不存在");
 
-        var failureHistory = await _equipmentRepo.GetFailureHistoryAsync(equipmentId);
+        var failureHistory = await _equipmentRepo.GetFailureHistoryAsync(equipmentId, ct);
 
         // 简化版本 - 实际应该调用AI诊断Agent
         return new DiagnosticReportDto
@@ -186,15 +173,15 @@ public class EquipmentAppService : IEquipmentAppService
 
     public async Task<List<MaintenanceRecordDto>> GetMaintenanceHistoryAsync(string equipmentId, CancellationToken ct = default)
     {
-        var records = await _equipmentRepo.GetFailureHistoryAsync(equipmentId);
+        var records = await _equipmentRepo.GetFailureHistoryAsync(equipmentId, ct);
         return records.Select(MapToMaintenanceRecordDto).ToList();
     }
 
     public async Task<List<string>> GetBottleneckEquipmentIdsAsync(string? workshopId = null, CancellationToken ct = default)
     {
         var equipments = string.IsNullOrEmpty(workshopId)
-            ? await _equipmentRepo.GetAllAsync()
-            : await _equipmentRepo.GetByWorkshopAsync(workshopId);
+            ? await _equipmentRepo.GetAllAsync(ct)
+            : await _equipmentRepo.GetByWorkshopAsync(workshopId, ct);
 
         return equipments
             .Where(e => e.UtilizationRate >= 0.8
@@ -274,6 +261,11 @@ public class EquipmentAppService : IEquipmentAppService
         _ => "危险"
     };
 
+    private static void ValidatePaging(int page, int pageSize)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+    }
+
     #endregion
 }
-

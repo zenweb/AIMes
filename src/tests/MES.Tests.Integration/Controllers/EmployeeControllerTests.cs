@@ -1,16 +1,21 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using MES.Infrastructure.Data;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class EmployeeControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
 
     public EmployeeControllerTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -65,6 +70,35 @@ public class EmployeeControllerTests : IClassFixture<TestWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<EmployeeResponse>();
         result!.Name.Should().Be("集成测试员工");
         result.Role.Should().Be("Engineer");
+    }
+
+    [Fact]
+    public async Task Create_ShouldPersistAuditLogFromEndpointFilter()
+    {
+        var employeeNumber = $"IT-EMP-AUD-{Guid.NewGuid():N}";
+        var request = new
+        {
+            EmployeeNumber = employeeNumber,
+            Name = "审计落库测试员工",
+            Phone = "13900002222",
+            Role = "Engineer",
+            Team = "技术组",
+            Shift = "Day"
+        };
+        _client.DefaultRequestHeaders.Remove("X-Test-User");
+        _client.DefaultRequestHeaders.Add("X-Test-User", "audit-filter-user");
+
+        var response = await _client.PostAsJsonAsync("/api/v1/employee", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AuditLogs.Should().Contain(log =>
+            log.UserId == "audit-filter-user"
+            && log.Action == "POST"
+            && log.Resource == "employee"
+            && log.NewValues != null
+            && log.NewValues.Contains(employeeNumber));
     }
 
     [Fact]

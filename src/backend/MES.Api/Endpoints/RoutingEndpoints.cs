@@ -6,12 +6,14 @@ namespace MES.Api.Endpoints;
 
 public static class RoutingEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("routing");
+
     public static RouteGroupBuilder MapRoutingEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/by-code/{routeCode}", GetByCodeAsync).WithTags("工艺路线");
         group.MapGet("/{id}", GetByIdAsync).WithTags("工艺路线");
         group.MapGet("/", GetAllAsync).WithTags("工艺路线");
-        group.MapPost("/", CreateAsync).WithTags("工艺路线").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPost("/", CreateAsync).WithTags("工艺路线").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         return group;
     }
 

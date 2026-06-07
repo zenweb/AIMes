@@ -25,9 +25,9 @@ public class EmployeeAppService : IEmployeeAppService
 
     public async Task<PagedResult<EmployeeDto>> GetAllAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        var all = await _employeeRepo.GetAllAsync(ct);
-        var total = all.Count;
-        var items = all.Skip((page - 1) * pageSize).Take(pageSize).Select(MapToDto).ToList();
+        var total = await _employeeRepo.CountAsync(ct);
+        var employees = await _employeeRepo.GetPagedAsync(page, pageSize, ct);
+        var items = employees.Select(MapToDto).ToList();
         return new PagedResult<EmployeeDto>
         {
             Items = items,

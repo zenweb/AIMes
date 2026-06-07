@@ -24,12 +24,14 @@ public class RoutingAppService : IRoutingAppService
 
     public async Task<PagedResult<ProcessRouteDto>> GetAllRoutesAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        var all = await _routingRepo.GetAllAsync(ct);
-        var skip = Math.Max(0, page - 1) * pageSize;
+        ValidatePaging(page, pageSize);
+
+        var routes = await _routingRepo.GetPagedAsync(page, pageSize, ct);
+        var total = await _routingRepo.CountAsync(ct);
         return new PagedResult<ProcessRouteDto>
         {
-            Items = all.Skip(skip).Take(pageSize).Select(MapToSummary).ToList(),
-            TotalCount = all.Count,
+            Items = routes.Select(MapToSummary).ToList(),
+            TotalCount = total,
             Page = page,
             PageSize = pageSize,
         };
@@ -63,6 +65,22 @@ public class RoutingAppService : IRoutingAppService
                 new OperationCode(stepReq.OperationCode),
                 stepReq.OperationName,
                 stepReq.WorkstationType);
+            step.ConfigureStandards(
+                stepReq.StandardSetupMinutes,
+                stepReq.StandardRunMinutesPerUnit,
+                stepReq.EquipmentType,
+                stepReq.InspectionRequired);
+            foreach (var parameterReq in stepReq.Parameters)
+            {
+                step.AddParameter(new StepParameter(
+                    parameterReq.ParameterCode,
+                    parameterReq.ParameterName,
+                    parameterReq.DefaultValue,
+                    parameterReq.Unit,
+                    parameterReq.UpperLimit,
+                    parameterReq.LowerLimit,
+                    parameterReq.IsMandatory));
+            }
 
             route.AddStep(step);
         }
@@ -117,4 +135,10 @@ public class RoutingAppService : IRoutingAppService
             }).ToList()
         }).ToList()
     };
+
+    private static void ValidatePaging(int page, int pageSize)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+    }
 }

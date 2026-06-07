@@ -23,9 +23,25 @@ public class RoutingRepository : IRoutingRepository
             .ToListAsync(ct);
     }
 
+    public async Task<List<ProcessRoute>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.ProcessRoutes
+            .AsNoTracking()
+            .OrderBy(e => e.RouteCode)
+            .ThenBy(e => e.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.ProcessRoutes.AsNoTracking().CountAsync(ct);
+    }
+
     public async Task<ProcessRoute?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.ProcessRoutes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        return await _context.ProcessRoutes.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<List<ProcessRoute>> GetByProductCodeAsync(ProductCode productCode, CancellationToken ct = default)
@@ -35,7 +51,7 @@ public class RoutingRepository : IRoutingRepository
 
     public async Task<ProcessRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken ct = default)
     {
-        return await _context.ProcessRoutes.FirstOrDefaultAsync(e => e.RouteCode == routeCode, ct);
+        return await _context.ProcessRoutes.AsNoTracking().FirstOrDefaultAsync(e => e.RouteCode == routeCode, ct);
     }
 
     public async Task<ProcessRoute> AddAsync(ProcessRoute route, CancellationToken ct = default)

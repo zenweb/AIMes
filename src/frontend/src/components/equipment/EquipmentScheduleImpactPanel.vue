@@ -75,7 +75,7 @@
       </button>
     </section>
 
-    <div class="sync-note">
+    <div class="sync-note" :role="syncState" aria-live="polite">
       <strong>{{ syncTitle }}</strong>
       <span>{{ syncMessage }}</span>
     </div>
@@ -83,15 +83,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { errorMessage } from '../../utils/error-message'
 import {
   readCustomerEquipmentFaultEvidence,
+  readCustomerEquipmentFaultEvidenceBackendFirst,
   writeCustomerEquipmentFaultEvidence,
   writeEquipmentDowntimeEvent,
   type CustomerEquipmentFaultEvidence,
 } from '../../utils/equipment-risk-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
-import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readAnomalyDispatchRecordByType, readAnomalyDispatchRecordByTypeBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 
 const downtime = reactive({
   equipmentCode: 'CNC-001',
@@ -105,83 +107,112 @@ const downtime = reactive({
 
 const syncTitle = ref('等待同步')
 const syncMessage = ref('标记设备故障后，AI 排产会读取停机事件并生成换设备、延后、加班或拆单建议。')
+const syncState = ref<'status' | 'alert'>('status')
 const customerFaultEvidence = ref<CustomerEquipmentFaultEvidence | null>(readCustomerEquipmentFaultEvidence())
 const equipmentDispatch = ref<AnomalyDispatchRecord | null>(readAnomalyDispatchRecordByType('equipment'))
 const faultSignals = computed(() => customerFaultEvidence.value?.capturedSignals ?? ['主轴振动', '轴承温度', '停机时长', '维修工单', '影响工单'])
 
+onMounted(async () => {
+  customerFaultEvidence.value = await readCustomerEquipmentFaultEvidenceBackendFirst()
+  equipmentDispatch.value = await readAnomalyDispatchRecordByTypeBackendFirst('equipment')
+})
+
 function syncDowntimeEvent() {
-  writeEquipmentDowntimeEvent({
-    ...downtime,
-    createdAt: new Date().toISOString(),
-  })
-  upsertOtdEvidenceChainRecord({
-    id: `equipment-downtime-${downtime.equipmentCode}`,
-    stage: '设备维护',
-    title: `${downtime.equipmentCode} 停机窗口已同步重排`,
-    summary: `${downtime.downtimeHours}h 停机影响 ${downtime.affectedOrders}，按 ${downtime.protectionStrategy} 保护瓶颈设备。`,
-    object: downtime.affectedOrders,
-    source: '设备维护 / 瓶颈保护',
-    traceId: `TRACE-EQ-DOWNTIME-${downtime.equipmentCode}`,
-    status: 'active',
-    statusLabel: '待维护',
-    createdAt: new Date().toISOString(),
-  })
-  syncTitle.value = '设备故障已同步 AI 排产'
-  syncMessage.value = `${downtime.equipmentCode} 预计停机 ${downtime.downtimeHours}h，${downtime.affectedOrders} 已进入事件触发 Agent。`
+  try {
+    writeEquipmentDowntimeEvent({
+      ...downtime,
+      createdAt: new Date().toISOString(),
+    })
+    upsertOtdEvidenceChainRecord({
+      id: `equipment-downtime-${downtime.equipmentCode}`,
+      stage: '设备维护',
+      title: `${downtime.equipmentCode} 停机窗口已同步重排`,
+      summary: `${downtime.downtimeHours}h 停机影响 ${downtime.affectedOrders}，按 ${downtime.protectionStrategy} 保护瓶颈设备。`,
+      object: downtime.affectedOrders,
+      source: '设备维护 / 瓶颈保护',
+      traceId: `TRACE-EQ-DOWNTIME-${downtime.equipmentCode}`,
+      status: 'active',
+      statusLabel: '待维护',
+      createdAt: new Date().toISOString(),
+    })
+    syncState.value = 'status'
+    syncTitle.value = '设备故障已同步 AI 排产'
+    syncMessage.value = `${downtime.equipmentCode} 预计停机 ${downtime.downtimeHours}h，${downtime.affectedOrders} 已进入事件触发 Agent。`
+    return true
+  } catch (error) {
+    syncState.value = 'alert'
+    syncTitle.value = '设备故障同步失败'
+    syncMessage.value = `排产/OTD 证据未完整归档：${errorMessage(error, '请稍后重试')}`
+    return false
+  }
 }
 
 function prepareCustomerFaultEvidence() {
-  const evidence = writeCustomerEquipmentFaultEvidence({
-    equipmentCode: downtime.equipmentCode,
-    affectedOrders: downtime.affectedOrders,
-    downtimeHours: downtime.downtimeHours,
-  })
-  if (!evidence) return
-  customerFaultEvidence.value = evidence
-  syncDowntimeEvent()
-  upsertOtdEvidenceChainRecord({
-    id: `customer-equipment-fault-${evidence.batchId}`,
-    stage: '设备实证',
-    title: '客户真实设备故障样例已映射',
-    summary: `${evidence.faultSamples} 条 ${evidence.equipmentCode} 故障样例已把停机、维修工单和影响工单写入 OTD 风险口径。`,
-    object: evidence.affectedOrders,
-    source: evidence.source,
-    traceId: evidence.batchId,
-    status: 'closed',
-    statusLabel: '已导入',
-    createdAt: evidence.preparedAt,
-  })
-  syncTitle.value = '客户设备故障样例已接入'
-  syncMessage.value = `${evidence.batchId} 已映射 ${evidence.faultSamples} 条故障样例，并同步 ${evidence.equipmentCode} 停机事件到 AI 排产。`
+  try {
+    const evidence = writeCustomerEquipmentFaultEvidence({
+      equipmentCode: downtime.equipmentCode,
+      affectedOrders: downtime.affectedOrders,
+      downtimeHours: downtime.downtimeHours,
+    })
+    if (!evidence) return
+    customerFaultEvidence.value = evidence
+    if (!syncDowntimeEvent()) return
+    upsertOtdEvidenceChainRecord({
+      id: `customer-equipment-fault-${evidence.batchId}`,
+      stage: '设备实证',
+      title: '客户真实设备故障样例已映射',
+      summary: `${evidence.faultSamples} 条 ${evidence.equipmentCode} 故障样例已把停机、维修工单和影响工单写入 OTD 风险口径。`,
+      object: evidence.affectedOrders,
+      source: evidence.source,
+      traceId: evidence.batchId,
+      status: 'closed',
+      statusLabel: '已导入',
+      createdAt: evidence.preparedAt,
+    })
+    syncState.value = 'status'
+    syncTitle.value = '客户设备故障样例已接入'
+    syncMessage.value = `${evidence.batchId} 已映射 ${evidence.faultSamples} 条故障样例，并同步 ${evidence.equipmentCode} 停机事件到 AI 排产。`
+  } catch (error) {
+    syncState.value = 'alert'
+    syncTitle.value = '客户设备故障样例同步失败'
+    syncMessage.value = `POC/OTD 证据未完整归档：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function syncDispatchMaintenance() {
   if (!equipmentDispatch.value) return
   const dispatch = equipmentDispatch.value
-  writeEquipmentDowntimeEvent({
-    equipmentCode: 'CNC-001',
-    equipmentName: 'CNC-001 加工中心',
-    downtimeHours: 2,
-    affectedOrders: dispatch.affectedOrders,
-    alternativeEquipment: 'CNC-003 / CNC-002',
-    maintenanceWindow: dispatch.scheduleWindow,
-    protectionStrategy: dispatch.suggestedAction,
-    createdAt: new Date().toISOString(),
-  })
-  upsertOtdEvidenceChainRecord({
-    id: `equipment-maintenance-${dispatch.anomalyId}`,
-    stage: '设备维护',
-    title: `${dispatch.title}维护复核单已生成`,
-    summary: `${dispatch.traceId} 已从异常管理进入设备维护，按 ${dispatch.scheduleWindow} 检查主轴冷却、轴承状态和 CNC-003 分流能力。`,
-    object: dispatch.affectedOrders,
-    source: `设备维护 / ${dispatch.owner}`,
-    traceId: dispatch.traceId,
-    status: 'active',
-    statusLabel: '维护复核中',
-    createdAt: new Date().toISOString(),
-  })
-  syncTitle.value = '异常分流维护单已同步'
-  syncMessage.value = `${dispatch.title} 已生成设备维护复核单，并同步 AI 排产复核 ${dispatch.affectedOrders}。`
+  try {
+    writeEquipmentDowntimeEvent({
+      equipmentCode: 'CNC-001',
+      equipmentName: 'CNC-001 加工中心',
+      downtimeHours: 2,
+      affectedOrders: dispatch.affectedOrders,
+      alternativeEquipment: 'CNC-003 / CNC-002',
+      maintenanceWindow: dispatch.scheduleWindow,
+      protectionStrategy: dispatch.suggestedAction,
+      createdAt: new Date().toISOString(),
+    })
+    upsertOtdEvidenceChainRecord({
+      id: `equipment-maintenance-${dispatch.anomalyId}`,
+      stage: '设备维护',
+      title: `${dispatch.title}维护复核单已生成`,
+      summary: `${dispatch.traceId} 已从异常管理进入设备维护，按 ${dispatch.scheduleWindow} 检查主轴冷却、轴承状态和 CNC-003 分流能力。`,
+      object: dispatch.affectedOrders,
+      source: `设备维护 / ${dispatch.owner}`,
+      traceId: dispatch.traceId,
+      status: 'active',
+      statusLabel: '维护复核中',
+      createdAt: new Date().toISOString(),
+    })
+    syncState.value = 'status'
+    syncTitle.value = '异常分流维护单已同步'
+    syncMessage.value = `${dispatch.title} 已生成设备维护复核单，并同步 AI 排产复核 ${dispatch.affectedOrders}。`
+  } catch (error) {
+    syncState.value = 'alert'
+    syncTitle.value = '异常分流维护单同步失败'
+    syncMessage.value = `维护/OTD 证据未完整归档：${errorMessage(error, '请稍后重试')}`
+  }
 }
 </script>
 

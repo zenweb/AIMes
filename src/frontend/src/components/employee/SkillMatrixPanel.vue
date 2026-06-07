@@ -5,10 +5,14 @@
         <span class="eyebrow">人员约束</span>
         <h3>技能矩阵与资质有效期</h3>
       </div>
-      <div class="panel-actions">
-        <span class="coverage-badge">{{ coverageText }}</span>
-        <button type="button" class="sync-button" @click="syncSkillEvidence">同步人员证据</button>
-      </div>
+    <div class="panel-actions">
+      <span class="coverage-badge">{{ coverageText }}</span>
+      <button type="button" class="sync-button" @click="syncSkillEvidence">同步人员证据</button>
+    </div>
+  </div>
+
+    <div v-if="syncError" class="sync-error" role="alert" aria-live="assertive">
+      {{ syncError }}
     </div>
 
     <div class="skill-grid">
@@ -81,11 +85,16 @@
         <strong>{{ reassignmentTitle }}</strong>
         <span>{{ reassignmentMessage }}</span>
       </div>
-      <div v-if="showQualificationReview" class="qualification-review">
+      <div
+        v-if="showQualificationReview"
+        class="qualification-review"
+        role="alert"
+        aria-labelledby="qualification-review-title"
+      >
         <div>
           <span>停工复核处置</span>
-          <strong>{{ reviewStatusText }}</strong>
-          <p>{{ reviewMessage }}</p>
+          <strong id="qualification-review-title">{{ reviewStatusText }}</strong>
+          <p>{{ reviewAlertMessage }}</p>
         </div>
         <div class="review-actions">
           <button type="button" class="sync-button warning" @click="confirmQualificationReview">
@@ -216,6 +225,7 @@ const syncMessage = ref('同步后，技能、班组班次和资质有效期会�
 const reassignmentTitle = ref('等待生成')
 const reassignmentMessage = ref('生成后，人员替班建议会同步到生产开工、排产解释、报表中心和审计回放。')
 const activeQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
+const syncError = ref('')
 const reviewMessage = ref('生成停工复核后，主管可先受理阻断，再登记补证/改派并重新放行；复核未闭环前生产开工保持禁用。')
 
 interface ReassignmentCandidate {
@@ -344,6 +354,10 @@ const reviewStatusText = computed(() => {
   if (status === 'active') return '停工复核'
   return '等待阻断'
 })
+const reviewAlertMessage = computed(() => activeQualificationBlock.value || hasReassignmentCandidate.value
+  ? reviewMessage.value
+  : `无有效替班候选：${qualificationBlockPreview.value.reason}`
+)
 
 function buildLaborReassignmentRecord(createdAt = new Date().toISOString()) {
   const risk = expiringLaborRisk.value
@@ -412,23 +426,28 @@ const decisionTraceId = computed(() => hasReassignmentCandidate.value
 
 function syncSkillEvidence() {
   const createdAt = new Date().toISOString()
-  skillRows.value.forEach((row) => {
-    const qualification = capabilityStatus(row.certifications, row.availability)
-    upsertOtdEvidenceChainRecord({
-      id: `labor-skill-${row.employeeNumber}`,
-      stage: '人员能力',
-      title: `${row.name} 技能/资质校验进入开工约束`,
-      summary: `${row.employeeNumber} 属于 ${row.team} ${row.shift}，技能：${row.skills.join(' / ')}；资质：${certificationSummary(row.certifications)}；排班：${row.availability.statusLabel} ${row.availability.window}，来源 ${row.availability.source}。`,
-      object: row.employeeNumber,
-      source: '人员管理 / 技能矩阵+排班计划',
-      traceId: `TRACE-LABOR-${row.employeeNumber}`,
-      status: qualification.status,
-      statusLabel: qualification.label,
-      createdAt,
+  try {
+    skillRows.value.forEach((row) => {
+      const qualification = capabilityStatus(row.certifications, row.availability)
+      upsertOtdEvidenceChainRecord({
+        id: `labor-skill-${row.employeeNumber}`,
+        stage: '人员能力',
+        title: `${row.name} 技能/资质校验进入开工约束`,
+        summary: `${row.employeeNumber} 属于 ${row.team} ${row.shift}，技能：${row.skills.join(' / ')}；资质：${certificationSummary(row.certifications)}；排班：${row.availability.statusLabel} ${row.availability.window}，来源 ${row.availability.source}。`,
+        object: row.employeeNumber,
+        source: '人员管理 / 技能矩阵+排班计划',
+        traceId: `TRACE-LABOR-${row.employeeNumber}`,
+        status: qualification.status,
+        statusLabel: qualification.label,
+        createdAt,
+      })
     })
-  })
-  syncTitle.value = '人员能力证据已同步 OTD 复盘'
-  syncMessage.value = `${skillRows.value.length} 名人员的技能和资质状态已写入统一证据链，可在报表、治理和审计中核对。`
+    syncError.value = ''
+    syncTitle.value = '人员能力证据已同步 OTD 复盘'
+    syncMessage.value = `${skillRows.value.length} 名人员的技能和资质状态已写入统一证据链，可在报表、治理和审计中核对。`
+  } catch (error: unknown) {
+    syncError.value = `人员证据同步失败：${error instanceof Error ? error.message : '请稍后重试'}`
+  }
 }
 
 function generateReassignmentSuggestion() {

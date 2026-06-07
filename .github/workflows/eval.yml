@@ -2,16 +2,13 @@ name: Agent Evaluation
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: ["main", "dev", "develop", "V1"]
   push:
-    branches: [main, develop]
+    branches: ["main", "dev", "develop", "V1"]
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./v1
 
     steps:
       - uses: actions/checkout@v4
@@ -20,17 +17,22 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+          dotnet-quality: "preview"
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore src/backend/AIMes.slnx
 
       - name: Build
-        run: dotnet build --no-restore --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
+        run: dotnet build src/backend/AIMes.slnx --no-restore --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
 
       - name: Unit Tests
-        run: dotnet test src/tests/MES.Tests.Unit/ --no-build --verbosity quiet
+        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-build --verbosity quiet
+
+      - name: Evaluation Tests
+        run: dotnet test src/tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj --no-build --verbosity quiet
 
       - name: Agent Evaluation
+        shell: pwsh
         run: pwsh src/tests/MES.Tests.Evaluation/eval.ps1
 
       - name: Check Evaluation Gate
@@ -39,9 +41,11 @@ jobs:
           $results = Get-Content src/tests/MES.Tests.Evaluation/eval_results.json | ConvertFrom-Json
           if (-not $results.gate_pass) {
             Write-Error "Evaluation gate failed!"
-            $results.agents | ForEach-Object {
-              if (-not $_.pass) {
-                Write-Error "  $($_.name): precision=$($_.precision) recall=$($_.recall) adoptability=$($_.adoptability)"
+            $results.agents.PSObject.Properties | ForEach-Object {
+              $agent = $_.Name
+              $metrics = $_.Value
+              if (-not $metrics.pass) {
+                Write-Error "  ${agent}: precision=$($metrics.precision) recall=$($metrics.recall) adoptability=$($metrics.adoptability) error=$($metrics.error)"
               }
             }
             exit 1

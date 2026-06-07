@@ -15,6 +15,7 @@ public class SystemUserConfiguration : IEntityTypeConfiguration<SystemUser>
         entity.Property(e => e.DisplayName).HasColumnName("display_name").HasMaxLength(100);
         entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(50);
         entity.Property(e => e.IsActive).HasColumnName("is_active");
+        entity.Property(e => e.MustChangePassword).HasColumnName("must_change_password");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at");
         entity.Property(e => e.PasswordHash).HasColumnName("password_hash").HasMaxLength(200);
         entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");

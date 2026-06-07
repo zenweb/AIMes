@@ -1,12 +1,13 @@
 using MassTransit;
 using MediatR;
+using MES.Infrastructure.DomainEvents;
 using OperationExecutionStartedDomainEvent = MES.Domain.Events.OperationExecutionStarted;
 using OperationReportedDomainEvent = MES.Domain.Events.OperationReported;
 using SchedulePlanCreatedDomainEvent = MES.Domain.Events.SchedulePlanCreated;
 
 namespace MES.Infrastructure.Events;
 
-public class OperationReportedDomainEventHandler : INotificationHandler<OperationReportedDomainEvent>
+public class OperationReportedDomainEventHandler : INotificationHandler<DomainEventNotification<OperationReportedDomainEvent>>
 {
     private readonly IPublishEndpoint _publishEndpoint;
 
@@ -15,20 +16,21 @@ public class OperationReportedDomainEventHandler : INotificationHandler<Operatio
         _publishEndpoint = publishEndpoint;
     }
 
-    public Task Handle(OperationReportedDomainEvent notification, CancellationToken cancellationToken)
+    public Task Handle(DomainEventNotification<OperationReportedDomainEvent> notification, CancellationToken cancellationToken)
     {
+        var domainEvent = notification.DomainEvent;
         return _publishEndpoint.Publish(new OperationReportedIntegrationEvent
         {
-            WorkOrderNumber = notification.WorkOrderNumber,
-            OperationCode = notification.OperationCode,
-            Quantity = notification.Quantity,
-            ReportTime = notification.ReportTime,
-            OperatorId = notification.OperatorId
+            WorkOrderNumber = domainEvent.WorkOrderNumber,
+            OperationCode = domainEvent.OperationCode,
+            Quantity = domainEvent.Quantity,
+            ReportTime = domainEvent.ReportTime,
+            OperatorId = domainEvent.OperatorId
         }, cancellationToken);
     }
 }
 
-public class SchedulePlanCreatedDomainEventHandler : INotificationHandler<SchedulePlanCreatedDomainEvent>
+public class SchedulePlanCreatedDomainEventHandler : INotificationHandler<DomainEventNotification<SchedulePlanCreatedDomainEvent>>
 {
     private readonly IPublishEndpoint _publishEndpoint;
 
@@ -37,18 +39,19 @@ public class SchedulePlanCreatedDomainEventHandler : INotificationHandler<Schedu
         _publishEndpoint = publishEndpoint;
     }
 
-    public Task Handle(SchedulePlanCreatedDomainEvent notification, CancellationToken cancellationToken)
+    public Task Handle(DomainEventNotification<SchedulePlanCreatedDomainEvent> notification, CancellationToken cancellationToken)
     {
+        var domainEvent = notification.DomainEvent;
         return _publishEndpoint.Publish(new SchedulePlanCreatedIntegrationEvent
         {
-            PlanId = notification.PlanId,
-            PlanName = notification.PlanName,
-            CreatedAt = notification.CreatedAt
+            PlanId = domainEvent.PlanId,
+            PlanName = domainEvent.PlanName,
+            CreatedAt = domainEvent.CreatedAt
         }, cancellationToken);
     }
 }
 
-public class OperationExecutionStartedDomainEventHandler : INotificationHandler<OperationExecutionStartedDomainEvent>
+public class OperationExecutionStartedDomainEventHandler : INotificationHandler<DomainEventNotification<OperationExecutionStartedDomainEvent>>
 {
     private readonly IPublishEndpoint _publishEndpoint;
 
@@ -57,14 +60,15 @@ public class OperationExecutionStartedDomainEventHandler : INotificationHandler<
         _publishEndpoint = publishEndpoint;
     }
 
-    public Task Handle(OperationExecutionStartedDomainEvent notification, CancellationToken cancellationToken)
+    public Task Handle(DomainEventNotification<OperationExecutionStartedDomainEvent> notification, CancellationToken cancellationToken)
     {
+        var domainEvent = notification.DomainEvent;
         return _publishEndpoint.Publish(new OperationExecutionStartedIntegrationEvent
         {
-            WorkOrderNumber = notification.WorkOrderNumber,
-            OperationCode = notification.OperationCode,
-            EquipmentId = notification.EquipmentId,
-            StartedAt = notification.StartedAt
+            WorkOrderNumber = domainEvent.WorkOrderNumber,
+            OperationCode = domainEvent.OperationCode,
+            EquipmentId = domainEvent.EquipmentId,
+            StartedAt = domainEvent.StartedAt
         }, cancellationToken);
     }
 }

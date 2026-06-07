@@ -41,7 +41,19 @@ function readRawEvidenceChain(): OtdEvidenceChainItem[] {
     const raw = window.localStorage.getItem(OTD_EVIDENCE_CHAIN_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isEvidenceItem) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(OTD_EVIDENCE_CHAIN_KEY)
+      return []
+    }
+    const records = parsed.filter(isEvidenceItem)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(OTD_EVIDENCE_CHAIN_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(OTD_EVIDENCE_CHAIN_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(OTD_EVIDENCE_CHAIN_KEY)
     return []
@@ -52,10 +64,25 @@ export function readOtdEvidenceChainRecords(): OtdEvidenceChainItem[] {
   return readRawEvidenceChain()
 }
 
+export async function readOtdEvidenceChainRecordsBackendFirst(): Promise<OtdEvidenceChainItem[]> {
+  try {
+    const { getOtdEvidenceChain } = await import('../api/otdEvidence')
+    const records = await getOtdEvidenceChain()
+    if (!Array.isArray(records)) return readRawEvidenceChain()
+    const validRecords = records.filter(isEvidenceItem)
+    return validRecords.length > 0 ? validRecords : readRawEvidenceChain()
+  } catch {
+    return readRawEvidenceChain()
+  }
+}
+
 export function upsertOtdEvidenceChainRecord(record: OtdEvidenceChainItem) {
   if (!canUseStorage()) return []
   const next = [record, ...readRawEvidenceChain().filter(item => item.id !== record.id)].slice(0, 24)
   window.localStorage.setItem(OTD_EVIDENCE_CHAIN_KEY, JSON.stringify(next))
+  void import('../api/otdEvidence')
+    .then(({ upsertOtdEvidence }) => upsertOtdEvidence(record))
+    .catch(() => undefined)
   return next
 }
 

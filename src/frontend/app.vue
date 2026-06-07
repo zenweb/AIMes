@@ -1,5 +1,5 @@
 <template>
-  <MainLayout v-if="requiresAuth">
+  <MainLayout v-if="usesAppShell">
     <NuxtPage />
   </MainLayout>
   <NuxtPage v-else />
@@ -10,4 +10,5 @@ import MainLayout from './src/components/layout/MainLayout.vue'
 
 const route = useRoute()
 const requiresAuth = computed(() => route.meta.requiresAuth !== false)
+const usesAppShell = computed(() => requiresAuth.value && route.meta.appShell !== false)
 </script>

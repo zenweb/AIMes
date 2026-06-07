@@ -28,18 +28,47 @@ public class KnowledgeAgent
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var sources = await FindSimilarDocumentsAsync(question, topK, ct);
+        var modelName = "KnowledgeRag";
+        string retrievalError = string.Empty;
+        List<DocumentChunk> sources;
+        try
+        {
+            sources = await FindSimilarDocumentsAsync(question, topK, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            modelName = "KnowledgeRagFallback";
+            retrievalError = $"检索失败（{ex.GetType().Name}），无法读取知识库上下文。";
+            sources = [];
+        }
+
         var context = JsonSerializer.Serialize(sources.Select(s => new { s.Id, s.Content, s.Source, s.Metadata }));
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请基于以下MES知识库上下文回答问题。若上下文不足，请明确说明缺口。
 
             问题：{question}
 
             知识库上下文：
             {context}
-            """;
+            """);
 
-        var answer = await _llmGateway.GenerateTextAsync(prompt, ct);
+        string answer;
+        if (!string.IsNullOrEmpty(retrievalError))
+        {
+            answer = retrievalError;
+        }
+        else
+        {
+            try
+            {
+                answer = await _llmGateway.GenerateTextAsync(prompt, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                modelName = "KnowledgeRagFallback";
+                answer = $"LLM 调用失败（{ex.GetType().Name}），请先查看已检索到的知识库来源。";
+            }
+        }
 
         return new KnowledgeAnswer
         {
@@ -49,7 +78,7 @@ public class KnowledgeAgent
                 AgentName,
                 AgentVersion,
                 "ConfiguredLlmGateway",
-                "KnowledgeRag",
+                modelName,
                 "unknown",
                 prompt,
                 context,
@@ -81,7 +110,7 @@ public class KnowledgeAgent
             CreatedAt = DateTime.UtcNow
         };
 
-        await _vectorStore.UpsertAsync(CollectionName, new[] { chunk });
+        await _vectorStore.UpsertAsync(CollectionName, new[] { chunk }, ct);
         return chunk;
     }
 
@@ -91,6 +120,6 @@ public class KnowledgeAgent
         CancellationToken ct = default)
     {
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        return await _vectorStore.SearchAsync(CollectionName, embedding, topK);
+        return await _vectorStore.SearchAsync(CollectionName, embedding, topK, ct);
     }
 }

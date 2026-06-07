@@ -1,5 +1,6 @@
 using MES.Application.DTOs;
 using MES.Application.Services;
+using MES.Domain.Entities.Anomalies;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Production;
 using MES.Domain.Entities.Quality;
@@ -73,13 +74,13 @@ public static class ReportEndpoints
         // Production
         var completedWo = workOrders.Count(w => w.Status == WorkOrderStatus.Completed);
         var inProgressWo = workOrders.Count(w => w.Status is WorkOrderStatus.InProgress or WorkOrderStatus.Paused);
-        var onTimeDeliveries = workOrders.Count(w => w.Status == WorkOrderStatus.Completed && w.ActualEndDate.HasValue && w.ActualEndDate.Value <= w.PlannedEndDate);
-        var onTimeRate = completedWo > 0 ? (double)onTimeDeliveries / completedWo : 0;
+        var onTimeRate = ProductionKpiCalculator.CalculateOnTimeRate(workOrders, DateTime.UtcNow);
 
         var today = DateTime.UtcNow.Date;
         var dailyOutput = workOrders
             .Where(w => w.Status == WorkOrderStatus.Completed && w.ActualEndDate.HasValue)
-            .GroupBy(w => w.ActualEndDate!.Value.Date)
+            .Select(w => new { Date = w.ActualEndDate.GetValueOrDefault().Date, w.CompletedQuantity })
+            .GroupBy(w => w.Date)
             .OrderBy(g => g.Key)
             .TakeLast(14)
             .Select(g => new ChartDataPoint
@@ -119,20 +120,17 @@ public static class ReportEndpoints
             };
         }).ToList();
 
-        // Anomaly — need to get from schedule or anomaly repo
-        // Use GetCriticalOpenAsync for approximate counts
-        var criticalAnomalies = await anomalyRepo.GetCriticalOpenAsync(ct);
-
-        // Build anomaly distribution from what we know
-        var anomalyByType = new List<ChartDataPoint>
-        {
-            new() { Label = "设备异常", Value = Math.Max(1, criticalAnomalies.Count / 3) },
-            new() { Label = "质量异常", Value = Math.Max(1, criticalAnomalies.Count / 4) },
-            new() { Label = "物料异常", Value = Math.Max(1, criticalAnomalies.Count / 5) },
-            new() { Label = "工艺异常", Value = Math.Max(1, criticalAnomalies.Count / 6) },
-        };
-        var anomalyTotal = (int)anomalyByType.Sum(a => a.Value);
-        var resolvedAnomalies = Math.Max(0, criticalAnomalies.Count * 2); // approximation
+        var anomalies = await anomalyRepo.GetAllAsync(ct);
+        var openAnomalies = anomalies.Count(a => a.Status is AnomalyStatus.Open or AnomalyStatus.Acknowledged);
+        var resolvedAnomalies = anomalies.Count(a => a.Status == AnomalyStatus.Resolved);
+        var anomalyByType = anomalies
+            .GroupBy(a => a.AnomalyType)
+            .OrderBy(g => g.Key)
+            .Select(g => new ChartDataPoint
+            {
+                Label = g.Key,
+                Value = g.Count(),
+            }).ToList();
 
         return new ReportDashboardDto
         {
@@ -142,7 +140,7 @@ public static class ReportEndpoints
                 CompletedOrders = completedWo,
                 InProgressOrders = inProgressWo,
                 OnTimeRate = Math.Round(onTimeRate, 3),
-                DailyOutput = dailyOutput.Any() ? dailyOutput : GetDefaultChartData(14, 20, 25),
+                DailyOutput = dailyOutput,
             },
             Quality = new QualitySummaryDto
             {
@@ -150,7 +148,7 @@ public static class ReportEndpoints
                 DefectRate = totalInspections > 0 ? Math.Round((double)defectCount / totalInspections, 3) : 0,
                 TotalInspections = totalInspections,
                 DefectCount = defectCount,
-                DailyDefects = dailyDefects.Any() ? dailyDefects : GetDefaultChartData(14, 0, 5),
+                DailyDefects = dailyDefects,
             },
             Equipment = new EquipmentSummaryDto
             {
@@ -162,17 +160,12 @@ public static class ReportEndpoints
             },
             Anomaly = new AnomalySummaryDto
             {
-                TotalAnomalies = anomalyTotal,
-                OpenCount = criticalAnomalies.Count,
+                TotalAnomalies = anomalies.Count,
+                OpenCount = openAnomalies,
                 ResolvedCount = resolvedAnomalies,
                 AvgResolveHours = 0,
                 AnomalyByType = anomalyByType,
             },
         };
-    }
-
-    private static List<ChartDataPoint> GetDefaultChartData(int count, int min, int max)
-    {
-        return [];
     }
 }

@@ -131,3 +131,111 @@ export async function rescheduleItem(
     plannedEndTime: endTime,
   })
 }
+
+export interface AgentRecommendRequest {
+  workshopId: string
+  eventType?: string
+  sourceModule?: string
+  businessKeyType?: string
+  businessKeyValue?: string
+  severity?: string
+  workOrderIds?: string[]
+  objective?: string
+  payload?: Record<string, unknown>
+}
+
+export interface AgentDecisionScenario {
+  id: string
+  strategyName: string
+  priorityRule?: string
+  capacityStrategy?: string
+  objective?: string
+  otdProjection: number
+  utilizationProjection: number
+  changeoverProjection: number
+  explanation?: string
+  sacrificedObjectives?: string
+}
+
+export interface AgentDecision {
+  id: string
+  triggerEventId: string
+  boundedContext: string
+  decisionType: string
+  status: string
+  recommendedScenarioId?: string
+  adoptedScenarioId?: string
+  agentName: string
+  agentVersion: string
+  traceId?: string
+  promptHash: string
+  contextHash: string
+  inputSummary?: string
+  outputSummary?: string
+  businessKey: string
+  createdAt: string
+  scenarios: AgentDecisionScenario[]
+}
+
+export interface AdoptionFeedbackSnapshot {
+  decision: 'accepted' | 'rejected'
+  decisionLabel: string
+  reasonCategory: string
+  categoryLabel: string
+  reasonDetail?: string
+  objectiveLabel: string
+  createdAt: string
+  traceId?: string
+  source: 'backend'
+  agentDecisionId?: string
+}
+
+export async function recommendAgentDecision(
+  request: AgentRecommendRequest
+): Promise<AgentDecision> {
+  const { data } = await http.post<AgentDecision>('/scheduling/agent/recommend', request)
+  return data
+}
+
+export async function getAgentDecisions(take = 20): Promise<AgentDecision[]> {
+  const { data } = await http.get<AgentDecision[]>('/scheduling/agent/decisions', {
+    params: { take },
+  })
+  return data
+}
+
+export async function getAgentDecision(decisionId: string): Promise<AgentDecision> {
+  const { data } = await http.get<AgentDecision>(`/scheduling/agent/${decisionId}`)
+  return data
+}
+
+export async function adoptAgentDecision(
+  decisionId: string,
+  scenarioId: string,
+  reason?: string
+): Promise<AgentDecision> {
+  const { data } = await http.post<AgentDecision>(`/scheduling/agent/${decisionId}/adopt`, {
+    scenarioId,
+    reason,
+  })
+  return data
+}
+
+export async function rejectAgentDecision(
+  decisionId: string,
+  reason?: string
+): Promise<AgentDecision> {
+  const { data } = await http.post<AgentDecision>(`/scheduling/agent/${decisionId}/reject`, {
+    reason,
+  })
+  return data
+}
+
+export async function getLatestAdoptionFeedback(): Promise<AdoptionFeedbackSnapshot | null> {
+  try {
+    const { data } = await http.get<AdoptionFeedbackSnapshot>('/scheduling/adoption-feedback/latest')
+    return data
+  } catch {
+    return null
+  }
+}

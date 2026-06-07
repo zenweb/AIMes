@@ -40,9 +40,9 @@ public class AuditLogRepository : IAuditLogRepository
         return await query.CountAsync(ct);
     }
 
-    public async Task AddAsync(AuditLog log, CancellationToken ct = default)
+    public Task AddAsync(AuditLog log, CancellationToken ct = default)
     {
         _context.AuditLogs.Add(log);
-        await _context.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 }

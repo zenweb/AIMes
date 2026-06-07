@@ -20,9 +20,38 @@ export interface QualityReworkImpact {
   createdAt: string
 }
 
+const QUALITY_REWORK_STRING_FIELDS = [
+  'inspectionId',
+  'workOrderId',
+  'productCode',
+  'processName',
+  'equipmentCode',
+  'materialBatchCode',
+  'batchCode',
+  'inspectionPoint',
+  'otdImpact',
+  'recommendedAction',
+  'rootCause',
+  'createdAt',
+] as const
+
+function isQualityReworkImpact(value: unknown): value is QualityReworkImpact {
+  if (!value || typeof value !== 'object') return false
+
+  const record = value as Record<string, unknown>
+  return QUALITY_REWORK_STRING_FIELDS.every(field => typeof record[field] === 'string')
+    && typeof record.defectQuantity === 'number'
+    && typeof record.reworkHours === 'number'
+    && Array.isArray(record.evidence)
+    && record.evidence.every(item => typeof item === 'string')
+}
+
 export function writeQualityReworkImpact(impact: QualityReworkImpact) {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(QUALITY_REWORK_SYNC_KEY, JSON.stringify(impact))
+  void import('../api/qualityEvidence')
+    .then(({ upsertQualityReworkImpact }) => upsertQualityReworkImpact(impact))
+    .catch(() => undefined)
 }
 
 export function readQualityReworkImpact(): QualityReworkImpact | null {
@@ -31,10 +60,23 @@ export function readQualityReworkImpact(): QualityReworkImpact | null {
   if (!raw) return null
 
   try {
-    return JSON.parse(raw) as QualityReworkImpact
+    const parsed = JSON.parse(raw)
+    if (isQualityReworkImpact(parsed)) return parsed
+
+    localStorage.removeItem(QUALITY_REWORK_SYNC_KEY)
+    return null
   } catch {
     localStorage.removeItem(QUALITY_REWORK_SYNC_KEY)
     return null
+  }
+}
+
+export async function readQualityReworkImpactBackendFirst(): Promise<QualityReworkImpact | null> {
+  try {
+    const { getLatestQualityReworkImpact } = await import('../api/qualityEvidence')
+    return await getLatestQualityReworkImpact() ?? readQualityReworkImpact()
+  } catch {
+    return readQualityReworkImpact()
   }
 }
 

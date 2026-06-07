@@ -57,13 +57,19 @@
             <h3>工单列表</h3>
             <span class="panel-count">{{ totalCount || workOrders.length }}</span>
           </div>
-          <div class="wo-list">
+          <div class="wo-list" role="listbox" aria-label="生产工单列表">
             <div
               v-for="wo in filteredWorkOrders"
               :key="wo.id"
               class="wo-card"
               :class="{ selected: selectedWo?.id === wo.id, [wo.status]: true }"
+              role="option"
+              tabindex="0"
+              :aria-selected="selectedWo?.id === wo.id"
+              :aria-label="workOrderOptionLabel(wo)"
               @click="selectWorkOrder(wo)"
+              @keydown.enter.prevent="selectWorkOrder(wo)"
+              @keydown.space.prevent="selectWorkOrder(wo)"
             >
               <div class="wo-top">
                 <span class="wo-number">{{ wo.orderNumber }}</span>
@@ -212,11 +218,23 @@
       <!-- 开工对话框 -->
       <Transition name="fade">
         <div v-if="dialog.type === 'start'" class="dialog-overlay" @click.self="dialog.type = ''">
-          <div class="dialog-card">
-            <h4>开工确认</h4>
+          <div
+            class="dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="production-start-dialog-title"
+          >
+            <h4 id="production-start-dialog-title">开工确认</h4>
             <p class="dialog-op-name">{{ dialog.op?.operationName }}</p>
             <div class="dialog-form">
               <StartQualificationPanel :check="startQualificationCheck" />
+              <p
+                v-if="startQualificationCheck.status === 'blocked'"
+                id="start-qualification-block-reason"
+                class="start-block-reason"
+              >
+                {{ startQualificationCheck.qualificationBlockReason || startQualificationCheck.note }}
+              </p>
               <div v-if="dialogBarcodeContext" class="barcode-dialog-evidence">
                 <label>扫码证据</label>
                 <strong>{{ dialogBarcodeContext.scanTraceId }}</strong>
@@ -232,8 +250,15 @@
               </div>
             </div>
             <div class="dialog-actions">
-              <button class="dialog-cancel" @click="dialog.type = ''">取消</button>
-              <button class="dialog-confirm" @click="confirmStart" :disabled="isStartConfirmationDisabled">确认开工</button>
+              <button class="dialog-cancel" aria-label="取消开工确认" @click="dialog.type = ''">取消</button>
+              <button
+                class="dialog-confirm"
+                @click="confirmStart"
+                :disabled="isStartConfirmationDisabled"
+                :aria-describedby="startQualificationCheck.status === 'blocked' ? 'start-qualification-block-reason' : undefined"
+              >
+                确认开工
+              </button>
             </div>
           </div>
         </div>
@@ -242,8 +267,13 @@
       <!-- 完工对话框 -->
       <Transition name="fade">
         <div v-if="dialog.type === 'complete'" class="dialog-overlay" @click.self="dialog.type = ''">
-          <div class="dialog-card">
-            <h4>完工报告</h4>
+          <div
+            class="dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="production-complete-dialog-title"
+          >
+            <h4 id="production-complete-dialog-title">完工报告</h4>
             <p class="dialog-op-name">{{ dialog.op?.operationName }}</p>
             <div class="dialog-form">
               <div v-if="dialogBarcodeContext" class="barcode-dialog-evidence">
@@ -269,7 +299,7 @@
               </div>
             </div>
             <div class="dialog-actions">
-              <button class="dialog-cancel" @click="dialog.type = ''">取消</button>
+              <button class="dialog-cancel" aria-label="取消完工报告" @click="dialog.type = ''">取消</button>
               <button class="dialog-confirm" @click="confirmComplete" :disabled="!dialog.quantity">确认完工</button>
             </div>
           </div>
@@ -279,8 +309,13 @@
       <!-- 异常对话框 -->
       <Transition name="fade">
         <div v-if="dialog.type === 'exception'" class="dialog-overlay" @click.self="dialog.type = ''">
-          <div class="dialog-card">
-            <h4>异常上报</h4>
+          <div
+            class="dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="production-exception-dialog-title"
+          >
+            <h4 id="production-exception-dialog-title">异常上报</h4>
             <p class="dialog-op-name">{{ dialog.op?.operationName }}</p>
             <div class="dialog-form">
               <div v-if="dialogBarcodeContext" class="barcode-dialog-evidence">
@@ -294,7 +329,7 @@
               </div>
             </div>
             <div class="dialog-actions">
-              <button class="dialog-cancel" @click="dialog.type = ''">取消</button>
+              <button class="dialog-cancel" aria-label="取消异常上报" @click="dialog.type = ''">取消</button>
               <button class="dialog-confirm danger" @click="confirmException" :disabled="!dialog.reason.trim()">上报异常</button>
             </div>
           </div>
@@ -303,18 +338,27 @@
 
       <!-- 通知 -->
       <Transition name="fade">
-        <div v-if="notification.show" class="notification" :class="notification.type">{{ notification.message }}</div>
+        <div
+          v-if="notification.show"
+          class="notification"
+          :class="notification.type"
+          :role="notification.type === 'error' ? 'alert' : 'status'"
+          :aria-live="notification.type === 'error' ? 'assertive' : 'polite'"
+        >
+          {{ notification.message }}
+        </div>
       </Transition>
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuth } from '../../stores/auth'
 import { getWorkOrders, scanOperation, startOperation, completeOperation, reportException } from '../../api/production'
 import type { WorkOrderDto, OperationInfoDto } from '../../types/production'
 import { formatDate } from '../../utils/date'
+import { errorMessage } from '../../utils/error-message'
 import ProductionExecutionTracePanel, {
   type ProductionExecutionTrace,
 } from './ProductionExecutionTracePanel.vue'
@@ -332,9 +376,8 @@ import {
   readBarcodeScanEvidenceRecords,
   type BarcodeScanEvidenceRecord,
 } from '../../utils/barcode-scan-evidence-sync'
-import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
+import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-sync'
 
-const router = useRouter()
 const route = useRoute()
 const { user } = useAuth()
 
@@ -401,6 +444,9 @@ const currentPage = ref(1)
 const pageSize = 20
 const totalCount = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+let latestWorkOrdersRequestId = 0
+let latestScanRequestId = 0
+let latestWorkOrderSelectionRequestId = 0
 
 // 显示的页码（带省略号）
 const displayedPages = computed<(number | '...')[]>(() => {
@@ -448,37 +494,12 @@ const barcodeContextOperation = computed(() => {
   ) ?? null
 })
 
-const notification = reactive({ show: false, type: 'success' as string, message: '', timer: null as any })
-
-const workforce = [
-  {
-    employeeNumber: 'EMP-001',
-    name: '张三',
-    team: '甲班',
-    shift: '白班',
-    skills: ['CNC 精加工', '首件自检'],
-    certificationName: 'CNC-2 级',
-    expiresAt: '2026-12-31',
-  },
-  {
-    employeeNumber: 'EMP-002',
-    name: '李四',
-    team: '甲班',
-    shift: '白班',
-    skills: ['装配', '扭矩复检'],
-    certificationName: '装配资质',
-    expiresAt: '2026-11-30',
-  },
-  {
-    employeeNumber: 'EMP-003',
-    name: '王五',
-    team: '乙班',
-    shift: '夜班',
-    skills: ['热处理', '炉温曲线确认'],
-    certificationName: '热处理上岗证',
-    expiresAt: '2026-05-25',
-  },
-]
+const notification = reactive({
+  show: false,
+  type: 'success',
+  message: '',
+  timer: null as ReturnType<typeof setTimeout> | null,
+})
 
 const filteredWorkOrders = computed(() => {
   if (!statusFilter.value) return workOrders.value
@@ -519,6 +540,10 @@ function statusLabel(s: string) {
     idle: '空闲', running: '运行中',
   }
   return map[s] || s
+}
+
+function workOrderOptionLabel(wo: WorkOrderDto) {
+  return `选择生产工单：${wo.orderNumber} ${wo.productName}，${statusLabel(wo.status)}，进度 ${wo.progressPercentage}%`
 }
 
 function progressClass(pct: number) {
@@ -991,13 +1016,28 @@ function isSelectedWorkOrderOnTime() {
 async function handleScan() {
   const code = scanCode.value.trim()
   if (!code) return
+  const requestId = ++latestScanRequestId
+  latestWorkOrderSelectionRequestId++
 
   // 先扫工单
+  let scanError: unknown = null
   try {
     const op = await scanOperation(code, user.value?.username)
+    if (requestId !== latestScanRequestId) return
+    const matched = workOrders.value.find(
+      wo => wo.id === op.workOrderId || wo.orderNumber === op.workOrderNumber
+    )
+    if (matched) {
+      selectedWo.value = matched
+    }
     currentOperations.value = [op]
+    scanCode.value = ''
+    notify(`已定位工序：${op.workOrderNumber} / ${op.operationCode}`)
     return
-  } catch { /* fall through */ }
+  } catch (e: unknown) {
+    if (requestId !== latestScanRequestId) return
+    scanError = e
+  }
 
   // 本地搜索工单
   const matched = workOrders.value.find(
@@ -1010,11 +1050,15 @@ async function handleScan() {
     }
     scanCode.value = ''
   } else {
-    notify('未找到匹配的工单或工序', 'error')
+    const message = scanError
+      ? `扫码查询失败，且本地未找到匹配的工单或工序：${errorMessage(scanError, '请稍后重试')}`
+      : '未找到匹配的工单或工序'
+    notify(message, 'error')
   }
 }
 
 async function selectWorkOrder(wo: WorkOrderDto) {
+  const requestId = ++latestWorkOrderSelectionRequestId
   if (barcodeProductionContext.value && barcodeProductionContext.value.code !== wo.orderNumber.toUpperCase()) {
     barcodeProductionContext.value = null
     barcodeStartEvidenceTraceId.value = ''
@@ -1032,12 +1076,15 @@ async function selectWorkOrder(wo: WorkOrderDto) {
   }
   selectedWo.value = wo
   scanCode.value = ''
+  currentOperations.value = []
 
   // 加载工序
   try {
     const result = await scanOperation(wo.orderNumber)
+    if (requestId !== latestWorkOrderSelectionRequestId) return
     currentOperations.value = [result]
   } catch {
+    if (requestId !== latestWorkOrderSelectionRequestId) return
     // 演示工序数据
     const opMap: Record<string, OperationInfoDto[]> = {
       'WO-001': [
@@ -1094,31 +1141,39 @@ async function confirmStart() {
       stationId: dialog.stationId,
       equipmentId: dialog.equipmentId || undefined,
     })
-  } catch { /* ok */ }
+  } catch (e: unknown) {
+    notify(`开工失败：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
+  }
 
-  const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
-  if (op) op.status = 'in_progress'
-  if (selectedWo.value?.orderNumber === dialog.op.workOrderNumber && selectedWo.value.status === 'pending') {
-    selectedWo.value.status = 'in_progress'
-    selectedWo.value.actualStartDate = new Date().toISOString()
-  }
-  if (reassignment) {
-    writeLaborReassignmentExecutionEvidence(reassignment, {
-      operationCode: dialog.op.operationCode,
-      operationName: dialog.op.operationName,
-      stationId: dialog.stationId,
-      equipmentId: dialog.equipmentId || undefined,
-      reportedBy: user.value?.username,
+  try {
+    const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
+    if (op) op.status = 'in_progress'
+    if (selectedWo.value?.orderNumber === dialog.op.workOrderNumber && selectedWo.value.status === 'pending') {
+      selectedWo.value.status = 'in_progress'
+      selectedWo.value.actualStartDate = new Date().toISOString()
+    }
+    if (reassignment) {
+      writeLaborReassignmentExecutionEvidence(reassignment, {
+        operationCode: dialog.op.operationCode,
+        operationName: dialog.op.operationName,
+        stationId: dialog.stationId,
+        equipmentId: dialog.equipmentId || undefined,
+        reportedBy: user.value?.username,
+      })
+    }
+    const barcodeStartTraceId = barcodeContext ? writeBarcodeStartEvidence(dialog.op, barcodeContext) : ''
+    prependTrace({
+      type: 'schedule',
+      typeLabel: '排产回写',
+      title: `${dialog.op.workOrderNumber} 已开工`,
+      detail: `${dialog.op.operationName} 在 ${dialog.stationId} 开工，设备 ${dialog.equipmentId || '未指定'} 已占用；${startQualificationCheck.value.sopDocument}、${startQualificationCheck.value.qualityGate}、${startQualificationCheck.value.materialKitting} 均已校验${reassignment ? `；${reassignment.auditId} 已执行 ${reassignment.replacementEmployeeName} 替班复核` : ''}${barcodeStartTraceId ? `；扫码开工证据 ${barcodeStartTraceId} 已进入 OTD 复盘。` : '。'}`,
+      tags: ['进度回写', '设备占用', '人员资质', 'SOP', '物料齐套', ...(reassignment ? ['人员替班'] : []), ...(barcodeContext ? ['扫码流转卡'] : [])],
     })
+  } catch (e: unknown) {
+    notify(`开工证据写入失败，后端开工已提交但人员替班/扫码/OTD 证据未归档：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
   }
-  const barcodeStartTraceId = barcodeContext ? writeBarcodeStartEvidence(dialog.op, barcodeContext) : ''
-  prependTrace({
-    type: 'schedule',
-    typeLabel: '排产回写',
-    title: `${dialog.op.workOrderNumber} 已开工`,
-    detail: `${dialog.op.operationName} 在 ${dialog.stationId} 开工，设备 ${dialog.equipmentId || '未指定'} 已占用；${startQualificationCheck.value.sopDocument}、${startQualificationCheck.value.qualityGate}、${startQualificationCheck.value.materialKitting} 均已校验${reassignment ? `；${reassignment.auditId} 已执行 ${reassignment.replacementEmployeeName} 替班复核` : ''}${barcodeStartTraceId ? `；扫码开工证据 ${barcodeStartTraceId} 已进入 OTD 复盘。` : '。'}`,
-    tags: ['进度回写', '设备占用', '人员资质', 'SOP', '物料齐套', ...(reassignment ? ['人员替班'] : []), ...(barcodeContext ? ['扫码流转卡'] : [])],
-  })
   notify('已开工：' + dialog.op.operationName)
   dialog.type = ''
 }
@@ -1320,64 +1375,72 @@ async function confirmComplete() {
       inspectionResult: dialog.inspectionResult,
       reportedBy: user.value?.username,
     })
-  } catch { /* ok */ }
-
-  const qualityPassed = dialog.inspectionResult === 'Pass' && dialog.defectQty === 0
-  const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
-  if (op) {
-    op.status = qualityPassed ? 'completed' : 'paused'
-    op.completedQuantity = Math.min(op.plannedQuantity, op.completedQuantity + dialog.quantity)
+  } catch (e: unknown) {
+    notify(`完工失败：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
   }
-  refreshSelectedWorkOrderFromOperations()
-  const onTime = isSelectedWorkOrderOnTime()
-  const barcodeContext = getBarcodeStartContextForOperation(dialog.op)
-  const barcodeCompletionEvidence = barcodeContext
-    ? writeBarcodeCompletionEvidence(dialog.op, barcodeContext, onTime)
-    : null
-  const barcodeQualityGateEvidence = barcodeContext
-    ? writeBarcodeQualityGateEvidence(dialog.op, barcodeContext, onTime)
-    : null
-  const nextBarcodeOperation = findNextBarcodeOperation(dialog.op)
-  const barcodeHandoffEvidence = barcodeContext && barcodeQualityGateEvidence?.passed
-    ? writeBarcodeHandoffEvidence(dialog.op, barcodeContext, nextBarcodeOperation)
-    : null
-  const barcodeNonconformanceEvidence = barcodeContext && barcodeQualityGateEvidence && !barcodeQualityGateEvidence.passed
-    ? writeBarcodeNonconformanceEvidence(dialog.op, barcodeContext, nextBarcodeOperation)
-    : null
-  const productionCloseoutReviewEvidence = writeProductionCloseoutReviewEvidence(dialog.op, onTime)
-  prependTrace({
-    type: 'schedule',
-    typeLabel: '排产回写',
-    title: `${dialog.op.workOrderNumber} 完工进度已回写`,
-    detail: `${dialog.op.operationName} 完成 ${dialog.quantity} 件，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%。${barcodeCompletionEvidence ? `扫码完工 ${barcodeCompletionEvidence.completeTraceId} 与物料批次 ${barcodeCompletionEvidence.materialTraceId} 已进入 OTD 复盘。` : ''}${barcodeHandoffEvidence ? `下道 ${barcodeHandoffEvidence.nextOperationCode} ${barcodeHandoffEvidence.nextOperationName} 已生成交接证据 ${barcodeHandoffEvidence.handoffTraceId}。` : ''}${productionCloseoutReviewEvidence ? ` 生产复核 ${productionCloseoutReviewEvidence.traceId} 已写入 OTD 证据链，提醒排产页复核后续窗口。` : ''}${barcodeNonconformanceEvidence ? `质量门未放行，下道 ${barcodeNonconformanceEvidence.nextOperationCode} 已冻结，返工证据 ${barcodeNonconformanceEvidence.reworkTraceId}、隔离证据 ${barcodeNonconformanceEvidence.isolationTraceId}、成本证据 ${barcodeNonconformanceEvidence.costTraceId} 和标签状态 ${barcodeNonconformanceEvidence.labelTraceId} 已归档。` : ''}`,
-    tags: ['进度回写', onTime ? 'OTD 达成' : 'OTD 风险', ...(barcodeCompletionEvidence ? ['扫码完工', '批次追溯'] : []), ...(barcodeHandoffEvidence ? ['工序交接'] : []), ...(productionCloseoutReviewEvidence ? ['生产复核', 'OTD 复盘'] : []), ...(barcodeNonconformanceEvidence ? ['交接冻结', '返工分流', '质量隔离', '返工成本'] : [])],
-  })
-  prependTrace({
-    type: 'schedule',
-    typeLabel: '生产复核',
-    title: `${dialog.op.workOrderNumber} 完工复核已提交`,
-    detail: `${productionCloseoutReviewEvidence.summary}${onTime ? ' OTD 达成已锁定。' : ' 当前完工存在 OTD 风险，排产页需复核后续窗口。'}`,
-    tags: ['生产完工', onTime ? 'OTD 达成' : 'OTD 风险', '生产复核', '排产复核'],
-  })
-  prependTrace({
-    type: 'quality',
-    typeLabel: '质量联动',
-    title: `${dialog.inspectionResult === 'Pass' ? '质检放行' : '质检异常'}：${dialog.op.operationName}`,
-    detail: `合格 ${dialog.quantity} 件，不良 ${dialog.defectQty} 件，结果 ${dialog.inspectionResult}。${barcodeQualityGateEvidence ? `首件巡检质量门 ${barcodeQualityGateEvidence.qualityTraceId} 已进入质量闭环、报表和审计回放。` : ''}${barcodeNonconformanceEvidence ? `扫码 CAPA ${barcodeNonconformanceEvidence.capaTraceId} 已生成，批次隔离 ${barcodeNonconformanceEvidence.isolationTraceId} 与返工成本 ${barcodeNonconformanceEvidence.costTraceId} 已进入 OTD 复盘，需返工复验后释放标签和交接。` : ''}`,
-    tags: ['质检触发', dialog.defectQty > 0 ? '不良品' : '合格批次', ...(barcodeQualityGateEvidence ? ['质量门', '首件巡检'] : []), ...(barcodeNonconformanceEvidence ? ['质量CAPA', '质量隔离', '返工成本', '标签冻结'] : [])],
-  })
-  upsertOtdEvidenceChainRecord({
-    id: `production-completion-${dialog.op.operationId}`,
-    stage: '生产完工',
-    title: `${dialog.op.workOrderNumber} ${dialog.op.operationName} 完工回写`,
-    summary: `${dialog.quantity} 件完工，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%，质检结果 ${dialog.inspectionResult}。${productionCloseoutReviewEvidence.traceId} 已写入生产复核。`,
-    object: dialog.op.workOrderNumber,
-    source: `生产报工 / ${user.value?.username ?? 'operator'}`,
-    traceId: `TRACE-PROD-COMPLETE-${dialog.op.operationCode}`,
-    status: onTime ? 'closed' : 'active',
-    statusLabel: onTime ? 'OTD 达成' : 'OTD 风险',
-    createdAt: new Date().toISOString(),
-  })
+
+  try {
+    const qualityPassed = dialog.inspectionResult === 'Pass' && dialog.defectQty === 0
+    const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
+    if (op) {
+      op.status = qualityPassed ? 'completed' : 'paused'
+      op.completedQuantity = Math.min(op.plannedQuantity, op.completedQuantity + dialog.quantity)
+    }
+    refreshSelectedWorkOrderFromOperations()
+    const onTime = isSelectedWorkOrderOnTime()
+    const barcodeContext = getBarcodeStartContextForOperation(dialog.op)
+    const barcodeCompletionEvidence = barcodeContext
+      ? writeBarcodeCompletionEvidence(dialog.op, barcodeContext, onTime)
+      : null
+    const barcodeQualityGateEvidence = barcodeContext
+      ? writeBarcodeQualityGateEvidence(dialog.op, barcodeContext, onTime)
+      : null
+    const nextBarcodeOperation = findNextBarcodeOperation(dialog.op)
+    const barcodeHandoffEvidence = barcodeContext && barcodeQualityGateEvidence?.passed
+      ? writeBarcodeHandoffEvidence(dialog.op, barcodeContext, nextBarcodeOperation)
+      : null
+    const barcodeNonconformanceEvidence = barcodeContext && barcodeQualityGateEvidence && !barcodeQualityGateEvidence.passed
+      ? writeBarcodeNonconformanceEvidence(dialog.op, barcodeContext, nextBarcodeOperation)
+      : null
+    const productionCloseoutReviewEvidence = writeProductionCloseoutReviewEvidence(dialog.op, onTime)
+    prependTrace({
+      type: 'schedule',
+      typeLabel: '排产回写',
+      title: `${dialog.op.workOrderNumber} 完工进度已回写`,
+      detail: `${dialog.op.operationName} 完成 ${dialog.quantity} 件，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%。${barcodeCompletionEvidence ? `扫码完工 ${barcodeCompletionEvidence.completeTraceId} 与物料批次 ${barcodeCompletionEvidence.materialTraceId} 已进入 OTD 复盘。` : ''}${barcodeHandoffEvidence ? `下道 ${barcodeHandoffEvidence.nextOperationCode} ${barcodeHandoffEvidence.nextOperationName} 已生成交接证据 ${barcodeHandoffEvidence.handoffTraceId}。` : ''}${productionCloseoutReviewEvidence ? ` 生产复核 ${productionCloseoutReviewEvidence.traceId} 已写入 OTD 证据链，提醒排产页复核后续窗口。` : ''}${barcodeNonconformanceEvidence ? `质量门未放行，下道 ${barcodeNonconformanceEvidence.nextOperationCode} 已冻结，返工证据 ${barcodeNonconformanceEvidence.reworkTraceId}、隔离证据 ${barcodeNonconformanceEvidence.isolationTraceId}、成本证据 ${barcodeNonconformanceEvidence.costTraceId} 和标签状态 ${barcodeNonconformanceEvidence.labelTraceId} 已归档。` : ''}`,
+      tags: ['进度回写', onTime ? 'OTD 达成' : 'OTD 风险', ...(barcodeCompletionEvidence ? ['扫码完工', '批次追溯'] : []), ...(barcodeHandoffEvidence ? ['工序交接'] : []), ...(productionCloseoutReviewEvidence ? ['生产复核', 'OTD 复盘'] : []), ...(barcodeNonconformanceEvidence ? ['交接冻结', '返工分流', '质量隔离', '返工成本'] : [])],
+    })
+    prependTrace({
+      type: 'schedule',
+      typeLabel: '生产复核',
+      title: `${dialog.op.workOrderNumber} 完工复核已提交`,
+      detail: `${productionCloseoutReviewEvidence.summary}${onTime ? ' OTD 达成已锁定。' : ' 当前完工存在 OTD 风险，排产页需复核后续窗口。'}`,
+      tags: ['生产完工', onTime ? 'OTD 达成' : 'OTD 风险', '生产复核', '排产复核'],
+    })
+    prependTrace({
+      type: 'quality',
+      typeLabel: '质量联动',
+      title: `${dialog.inspectionResult === 'Pass' ? '质检放行' : '质检异常'}：${dialog.op.operationName}`,
+      detail: `合格 ${dialog.quantity} 件，不良 ${dialog.defectQty} 件，结果 ${dialog.inspectionResult}。${barcodeQualityGateEvidence ? `首件巡检质量门 ${barcodeQualityGateEvidence.qualityTraceId} 已进入质量闭环、报表和审计回放。` : ''}${barcodeNonconformanceEvidence ? `扫码 CAPA ${barcodeNonconformanceEvidence.capaTraceId} 已生成，批次隔离 ${barcodeNonconformanceEvidence.isolationTraceId} 与返工成本 ${barcodeNonconformanceEvidence.costTraceId} 已进入 OTD 复盘，需返工复验后释放标签和交接。` : ''}`,
+      tags: ['质检触发', dialog.defectQty > 0 ? '不良品' : '合格批次', ...(barcodeQualityGateEvidence ? ['质量门', '首件巡检'] : []), ...(barcodeNonconformanceEvidence ? ['质量CAPA', '质量隔离', '返工成本', '标签冻结'] : [])],
+    })
+    upsertOtdEvidenceChainRecord({
+      id: `production-completion-${dialog.op.operationId}`,
+      stage: '生产完工',
+      title: `${dialog.op.workOrderNumber} ${dialog.op.operationName} 完工回写`,
+      summary: `${dialog.quantity} 件完工，工单进度更新为 ${selectedWo.value?.progressPercentage ?? 0}%，质检结果 ${dialog.inspectionResult}。${productionCloseoutReviewEvidence.traceId} 已写入生产复核。`,
+      object: dialog.op.workOrderNumber,
+      source: `生产报工 / ${user.value?.username ?? 'operator'}`,
+      traceId: `TRACE-PROD-COMPLETE-${dialog.op.operationCode}`,
+      status: onTime ? 'closed' : 'active',
+      statusLabel: onTime ? 'OTD 达成' : 'OTD 风险',
+      createdAt: new Date().toISOString(),
+    })
+  } catch (e: unknown) {
+    notify(`完工证据写入失败，后端完工已提交但 OTD/质量证据未归档：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
+  }
   notify('完工报告已提交：' + dialog.op.operationName)
   dialog.type = ''
 }
@@ -1397,62 +1460,86 @@ async function confirmException() {
   const barcodeContext = getBarcodeStartContextForOperation(op)
   const anomalyTraceId = `TRACE-PROD-ANOMALY-${op.workOrderNumber}-${op.operationCode}`
 
-  writeProductionAnomalyEvent({
-    id: eventId,
-    workOrderNumber: op.workOrderNumber,
-    operationCode: op.operationCode,
-    operationName: op.operationName,
-    equipmentId: dialog.equipmentId || 'CNC-002',
-    anomalyType: 'process',
-    severity: 'High',
-    title: `${op.workOrderNumber} ${op.operationName} 现场异常`,
-    description: reason,
-    detectedAt,
-    detectedBy: user.value?.username || 'operator',
-    suggestedAction: '冻结当前工序，通知班组长复核 SOP、设备状态和物料批次；同步 AI 排产风险队列评估延期。',
-  })
-  const barcodeAnomalyTraceId = barcodeContext ? writeBarcodeAnomalyEvidence(op, barcodeContext, eventId) : ''
-
   try {
     await reportException(op.operationId, { reason })
-  } catch { /* ok */ }
+  } catch (e: unknown) {
+    notify(`异常上报失败：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
+  }
 
-  prependTrace({
-    type: 'risk',
-    typeLabel: '风险联动',
-    title: `${op.workOrderNumber} 异常已进入处置队列`,
-    detail: `${op.operationName} 上报异常：${reason}。已生成异常管理事件 ${eventId}，建议触发排产风险复核；生产异常证据 ${anomalyTraceId} 已进入 OTD 复盘${barcodeAnomalyTraceId ? `；扫码异常证据 ${barcodeAnomalyTraceId} 已进入 OTD 复盘。` : '。'}`,
-    tags: ['异常管理', '排产风险', '事件回写', ...(barcodeAnomalyTraceId ? ['扫码异常'] : [])],
-  })
-  upsertOtdEvidenceChainRecord({
-    id: `production-anomaly-${op.workOrderNumber}-${op.operationCode}`,
-    stage: '生产异常',
-    title: `${op.workOrderNumber} ${op.operationName} 异常上报进入风险联动`,
-    summary: `${op.operationName} 上报异常：${reason}。异常管理事件 ${eventId} 已生成，需冻结当前工序，班组长复核 SOP、设备状态和物料批次，并由 AI 排产复核承诺交期影响。`,
-    object: op.workOrderNumber,
-    source: `生产报工 / ${user.value?.username ?? 'operator'}`,
-    traceId: anomalyTraceId,
-    sourceTraceId: eventId,
-    status: 'active',
-    statusLabel: '异常待分流',
-    createdAt: detectedAt,
-  })
+  try {
+    writeProductionAnomalyEvent({
+      id: eventId,
+      workOrderNumber: op.workOrderNumber,
+      operationCode: op.operationCode,
+      operationName: op.operationName,
+      equipmentId: dialog.equipmentId || 'CNC-002',
+      anomalyType: 'process',
+      severity: 'High',
+      title: `${op.workOrderNumber} ${op.operationName} 现场异常`,
+      description: reason,
+      detectedAt,
+      detectedBy: user.value?.username || 'operator',
+      suggestedAction: '冻结当前工序，通知班组长复核 SOP、设备状态和物料批次；同步 AI 排产风险队列评估延期。',
+    })
+    const barcodeAnomalyTraceId = barcodeContext ? writeBarcodeAnomalyEvidence(op, barcodeContext, eventId) : ''
+
+    prependTrace({
+      type: 'risk',
+      typeLabel: '风险联动',
+      title: `${op.workOrderNumber} 异常已进入处置队列`,
+      detail: `${op.operationName} 上报异常：${reason}。已生成异常管理事件 ${eventId}，建议触发排产风险复核；生产异常证据 ${anomalyTraceId} 已进入 OTD 复盘${barcodeAnomalyTraceId ? `；扫码异常证据 ${barcodeAnomalyTraceId} 已进入 OTD 复盘。` : '。'}`,
+      tags: ['异常管理', '排产风险', '事件回写', ...(barcodeAnomalyTraceId ? ['扫码异常'] : [])],
+    })
+    upsertOtdEvidenceChainRecord({
+      id: `production-anomaly-${op.workOrderNumber}-${op.operationCode}`,
+      stage: '生产异常',
+      title: `${op.workOrderNumber} ${op.operationName} 异常上报进入风险联动`,
+      summary: `${op.operationName} 上报异常：${reason}。异常管理事件 ${eventId} 已生成，需冻结当前工序，班组长复核 SOP、设备状态和物料批次，并由 AI 排产复核承诺交期影响。`,
+      object: op.workOrderNumber,
+      source: `生产报工 / ${user.value?.username ?? 'operator'}`,
+      traceId: anomalyTraceId,
+      sourceTraceId: eventId,
+      status: 'active',
+      statusLabel: '异常待分流',
+      createdAt: detectedAt,
+    })
+  } catch (e: unknown) {
+    notify(`异常证据写入失败，后端异常已上报但异常管理/OTD 证据未归档：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
+  }
   notify('异常已上报：' + reason, 'error')
   dialog.type = ''
 }
 
 async function loadWorkOrders() {
+  const requestId = ++latestWorkOrdersRequestId
   try {
     const result = await getWorkOrders({
       status: statusFilter.value || undefined,
       page: currentPage.value,
       pageSize,
     })
+    if (requestId !== latestWorkOrdersRequestId) return
     workOrders.value = result.items
     totalCount.value = result.totalCount
-  } catch {
+    syncSelectedWorkOrderWithLoadedItems()
+  } catch (e: unknown) {
+    if (requestId !== latestWorkOrdersRequestId) return
     loadDemoData()
+    notify(`生产工单加载失败，已显示本地演示工单：${errorMessage(e, '请稍后重试')}`, 'error')
   }
+}
+
+function syncSelectedWorkOrderWithLoadedItems() {
+  if (!selectedWo.value) return
+  const refreshed = workOrders.value.find(wo => wo.id === selectedWo.value?.id)
+  if (refreshed) {
+    selectedWo.value = refreshed
+    return
+  }
+  selectedWo.value = null
+  currentOperations.value = []
 }
 
 function buildDemoWorkOrderFromBarcode(code: string): WorkOrderDto | null {
@@ -1513,7 +1600,7 @@ async function applyBarcodeRouteContext() {
 
 onMounted(async () => {
   await loadWorkOrders()
-  applyPocPilotRunTrace()
+  await applyPocPilotRunTrace()
   await applyBarcodeRouteContext()
 })
 
@@ -1538,8 +1625,14 @@ function loadDemoData() {
     }
   }
 
-function applyPocPilotRunTrace() {
-  const pilotRun = readPocPilotRunRecord()
+async function applyPocPilotRunTrace() {
+  let pilotRun
+  try {
+    pilotRun = await readPocPilotRunRecordBackendFirst()
+  } catch (e: unknown) {
+    notify(`POC 试点运行证据加载失败：${errorMessage(e, '请稍后重试')}`, 'error')
+    return
+  }
   if (!pilotRun) return
   executionTraces.value = [
     {

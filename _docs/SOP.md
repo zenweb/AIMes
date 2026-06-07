@@ -1,6 +1,6 @@
 # AIMes V1 生产运行 SOP
 
-> 版本: 1.0 | 最后更新: 2026-05-14
+> 版本: 1.1 | 最后更新: 2026-05-31
 
 ---
 
@@ -10,11 +10,11 @@
 
 | 组件 | 容器 | 端口 | 健康检查 |
 |------|------|------|----------|
-| API (ASP.NET Core) | aimes-api | 5000 | `/health`, `/healthz/secured` |
+| API (ASP.NET Core) | aimes-api | 5000 | `/live`, `/startup`, `/ready`, `/health` |
 | PostgreSQL 16 | aimes-pg | 5432 | `pg_isready` |
 | Redis 7 | aimes-redis | 6379 | `redis-cli ping` |
 | RabbitMQ 4 | aimes-rabbitmq | 5672/15672 | `rabbitmqctl status` |
-| Qdrant | aimes-qdrant | 6333/6334 | `/health` |
+| Qdrant | aimes-qdrant | 6333/6334 | `/healthz` |
 
 ### 数据卷
 
@@ -30,8 +30,7 @@ v1/
 ├── docker-compose.yml        # 容器编排
 ├── Dockerfile                # API 镜像构建（含前端编译）
 ├── db/
-│   ├── init.sql              # 建库建表
-│   └── seed.sql              # 演示种子数据
+│   └── seed.sql              # 演示种子数据；schema 由 EF Core Migrations 唯一管理
 ├── _docs/SOP.md              # 本文档
 ├── src/
 │   ├── backend/
@@ -61,15 +60,24 @@ git clone <repo-url> && cd v1
 #   - AI:Llm:Provider → AzureOpenAI / OpenAI
 #   - ConnectionStrings:* → 生产连接串
 
-# 3. 启动全部服务
-docker compose up -d
+# 3. 先启动外部依赖
+docker compose up -d postgresql redis rabbitmq qdrant
 
-# 4. 验证启动
+# 4. 生产迁移必须显式执行；API 不会在 Production 自动 Migrate
+dotnet ef database update \
+  --project src/backend/MES.Infrastructure \
+  --startup-project src/backend/MES.Api
+
+# 5. 启动 API
+docker compose up -d api
+
+# 6. 验证启动
 docker compose logs -f api   # 等待 "Now listening on http://[::]:5000"
-curl -s http://localhost:5000/health | jq .
+curl -s http://localhost:5000/live | jq .
+curl -s http://localhost:5000/ready | jq .
 # 预期: {"status":"Healthy", ...}
 
-# 5. 验证前端
+# 7. 验证前端
 curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/
 # 预期: 200
 ```
@@ -80,19 +88,25 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/
 # 1. 拉取最新代码
 git pull
 
-# 2. 重建 API 镜像
+# 2. 重建 API 镜像（Dockerfile 固定基础镜像 digest，runtime 非 root）
 docker compose build api
 
-# 3. 滚动重启
+# 3. 如有新迁移，先显式应用数据库迁移
+dotnet ef database update \
+  --project src/backend/MES.Infrastructure \
+  --startup-project src/backend/MES.Api
+
+# 4. 滚动重启
 docker compose up -d api
 
-# 4. 验证
-curl -s http://localhost:5000/health
+# 5. 验证
+curl -s http://localhost:5000/live
+curl -s http://localhost:5000/ready
 ```
 
 ### 1.3 数据库迁移
 
-EF Core 迁移在 API 启动时自动执行（`Program.cs:318`）。如需手动管理：
+Production 环境不允许 API 启动时自动迁移。启动时只校验是否存在 pending migration；若存在，API 拒绝启动并提示先执行 `dotnet ef database update`。Development 环境仍可自动迁移并播种演示数据。
 
 ```bash
 # 生成迁移
@@ -100,7 +114,7 @@ dotnet ef migrations add MigrationName \
   --project src/backend/MES.Infrastructure \
   --startup-project src/backend/MES.Api
 
-# 手动应用
+# 应用迁移
 dotnet ef database update \
   --project src/backend/MES.Infrastructure \
   --startup-project src/backend/MES.Api
@@ -139,7 +153,7 @@ docker exec -i aimes-pg pg_restore -U postgres -d mes \
 docker compose start api
 
 # 4. 验证数据完整性
-curl -s http://localhost:5000/health
+curl -s http://localhost:5000/ready
 ```
 
 ---
@@ -185,14 +199,18 @@ mv wwwroot/scheduling.backup wwwroot/scheduling
 
 | 端点 | 鉴权 | 用途 |
 |------|------|------|
-| `GET /health` | 无 | 负载均衡探针（基础检查） |
-| `GET /healthz/secured` | Admin | 全量健康检查（含 DB/Redis） |
+| `GET /live` | 无 | 存活探针；不检查 PostgreSQL/Redis/RabbitMQ/Qdrant |
+| `GET /startup` | 无 | 启动门；确认应用启动完成 |
+| `GET /ready` | 无 | 就绪探针；检查 PostgreSQL、Redis、RabbitMQ、Qdrant 等依赖 |
+| `GET /health` | 无 | 兼容旧入口；包含所有已注册健康检查 |
+| `GET /healthz/secured` | Admin | 管理员全量健康检查入口 |
 
 ### 4.2 关键指标（OpenTelemetry）
 
 | 指标 | 来源 | 告警阈值 |
 |------|------|----------|
 | HTTP 请求 P99 延迟 | ASP.NET Core | > 3s |
+| 规则引擎 100 工单排产 | `SchedulingRuleEngineTests.GenerateInitialSchedule_OneHundredWorkOrders_CompletesUnderGrayReleaseGate` | >= 3s |
 | 排产 API 响应时间 | `MES.Scheduling` meter | > 5s |
 | 数据库连接数 | Npgsql | > 80% 池上限 |
 | 排产准时交付率 | `MES.Scheduling` meter | < 60% |
@@ -202,7 +220,10 @@ mv wwwroot/scheduling.backup wwwroot/scheduling
 
 - 格式: `[HH:mm:ss LVL] {TraceId} {UserId} {Message}`
 - 容器: `docker compose logs -f [service]`
-- 持久化: 生产环境建议配置 Serilog 写入文件或 Seq
+- 输出: Serilog Console + File + OpenTelemetry sink
+- 文件: `logs/aimes-.log`，按天滚动
+- OTLP: 默认 `http://localhost:4317`，生产通过 `OpenTelemetry__OTLP__Endpoint` 或 Serilog sink endpoint 覆盖
+- Seq/Tempo: 由 OTLP Collector 或对应接收端承接；灰度前需在 staging 验证日志和慢查询 trace 可见
 
 ```bash
 # 查看实时日志
@@ -227,9 +248,11 @@ docker compose logs api | grep -i "error\|critical\|fail"
 1. 查看日志: `docker compose logs api --tail=50`
 2. 检查数据库连接: `docker exec aimes-pg pg_isready -U postgres`
 3. 验证配置: `docker exec aimes-api env | grep ConnectionStrings`
+4. 检查是否有 pending migration: `docker compose logs api | grep "pending EF migrations"`
 
 **常见原因**:
-- 数据库未就绪（`depends_on` 仅检查健康，数据表可能尚未创建）
+- 数据库未就绪（`depends_on` 仅检查容器，不代表 schema 已完成迁移）
+- Production 存在 pending migration，API 按设计拒绝启动
 - JWT SigningKey 为空（生产环境会抛出 `InvalidOperationException`）
 - 端口 5000 被占用
 
@@ -255,7 +278,7 @@ docker compose logs api | grep -i "scheduling\|SchedulingAgent\|llm"
 #   - optimizationNotes: LLM/规则引擎决策说明
 
 # 3. 验证 LLM 配置
-curl -s http://localhost:5000/health | jq '.entries.llm'
+curl -s http://localhost:5000/ready | jq .
 ```
 
 ### 5.4 前端白屏 / SPA 路由 404
@@ -286,7 +309,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/some-dee
 
 ### 6.2 速率限制
 
-- 登录 API: 每 IP 每分钟 10 次（`FixedWindowLimiter`）
+- 登录 API: 按 IP + 用户名分区限流，避免全站共享桶误伤正常用户
 
 ### 6.3 Token 管理
 
@@ -302,7 +325,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/some-dee
 
 | 组件 | 首次启动 | 热启动 |
 |------|----------|--------|
-| API (含 EF 迁移) | ~15s | ~5s |
+| API (已完成 schema 校验) | ~15s | ~5s |
 | PostgreSQL | ~10s | ~3s |
 | 前端构建 (CI) | ~30s | ~10s |
 
@@ -311,7 +334,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/some-dee
 | 工单数 | 规则引擎 | 规则引擎 + LLM |
 |--------|----------|----------------|
 | 50     | <200ms   | <5s            |
-| 100    | <500ms   | <10s           |
+| 100    | <3s（灰度硬门） | <10s           |
 | 200    | <1.5s    | <20s           |
 
 ### 7.3 资源占用
@@ -355,5 +378,6 @@ docker exec -it aimes-pg psql -U postgres -d mes
 docker compose ps
 
 # 健康检查
-curl -s http://localhost:5000/health | jq .
+curl -s http://localhost:5000/live | jq .
+curl -s http://localhost:5000/ready | jq .
 ```

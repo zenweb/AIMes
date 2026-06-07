@@ -5,6 +5,7 @@ using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class ScanControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
@@ -42,18 +43,14 @@ public class ScanControllerTests : IClassFixture<TestWebApplicationFactory>
         {
             if (!db.Materials.Any(m => m.MaterialCode == "SCAN-TEST-MAT"))
             {
-                db.Materials.Add(new Material
-                {
-                    MaterialCode = "SCAN-TEST-MAT",
-                    MaterialName = "扫描测试物料",
-                    MaterialType = "原材料",
-                    Unit = "PCS",
-                    AvailableQuantity = 100,
-                    ReservedQuantity = 0,
-                    SafetyStock = 10,
-                    StorageLocation = "A-01",
-                    CreatedAt = DateTime.UtcNow,
-                });
+                db.Materials.Add(Material.Create(
+                    "SCAN-TEST-MAT",
+                    "扫描测试物料",
+                    "PCS",
+                    safetyStock: 10,
+                    storageLocation: "A-01",
+                    materialType: "原材料",
+                    availableQuantity: 100));
             }
         });
 

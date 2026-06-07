@@ -9,6 +9,14 @@ public partial class NotificationHub : Hub
 {
     private static readonly HashSet<string> ReservedChannels = ["all", "Admin", "Operator", "Lead", "Engineer"];
     private static readonly string[] AllowedPrefixes = ["equipment:", "order:", "anomaly:", "quality:", "material:"];
+    private static readonly Dictionary<string, string[]> ChannelRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["equipment:"] = ["Admin", "Engineer", "Maintenance"],
+        ["order:"] = ["Admin", "Operator", "Lead", "Planner"],
+        ["anomaly:"] = ["Admin", "Operator", "Lead", "Engineer", "Maintenance", "QC", "Quality"],
+        ["quality:"] = ["Admin", "QC", "Quality", "Engineer"],
+        ["material:"] = ["Admin", "Purchase", "Planner"],
+    };
 
     [GeneratedRegex(@"^[a-zA-Z][\w-]+:[\w-]+$")]
     private static partial Regex ChannelPattern();
@@ -32,7 +40,8 @@ public partial class NotificationHub : Hub
     /// </summary>
     public async Task Subscribe(string channel)
     {
-        if (!IsChannelAllowed(channel, out var message))
+        var role = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (!CanSubscribeToChannel(channel, role, out var message))
         {
             throw new HubException(message);
         }
@@ -42,7 +51,8 @@ public partial class NotificationHub : Hub
 
     public async Task Unsubscribe(string channel)
     {
-        if (!IsChannelAllowed(channel, out _))
+        var role = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (!CanSubscribeToChannel(channel, role, out _))
         {
             throw new HubException("无效的频道名称");
         }
@@ -50,7 +60,7 @@ public partial class NotificationHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, channel);
     }
 
-    private static bool IsChannelAllowed(string channel, out string message)
+    public static bool CanSubscribeToChannel(string channel, string? role, out string message)
     {
         if (ReservedChannels.Contains(channel))
         {
@@ -67,6 +77,19 @@ public partial class NotificationHub : Hub
         if (!AllowedPrefixes.Any(p => channel.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
         {
             message = $"不允许订阅该频道类型，允许的前缀: {string.Join(", ", AllowedPrefixes)}";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            message = "无法识别订阅者角色";
+            return false;
+        }
+
+        var prefix = AllowedPrefixes.First(p => channel.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+        if (!ChannelRoles[prefix].Contains(role, StringComparer.OrdinalIgnoreCase))
+        {
+            message = "当前角色无权订阅该频道";
             return false;
         }
 

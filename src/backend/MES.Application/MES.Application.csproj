@@ -1,12 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="ClosedXML" />
-    <PackageReference Include="QuestPDF" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\MES.Domain\MES.Domain.csproj" />
+    <ProjectReference Include="..\MES.AI\MES.AI.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

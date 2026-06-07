@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getLocalAccessToken } from '../utils/auth-token'
+import { getLocalUser, getLocalUserRole } from '../utils/local-user'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -16,14 +18,6 @@ const ROLES = {
   QC: 'QC',
 } as const
 
-function getUserRole(): string | null {
-  try {
-    const raw = localStorage.getItem('aimes_user')
-    if (raw) return JSON.parse(raw).role ?? null
-  } catch { /* ignore */ }
-  return null
-}
-
 const router = createRouter({
   history: createWebHistory('/scheduling/'),
   routes: [
@@ -35,6 +29,12 @@ const router = createRouter({
       path: '/login',
       name: 'Login',
       component: () => import('../components/auth/LoginPage.vue'),
+    },
+    {
+      path: '/change-password',
+      name: 'ChangePassword',
+      component: () => import('../components/auth/ChangePasswordPage.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/dashboard',
@@ -154,16 +154,21 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('aimes_token')
+  const token = getLocalAccessToken()
+  const cachedUser = getLocalUser()
+  const mustChangePassword = cachedUser?.mustChangePassword === true
+
   if (to.meta.requiresAuth && !token) {
     next('/login')
+  } else if (mustChangePassword && to.path !== '/change-password' && to.path !== '/login') {
+    next('/change-password')
   } else if (to.path === '/login' && token) {
-    next('/dashboard')
+    next(mustChangePassword ? '/change-password' : '/dashboard')
   } else {
     // Role-based access check
     const routeRoles = to.meta.roles as string[] | undefined
     if (routeRoles && routeRoles.length > 0) {
-      const userRole = getUserRole()
+      const userRole = getLocalUserRole()
       if (!userRole || !routeRoles.includes(userRole)) {
         next('/dashboard')
         return

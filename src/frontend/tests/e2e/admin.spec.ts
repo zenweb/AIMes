@@ -344,14 +344,14 @@ test.describe('Admin Agent 治理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
   })
 
   test('展示 Agent 可执行动作、权限、审计和配置审批策略', async ({ page }) => {
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel).toBeVisible()
@@ -371,7 +371,7 @@ test.describe('Admin Agent 治理', () => {
   })
 
   test('从 Agent 治理跳转到审计决策回放', async ({ page }) => {
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await page.getByRole('button', { name: '查看审计回放' }).click()
 
     await expect(page).toHaveURL(/\/scheduling\/audit-logs$/)
@@ -413,7 +413,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '助手动作审计' }).getByText('2')).toBeVisible()
@@ -472,7 +472,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '外协承诺包' }).getByText('1 条 / 外协承诺待到货')).toBeVisible()
@@ -485,7 +485,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(page).toHaveURL(/\/scheduling\/purchase$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await outsourcingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
   })
@@ -572,7 +572,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '交期恢复包' }).getByText('1 条 / 质量动作已闭合')).toBeVisible()
@@ -587,17 +587,17 @@ test.describe('Admin Agent 治理', () => {
     await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看风险预警' }).click()
     await expect(page).toHaveURL(/\/scheduling\/risk$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看采购协同' }).click()
     await expect(page).toHaveURL(/\/scheduling\/purchase$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看质量闭环' }).click()
     await expect(page).toHaveURL(/\/scheduling\/quality$/)
   })
@@ -627,7 +627,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.getByRole('heading', { name: '客户 POC 证据治理' })).toBeVisible()
@@ -682,7 +682,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: 'OTD 复盘证据' }).getByText('3')).toBeVisible()
@@ -703,7 +703,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '异常分流治理' }).getByText('1 条 / 1 待下游闭环')).toBeVisible()
@@ -723,7 +723,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const riskCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await riskCard.getByRole('button', { name: '查看风险预警' }).click()
     await page.waitForURL(/\/scheduling\/risk$/)
@@ -731,7 +731,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -739,7 +739,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const qualityCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await qualityCard.getByRole('button', { name: '查看质量闭环' }).click()
     await page.waitForURL(/\/scheduling\/quality$/)
@@ -757,7 +757,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '工程变更治理' }).getByText('1 条 / 已批准')).toBeVisible()
@@ -780,7 +780,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -788,7 +788,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
     await page.waitForURL(/\/scheduling\/report$/)
@@ -796,7 +796,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
     await page.waitForURL(/\/scheduling\/audit-logs$/)
@@ -814,7 +814,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '工艺能力治理' }).getByText('1 条 / 分流已确认')).toBeVisible()
@@ -837,7 +837,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -845,7 +845,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
     await page.waitForURL(/\/scheduling\/report$/)
@@ -853,7 +853,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
     await page.waitForURL(/\/scheduling\/audit-logs$/)
@@ -871,7 +871,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '人员能力治理' }).getByText('1 替班 / 8 证据')).toBeVisible()
@@ -892,7 +892,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const productionCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await productionCard.getByRole('button', { name: '查看生产报工' }).click()
     await page.waitForURL(/\/scheduling\/production$/)
@@ -900,7 +900,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -908,7 +908,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
     await page.waitForURL(/\/scheduling\/audit-logs$/)
@@ -924,7 +924,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('1 待处理 / 1 条')).toBeVisible()
@@ -943,7 +943,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -951,7 +951,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const purchaseCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await purchaseCard.getByRole('button', { name: '查看采购协同' }).click()
     await page.waitForURL(/\/scheduling\/purchase$/)
@@ -959,7 +959,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const bomCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await bomCard.getByRole('button', { name: '查看 BOM 约束' }).click()
     await page.waitForURL(/\/scheduling\/bom$/)
@@ -975,7 +975,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '质量返工治理' }).getByText('1 条 / 待排产复核')).toBeVisible()
@@ -996,7 +996,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -1004,7 +1004,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
     await page.waitForURL(/\/scheduling\/report$/)
@@ -1024,7 +1024,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '生产执行治理' }).getByText('2 条 / 2 待复核')).toBeVisible()
@@ -1046,7 +1046,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
     await page.waitForURL(/\/scheduling\/scheduling$/)
@@ -1054,7 +1054,7 @@ test.describe('Admin Agent 治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
     await page.waitForURL(/\/scheduling\/report$/)
@@ -1082,7 +1082,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: 'POC 复盘签署' }).getByText('已签署')).toBeVisible()
@@ -1116,7 +1116,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '知识复核' }).getByText('1')).toBeVisible()
@@ -1129,7 +1129,7 @@ test.describe('Admin Agent 治理', () => {
   })
 
   test('知识待治理提醒可从 Agent 治理跳转到文档治理', async ({ page }) => {
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '知识待治理' }).getByText('2')).toBeVisible()
@@ -1184,7 +1184,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '质量策略规则' }).getByText('1')).toBeVisible()
@@ -1248,7 +1248,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '再训练版本' }).getByText('1')).toBeVisible()
@@ -1318,7 +1318,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     const retrainingLane = panel.locator('.quality-retraining-governance')
@@ -1368,7 +1368,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '推荐采纳反馈' }).getByText('1')).toBeVisible()
@@ -1451,7 +1451,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '灰度监控' }).getByText('1')).toBeVisible()
@@ -1474,7 +1474,7 @@ test.describe('Admin Agent 治理', () => {
     await seedR3R4R5QualityRecommendationExperiments(page)
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '推荐实验' }).getByText('3')).toBeVisible()
@@ -1511,7 +1511,7 @@ test.describe('Admin Agent 治理', () => {
     await seedR3R4R5QualityRecommendationExperiments(page)
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     const approvalRow = panel.locator('.approval-row').filter({ hasText: '质量推荐实验扩大门禁' })
@@ -1537,7 +1537,7 @@ test.describe('Admin Agent 治理', () => {
     await seedR3R4R5QualityRecommendationExperiments(page)
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     await expect(panel.locator('.agent-metric').filter({ hasText: '实验候选' }).getByText('2')).toBeVisible()
@@ -1631,7 +1631,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const monitorCard = page.locator('.quality-gray-monitor-card')
     await monitorCard.getByRole('button', { name: '扩大灰度' }).click()
@@ -1640,6 +1640,38 @@ test.describe('Admin Agent 治理', () => {
     await expect(monitorCard.getByText('AUD-KG-QA-RETRAINING-R3-GRAY-EXPAND-20260521-001')).toBeVisible()
     await monitorCard.getByRole('button', { name: '质量主管确认扩大' }).click()
     await expect(monitorCard.getByText('质量主管已确认扩大')).toBeVisible()
+  })
+
+  test('R3 灰度扩大决策写入失败时真实浏览器展示 fail-loud 且不伪造决策', async ({ page }) => {
+    await seedR3GrayReleaseDemo(page)
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithQualityGrayExpandFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_gray_release_decisions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-GRAY-EXPAND-20260521-001')
+        ) {
+          throw new Error('quality gray expand decision storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const monitorCard = page.locator('.quality-gray-monitor-card')
+    await monitorCard.getByRole('button', { name: '扩大灰度' }).click()
+
+    const alert = page.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量推荐灰度决策失败')
+    await expect(alert).toContainText('quality gray expand decision storage denied from chromium')
+    await expect(monitorCard.getByRole('button', { name: '扩大灰度' })).toBeVisible()
+    await expect(monitorCard.getByRole('button', { name: '回滚到 R2' })).toBeVisible()
+    await expect(monitorCard).not.toContainText('AUD-KG-QA-RETRAINING-R3-GRAY-EXPAND-20260521-001')
+    await expect(monitorCard).not.toContainText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-EXPANDED')
   })
 
   test('R3 灰度监控可触发回滚并进入质量推荐与审计回放', async ({ page }) => {
@@ -1760,7 +1792,7 @@ test.describe('Admin Agent 治理', () => {
     })
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     const monitorCard = panel.locator('.quality-gray-monitor-card')
@@ -1810,11 +1842,43 @@ test.describe('Admin Agent 治理', () => {
     expect(csv).toContain('R3-REVIEW-ISSUE-20260521-001 / TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-REVIEW-ISSUE')
   })
 
+  test('R3 灰度回滚决策写入失败时真实浏览器展示 fail-loud 且不伪造决策', async ({ page }) => {
+    await seedR3GrayReleaseDemo(page)
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithQualityGrayRollbackFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_gray_release_decisions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-GRAY-ROLLBACK-20260521-001')
+        ) {
+          throw new Error('quality gray rollback decision storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const monitorCard = page.locator('.quality-gray-monitor-card')
+    await monitorCard.getByRole('button', { name: '回滚到 R2' }).click()
+
+    const alert = page.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量推荐灰度决策失败')
+    await expect(alert).toContainText('quality gray rollback decision storage denied from chromium')
+    await expect(monitorCard.getByRole('button', { name: '扩大灰度' })).toBeVisible()
+    await expect(monitorCard.getByRole('button', { name: '回滚到 R2' })).toBeVisible()
+    await expect(monitorCard).not.toContainText('AUD-KG-QA-RETRAINING-R3-GRAY-ROLLBACK-20260521-001')
+    await expect(monitorCard).not.toContainText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-ROLLED-BACK')
+  })
+
   test('R3 回滚后可补充负样本并关闭待复核问题单', async ({ page }) => {
     await seedR3GrayReleaseDemo(page)
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     const monitorCard = panel.locator('.quality-gray-monitor-card')
@@ -1856,7 +1920,7 @@ test.describe('Admin Agent 治理', () => {
     await seedR3GrayReleaseDemo(page)
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const panel = page.locator('.agent-governance-panel')
     const monitorCard = panel.locator('.quality-gray-monitor-card')
@@ -1892,7 +1956,7 @@ test.describe('Admin Agent 治理', () => {
   })
 
   test('关键 Agent 配置审批通过后进入审计回放', async ({ page }) => {
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const panel = page.locator('.agent-governance-panel')
     const approvalRow = panel.locator('.approval-row').filter({ hasText: 'Scheduling.LockWindowHours' })
 

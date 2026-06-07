@@ -1,3 +1,4 @@
+using MES.Domain.Exceptions;
 using MES.Domain.Primitives;
 using DomainEvents = MES.Domain.Events;
 
@@ -51,7 +52,7 @@ public class OperationExecution : AggregateRoot
     public void Start()
     {
         if (Status != OperationExecutionStatus.Pending && Status != OperationExecutionStatus.Paused)
-            throw new InvalidOperationException("Only pending or paused operations can be started.");
+            throw new DomainRuleViolationException("Only pending or paused operations can be started.");
 
         var wasPaused = Status == OperationExecutionStatus.Paused;
         Status = OperationExecutionStatus.Running;
@@ -68,7 +69,7 @@ public class OperationExecution : AggregateRoot
     public void Pause(string suspendReason)
     {
         if (Status != OperationExecutionStatus.Running)
-            throw new InvalidOperationException("Only running operations can be paused.");
+            throw new DomainRuleViolationException("Only running operations can be paused.");
 
         Status = OperationExecutionStatus.Paused;
         SuspendReason = suspendReason;
@@ -81,7 +82,7 @@ public class OperationExecution : AggregateRoot
     public void Complete(int quantity)
     {
         if (Status != OperationExecutionStatus.Running)
-            throw new InvalidOperationException("Only running operations can be completed.");
+            throw new DomainRuleViolationException("Only running operations can be completed.");
 
         Status = OperationExecutionStatus.Completed;
         CompletedQuantity = quantity;
@@ -94,7 +95,7 @@ public class OperationExecution : AggregateRoot
     public void ReportException(string reason)
     {
         if (Status != OperationExecutionStatus.Running && Status != OperationExecutionStatus.Paused)
-            throw new InvalidOperationException("Only active operations can report exceptions.");
+            throw new DomainRuleViolationException("Only active operations can report exceptions.");
 
         Status = OperationExecutionStatus.Failed;
         ExceptionReason = reason;

@@ -1,13 +1,149 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+interface LatestAbReport {
+  delta: { delayedOrdersReduced: number }
+}
+
+const latestAbReport = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'public', 'reports', 'latest-ab-report.json'), 'utf8'),
+) as LatestAbReport
+const expectedDelayedOrdersReduced = `${latestAbReport.delta.delayedOrdersReduced} 单`
 
 test.describe('Purchase 采购协同', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('purchase')
     await page.waitForSelector('.po-board', { timeout: 20000 })
+  })
+
+  test('新建采购订单接口失败时保留弹窗并告警', async ({ page }) => {
+    const orderNumber = 'PO-CHROMIUM-FAIL-001'
+    let createRequestCount = 0
+
+    await page.route('**/api/v1/purchase', async route => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+
+      createRequestCount += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'supplier master data missing from chromium' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    await page.locator('.list-panel').scrollIntoViewIfNeeded()
+    await page.getByRole('button', { name: '+ 新建' }).click()
+    const dialog = page.getByRole('dialog', { name: '新建采购订单' })
+    await expect(dialog).toBeVisible()
+    const inputs = dialog.locator('.form-input')
+    await inputs.nth(0).fill(orderNumber)
+    await inputs.nth(1).fill('西南锻造厂')
+    await dialog.locator('.btn-ok').click()
+
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toContainText('创建失败')
+    await expect(alert).toContainText('supplier master data missing from chromium')
+    await expect(dialog).toBeVisible()
+    await expect(page.locator('.list-panel')).not.toContainText(orderNumber)
+    expect(createRequestCount).toBe(1)
+  })
+
+  test('确认采购订单接口失败时保留已提交状态并告警', async ({ page }) => {
+    let confirmRequestCount = 0
+
+    await page.route('**/api/v1/purchase/*/confirm', async route => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+
+      confirmRequestCount += 1
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'supplier credit hold from chromium' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    await page.locator('.list-panel').scrollIntoViewIfNeeded()
+    await page.getByRole('option', { name: /PO-20260502/ }).click()
+    await expect(page.locator('.detail-header')).toContainText('PO-20260502')
+    await expect(page.locator('.detail-header .tag')).toHaveText('已提交')
+    await page.locator('.act-confirm').click()
+
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toContainText('确认失败')
+    await expect(alert).toContainText('supplier credit hold from chromium')
+    await expect(page.locator('.detail-header .tag')).toHaveText('已提交')
+    await expect(page.getByRole('option', { name: /PO-20260502/ }).locator('.tag').filter({ hasText: '已提交' })).toBeVisible()
+    await expect(page.locator('.act-confirm')).toBeVisible()
+    expect(confirmRequestCount).toBe(1)
+  })
+
+  test('收货接口失败时保留收货弹窗和已确认状态并告警', async ({ page }) => {
+    let receiveRequestCount = 0
+
+    await page.route('**/api/v1/purchase/*/receive', async route => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+
+      receiveRequestCount += 1
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'received quantity exceeds remaining from chromium' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    await page.locator('.list-panel').scrollIntoViewIfNeeded()
+    await page.getByRole('option', { name: /PO-20260501/ }).click()
+    await expect(page.locator('.detail-header')).toContainText('PO-20260501')
+    await expect(page.locator('.detail-header .tag')).toHaveText('已确认')
+    await expect(page.locator('.items-table tbody').getByText('MAT-A01')).toBeVisible()
+    await expect(page.locator('.items-table tbody tr').filter({ hasText: 'MAT-A01' }).locator('.rec-part')).toHaveText('0')
+
+    await page.locator('.act-receive').click()
+    const dialog = page.locator('.modal-content').filter({ hasText: '收货' })
+    await expect(dialog).toBeVisible()
+    await dialog.locator('select').selectOption('MAT-A01')
+    await dialog.locator('input[type="number"]').fill('2500')
+    await dialog.locator('.btn-ok').click()
+
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toContainText('收货失败')
+    await expect(alert).toContainText('received quantity exceeds remaining from chromium')
+    await expect(dialog).toBeVisible()
+    await expect(page.locator('.detail-header .tag')).toHaveText('已确认')
+    await expect(page.locator('.items-table tbody tr').filter({ hasText: 'MAT-A01' }).locator('.rec-part')).toHaveText('0')
+    await expect(page.locator('.act-receive')).toBeVisible()
+    expect(receiveRequestCount).toBe(1)
+  })
+
+  test('收货弹窗具备可访问 dialog 名称', async ({ page }) => {
+    await page.locator('.list-panel').scrollIntoViewIfNeeded()
+    await page.getByRole('option', { name: /PO-20260501/ }).click()
+    await expect(page.locator('.detail-header .tag')).toHaveText('已确认')
+
+    await page.locator('.act-receive').click()
+
+    const dialog = page.getByRole('dialog', { name: '收货' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('select')).toBeVisible()
+    await expect(dialog.locator('input[type="number"]')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '确认收货' })).toBeVisible()
   })
 
   test('缺料事件生成采购加急单并回写风险下降', async ({ page }) => {
@@ -71,7 +207,7 @@ test.describe('Purchase 采购协同', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const pendingPanel = page.locator('.agent-governance-panel')
     await expect(pendingPanel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('1 待处理 / 1 条')).toBeVisible()
 
@@ -85,7 +221,7 @@ test.describe('Purchase 采购协同', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const closedPanel = page.locator('.agent-governance-panel')
     await expect(closedPanel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('0 待处理 / 1 条')).toBeVisible()
     const closedCard = closedPanel.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
@@ -270,7 +406,7 @@ test.describe('Purchase 采购协同', () => {
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const releasedKpiPanel = page.locator('.otd-kpi-drilldown-panel')
     await expect(page.locator('.otd-hero').getByText(/法兰盘 DN100 外协到货和 AI 排产释放已关闭厂外等待口径/)).toBeVisible()
-    await expect(page.locator('.metric-tile').filter({ hasText: '延期减少' }).getByText('5 单')).toBeVisible()
+    await expect(page.locator('.metric-tile').filter({ hasText: '延期减少' }).locator('strong')).toHaveText(expectedDelayedOrdersReduced)
     await releasedKpiPanel.getByRole('tab', { name: '产品族' }).click()
     await releasedKpiPanel.getByRole('button', { name: /法兰盘 DN100/ }).click()
     const releasedKpiDetail = releasedKpiPanel.locator('.kpi-drilldown-detail')

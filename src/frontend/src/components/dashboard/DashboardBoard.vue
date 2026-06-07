@@ -1,5 +1,34 @@
 <template>
   <div class="dashboard">
+      <section class="ops-command-hero" aria-label="生产运营控制塔">
+        <div class="ops-hero-main">
+          <span class="ops-eyebrow">AIMes Pro Control Tower</span>
+          <h1>生产运营控制塔</h1>
+          <p>以 OTD 承诺为主线，串联风险识别、AI 排产、执行回写、审计回放和经营复盘。</p>
+          <div class="ops-hero-actions">
+            <router-link to="/scheduling">进入调度台</router-link>
+            <router-link to="/audit-logs">回放证据链</router-link>
+          </div>
+        </div>
+        <div class="ops-hero-status">
+          <div>
+            <span>今日主承诺</span>
+            <strong>{{ abOtdSummary.range }}</strong>
+            <em>{{ abOtdSummary.delta }}</em>
+          </div>
+          <div>
+            <span>风险闭环</span>
+            <strong>{{ commandBlockers.length }}/{{ kpi.activeOrders }}</strong>
+            <em>阻塞项进入责任动作</em>
+          </div>
+          <div>
+            <span>运行状态</span>
+            <strong>{{ statusCounts.running }}</strong>
+            <em>设备在线 / {{ statusCounts.down }} 停机</em>
+          </div>
+        </div>
+      </section>
+
       <!-- 顶部指标卡片 -->
       <div class="kpi-row">
         <div class="kpi-card">
@@ -31,6 +60,16 @@
           </div>
         </div>
       </div>
+      <section v-if="dashboardDataError" class="dashboard-data-alert" aria-label="生产概览数据读取失败">
+        <span class="command-eyebrow">生产概览数据</span>
+        <h2>生产概览数据读取失败</h2>
+        <p>{{ dashboardDataError }}</p>
+      </section>
+      <section v-if="abReportError" class="ab-report-alert" aria-label="A/B 报告读取失败">
+        <span class="command-eyebrow">OTD 改善报告</span>
+        <h2>A/B 报告读取失败</h2>
+        <p>{{ abReportError }}</p>
+      </section>
 
       <section class="command-center" aria-label="AI MES 指挥中心">
         <div class="command-header">
@@ -41,26 +80,26 @@
           </div>
           <div class="otd-summary">
             <span>OTD 改善</span>
-            <strong>82% → 96%</strong>
-            <em>+14%</em>
+            <strong>{{ abOtdSummary.range }}</strong>
+            <em>{{ abOtdSummary.delta }}</em>
           </div>
         </div>
 
-        <div class="command-grid">
-          <router-link
-            v-for="item in commandSteps"
-            :key="item.id"
-            class="command-card"
-            :to="item.route"
-          >
-            <span class="step-index">{{ item.index }}</span>
-            <div>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.detail }}</p>
-            </div>
-            <span class="step-action">{{ item.action }}</span>
-          </router-link>
-        </div>
+        <ol class="command-grid" aria-label="AI MES 指挥中心主线">
+          <li v-for="item in commandSteps" :key="item.id">
+            <router-link
+              class="command-card"
+              :to="item.route"
+            >
+              <span class="step-index">{{ item.index }}</span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.detail }}</p>
+              </div>
+              <span class="step-action">{{ item.action }}</span>
+            </router-link>
+          </li>
+        </ol>
 
         <div class="command-bottom">
           <div class="blocker-list">
@@ -108,6 +147,13 @@
           </div>
         </div>
       </section>
+      <section v-if="pocHypercareAcceptanceError" class="hypercare-command" aria-label="POC Hypercare 上线验收读取失败">
+        <div class="hypercare-main">
+          <span class="command-eyebrow">正式上线验收</span>
+          <h2>上线验收记录读取失败</h2>
+          <p>{{ pocHypercareAcceptanceError }}</p>
+        </div>
+      </section>
 
       <section class="demo-runbook" aria-label="5 分钟 Demo 录制运行手册">
         <div class="runbook-header">
@@ -147,6 +193,7 @@
             <span class="command-eyebrow">彩排证据</span>
             <strong>{{ demoRehearsalEvidence ? '5 分钟 Demo 彩排已确认' : '确认 5 分钟 Demo 彩排' }}</strong>
             <p>{{ demoRehearsalEvidence ? demoRehearsalEvidence.summary : '完成一次从生产概览到报表中心的售前演示彩排，并把镜头、证据、POC 口径写入 OTD 复盘证据链。' }}</p>
+            <p v-if="demoRehearsalError" class="runbook-error">{{ demoRehearsalError }}</p>
           </div>
           <button type="button" @click="handleConfirmDemoRehearsal">
             {{ demoRehearsalEvidence ? '刷新彩排证据' : '确认彩排并写入证据链' }}
@@ -248,13 +295,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { getDashboard } from '../../api/dashboard'
 import type { DashboardData, KpiCard, EquipmentStatus, TodaySchedule, MaterialAlert, QualityStats } from '../../types/dashboard'
-import { readShortageRiskResolution, type ShortageRiskResolution } from '../../utils/shortage-risk-sync'
+import { readShortageRiskResolutionBackendFirst, type ShortageRiskResolution } from '../../utils/shortage-risk-sync'
 import { readOtdEvidenceChainRecords, upsertOtdEvidenceChainRecord, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
-import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { getLocalAccessToken } from '../../utils/auth-token'
+import { appAssetPath, isOfflineDemoMode } from '../../utils/offline-demo-mode'
+import { errorMessage } from '../../utils/error-message'
 
 const kpi = reactive<KpiCard>({ scheduleAdherence: 0, qualityPassRate: 0, equipmentUtilization: 0, activeOrders: 0 })
 const statusCounts = reactive({ running: 0, idle: 0, down: 0, maintenance: 0 })
@@ -265,8 +315,28 @@ const todayTasks = ref<TodaySchedule[]>([])
 const materialAlerts = ref<MaterialAlert[]>([])
 const shortageResolution = ref<ShortageRiskResolution | null>(null)
 const demoRehearsalEvidence = ref<OtdEvidenceChainItem | null>(null)
+const demoRehearsalError = ref('')
 const pocHypercareAcceptance = ref<PocHypercareAcceptanceRecord | null>(null)
+const pocHypercareAcceptanceError = ref('')
+const dashboardDataError = ref('')
+const latestAbReport = ref<LatestAbReport | null>(null)
+const abReportError = ref('')
 let connection: signalR.HubConnection | null = null
+
+interface LatestAbReport {
+  baseline: { otd: number }
+  agent: { otd: number }
+  delta: { otd: number }
+}
+
+const abOtdSummary = computed(() => {
+  const report = latestAbReport.value
+  if (!report) return { range: '26.7% -> 30.0%', delta: '+3.3pt' }
+  return {
+    range: `${(report.baseline.otd * 100).toFixed(1)}% -> ${(report.agent.otd * 100).toFixed(1)}%`,
+    delta: `+${(report.delta.otd * 100).toFixed(1)}pt`,
+  }
+})
 
 const commandSteps = [
   {
@@ -343,8 +413,8 @@ const demoRunbook = [
     id: 'opening',
     time: '00:00-00:45',
     title: '开场：老板问题',
-    script: '先展示 OTD 82% -> 96%，说明今天只讲“为什么交期会提高”。',
-    evidence: ['OTD +14%', '当前阻塞', '主线入口'],
+    script: '先展示 A/B 报告 OTD 26.7% -> 30.0%，说明今天只讲“为什么交期会提高”和“当前样本尚未显著”。',
+    evidence: ['OTD +3.3pt', '当前阻塞', '主线入口'],
     capture: '录制首页指挥中心',
     route: '/dashboard',
   },
@@ -386,14 +456,14 @@ const demoRunbook = [
   },
 ]
 
-function applyDashboardData(d: DashboardData) {
+async function applyDashboardData(d: DashboardData) {
   Object.assign(kpi, d.kpi)
   Object.assign(qualityStats, d.qualityStats)
   qualityPass.value = d.qualityStats.passRate
   equipment.value = d.equipment
   todayTasks.value = d.todaySchedule
   materialAlerts.value = d.materialAlerts
-  applyShortageRiskResolution()
+  await applyShortageRiskResolution()
 
   statusCounts.running = d.equipment.filter(e => e.status === 'running').length
   statusCounts.idle = d.equipment.filter(e => e.status === 'idle').length
@@ -401,33 +471,59 @@ function applyDashboardData(d: DashboardData) {
   statusCounts.maintenance = d.equipment.filter(e => e.status === 'maintenance').length
 }
 
-function applyShortageRiskResolution() {
-  shortageResolution.value = readShortageRiskResolution()
+async function applyShortageRiskResolution() {
+  shortageResolution.value = await readShortageRiskResolutionBackendFirst()
 }
 
 function applyDemoRehearsalEvidence() {
   demoRehearsalEvidence.value = readOtdEvidenceChainRecords().find(record =>
     record.id === 'demo-rehearsal-20260521'
   ) ?? null
+  if (demoRehearsalEvidence.value) demoRehearsalError.value = ''
 }
 
-function applyPocHypercareAcceptance() {
-  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
+async function applyPocHypercareAcceptance() {
+  try {
+    pocHypercareAcceptance.value = await readPocHypercareAcceptanceRecordBackendFirst()
+    pocHypercareAcceptanceError.value = ''
+  } catch (error) {
+    pocHypercareAcceptance.value = null
+    pocHypercareAcceptanceError.value = `POC Hypercare 验收状态暂未加载：${errorMessage(error, '请稍后重试')}`
+  }
+}
+
+async function loadLatestAbReport() {
+  try {
+    const response = await fetch(appAssetPath('reports/latest-ab-report.json'), { cache: 'no-store' })
+    if (!response.ok) {
+      throw new Error(`latest A/B report HTTP ${response.status}`)
+    }
+    latestAbReport.value = await response.json()
+    abReportError.value = ''
+  } catch (error) {
+    latestAbReport.value = null
+    abReportError.value = `OTD 改善暂用默认演示值：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function handleConfirmDemoRehearsal() {
-  demoRehearsalEvidence.value = upsertOtdEvidenceChainRecord({
-    id: 'demo-rehearsal-20260521',
-    stage: '演示彩排',
-    title: '5 分钟 Demo 彩排已确认',
-    summary: '已完成生产概览、风险预警、AI 排产、采购协同、生产执行和报表中心 5 段镜头彩排；OTD +14%、30 单样本、POC 评分和补齐缺口均可核对。',
-    object: '00:00-05:00 可销售 Demo 路径',
-    source: '生产概览 / 5 分钟 Demo 录制运行手册',
-    traceId: 'TRACE-DEMO-RUNBOOK-20260521-REHEARSAL',
-    status: 'closed',
-    statusLabel: '彩排已确认',
-    createdAt: new Date().toISOString(),
-  }).find(record => record.id === 'demo-rehearsal-20260521') ?? null
+  try {
+    demoRehearsalEvidence.value = upsertOtdEvidenceChainRecord({
+      id: 'demo-rehearsal-20260521',
+      stage: '演示彩排',
+      title: '5 分钟 Demo 彩排已确认',
+      summary: '已完成生产概览、风险预警、AI 排产、采购协同、生产执行和报表中心 5 段镜头彩排；OTD +3.3pt、30 单样本、p=0.7745 未显著、POC 评分和补齐缺口均可核对。',
+      object: '00:00-05:00 可销售 Demo 路径',
+      source: '生产概览 / 5 分钟 Demo 录制运行手册',
+      traceId: 'TRACE-DEMO-RUNBOOK-20260521-REHEARSAL',
+      status: 'closed',
+      statusLabel: '彩排已确认',
+      createdAt: new Date().toISOString(),
+    }).find(record => record.id === 'demo-rehearsal-20260521') ?? null
+    demoRehearsalError.value = ''
+  } catch (error) {
+    demoRehearsalError.value = `彩排证据写入失败，5 分钟 Demo 彩排尚未写入 OTD 证据链：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function alertIcon(level: string) {
@@ -437,9 +533,11 @@ function alertIcon(level: string) {
 }
 
 function connectSignalR() {
+  if (isOfflineDemoMode()) return
+
   connection = new signalR.HubConnectionBuilder()
     .withUrl('/hubs/monitoring', {
-      accessTokenFactory: () => localStorage.getItem('aimes_token') ?? '',
+      accessTokenFactory: () => getLocalAccessToken() ?? '',
     })
     .withAutomaticReconnect([0, 2000, 5000, 10000])
     .configureLogging(signalR.LogLevel.Warning)
@@ -461,13 +559,20 @@ function connectSignalR() {
 }
 
 onMounted(async () => {
+  await loadLatestAbReport()
   applyDemoRehearsalEvidence()
-  applyPocHypercareAcceptance()
+  await applyPocHypercareAcceptance()
   try {
     const data = await getDashboard()
-    applyDashboardData(data)
-  } catch {
-    applyShortageRiskResolution()
+    await applyDashboardData(data)
+    dashboardDataError.value = ''
+  } catch (error) {
+    dashboardDataError.value = `KPI、设备状态、今日排产与物料预警暂未加载：${errorMessage(error, '请稍后重试')}`
+    try {
+      await applyShortageRiskResolution()
+    } catch {
+      shortageResolution.value = null
+    }
   }
 
   connectSignalR()
@@ -485,6 +590,102 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   overflow-y: auto;
   height: 100%;
+}
+
+.ops-command-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(7, 17, 31, 0.96), rgba(11, 79, 143, 0.88)),
+    #07111f;
+  color: #f8fafc;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16);
+}
+
+.ops-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 999px;
+  color: #7dd3fc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.ops-hero-main h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.ops-hero-main p {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: #cfe5ff;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.ops-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ops-hero-actions a {
+  padding: 8px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  border-radius: 6px;
+  background: rgba(14, 159, 188, 0.18);
+  color: #e0f2fe;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.ops-hero-actions a:first-child {
+  background: #16a06a;
+  border-color: #16a06a;
+  color: #fff;
+}
+
+.ops-hero-status {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.ops-hero-status div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-left: 3px solid #22c55e;
+  border-radius: 7px;
+  background: rgba(2, 8, 23, 0.28);
+}
+
+.ops-hero-status span,
+.ops-hero-status em {
+  color: #a9c9e9;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.ops-hero-status strong {
+  color: #fff;
+  font-family: 'Fira Code', monospace;
+  font-size: 18px;
 }
 
 /* KPI */
@@ -530,6 +731,33 @@ onBeforeUnmount(() => {
 .kpi-label {
   font-size: 13px;
   color: #888;
+}
+
+.dashboard-data-alert,
+.ab-report-alert {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #7f1d1d;
+}
+
+.dashboard-data-alert h2,
+.ab-report-alert h2 {
+  margin: 4px 0;
+  color: #991b1b;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.dashboard-data-alert p,
+.ab-report-alert p {
+  margin: 0;
+  color: #7f1d1d;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .command-center {
@@ -600,12 +828,20 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.command-grid li {
+  display: flex;
+  min-width: 0;
 }
 
 .command-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
+  width: 100%;
   min-height: 116px;
   padding: 10px;
   border: 1px solid #e5e7eb;
@@ -1191,6 +1427,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
+  .ops-command-hero,
   .command-grid,
   .command-bottom,
   .hypercare-command {

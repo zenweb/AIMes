@@ -13,6 +13,7 @@ public class EquipmentConfiguration : IEntityTypeConfiguration<Equipment>
         entity.HasKey(e => e.Id);
         entity.Ignore(e => e.Parameters);
         entity.Property(e => e.Id).HasColumnName("id");
+        entity.UseProviderShadowConcurrencyToken();
         entity.Property(e => e.EquipmentCode).HasColumnName("equipment_code").IsRequired().HasMaxLength(50);
         entity.Property(e => e.EquipmentName).HasColumnName("equipment_name").IsRequired().HasMaxLength(200);
         entity.Property(e => e.EquipmentType).HasColumnName("equipment_type").HasMaxLength(50);

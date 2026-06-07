@@ -1,3 +1,5 @@
+import { getLatestCustomerOrderImport, upsertCustomerOrderImport } from '../api/pocEvidence'
+
 const STORAGE_KEY = 'aimes_customer_order_import'
 
 export interface CustomerOrderImportEvidence {
@@ -14,15 +16,43 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isCustomerOrderImportEvidence(value: unknown): value is CustomerOrderImportEvidence {
+  if (!value || typeof value !== 'object') return false
+  const evidence = value as Partial<CustomerOrderImportEvidence>
+  return !!evidence.batchId
+    && !!evidence.fileName
+    && !!evidence.source
+    && typeof evidence.importedOrders === 'number'
+    && typeof evidence.highRiskOrders === 'number'
+    && Array.isArray(evidence.mappedFields)
+    && evidence.mappedFields.length > 0
+    && evidence.mappedFields.every(field => typeof field === 'string' && field.trim().length > 0)
+    && !!evidence.preparedAt
+}
+
 export function readCustomerOrderImportEvidence(): CustomerOrderImportEvidence | null {
   if (!canUseStorage()) return null
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return parsed?.batchId && parsed?.fileName ? parsed : null
-  } catch {
+    if (isCustomerOrderImportEvidence(parsed)) return parsed
+    window.localStorage.removeItem(STORAGE_KEY)
     return null
+  } catch {
+    window.localStorage.removeItem(STORAGE_KEY)
+    return null
+  }
+}
+
+export async function readCustomerOrderImportEvidenceBackendFirst(): Promise<CustomerOrderImportEvidence | null> {
+  try {
+    const record = await getLatestCustomerOrderImport()
+    return record ?? readCustomerOrderImportEvidence()
+  } catch (error: unknown) {
+    const localRecord = readCustomerOrderImportEvidence()
+    if (localRecord) return localRecord
+    throw error
   }
 }
 
@@ -38,5 +68,6 @@ export function writeCustomerOrderImportEvidence(evidence?: Partial<CustomerOrde
     preparedAt: evidence?.preparedAt ?? new Date().toISOString(),
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  void upsertCustomerOrderImport(next).catch(() => undefined)
   return next
 }

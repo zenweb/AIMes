@@ -41,7 +41,7 @@ export const assistantCitationTraces: AssistantCitationTrace[] = [
       {
         sourceId: 'kg-otd-replay',
         sourceName: 'OTD 改善复盘样本 2026-05-20',
-        content: '人工基线 OTD 82%，Agent 推荐方案 OTD 96%。',
+        content: 'DEMO-OTD-30-202605 当前可重跑口径：人工基线 OTD 26.67%，Agent 推荐方案 OTD 30.00%，p=0.7745。',
         relevanceScore: 0.87,
       },
     ],

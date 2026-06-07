@@ -1,5 +1,7 @@
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
 import * as signalR from '@microsoft/signalr'
+import { getLocalAccessToken } from '../utils/auth-token'
+import { appAssetPath, isOfflineDemoMode } from '../utils/offline-demo-mode'
 
 export interface Toast {
   id: string
@@ -62,7 +64,6 @@ interface PurchaseOrderStatusEvent {
 const toasts = ref<Toast[]>([])
 let connection: signalR.HubConnection | null = null
 const connected = ref(false)
-const TOKEN_KEY = 'aimes_token'
 
 export function addToast(type: Toast['type'], title: string, message: string) {
   const toast: Toast = {
@@ -88,11 +89,16 @@ export function addToast(type: Toast['type'], title: string, message: string) {
 
 export function useNotifications() {
   function connect() {
+    if (isOfflineDemoMode()) {
+      connected.value = false
+      return
+    }
+
     if (connection?.state === signalR.HubConnectionState.Connected) return
 
     connection = new signalR.HubConnectionBuilder()
       .withUrl('/hubs/notifications', {
-        accessTokenFactory: () => localStorage.getItem(TOKEN_KEY) ?? '',
+        accessTokenFactory: () => getLocalAccessToken() ?? '',
       })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
       .configureLogging(signalR.LogLevel.Warning)
@@ -173,11 +179,11 @@ function playAlertSound() {
 function sendBrowserNotification(title: string, body: string) {
   if (!('Notification' in window)) return
   if (Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/favicon.ico' })
+    new Notification(title, { body, icon: appAssetPath('favicon.ico') })
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission().then(perm => {
       if (perm === 'granted') {
-        new Notification(title, { body, icon: '/favicon.ico' })
+        new Notification(title, { body, icon: appAssetPath('favicon.ico') })
       }
     })
   }

@@ -4,6 +4,7 @@ export interface SystemUser {
   displayName: string
   role: string
   isActive: boolean
+  mustChangePassword: boolean
   createdAt: string
   lastLoginAt: string | null
 }

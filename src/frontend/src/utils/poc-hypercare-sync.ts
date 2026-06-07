@@ -1,5 +1,6 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
 import type { PocPilotRunRecord } from './poc-pilot-run-sync'
+import { getLatestPocHypercareAcceptance, upsertPocHypercareAcceptance } from '../api/pocEvidence'
 
 const STORAGE_KEY = 'aimes_poc_hypercare_acceptance'
 
@@ -51,6 +52,30 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isPocHypercareMonitor(
+  monitor: Partial<PocHypercareMonitor> | null | undefined
+): monitor is PocHypercareMonitor {
+  return !!monitor
+    && typeof monitor.label === 'string'
+    && typeof monitor.target === 'string'
+    && typeof monitor.current === 'string'
+    && (monitor.status === 'stable' || monitor.status === 'watch')
+    && typeof monitor.statusLabel === 'string'
+    && typeof monitor.evidence === 'string'
+}
+
+function isPocHypercareCheckpoint(
+  checkpoint: Partial<PocHypercareCheckpoint> | null | undefined
+): checkpoint is PocHypercareCheckpoint {
+  return !!checkpoint
+    && typeof checkpoint.module === 'string'
+    && typeof checkpoint.owner === 'string'
+    && typeof checkpoint.action === 'string'
+    && checkpoint.status === 'active'
+    && typeof checkpoint.evidence === 'string'
+    && typeof checkpoint.summary === 'string'
+}
+
 function isPocHypercareAcceptanceRecord(
   record: Partial<PocHypercareAcceptanceRecord> | null | undefined
 ): record is PocHypercareAcceptanceRecord {
@@ -73,7 +98,9 @@ function isPocHypercareAcceptanceRecord(
     && typeof record.acceptanceGate === 'string'
     && typeof record.owner === 'string'
     && Array.isArray(record.monitors)
+    && record.monitors.every(isPocHypercareMonitor)
     && Array.isArray(record.checkpoints)
+    && record.checkpoints.every(isPocHypercareCheckpoint)
     && typeof record.auditId === 'string'
     && typeof record.traceId === 'string'
     && typeof record.createdAt === 'string'
@@ -86,11 +113,18 @@ export function readPocHypercareAcceptanceRecord(): PocHypercareAcceptanceRecord
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return isPocHypercareAcceptanceRecord(parsed) ? parsed : null
+    if (isPocHypercareAcceptanceRecord(parsed)) return parsed
+    window.localStorage.removeItem(STORAGE_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return null
   }
+}
+
+export async function readPocHypercareAcceptanceRecordBackendFirst(options?: { failLoud?: boolean }): Promise<PocHypercareAcceptanceRecord | null> {
+  const record = await getLatestPocHypercareAcceptance(options)
+  return record ?? readPocHypercareAcceptanceRecord()
 }
 
 export function writePocHypercareAcceptanceRecord(pilotRun: PocPilotRunRecord) {
@@ -180,6 +214,7 @@ export function writePocHypercareAcceptanceRecord(pilotRun: PocPilotRunRecord) {
     summary: `${pilotRun.targetCustomer} 已从首批真实工单试点进入正式上线验收，Hypercare 监控跟踪 OTD ${pilotRun.actualOtd}、OEE 82%、P1/P2 未关闭 0 个和 AI 建议采纳率 89%。`,
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record))
+  void upsertPocHypercareAcceptance(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: 'POC 上线验收',

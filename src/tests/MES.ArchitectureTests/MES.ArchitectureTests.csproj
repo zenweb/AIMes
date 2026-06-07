@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\backend\MES.Api\MES.Api.csproj" />
+    <ProjectReference Include="..\..\backend\MES.Application\MES.Application.csproj" />
+    <ProjectReference Include="..\..\backend\MES.Domain\MES.Domain.csproj" />
+    <ProjectReference Include="..\..\backend\MES.Infrastructure\MES.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

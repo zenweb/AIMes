@@ -1,5 +1,6 @@
 using MES.AI.Pro.Configuration;
 using MES.Domain.Interfaces.Services;
+using Microsoft.Extensions.Options;
 
 namespace MES.Api.Endpoints;
 
@@ -18,8 +19,9 @@ public static class LlmEndpoints
         return TypedResults.Ok(status);
     }
 
-    private static IResult GetConfigAsync(LlmConfig config)
+    private static IResult GetConfigAsync(IOptions<LlmConfig> options)
     {
+        var config = options.Value;
         return TypedResults.Ok(new
         {
             config.Provider,

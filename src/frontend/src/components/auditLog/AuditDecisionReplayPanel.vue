@@ -5,7 +5,10 @@
         <span class="eyebrow">AI 决策审计</span>
         <h3>建议、采纳、重排动作与配置审批可回放</h3>
       </div>
-      <span class="approval-badge">{{ pendingApprovalCount }} 个配置待审批</span>
+      <span class="approval-badge" role="status" aria-live="polite">{{ pendingApprovalCount }} 个配置待审批</span>
+    </div>
+    <div v-if="replaySyncErrors.length" class="replay-sync-alert" role="alert" aria-live="assertive">
+      <p v-for="message in replaySyncErrors" :key="message">{{ message }}</p>
     </div>
 
     <div class="replay-metrics">
@@ -28,13 +31,27 @@
           <span>执行人：{{ item.actor }}</span>
           <span>证据：{{ item.evidence }}</span>
         </div>
-        <button type="button" class="replay-btn" @click="selectedId = item.id">回放决策链</button>
+        <button
+          type="button"
+          class="replay-btn"
+          :aria-pressed="selectedId === item.id"
+          :aria-label="`回放决策链：${item.title}`"
+          @click="selectedId = item.id"
+        >
+          回放决策链
+        </button>
       </article>
     </div>
 
-    <div v-if="selectedItem" class="replay-detail">
+    <div
+      v-if="selectedItem"
+      class="replay-detail"
+      role="region"
+      aria-live="polite"
+      aria-labelledby="audit-replay-detail-title"
+    >
       <div class="detail-title">
-        <h4>{{ selectedItem.title }} 回放链</h4>
+        <h4 id="audit-replay-detail-title">{{ selectedItem.title }} 回放链</h4>
         <span>{{ selectedItem.traceId }}</span>
       </div>
       <ol>
@@ -43,12 +60,26 @@
       <div class="trace-footer">
         <span>风险口径：{{ selectedItem.risk }}</span>
         <span>留痕状态：{{ selectedItem.auditState }}</span>
+        <RouterLink
+          v-if="selectedItem.route"
+          class="trace-link"
+          :to="selectedItem.route"
+          :aria-label="`打开${selectedItem.routeLabel}：${selectedItem.object}`"
+        >
+          打开{{ selectedItem.routeLabel }}
+        </RouterLink>
       </div>
     </div>
 
-    <div class="approval-lane">
+    <div class="approval-lane" role="list" aria-label="关键配置变更审批">
       <h4>关键配置变更审批</h4>
-      <div v-for="approval in approvals" :key="approval.id" class="approval-row">
+      <div
+        v-for="approval in approvals"
+        :key="approval.id"
+        class="approval-row"
+        role="listitem"
+        :aria-label="`审批项：${approval.title}，状态 ${approval.status}，责任人 ${approval.owner}`"
+      >
         <div>
           <strong>{{ approval.title }}</strong>
           <p>{{ approval.reason }}</p>
@@ -62,26 +93,29 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { readAssistantActionAudits, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
-import { readQualityCapaClosure, type QualityCapaClosure } from '../../utils/quality-capa-sync'
-import { readPocEvidenceGovernanceRecords, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
-import { approvalStatusLabel, isApprovalOpen, readAgentConfigApprovals, type AgentConfigApprovalRecord } from '../../utils/agent-config-approval-sync'
-import { readPocReviewSignoffRecord, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
+import { getAuditLogDetail, getAuditLogs } from '../../api/auditLog'
+import type { AuditLogDetail } from '../../types/auditLog'
+import { readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
+import { readQualityCapaClosureBackendFirst, type QualityCapaClosure } from '../../utils/quality-capa-sync'
+import { readPocEvidenceGovernanceRecordsBackendFirst, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
+import { approvalStatusLabel, isApprovalOpen, readAgentConfigApprovalsBackendFirst, type AgentConfigApprovalRecord } from '../../utils/agent-config-approval-sync'
+import { readPocReviewSignoffRecordBackendFirst, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
-import { readKnowledgeGovernanceReviews, type KnowledgeGovernanceReviewRecord } from '../../utils/knowledge-governance-sync'
+import { readKnowledgeGovernanceReviewsBackendFirst, type KnowledgeGovernanceReviewRecord } from '../../utils/knowledge-governance-sync'
 import {
   buildQualityKnowledgeRecommendationExperimentCandidateRecords,
   buildQualityKnowledgeGrayReleaseMonitorRecords,
   qualityKnowledgeGrayReleaseCycleLabel,
-  readQualityKnowledgeGrayReleaseDecisionRecords,
-  readQualityKnowledgeRecommendationFeedbackRecords,
-  readQualityKnowledgeRetrainingVersionRecords,
+  readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
+  readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
+  readQualityKnowledgeRetrainingVersionRecordsBackendFirst,
   type QualityKnowledgeGrayReleaseDecisionRecord,
   type QualityKnowledgeGrayReleaseMonitorRecord,
   type QualityKnowledgeRecommendationExperimentCandidateRecord,
   type QualityKnowledgeRecommendationFeedbackRecord,
   type QualityKnowledgeRetrainingVersionRecord,
 } from '../../utils/quality-knowledge-sample-sync'
+import { errorMessage } from '../../utils/error-message'
 
 interface ReplayItem {
   id: string
@@ -97,6 +131,8 @@ interface ReplayItem {
   risk: string
   auditState: string
   steps: string[]
+  route?: string | { path: string; query: Record<string, string> }
+  routeLabel?: string
 }
 
 interface ApprovalItem {
@@ -117,6 +153,9 @@ const knowledgeReviewRecords = ref<KnowledgeGovernanceReviewRecord[]>([])
 const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>([])
 const qualityGrayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
+const backendAgentActionAudits = ref<AuditLogDetail[]>([])
+const replaySyncErrors = ref<string[]>([])
+const OTD_EVIDENCE_CHAIN_STORAGE_KEY = 'aimes_otd_evidence_chain'
 
 const qualityGrayReleaseMonitorRecords = computed<QualityKnowledgeGrayReleaseMonitorRecord[]>(() =>
   buildQualityKnowledgeGrayReleaseMonitorRecords(qualityRetrainingVersionRecords.value, qualityRecommendationFeedbackRecords.value)
@@ -137,7 +176,7 @@ const baseReplayItems: ReplayItem[] = [
     summary: 'Agent 基于锁定期、CNC 空窗和 M-AL-6061 齐套缺口生成加班插入方案。',
     object: 'WO-RUSH-9001 / CNC-01',
     actor: 'scheduler.li',
-    evidence: 'OTD +14% / 延期减少 4 单',
+    evidence: 'OTD +3.3pt / 延期减少 1 单 / p=0.7745',
     time: '2026-05-20 09:14',
     status: 'accepted',
     traceId: 'TRACE-SCH-20260520-001',
@@ -181,10 +220,13 @@ const replayItems = computed<ReplayItem[]>(() => {
   const qualityGrayReleaseMonitorItems = qualityGrayReleaseMonitorRecords.value.map(mapQualityGrayReleaseMonitorToReplay)
   const qualityGrayReleaseDecisionItems = qualityGrayReleaseDecisionRecords.value.map(mapQualityGrayReleaseDecisionToReplay)
   const qualityExperimentCandidateItems = qualityExperimentCandidateRecords.value.map(mapQualityExperimentCandidateToReplay)
+  const backendBusinessWriteItems = backendAgentActionAudits.value
+    .map(mapAgentBusinessWriteAuditToReplay)
+    .filter((item): item is ReplayItem => item !== null)
   const otdEvidenceItems = otdEvidenceRecords.value.map(mapOtdEvidenceToReplay)
   const configApprovalItems = configApprovals.value.map(mapConfigApprovalToReplay)
   const signoffItems = pocReviewSignoff.value ? [mapPocReviewSignoffToReplay(pocReviewSignoff.value)] : []
-  const baseItems = [...qualityExperimentCandidateItems, ...qualityGrayReleaseMonitorItems, ...qualityGrayReleaseDecisionItems, ...qualityRecommendationFeedbackItems, ...knowledgeItems, ...otdEvidenceItems, ...signoffItems, ...pocEvidenceItems, ...assistantItems, ...configApprovalItems, ...baseReplayItems]
+  const baseItems = [...backendBusinessWriteItems, ...qualityExperimentCandidateItems, ...qualityGrayReleaseMonitorItems, ...qualityGrayReleaseDecisionItems, ...qualityRecommendationFeedbackItems, ...knowledgeItems, ...otdEvidenceItems, ...signoffItems, ...pocEvidenceItems, ...assistantItems, ...configApprovalItems, ...baseReplayItems]
   if (!closure) return baseItems
 
   return [
@@ -220,6 +262,7 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
   const isEngineeringConstraintPackage = record.type === 'engineering_constraint_package'
   const isCustomerCommitmentPackage = record.type === 'customer_commitment_package'
   const isBomKittingPackage = record.type === 'bom_kitting_package'
+  const isEquipmentDowntimePackage = record.type === 'equipment_downtime_package'
   return {
     id: record.id,
     type: 'AI 助手动作',
@@ -242,7 +285,9 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
               ? '助手客户交付承诺包已同步报表中心、AI 排产、OTD 证据链和 CSV 导出，可追溯对外承诺口径。'
               : isBomKittingPackage
                 ? '助手 BOM 齐套包已同步 BOM 管理、库存齐套、AI 排产和 OTD 证据链，可追溯缺料来源。'
-                : '助手动作已进入审计回放，后续可追溯执行人与入口。'
+                : isEquipmentDowntimePackage
+                  ? '助手设备停机复核包已同步设备维护、AI 排产、风险预警和 OTD 证据链，可追溯停机影响。'
+                  : '助手动作已进入审计回放，后续可追溯执行人与入口。'
       : '权限阻断已留痕，未改变业务数据。',
     auditState: record.permitted
       ? isRecoveryPackage
@@ -255,7 +300,9 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
               ? 'AI 助手意图、权限校验、客户交付承诺、KPI 钻取和 OTD 证据已归档'
               : isBomKittingPackage
                 ? 'AI 助手意图、权限校验、BOM 展开齐套、缺料事件和 OTD 证据已归档'
-                : 'AI 助手意图、权限校验、执行结果已归档'
+                : isEquipmentDowntimePackage
+                  ? 'AI 助手意图、权限校验、设备停机复核、排产事件和 OTD 证据已归档'
+                  : 'AI 助手意图、权限校验、执行结果已归档'
       : 'AI 助手意图与权限拒绝已归档',
     steps: isRecoveryPackage
       ? [
@@ -297,6 +344,14 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
                 'BOM 展开齐套检查包已分解为 M-AL-6061 缺料处置、M-SEAL-20 已齐套确认和 M-AL-6061B 替代料工程确认三类动作。',
                 `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
               ]
+            : isEquipmentDowntimePackage
+              ? [
+                  `AI 生产助手识别可执行意图：${record.label}。`,
+                  `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+                  `${statusText}，${routeText}。`,
+                  '设备停机复核包已分解为 CNC-001 维护窗口、CNC-002 / CNC-003 替代设备、影响工单重排和现场班组瓶颈保护四类动作。',
+                  `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
+                ]
         : [
           `AI 生产助手识别可执行意图：${record.label}。`,
           `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
@@ -304,6 +359,208 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
           `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode}。`,
         ],
   }
+}
+
+interface AgentActionAuditPayload {
+  actionName?: string
+  requestActionName?: string
+  reason?: string
+  businessWrite?: AgentBusinessWrite | null
+}
+
+interface AgentBusinessWrite {
+  resource?: string
+  purchaseOrderId?: string
+  orderNumber?: string
+  materialCode?: string
+  receivedQuantity?: number
+  status?: string
+  inspectionId?: string
+  result?: string
+  defectType?: string
+  quantity?: number
+  severity?: string
+  equipmentId?: string
+  equipmentCode?: string
+  targetStatus?: string
+}
+
+const agentExecuteAuditActions = [
+  'AgentExecutePurchaseAction',
+  'AgentExecuteQualityDisposition',
+  'AgentExecuteMaintenanceAction',
+]
+
+async function readBackendAgentActionAudits(onError?: (label: string, error: unknown) => void): Promise<AuditLogDetail[]> {
+  const batches = await Promise.all(agentExecuteAuditActions.map(async action => {
+    try {
+      const page = await getAuditLogs(action, 1, 8)
+      if (!Array.isArray(page.items)) {
+        throw new Error('后端返回非数组审计载荷')
+      }
+      const details = await Promise.all(page.items.map(async item => {
+        try {
+          const detail = await getAuditLogDetail(item.id)
+          if (!isAuditLogDetailRecord(detail)) {
+            throw new Error(`${item.id} 后端返回非对象审计载荷`)
+          }
+          return detail
+        } catch (error: unknown) {
+          onError?.('业务落库审计详情', error)
+          return null
+        }
+      }))
+      return details.filter((item): item is AuditLogDetail => {
+        if (item === null) return false
+        const payload = parseAgentActionAuditPayload(item, error => onError?.('业务落库审计详情', error))
+        if (!payload?.businessWrite) return false
+        if (!isSupportedAgentBusinessWriteResource(payload.businessWrite.resource)) {
+          onError?.('业务落库审计详情', new Error(`${item.id} 不支持的业务落库资源：${payload.businessWrite.resource ?? '未指定'}`))
+          return false
+        }
+        return true
+      })
+    } catch (error: unknown) {
+      onError?.('业务落库审计', error)
+      return []
+    }
+  }))
+  return batches.flat()
+}
+
+function isAuditLogDetailRecord(value: unknown): value is AuditLogDetail {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Partial<AuditLogDetail>
+  return (
+    typeof record.id === 'string'
+    && typeof record.userId === 'string'
+    && typeof record.action === 'string'
+    && typeof record.resource === 'string'
+    && typeof record.createdAt === 'string'
+    && Object.prototype.hasOwnProperty.call(record, 'newValues')
+  )
+}
+
+function parseAgentActionAuditPayload(record: AuditLogDetail, onError?: (error: unknown) => void): AgentActionAuditPayload | null {
+  if (!record.newValues) {
+    onError?.(new Error(`${record.id} 审计载荷缺失`))
+    return null
+  }
+  try {
+    const parsed = JSON.parse(record.newValues) as AgentActionAuditPayload
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
+  } catch (error: unknown) {
+    onError?.(new Error(`${record.id} 审计载荷解析失败：${errorMessage(error, 'JSON 解析失败')}`))
+    return null
+  }
+}
+
+function isSupportedAgentBusinessWriteResource(resource?: string): boolean {
+  return resource === 'purchase-order' || resource === 'quality-inspection' || resource === 'equipment'
+}
+
+function mapAgentBusinessWriteAuditToReplay(record: AuditLogDetail): ReplayItem | null {
+  const payload = parseAgentActionAuditPayload(record)
+  const businessWrite = payload?.businessWrite
+  if (!businessWrite?.resource) return null
+
+  const common = {
+    id: `agent-business-write-${record.id}`,
+    type: '业务落库动作',
+    actor: record.userId,
+    evidence: record.traceId ?? record.id,
+    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: 'executed' as const,
+    traceId: record.traceId ?? record.id,
+  }
+  const actionName = payload?.requestActionName || payload?.actionName || record.action
+  const reason = payload?.reason ? `执行原因：${payload.reason}` : '执行原因已记录在审计日志中。'
+
+  if (businessWrite.resource === 'purchase-order') {
+    const object = businessWrite.orderNumber ?? businessWrite.purchaseOrderId ?? record.resourceId ?? '采购单'
+    return {
+      ...common,
+      title: `采购收货落库：${object}`,
+      summary: `${businessWrite.materialCode ?? '物料'} 收货 ${businessWrite.receivedQuantity ?? '-'}，采购单状态 ${businessWrite.status ?? '-'}。`,
+      object,
+      route: {
+        path: '/purchase',
+        query: {
+          auditObjectType: 'purchase-order',
+          auditObjectId: businessWrite.purchaseOrderId ?? object,
+          auditObjectLabel: object,
+          auditTraceId: record.traceId ?? record.id,
+        },
+      },
+      routeLabel: '采购协同',
+      risk: '采购动作已经写入采购单，审计回放需核对收货数量、齐套缺口和排产释放条件。',
+      auditState: 'Agent 执行动作、PurchaseOrder.Receive、AgentActionResult 和 AuditLog 已归档',
+      steps: [
+        `Agent 决策 ${record.resourceId ?? '-'} 执行 ${actionName}。`,
+        reason,
+        `业务写入 purchase-order：${businessWrite.purchaseOrderId ?? '-'} / ${businessWrite.materialCode ?? '-'} / 收货 ${businessWrite.receivedQuantity ?? '-'}。`,
+        `采购单状态变为 ${businessWrite.status ?? '-'}，可在采购协同页核对业务对象。`,
+      ],
+    }
+  }
+
+  if (businessWrite.resource === 'quality-inspection') {
+    const object = businessWrite.inspectionId ?? record.resourceId ?? '质检记录'
+    return {
+      ...common,
+      title: `质量处置落库：${object}`,
+      summary: `${businessWrite.defectType ?? '缺陷'} ${businessWrite.quantity ?? '-'} 件，严重度 ${businessWrite.severity ?? '-'}，结果 ${businessWrite.result ?? '-'}。`,
+      object,
+      route: {
+        path: '/quality',
+        query: {
+          auditObjectType: 'quality-inspection',
+          auditObjectId: object,
+          auditObjectLabel: object,
+          auditTraceId: record.traceId ?? record.id,
+        },
+      },
+      routeLabel: '质量闭环',
+      risk: '质量处置已经写入质检记录，审计回放需核对缺陷数量、纠正措施和后续 CAPA/排产影响。',
+      auditState: 'Agent 执行动作、QualityInspection.RecordDefect、AgentActionResult 和 AuditLog 已归档',
+      steps: [
+        `Agent 决策 ${record.resourceId ?? '-'} 执行 ${actionName}。`,
+        reason,
+        `业务写入 quality-inspection：${object}，缺陷 ${businessWrite.defectType ?? '-'} / 数量 ${businessWrite.quantity ?? '-'}。`,
+        `质检结果变为 ${businessWrite.result ?? '-'}，可在质量闭环页核对业务对象。`,
+      ],
+    }
+  }
+
+  if (businessWrite.resource === 'equipment') {
+    const object = businessWrite.equipmentCode ?? businessWrite.equipmentId ?? record.resourceId ?? '设备'
+    return {
+      ...common,
+      title: `设备状态落库：${object}`,
+      summary: `设备 ${businessWrite.equipmentCode ?? businessWrite.equipmentId ?? '-'} 状态切换为 ${businessWrite.targetStatus ?? '-'}。`,
+      object,
+      route: {
+        path: '/equipment',
+        query: {
+          auditObjectType: 'equipment',
+          auditObjectId: businessWrite.equipmentId ?? object,
+          auditObjectLabel: object,
+          auditTraceId: record.traceId ?? record.id,
+        },
+      },
+      routeLabel: '设备维护',
+      risk: '维护动作已经写入设备状态，审计回放需核对停机窗口、影响工单和替代设备策略。',
+      auditState: 'Agent 执行动作、Equipment.TransitionTo、AgentActionResult 和 AuditLog 已归档',
+      steps: [
+        `Agent 决策 ${record.resourceId ?? '-'} 执行 ${actionName}。`,
+        reason,
+        `业务写入 equipment：${businessWrite.equipmentId ?? '-'} / ${businessWrite.equipmentCode ?? '-'}。`,
+        `设备状态变为 ${businessWrite.targetStatus ?? '-'}，可在设备维护页核对业务对象。`,
+      ],
+    }
+  }
+
+  return null
 }
 
 function mapPocEvidenceToReplay(record: PocEvidenceGovernanceRecord): ReplayItem {
@@ -1066,6 +1323,16 @@ function mapPocReviewSignoffToReplay(record: PocReviewSignoffRecord): ReplayItem
     time: new Date(record.signedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
     status: 'signoff',
     traceId: record.auditId,
+    route: {
+      path: '/report',
+      query: {
+        auditObjectType: 'poc-review-signoff',
+        auditObjectId: record.meetingId,
+        auditObjectLabel: record.meetingId,
+        auditTraceId: record.auditId,
+      },
+    },
+    routeLabel: '报表中心',
     risk: 'POC 已通过签署，后续交付需以本次证据包和评分表作为验收基线。',
     auditState: 'POC 评分、证据批次、签署人和复盘结论已归档',
     steps: [
@@ -1075,6 +1342,10 @@ function mapPocReviewSignoffToReplay(record: PocReviewSignoffRecord): ReplayItem
       `${record.reviewers.join('、')} 参与复盘，${record.signedBy} 完成签署，审计编号 ${record.auditId}。`,
     ],
   }
+}
+
+function hasPocReviewSignoffReplayPayload(record: PocReviewSignoffRecord): boolean {
+  return Array.isArray(record.evidenceBatches) && Array.isArray(record.reviewers)
 }
 
 function mapConfigApprovalToReplay(record: AgentConfigApprovalRecord): ReplayItem {
@@ -1169,6 +1440,7 @@ const metrics = computed(() => [
   { label: '供应风险回放', value: replayItems.value.filter(item => item.type === '供应风险证据').length },
   { label: '供应网络回放', value: replayItems.value.filter(item => item.type === '供应网络证据').length },
   { label: '采购整改回放', value: replayItems.value.filter(item => item.type === '采购整改证据').length },
+  { label: '业务落库回放', value: replayItems.value.filter(item => item.type === '业务落库动作').length },
   { label: '人员能力回放', value: replayItems.value.filter(item => item.type === '人员能力证据').length },
   { label: '人员替班回放', value: replayItems.value.filter(item => item.type === '人员替班证据').length },
   { label: '人员阻断回放', value: replayItems.value.filter(item => item.type === '人员阻断证据').length },
@@ -1179,18 +1451,124 @@ const metrics = computed(() => [
   { label: '证据链覆盖', value: '100%' },
 ])
 
-onMounted(() => {
-  qualityCapaClosure.value = readQualityCapaClosure()
-  assistantActionAudits.value = readAssistantActionAudits()
-  pocEvidenceRecords.value = readPocEvidenceGovernanceRecords()
-  configApprovals.value = readAgentConfigApprovals()
-  pocReviewSignoff.value = readPocReviewSignoffRecord()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
-  knowledgeReviewRecords.value = readKnowledgeGovernanceReviews()
-  qualityRecommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
-  qualityRetrainingVersionRecords.value = readQualityKnowledgeRetrainingVersionRecords()
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
-  if (qualityCapaClosure.value) selectedId.value = 'quality-capa-closure'
+function recordReplaySyncError(label: string, error: unknown) {
+  replaySyncErrors.value.push(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
+}
+
+function ensureReplayArray<T>(label: string, value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  recordReplaySyncError(label, new Error('后端返回非数组审计载荷'))
+  return []
+}
+
+function ensureQualityCapaClosure(value: unknown): QualityCapaClosure | null {
+  if (value === null) return null
+  if (!value || typeof value !== 'object') {
+    recordReplaySyncError('质量 CAPA 闭环', new Error('后端返回非对象审计载荷'))
+    return null
+  }
+  const candidate = value as Partial<QualityCapaClosure>
+  if (
+    typeof candidate.inspectionId === 'string'
+    && typeof candidate.workOrderId === 'string'
+    && typeof candidate.traceId === 'string'
+    && typeof candidate.rootCause === 'string'
+    && typeof candidate.evidenceStrength === 'number'
+    && Number.isFinite(candidate.evidenceStrength)
+    && typeof candidate.taskTitle === 'string'
+    && typeof candidate.taskKind === 'string'
+    && typeof candidate.owner === 'string'
+    && typeof candidate.dueAt === 'string'
+    && typeof candidate.verification === 'string'
+    && typeof candidate.verifiedAt === 'string'
+    && typeof candidate.auditState === 'string'
+    && typeof candidate.otdImpact === 'string'
+    && typeof candidate.reviewAction === 'string'
+  ) {
+    return candidate as QualityCapaClosure
+  }
+  recordReplaySyncError('质量 CAPA 闭环', new Error('后端返回不完整审计载荷'))
+  return null
+}
+
+function recordCorruptLocalOtdEvidenceChain() {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  const raw = window.localStorage.getItem(OTD_EVIDENCE_CHAIN_STORAGE_KEY)
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      recordReplaySyncError('OTD 证据链', new Error('本地审计证据链载荷损坏'))
+    }
+  } catch {
+    recordReplaySyncError('OTD 证据链', new Error('本地审计证据链载荷损坏'))
+  }
+}
+
+onMounted(async () => {
+  try {
+    qualityCapaClosure.value = ensureQualityCapaClosure(await readQualityCapaClosureBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('质量 CAPA 闭环', error)
+  }
+  try {
+    assistantActionAudits.value = ensureReplayArray<AssistantActionAuditRecord>('助手动作审计', await readAssistantActionAuditsBackendFirst({ failLoud: true }))
+  } catch (error: unknown) {
+    recordReplaySyncError('助手动作审计', error)
+  }
+  try {
+    pocEvidenceRecords.value = ensureReplayArray<PocEvidenceGovernanceRecord>('POC 证据治理', await readPocEvidenceGovernanceRecordsBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('POC 证据治理', error)
+  }
+  try {
+    configApprovals.value = ensureReplayArray<AgentConfigApprovalRecord>('配置审批', await readAgentConfigApprovalsBackendFirst({ failLoud: true }))
+  } catch (error: unknown) {
+    recordReplaySyncError('配置审批', error)
+  }
+  try {
+    const signoffRecord = await readPocReviewSignoffRecordBackendFirst()
+    if (signoffRecord && !hasPocReviewSignoffReplayPayload(signoffRecord)) {
+      recordReplaySyncError('POC 复盘签署', new Error(`${signoffRecord.id || signoffRecord.meetingId || 'POC 复盘签署'} 复盘签署审计载荷缺失`))
+    } else {
+      pocReviewSignoff.value = signoffRecord
+    }
+  } catch (error: unknown) {
+    recordReplaySyncError('POC 复盘签署', error)
+  }
+  try {
+    recordCorruptLocalOtdEvidenceChain()
+    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  } catch (error: unknown) {
+    recordReplaySyncError('OTD 证据链', error)
+  }
+  try {
+    knowledgeReviewRecords.value = ensureReplayArray<KnowledgeGovernanceReviewRecord>('知识治理', await readKnowledgeGovernanceReviewsBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('知识治理', error)
+  }
+  try {
+    qualityRecommendationFeedbackRecords.value = ensureReplayArray<QualityKnowledgeRecommendationFeedbackRecord>('质量推荐反馈', await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('质量推荐反馈', error)
+  }
+  try {
+    qualityRetrainingVersionRecords.value = ensureReplayArray<QualityKnowledgeRetrainingVersionRecord>('质量再训练版本', await readQualityKnowledgeRetrainingVersionRecordsBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('质量再训练版本', error)
+  }
+  try {
+    qualityGrayReleaseDecisionRecords.value = ensureReplayArray<QualityKnowledgeGrayReleaseDecisionRecord>('质量灰度决策', await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst())
+  } catch (error: unknown) {
+    recordReplaySyncError('质量灰度决策', error)
+  }
+  try {
+    backendAgentActionAudits.value = ensureReplayArray<AuditLogDetail>('业务落库审计', await readBackendAgentActionAudits(recordReplaySyncError))
+  } catch (error: unknown) {
+    recordReplaySyncError('业务落库审计', error)
+  }
+  if (backendAgentActionAudits.value[0]) selectedId.value = `agent-business-write-${backendAgentActionAudits.value[0].id}`
+  else if (qualityCapaClosure.value) selectedId.value = 'quality-capa-closure'
   else if (qualityExperimentCandidateRecords.value[0]) selectedId.value = `quality-experiment-candidate-${qualityExperimentCandidateRecords.value[0].id}`
   else if (qualityGrayReleaseMonitorRecords.value[0]) selectedId.value = `quality-gray-release-monitor-${qualityGrayReleaseMonitorRecords.value[0].id}`
   else if (qualityGrayReleaseDecisionRecords.value[0]) selectedId.value = `quality-gray-release-decision-${qualityGrayReleaseDecisionRecords.value[0].id}`
@@ -1212,10 +1590,13 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   margin-bottom: 16px;
-  padding: 14px;
+  padding: 18px;
   border: 1px solid #c7d2fe;
   border-radius: 8px;
-  background: #f8faff;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 255, 0.98), rgba(255, 255, 255, 0.98)),
+    #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 .replay-heading,
@@ -1225,6 +1606,19 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
+}
+
+.replay-sync-alert {
+  padding: 10px 12px;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  background: #fff2f0;
+  color: #a8071a;
+  font-size: 13px;
+}
+
+.replay-sync-alert p {
+  margin: 0;
 }
 
 .eyebrow {
@@ -1304,8 +1698,9 @@ h3 {
   min-height: 202px;
   padding: 11px;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .decision-card.accepted {
@@ -1417,6 +1812,16 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.trace-link {
+  padding: 3px 7px;
+  border: 1px solid #4f46e5;
+  border-radius: 4px;
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .approval-row {

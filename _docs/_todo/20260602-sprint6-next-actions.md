@@ -1,0 +1,188 @@
+# 2026-06-02 Sprint 6 Next Actions
+
+## A 轨：质量打磨
+
+- 继续执行 Coverage-Leverage Routing：优先选择当前覆盖率最低且用户必经/发布关键的组件，不让已 100% 覆盖组件的微切片插队。
+- `AuditDecisionReplayPanel.vue` 已补 POC 签署回放到报表中心证据入口；当前 coverage 证据显示行覆盖 `62.06%`，但仍有大量质量灰度、OTD 和配置审批映射分支可继续按业务关键度补测。
+- `GanttChart.vue` 已从 `0.00%` 打开到 `61.49%` 行覆盖，当前覆盖轻量甘特 marker 语义、轻量任务条点击/Enter 打开详情事件、真实 dhtmlx `onAfterTaskDrag` 同设备重叠冲突事件、进行中任务与锁定期重叠时的 `onBeforeTaskDrag` 阻断，以及初始 `scale` prop 应用；后续可继续覆盖实时拖拽冲突标记和 dhtmlx 初始化配置剩余分支。
+- `ChatPanel.vue` 已从约 `2.36%` 提升到 `54.24%` 行覆盖，当前覆盖 modal dialog、标题关联、输入框名称、关闭事件、消息区 `role=log`、真实发送问题、`queryKnowledge` payload、助手回答渲染、参考来源可聚焦展开、服务端问答失败 fallback 的 alert 降级说明、Admin-only 动作权限拒绝的审计与 alert 播报、Admin 生成交期恢复执行包写包/跳转/成功审计/status 播报、Admin 创建异常处置卡写包/跳转/成功审计/status 播报、Admin 生成工程约束复核包写包/跳转/成功审计/status 播报、Admin 生成客户交付恢复承诺包写包/跳转/成功审计/status 播报、Admin 生成 BOM 展开齐套检查包写包/OTD 证据链/跳转/成功审计/status 播报、Admin 生成设备停机复核包写事件/OTD 证据链/跳转/成功审计/status 播报，以及 OTD/POC 复盘 CSV 导出、Blob URL 生命周期、报表中心跳转、成功审计和 status 播报；后续若继续该组件，优先覆盖引用治理或失败路径，不再追加纯模板属性微切片。
+- `ScheduleBoard.vue` 已从 `49.49%` 提升到 `50.60%` 行覆盖，当前新增覆盖工单详情后端失败时的 fail-loud 兜底提示、采纳/拒绝反馈同步失败时暴露后端原因，以及优化失败后再次成功会清空旧错误横幅；后续优先覆盖缺计划 ID、Agent 建议采纳、拖拽重排或风险事件加载分支。
+- `ScheduleAgentWorkbenchPanel.vue` 已提升到 `83.52%` 行覆盖，当前新增覆盖后端建议生成失败时使用 assertive alert 播报；后续不再优先精修该面板，除非发现真实阻断缺陷。
+- `BomBoard.vue` 已从 `55.68%` 提升到 `66.46%` 行覆盖，当前覆盖键盘选择 BOM 记录和爆炸接口异步失败后的本地展开树兜底；后续优先覆盖齐套包生成失败/工程变更审批分支，避免继续做纯视觉模板属性。
+- `ScheduleAgentWorkbenchPanel.vue` 已从 `16.47%` 提升到 `81.17%` 行覆盖，当前覆盖后端建议生成结果的状态播报；后续若继续该组件，优先覆盖采纳/拒绝失败提示或真实后端决策加载分支。
+- `QualityCapaTaskPanel.vue` 已从 `17.82%` 提升到 `53.00%` 行覆盖，当前覆盖 CAPA 待验证数量状态播报，以及执行中 CAPA 推进到已验证、写入质量闭环 payload 和完成消息 status 播报；后续优先覆盖正式 CAPA 转换、复用效果验证、低分复核队列或助手执行包质量责任闭环。
+- `ParetoCompare.vue` 已从 `11.11%` 提升到 `21.73%` 行覆盖，当前覆盖多目标方案对比浮层 modal dialog 语义；后续优先覆盖 demo fallback、推荐方案采用事件、tab 切换或雷达/KPI 归一化函数。
+- `EquipmentScheduleImpactPanel.vue` 已从 `26.31%` 提升到 `64.86%` 行覆盖，当前覆盖设备故障同步结果状态播报和本地/OTD 写入调用；后续优先覆盖客户故障样例生成和异常分流维护单同步分支。
+- `FeedbackForm.vue` 已从 `21.42%` 提升到 `85.71%` 行覆盖，当前覆盖采纳反馈提交失败的 alert 播报和错误归一化；后续若继续该组件，优先覆盖成功提交 payload/emit 或分类必填禁用状态，不做纯视觉微调。
+- `DocumentUpload.vue` 已从 `30.28%` 提升到 `50.57%` 行覆盖，当前覆盖客户真实工单导入样例、拒绝文件 alert、键盘触发文件选择、成功上传后 API 调用/队列状态/历史记录、上传失败队列行 alert 播报，以及 50MB 超大文件上传前拒绝；后续优先覆盖拖拽上传路径或质量知识治理事件。
+- `ProductionBoard.vue` 已从 `39.51%` 提升到 `53.34%` 行覆盖，当前新增覆盖并修复后端扫码成功后选中工单、渲染匹配工序和状态播报，以及开工/完工/异常上报 API 失败时不乐观推进本地状态或证据链；后续优先覆盖条码证据写入和不良品质量门冻结。
+- `ProductionBoard.vue` 已继续提升到 `54.42%` 行覆盖，当前新增覆盖工单列表接口失败时显示 demo 工单但必须以 alert 暴露后端失败原因；后续优先覆盖扫码上下文成功闭环、非合格完工质量冻结或分页/过滤加载失败分支。
+- `PurchaseBoard.vue` 已提升到 `53.18%` 行覆盖、`36.84%` 函数覆盖，当前新增覆盖并修复采购单确认成功后详情与左侧列表状态同步、取消 API 失败时不乐观推进本地取消、普通收货 API 失败时保留弹窗并显示 alert；后续优先覆盖供应延期升级、替代到货或外协到货确认。
+- `GanttToolbar.vue` 已从 `41.66%` 行覆盖 / `0%` 函数覆盖提升到 `100%` / `100%`，当前覆盖排产工具栏五个命令事件和两个选择器更新，并修复操作按钮默认 submit 风险；后续不再优先精修该组件。
+- `ScheduleMetrics.vue` 已从 `43.75%` 行覆盖 / `0%` 函数覆盖提升到 `87.50%` / `100%`，当前覆盖首屏 KPI 显示、阈值颜色和状态播报语义；后续不再优先精修该组件。
+- `ScheduleRecoveryHandoffPanel.vue` 已提升到 `100%` 行覆盖 / `100%` 函数覆盖，当前覆盖交期恢复执行包状态播报、活动建议/人工反馈展示和闭环事件；后续不再优先精修该组件。
+- `ScheduleEventQueuePanel.vue` 已提升到 `100%` 行覆盖 / `100%` 函数覆盖，当前覆盖事件证据、当前 Agent 建议状态播报、推荐方案包、生成和采纳事件；后续不再优先精修该组件。
+- `ParetoCompare.vue` 已从 `21.73%` 提升到 `90.06%` 行覆盖，当前覆盖后端批量优化失败后的 demo fallback、推荐方案状态播报和 `apply=balanced` 事件；后续若继续该组件，优先覆盖真实 API 成功返回、tab 切换或 KPI/雷达归一化边界。
+- 下一轮候选优先看 `ChatPanel.vue` 的真实业务分支、`GanttChart.vue` 的 dhtmlx 初始化/拖拽分支、`DocumentUpload.vue` 成功上传、`ProductionBoard.vue` / `PurchaseBoard.vue` 等低覆盖且用户关键组件；若继续审计链路，则优先覆盖真实业务回放映射分支。
+- 若继续排产链路，优先覆盖用户必经状态、失败反馈、审计留痕或后台同步结果，不做纯视觉微调。
+
+## B 轨：发布阻断项
+
+- 获取 hosted CI 真实远端 PASS run URL、run id 和 job summary。
+- 在 PostgreSQL/staging 环境运行 rehearsal 并保存 `Result: PASS` 证据。
+- 完成 Attack Chain A/B/C 人工验证并记录证据链接。
+- 完成 security signoff，不能用自动自评报告替代人工签字。
+- 启动首次灰度，并记录灰度编号、开始时间和观测入口。
+- 满 14 天无 P0/P1 后再关闭观察窗口闸门。
+- 2026-06-02 已刷新 fail-loud 证据包：`hosted-ci-20260602.md`、`staging-rehearsal-20260602-local.md`、`attack-chain-verification-20260602.md`、`gray-observation-20260602.md`。四份均为 `Result: FAIL`，下一步必须补真实外部/人工证据，而不是继续用本机占位报告。
+- 2026-06-02 已新增总审计入口：`scripts/run-release-gate-audit.ps1` 和 `_docs/_reports/release-gate-audit-20260602.md`。下一次补证后应先更新对应单项报告，再跑总审计脚本确认是否仍为 `Result: FAIL`。
+- 2026-06-02 已刷新安全签字包：`_docs/_review/20260602-security-signoff.md`，当前仍为 `Status: UNSIGNED` / `Decision: UNSIGNED`。下一步必须先完成 Attack Chain A/B/C 人工验证，再由 human signer 签字。
+- 2026-06-02 聚合报告已新增 `Evidence packet status`：当前五个证据包文件均为 `FOUND`，但五个发布闸门仍为 `FAIL`。后续审计不要把 `FOUND` 当作 `PASS`。
+- 2026-06-02 自动安全自评已刷新为 PASS：`_docs/_reports/security-self-assessment-20260602-local.md`。剩余安全签字动作仍是 Attack Chain A/B/C 人工验证和 human signer，不能由自动自评替代。
+- 2026-06-02 hosted CI 单项脚本已加固 `gh run list` 硬门槛：即使 RunUrl、RunId 和 job summary 都存在，只要授权环境无法查询 GitHub Actions runs，`hosted-ci-20260602.md` 仍必须 `Result: FAIL`。
+- 2026-06-02 staging rehearsal 报告已加固迁移连接串证据：报告现在区分 API 容器 `Host=postgresql` 和 EF migration 宿主机 `Host=localhost`，但真实 Docker/PostgreSQL/staging PASS 仍未完成。
+- 2026-06-02 Attack Chain 单项脚本已加固占位 evidence 拒绝：`TBD`、`PENDING`、`待补` 等不再算人工验证证据。
+- 2026-06-02 Security signoff 总审计已加固占位 signer/evidence 拒绝：SIGNED 状态不能搭配 `TBD` 等占位字段关闭签字 gate。
+- 2026-06-02 Attack Chain 总审计已加固占位 verifier/evidence 拒绝：`VERIFIED` 状态不能搭配 `TBD/PENDING/待补` 关闭 Attack Chain gate。
+- 2026-06-02 hosted CI 单项和总审计已加固占位 job summary 拒绝：`TBD` 或 `job summary: TBD` 不能关闭 Hosted CI gate。
+- 2026-06-02 gray observation 单项和总审计已加固占位 evidence 拒绝：`TBD/PENDING/待补` 不能关闭灰度观察 gate。
+- 2026-06-02 Hosted CI 总审计已加固 `gh run` 段落级 exit code：只有 `## gh run` 内的 `Exit code: 0` 能作为远端 run 查询成功证据。
+
+## 本片收尾
+
+- 已完成 `ScheduleFeedbackPanel` 同步提示状态播报补强。
+- 已完成 `AuditDecisionReplayPanel` 待审批数量 badge 状态播报补强。
+- 已完成 `AuditDecisionReplayPanel` POC 签署回放到报表中心证据入口，并修复 Vitest 4 下 coverage 暴露的测试夹具问题。
+- 已完成 `GanttChart` 轻量 marker 列表语义补强。
+- 已完成 `ChatPanel` modal dialog 与输入框可访问语义补强。
+- 已完成 `ScheduleAgentWorkbenchPanel` 后端建议动作反馈状态播报补强。
+- 已完成 `QualityCapaTaskPanel` 待验证 CAPA 数量状态播报补强。
+- 已完成 `ParetoCompare` 多目标方案对比浮层 modal dialog 语义补强。
+- 已完成 `EquipmentScheduleImpactPanel` 设备故障同步结果状态播报补强。
+- 已完成 `ChatPanel` 消息区 `role=log` / `aria-live=polite` / 可访问名称补强。
+- 已完成 `FeedbackForm` 采纳反馈提交失败 alert 播报补强。
+- 已完成 `DocumentUpload` 客户真实工单导入样例生成结果状态播报补强。
+- 已完成 `ParetoCompare` 后端失败 demo fallback 推荐方案状态播报和采用事件覆盖。
+- 已完成 `ChatPanel` 真实发送路径、知识检索 payload、助手回答渲染和参考来源可聚焦展开覆盖。
+- 已完成 `GanttChart` 真实 dhtmlx 拖拽结束冲突检测覆盖；该片为测试覆盖增量，未修改生产代码。
+- 已完成 `DocumentUpload` 成功上传路径覆盖；该片为测试覆盖增量，未修改生产代码。
+- 已完成 `ProductionBoard` 后端扫码成功路径定位工单/工序和状态播报修复。
+- 已完成 `PurchaseBoard` 采购单确认成功后详情与列表状态同步修复。
+- 已完成 `GanttToolbar` 工具栏按钮显式 `type="button"` 修复和命令事件覆盖。
+- 已完成 `ScheduleMetrics` 排产 KPI 条状态播报语义和阈值显示覆盖。
+- 已完成 `ScheduleRecoveryHandoffPanel` 交期恢复执行包状态播报和闭环事件覆盖。
+- 已完成 `ScheduleEventQueuePanel` 当前 Agent 建议状态播报、推荐方案包、生成/采纳事件覆盖。
+- 已完成 `KnowledgeGovernancePanel` 过期风险数量状态播报语义补强；该片为语义质量收口，fresh 总行覆盖 `61.40%`，`KnowledgeGovernancePanel.vue` 行覆盖 `36.63%`，没有有意义覆盖率增量，后续不应继续精修同一模板属性。
+- 已完成 `DocumentUpload` 上传失败队列行 alert 播报覆盖，mock `uploadDocument` 失败时错误不会进入历史记录，且单文件失败会以 assertive alert 暴露。
+- 已完成 `ProductionBoard` 开工 API 失败保护，mock `startOperation` 失败时工序/工单保持待生产并以 alert 告知操作员。
+- 已完成 `ProductionBoard` 完工 API 失败保护，mock `completeOperation` 失败时工序/工单保持生产中，不写入质量联动和 OTD 证据，并以 alert 告知操作员。
+- 已完成 `ProductionBoard` 异常上报 API 失败保护，mock `reportException` 失败时不写入生产异常事件、风险追踪或 OTD 证据，并以 alert 告知操作员。
+- 已完成 `PurchaseBoard` 取消 API 失败保护，mock `cancelPurchaseOrder` 失败时采购单保持原状态，并以 `取消失败：...` alert 告知采购员。
+- 已完成 `ScheduleBoard` 单测的 `GanttChart.vue` 模块 mock 隔离，修复 full coverage 下真实 Gantt CSS 异步导入造成的 teardown unhandled errors。
+- 已完成 `ChatPanel` 权限拒绝路径覆盖，Planner 点击 Admin-only `生成交期恢复执行包` 时不跳转，写入拒绝审计，并以 assertive alert 告知动作未执行。
+- 已完成 `ChatPanel` OTD/POC 复盘报表导出路径覆盖，验证 CSV Blob、下载触发、URL 回收、`/report` 跳转、成功审计和 polite status 播报。
+- 已完成 `DocumentUpload` 50MB 超大文件拒绝路径覆盖；该片为 coverage-only GREEN/no production change，验证超大 PDF 不进入队列、上传按钮禁用且不会调用 `uploadDocument`。
+- 已完成 `PurchaseBoard` 普通收货 API 失败保护，mock `receivePurchaseOrder` 失败时收货弹窗保持打开，采购单状态/已收数量不变，并以 `收货失败：...` alert 告知采购员。
+- 已完成 `QualityCapaTaskPanel` CAPA 验证闭环覆盖，执行中任务推进到已验证时写入 `writeQualityCapaClosure` payload，并以 polite status 播报审计/OTD 同步完成消息。
+- 已完成 `ChatPanel` 知识问答失败 fallback alert 覆盖，mock `queryKnowledge` 失败时明确播报 RAG/LLM 服务不可用和离线演示降级原因，避免把演示回答伪装成真实检索结果。
+- 已完成 `ChatPanel` 异常处置卡创建成功路径覆盖，Admin 点击动作后写入异常处置包、跳转 `/anomaly`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `ChatPanel` 工程约束复核包创建成功路径覆盖，Admin 点击动作后写入工程约束复核包、跳转 `/routing`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `ChatPanel` 客户交付恢复承诺包创建成功路径覆盖，Admin 点击动作后写入 OTD KPI 承诺包、跳转 `/report`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `ChatPanel` BOM 展开齐套检查包创建成功路径覆盖，Admin 点击动作后写入齐套包、同步 OTD 证据链、跳转 `/bom`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `ChatPanel` 设备停机复核包创建成功路径覆盖，Admin 点击动作后写入停机事件、同步 OTD 证据链、跳转 `/equipment`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `ChatPanel` 交期恢复执行包创建成功路径覆盖，Admin 点击动作后写入执行包、跳转 `/scheduling`、记录成功审计，并以 polite status 播报完成结果。
+- 已完成 `GanttChart` 轻量甘特任务条点击/Enter 打开详情覆盖，离线/demo marker 现在会发出 `taskClick`，父级调度页可继续打开工单解释和详情。
+- 已完成 `GanttChart` 锁定期重叠拖拽保护，进行中且跨锁定窗口的任务现在会被 `onBeforeTaskDrag` 阻断，并以 warning 告知调度员。
+- 已完成 `GanttChart` 初始 scale 应用覆盖，`scale="week"` 初始挂载会直接配置 dhtmlx 周视图，避免调度主视图首屏粒度不一致。
+- 已完成 `ScheduleBoard` 工单详情后端失败 fail-loud 覆盖，`getWorkOrderById` 失败时仍显示本地排产解释兜底，但详情面板会明确提示真实接口失败原因。
+- 已完成 `ScheduleBoard` 反馈同步失败原因提示覆盖，`submitAdoptionFeedback` 失败时 `.sync-note` 会保留本地复盘提示并追加后端错误原因。
+- 已完成 `ScheduleBoard` 智能优化成功恢复路径覆盖，首次优化失败后再次成功应用新 plan 时会清空旧错误横幅，避免成功方案被上一轮失败状态误导。
+- 已完成 `ScheduleAgentWorkbenchPanel` 后端建议生成失败 alert 播报覆盖，`recommendAgentDecision` 失败时错误提示使用 `role="alert"` / `aria-live="assertive"`，成功提示仍保持 polite status。
+- 已完成 `BomBoard` 爆炸接口异步失败兜底修复，`explodeBom` rejected 时不再产生 unhandled rejection，并显示本地 demo 展开树用于 BOM/齐套/排产约束复核。
+- 已完成 `ProductionBoard` 工单列表加载失败 fail-loud 兜底，`getWorkOrders` 失败时显示本地 demo 工单但以 assertive alert 暴露后端错误原因。
+- 已完成 `PurchaseBoard` 确认成功后列表刷新失败 fail-loud 覆盖，`confirmPurchaseOrder` 成功但 `getPurchaseList` 刷新失败时保留本地列表状态，并以 alert 暴露后端错误原因。
+- 已完成 `PurchaseBoard` 初始列表加载失败 fail-loud 兜底，`getPurchaseList` 首屏失败时显示本地 demo 采购单但以 alert 暴露后端错误原因。
+- 已完成 `InventoryBoard` 初始库存列表加载失败 fail-loud 兜底，`getInventoryList` 失败时显示本地 demo 物料但以 alert 暴露后端错误原因。
+- 已完成 `InventoryBoard` 交易记录加载失败 fail-loud 兜底，`getStockTransactions` 失败时显示当前物料 demo 交易但以 alert 暴露后端错误原因。
+- 已完成 `InventoryBoard` 库存操作失败 alert 语义补强，`stockOut` 失败时弹窗保持打开，错误原因以 `role="alert"` 暴露。
+- 已完成 `AnomalyBoard` 初始异常列表加载失败 fail-loud 兜底，`getAnomalyList` 失败时显示本地 demo 异常但以 alert 暴露后端错误原因。
+- 已完成 `AnomalyBoard` 异常详情加载失败 fail-loud 兜底，`getAnomalyById` 失败时显示本地 demo 详情但以 alert 暴露后端错误原因。
+- 已完成 `AnomalyBoard` AI 分析失败 fail-loud 兜底，`analyzeAnomaly` 失败时显示本地 demo 建议但以 alert 暴露后端错误原因。
+- 已完成 `ChatPanel` 交期恢复执行包写入失败 fail-loud 兜底，`writeAssistantRecoveryPackage` 失败时不导航，不报成功，以 alert 暴露原因并写入 permitted=false 审计。
+- 已完成 `ProductionBoard` 扫码接口失败 fail-loud 兜底，`scanOperation` 失败且本地无匹配时以 alert 暴露后端错误原因，避免误报为普通无匹配。
+- 已完成 `QualityCapaTaskPanel` CAPA 验证闭环写入失败 fail-loud 兜底，`writeQualityCapaClosure` 失败时任务保留执行中，不报成功，以 assertive alert 暴露原因并允许重试。
+- 已完成 `DocumentUpload` 质量知识证据刷新失败 fail-loud 兜底，后台刷新失败时保留本地治理数据，不产生 mounted hook 未处理异常，并以 assertive alert 暴露原因。
+- 已完成 `ScheduleBoard` 拖拽重排保存失败 fail-loud 兜底，`rescheduleItem` 失败后恢复重载会保留 `保存失败：...` alert，避免调度员误以为拖拽调整已落库。
+- 已完成 `ScheduleBoard` 多目标方案采纳反馈同步失败 fail-loud 兜底，`submitAdoptionFeedback` 失败时保留本地目标切换，并以 `.sync-note` 暴露后端原因。
+- 已完成 `ScheduleBoard` 风险事件加载失败 fail-loud 兜底，`getRiskDashboard` 失败时显示本地 demo 事件但以 `.risk-event-sync-note` 暴露后端原因，避免把演示事件伪装成实时风险队列。
+- 已完成 `ScheduleBoard` 外协排产释放失败 fail-loud 兜底，已到货外协事件采纳 Agent 建议时若 `confirmOutsourcingScheduleRelease` 失败，会保留采纳反馈并以 `.sync-note` 暴露释放审计未归档原因。
+- 已完成 `DocumentUpload` 质量知识灰度发布失败 fail-loud 兜底，R3 灰度发布写入失败时训练集不被记为成功发布，并以 assertive alert 暴露后端原因。
+- 已完成 `ChatPanel` 权限拒绝审计写入失败 fail-loud 兜底，受限动作仍不执行不导航，但 `recordAssistantActionAudit` 失败时会以 alert 暴露拒绝审计未落地原因。
+- 已完成 `ProductionBoard` 完工证据写入失败 fail-loud 兜底，`completeOperation` 成功但 OTD/质量证据归档失败时不会弹成功提示，而是以 alert 说明后端完工已提交但证据未归档。
+- 已完成 `QualityCapaTaskPanel` 质量知识复用草案转正式 CAPA 失败 fail-loud 兜底，`writeQualityKnowledgeReuseClosure` 失败时草案保持待复核，可重试，并以 alert 暴露后端原因。
+- 已完成 `DocumentUpload` 质量实验 R7 影子灰度发布失败 fail-loud 兜底，`grayPublishQualityExperimentShadowValidationVersion` 失败时不新增发布历史，并以 alert 暴露后端原因。
+- 已完成 `PurchaseBoard` 采购确认失败 fail-loud 兜底，`confirmPurchaseOrder` 失败时采购单保持已提交，不再本地改成已确认，并以 alert 暴露后端原因。
+- 已完成 `ChatPanel` 动作执行失败后的失败审计写入失败 fail-loud 兜底，原始动作失败和失败审计写入失败会同时以 alert 暴露。
+- 已完成 `PurchaseBoard` 采购提交失败 fail-loud 兜底，`submitPurchaseOrder` 失败时采购单保持草稿，不再本地改成已提交，并以 alert 暴露后端原因。
+- 已完成 `PurchaseBoard` 采购新建失败 fail-loud 兜底，`createPurchaseOrder` 失败时保留新建弹窗和表单，不再本地插入 `po-new` 草稿单，并以 alert 暴露后端原因。
+- 已完成 `ParetoCompare` 单测隔离修复，按组件名 stub 异步 `GanttChart`，避免 full coverage 在环境 teardown 后加载 `gantt-overrides.css` 产生 unhandled rejection。
+- 已完成 `DocumentUpload` 质量知识正式发布失败 fail-loud 兜底，`publishQualityKnowledgeRetrainingVersion` 失败时不新增发布历史，并以 alert 暴露后端原因。
+- 已完成 `ChatPanel` 成功动作审计失败 fail-loud 兜底，动作主体已执行但成功审计写入失败时保留成功状态，并追加 alert 暴露审计未落地原因。
+- 已完成 `DocumentUpload` 质量知识回滚失败 fail-loud 兜底，`rollbackQualityKnowledgeRetrainingVersion` 失败时不新增回滚历史，并以 alert 暴露训练集仍保留在发布状态和后端原因。
+- 已完成 `PurchaseBoard` 替代供应商锁定失败 fail-loud 兜底，`writeSupplyRiskEscalation` 或 OTD 证据写入失败时供应风险保持 open，不显示替代到货入口，并以 alert 暴露后端原因。
+- 已完成 `ChatPanel` BOM 齐套包 OTD 证据写入失败 fail-loud 兜底，齐套包已生成时保留成功包卡片和 `/bom` 跳转，并以 alert 暴露 OTD 证据未归档原因。
+- 已完成 `ChatPanel` 设备停机复核包 OTD 证据写入失败 fail-loud 兜底，停机事件已写入时保留成功包卡片和 `/equipment` 跳转，并以 alert 暴露 OTD 证据未归档原因。
+- 已完成 `ProductionBoard` 异常上报后证据归档失败 fail-loud 兜底，`reportException` 已成功但异常管理/OTD 证据写入失败时，以 alert 暴露“后端已上报但证据未归档”，不显示全成功提示。
+- 已完成 `RiskActionQueuePanel` 风险升级 trace 写入失败 fail-loud 兜底，trace 未归档时保留 `待处置` 和原负责人，并以 alert 暴露升级失败原因。
+- 已完成 `ReportBoard` POC 复盘签署失败 fail-loud 兜底，签署记录未归档时保留未签署状态，并以 alert 暴露失败原因。
+- 已完成 `run-release-gate-audit.ps1` anchored PASS 加固，总审计只接受独立 `Result: PASS` 行，临时 spoof 报告验证仍为 `EXPECTED_FAIL`。
+- 已修正 `Sprint4LlmCostControls` 架构门与 Sprint5 Options 口径冲突，当前 `MES.ArchitectureTests` 全量 `72/72 passed`。
+- 已完成 `run-release-gate-audit.ps1` anchored security signoff 加固，总审计只接受独立 `Status: SIGNED` / `Decision: SIGNED` 行；临时 unsigned 签字 spoof 报告验证仍为 `EXPECTED_FAIL`。
+- 已完成 `run-hosted-ci-evidence.ps1` job summary 硬门槛，`RunUrl` / `RunId` 有值但 `Evidence` 为空时仍 `EXPECTED_FAIL`。
+- 当前架构审计证据：`MES.ArchitectureTests` 全量 `73/73 passed`；hosted/release gate 过滤 `4/4 passed`；PowerShell parser `parse ok`。
+- 已完成 `run-attack-chain-verification.ps1` VerifiedAt 时间戳硬门槛，Verifier、Attack Chain A/B/C 和 evidence 均给齐但 `VerifiedAt=not-a-date` 时仍 `EXPECTED_FAIL`。
+- 已完成 `run-release-gate-audit.ps1` Attack Chain 专用证据 predicate；Attack Chain 报告只有 `Result: PASS` 但缺人/时间/三链路 evidence 时，总审计仍 `EXPECTED_FAIL`。
+- 已完成 `run-release-gate-audit.ps1` PostgreSQL/staging 专用证据 predicate；staging 报告只有 `Result: PASS` 但缺迁移、依赖启动、API、`/live`、`/ready` 和 exit code 证据时，总审计仍 `EXPECTED_FAIL`。
+- 已完成 `run-release-gate-audit.ps1` Hosted CI 专用证据 predicate；Hosted CI 报告只有 `Result: PASS` 但缺 READY 状态、RunUrl、RunId、job summary 或 `gh run` 成功证据时，总审计仍 `EXPECTED_FAIL`。
+- 已完成 `run-release-gate-audit.ps1` Gray observation 专用证据 predicate；Gray observation 报告只有 `Result: PASS` 但缺 PASS 状态、GrayReleaseId、可解析时间戳、14 天窗口、P0/P1=0 或 evidence 时，总审计仍 `EXPECTED_FAIL`。
+- 已完成 `run-release-gate-audit.ps1` Security signoff 专用证据 predicate；安全签字包只有 `Status: SIGNED` / `Decision: SIGNED` 但缺 Signer、可解析 SignedAt、自评、Attack Chain 或 evidence 时，总审计仍 `EXPECTED_FAIL`。
+- 已完成 hosted CI RunUrl/RunId 格式加固；`RunUrl` 必须匹配 GitHub Actions run URL，`RunId` 必须为数字，非法 URL/RunId 在单项脚本和总闸门均保持 `EXPECTED_FAIL`。
+- 已完成 staging health HTTP 成功证据加固；`Health /live` 和 `Health /ready` 标签必须各自对应 HTTP 2xx/3xx 段落，HTTP 500 样本在总闸门仍 `EXPECTED_FAIL`。
+- 已完成 Attack Chain A/B/C 分段证据加固；总闸门现在要求 A、B、C 三段各自 `Manual verification: PASS` 且各自有非空 `Evidence`，不能用同一链路重复三条证据替代。
+- 已完成 gray observation OBSERVING 单项脚本 fail-loud；观察中即使已有 GrayReleaseId、GrayStartedAt 和 Evidence，也必须 `Result: FAIL`，直到 14 天窗口完成。
+- 已完成 hosted CI `gh run list` 单项脚本 fail-loud；合法 RunUrl/数字 RunId/job summary 不能绕过 `gh run` 查询失败，正式 hosted CI 报告和总 release audit 仍 `EXPECTED_FAIL`。
+- 已完成 staging rehearsal 迁移连接串证据加固；报告显式记录 `Migration connection string`，避免把 API 容器连接串误当作 EF migration 实际连接串。
+- 已完成 Attack Chain A/B/C 占位 evidence 拒绝；三段人工验证必须填真实证据，不能用 `TBD` / `PENDING` / `待补` 占位。
+- 已完成 Security signoff 总闸门占位字段拒绝；`Signer` 和 `Evidence` 必须是具体非占位值，不能用 SIGNED + TBD 关闭。
+- 已完成 Attack Chain 总闸门占位字段拒绝；Verifier 和 A/B/C evidence 必须是具体非占位值，不能用 VERIFIED + TBD 关闭。
+- 已完成 hosted CI job summary 占位字段拒绝；Evidence 必须是真实 job summary，不能用 `TBD` 或 `job summary: TBD` 关闭。
+- 已完成 gray observation evidence 占位字段拒绝；Evidence 必须是真实观察看板/事故查询记录，不能用 `TBD` 等占位词关闭。
+- 已完成 Hosted CI `gh run` 段落级 exit code 判定；不能用 `git ls-remote` 或其它段落的 `Exit code: 0` 替代。
+- 已完成 PostgreSQL/staging 四个关键段落级 exit code 判定；不能用无关段落的 `Exit code: 0` 替代 Docker、依赖启动、EF migration 或 API 启动成功。
+- 已完成 Security signoff 阻断正文拒绝；签字包即使字段为 SIGNED，也不能保留 `PENDING`、`UNSIGNED` 或 `FAIL` 阻断语义。
+- 已完成 Hosted CI RunUrl 精确匹配；`RunUrl` 必须以 GitHub Actions 数字 run id 结束，尾随路径不再通过。
+- 已完成 Hosted CI RunUrl/RunId 一致性校验；`RunUrl` 末尾 run id 必须与 `RunId` 字段相同。
+- 已完成 Hosted CI `gh run` 输出 RunId 绑定；`## gh run` 成功段落必须包含当前 `RunId`。
+- 已完成 Hosted CI `gh run` RunId 数字边界匹配；长数字子串不能替代独立目标 `RunId`。
+- 已完成 Hosted CI 单项脚本 `gh run list` 输出 RunId 绑定；单项证据生成阶段也要求 CLI 输出包含目标 `RunId`。
+- 已完成 Gray observation 未来结束时间拒绝；`ObservationEndedAt` 不能晚于当前时间，不能用未来时间提前关闭 14 天墙钟窗口。
+- 已完成 Gray observation 时间线顺序校验；`GrayStartedAt` 必须不晚于 `ObservationStartedAt`。
+- 已完成 Gray observation P0/P1 计数字段锚定；备注文本不能替代独立 `P0/P1 incident counts: P0=0; P1=0` 行。
+- 已完成 Gray observation GrayReleaseId 占位值拒绝；灰度发布 ID 必须是具体非占位值。
+- 已完成 Attack Chain VerifiedAt 未来时间拒绝；人工验证时间必须已经发生，不能用未来时间提前关闭。
+- 当前架构审计证据：`ReleaseGateAudit|GrayObservation` 过滤 `8/8 passed`；`run-release-gate-audit.ps1` PowerShell parser `parse ok`。
+- 当前 hosted/release gate 架构审计证据：`HostedCiEvidence|ReleaseGateAudit` 过滤 `12/12 passed`；`run-hosted-ci-evidence.ps1` 和 `run-release-gate-audit.ps1` PowerShell parser 均 `parse ok`。
+- 当前 staging/release gate 架构审计证据：`StagingRehearsal|ReleaseGateAudit` 过滤 `12/12 passed`；`run-staging-rehearsal.ps1` 和 `run-release-gate-audit.ps1` PowerShell parser 均 `parse ok`。
+- 当前 attack-chain/release gate 架构审计证据：`AttackChain|ReleaseGateAudit` 过滤 `12/12 passed`；`run-attack-chain-verification.ps1` 和 `run-release-gate-audit.ps1` PowerShell parser 均 `parse ok`。
+- 当前 security-signoff/release gate 架构审计证据：`SecuritySignoff|ReleaseGateAudit` 过滤 `11/11 passed`；`run-release-gate-audit.ps1` PowerShell parser `parse ok`。
+- 当前 attack-chain/release gate 总审计证据：`AttackChain|ReleaseGateAudit` 过滤 `12/12 passed`；`run-release-gate-audit.ps1` PowerShell parser `parse ok`。
+- 当前 hosted-ci/release gate 审计证据：`HostedCi|ReleaseGateAudit` 过滤 `13/13 passed`；`run-hosted-ci-evidence.ps1` 和 `run-release-gate-audit.ps1` PowerShell parser 均 `parse ok`。
+- 当前 gray-observation/release gate 审计证据：`GrayObservation|ReleaseGateAudit` 过滤 `12/12 passed`；`run-gray-observation.ps1` 和 `run-release-gate-audit.ps1` PowerShell parser 均 `parse ok`。
+- 当前 hosted-ci/release gate 段落级审计证据：`HostedCi|ReleaseGateAudit` 过滤 `13/13 passed`；`run-release-gate-audit.ps1` PowerShell parser `parse ok`。
+- 当前发布闸门证据：正式 `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260602.md` 输出 `EXPECTED_FAIL`；Hosted CI、PostgreSQL/staging、Attack Chain A/B/C、安全签字和 Gray observation 五个 B 轨 gate 均为 `FAIL`。
+- 当前前端 coverage 证据：`npm run test:unit:coverage` 通过，`81 files / 335 tests passed`，fresh 总行覆盖 `66.79%`；`ChatPanel.vue` 行覆盖为 `56.14%`，`BarcodePrintBoard.vue` 行覆盖为 `57.69%`，`EmployeeBoard.vue` 行覆盖为 `58.92%`，`ProductionBoard.vue` 行覆盖为 `59.45%`，`PurchaseBoard.vue` 行覆盖为 `60.57%`，`ReportBoard.vue` 行覆盖为 `61.89%`。下一片应优先 `BarcodePrintBoard.vue`、`EmployeeBoard.vue`、`ChatPanel.vue` 或 `ProductionBoard.vue` 等低覆盖关键入口。
+- 当前发布闸门判定口径：总审计已具备 anchored PASS、Hosted CI / Attack Chain / staging / Security signoff / Gray observation 专用 predicate；hosted CI 需要 READY 状态、真实 GitHub Actions RunUrl、数字 RunId、job summary 和 `gh run` 成功证据，Attack Chain 需要可解析 `VerifiedAt`、人工 verifier、A/B/C 三段各自 PASS 和 evidence，staging 需要迁移、API 启动和 `/live` `/ready` HTTP 2xx/3xx 证据，Security signoff 需要 signer/time/self-assessment/Attack Chain/evidence，Gray observation 单项脚本 OBSERVING 必须 fail loud，最终关闭需要首次灰度、14 天观察和 P0/P1=0 证据。
+- 保持 B 轨 fail loud：A 轨测试绿灯不代表 v1.0.0 发布完成。
+- 已新增项目级 Core Convention：现有功能必须优先做到精品级；后续 A 轨选片除了看覆盖率杠杆，还要优先打磨用户关键路径的正确性、UX、可靠性、可观测性和测试证据，避免新增浅层功能插队。
+- 已完成 Security signoff `SignedAt` 未来时间拒绝验证：未来 `SignedAt` 动态样本只卡 Security signoff，过去 `SignedAt` 完整样本可 PASS；后续真人签字必须使用已经发生的签字时间。
+- 已完成 Security signoff 未来 `SignedAt` 具体 violation 输出：报告现在会写出 `SignedAt must not be in the future.`，减少人工补证定位成本。

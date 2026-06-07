@@ -55,23 +55,24 @@
     </div>
 
     <div class="button-row">
-      <button v-if="!record" type="button" @click="$emit('create')">
+      <button v-if="!record" type="button" :aria-label="createActionLabel" @click="$emit('create')">
         生成 MRB 报废补料决策
       </button>
-      <button v-else-if="record.status !== 'closed'" type="button" @click="$emit('close')">
+      <button v-else-if="record.status !== 'closed'" type="button" :aria-label="closeActionLabel" @click="$emit('close')">
         确认 MRB 处置闭环
       </button>
       <span v-else>闭环追踪：{{ record.closureAuditId }} / {{ record.closureTraceId }}</span>
     </div>
 
-    <p v-if="syncMessage" class="sync-message">{{ syncMessage }}</p>
+    <p v-if="syncMessage" class="sync-message" role="status" aria-live="polite">{{ syncMessage }}</p>
   </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 
-defineProps<{
+const props = defineProps<{
   preview: QualityMrbDispositionRecord
   record: QualityMrbDispositionRecord | null
   syncMessage: string
@@ -81,6 +82,9 @@ defineEmits<{
   create: []
   close: []
 }>()
+
+const createActionLabel = computed(() => `生成 ${props.preview.workOrderId} ${props.preview.inspectionId} MRB 报废补料决策`)
+const closeActionLabel = computed(() => `确认 ${props.preview.workOrderId} MRB 处置闭环`)
 </script>
 
 <style scoped>

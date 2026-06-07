@@ -15,6 +15,10 @@
       </div>
     </div>
 
+    <div v-if="actionError" class="action-error" role="alert" aria-live="assertive">
+      {{ actionError }}
+    </div>
+
     <section class="sla-review-panel" aria-label="风险 SLA 晨会复核">
       <div class="sla-review-heading">
         <div>
@@ -111,9 +115,9 @@
           <span>{{ item.note }}</span>
         </div>
         <div class="card-actions">
-          <button type="button" @click="reassign(item.id)">转派</button>
-          <button type="button" @click="escalate(item.id)">升级</button>
-          <button type="button" @click="closeItem(item.id)">关闭</button>
+          <button type="button" :aria-label="`转派风险：${item.title}`" @click="reassign(item.id)">转派</button>
+          <button type="button" :aria-label="`升级风险：${item.title}`" @click="escalate(item.id)">升级</button>
+          <button type="button" :aria-label="`关闭风险：${item.title}`" @click="closeItem(item.id)">关闭</button>
         </div>
       </article>
     </div>
@@ -129,19 +133,20 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { readProductionAnomalyEvent } from '../../utils/production-anomaly-sync'
-import { readAnomalyDispatchRecords } from '../../utils/anomaly-dispatch-sync'
-import { readAssistantRecoveryPackages } from '../../utils/assistant-action-package-sync'
+import { errorMessage } from '../../utils/error-message'
+import { readProductionAnomalyEventBackendFirst } from '../../utils/production-anomaly-sync'
+import { readAnomalyDispatchRecordsBackendFirst } from '../../utils/anomaly-dispatch-sync'
+import { readAssistantRecoveryPackagesBackendFirst } from '../../utils/assistant-action-package-sync'
 import { appendRiskActionTrace, type RiskActionTraceStatus } from '../../utils/risk-action-sync'
 import {
   closeRiskSlaReviewRecord,
-  readRiskSlaReviewRecord,
+  readRiskSlaReviewRecordBackendFirst,
   writeRiskSlaReviewRecord,
   type RiskSlaReviewRecord,
 } from '../../utils/risk-sla-review-sync'
 import {
   closeMonitoringSituationEscalation,
-  readMonitoringSituationEscalations,
+  readMonitoringSituationEscalationsBackendFirst,
 } from '../../utils/monitoring-situation-escalation-sync'
 
 type RiskLevel = 'critical' | 'warning'
@@ -204,8 +209,8 @@ const baseActionItems: RiskActionItem[] = [
   },
 ]
 
-function buildProductionAnomalyRiskItem(): RiskActionItem | null {
-  const event = readProductionAnomalyEvent()
+async function buildProductionAnomalyRiskItem(): Promise<RiskActionItem | null> {
+  const event = await readProductionAnomalyEventBackendFirst()
   if (!event) return null
 
   return {
@@ -223,8 +228,9 @@ function buildProductionAnomalyRiskItem(): RiskActionItem | null {
   }
 }
 
-function buildAnomalyDispatchRiskItems(): RiskActionItem[] {
-  return readAnomalyDispatchRecords().map((record) => ({
+async function buildAnomalyDispatchRiskItems(): Promise<RiskActionItem[]> {
+  const records = await readAnomalyDispatchRecordsBackendFirst()
+  return records.map((record) => ({
     id: `risk-${record.id}`,
     type: record.typeLabel,
     title: record.title,
@@ -239,8 +245,9 @@ function buildAnomalyDispatchRiskItems(): RiskActionItem[] {
   }))
 }
 
-function buildAssistantRecoveryRiskItems(): RiskActionItem[] {
-  return readAssistantRecoveryPackages().map((record) => ({
+async function buildAssistantRecoveryRiskItems(): Promise<RiskActionItem[]> {
+  const records = await readAssistantRecoveryPackagesBackendFirst()
+  return records.map((record) => ({
     id: `risk-assistant-recovery-${record.id}`,
     type: '助手执行包',
     title: record.title,
@@ -270,8 +277,9 @@ function buildAssistantRecoveryRiskItems(): RiskActionItem[] {
   }))
 }
 
-function buildMonitoringSituationRiskItems(): RiskActionItem[] {
-  return readMonitoringSituationEscalations().map(record => ({
+async function buildMonitoringSituationRiskItems(): Promise<RiskActionItem[]> {
+  const records = await readMonitoringSituationEscalationsBackendFirst()
+  return records.map(record => ({
     id: `risk-${record.id}`,
     type: '现场态势',
     title: record.title,
@@ -289,12 +297,13 @@ function buildMonitoringSituationRiskItems(): RiskActionItem[] {
 const actionItems = ref<RiskActionItem[]>([])
 const actionRecords = ref<string[]>([])
 const slaReview = ref<RiskSlaReviewRecord | null>(null)
+const actionError = ref('')
 
-function syncRiskActionQueue() {
-  const productionAnomalyRiskItem = buildProductionAnomalyRiskItem()
-  const anomalyDispatchRiskItems = buildAnomalyDispatchRiskItems()
-  const assistantRecoveryRiskItems = buildAssistantRecoveryRiskItems()
-  const monitoringSituationRiskItems = buildMonitoringSituationRiskItems()
+async function syncRiskActionQueue() {
+  const productionAnomalyRiskItem = await readRiskActionSource('生产异常风险', buildProductionAnomalyRiskItem, null)
+  const anomalyDispatchRiskItems = await readRiskActionSource('异常分流风险', buildAnomalyDispatchRiskItems, [])
+  const assistantRecoveryRiskItems = await readRiskActionSource('助手执行包风险', buildAssistantRecoveryRiskItems, [])
+  const monitoringSituationRiskItems = await readRiskActionSource('现场态势风险', buildMonitoringSituationRiskItems, [])
 
   actionItems.value = productionAnomalyRiskItem
     ? [productionAnomalyRiskItem, ...monitoringSituationRiskItems, ...assistantRecoveryRiskItems, ...anomalyDispatchRiskItems, ...baseActionItems]
@@ -314,6 +323,15 @@ function syncRiskActionQueue() {
       : []),
     '系统生成 3 张风险处置卡，并同步为调度员 Agent 触发器。',
   ]
+}
+
+async function readRiskActionSource<T>(label: string, loader: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader()
+  } catch (error: unknown) {
+    actionError.value = `${label}加载失败：${errorMessage(error, '请稍后重试')}`
+    return fallback
+  }
 }
 
 const openCount = computed(() => actionItems.value.filter(item => item.status !== 'closed').length)
@@ -336,26 +354,38 @@ function statusText(status: RiskActionStatus) {
 function reassign(id: string) {
   const item = findItem(id)
   if (!item || item.status === 'closed') return
+  const nextOwner = '班组长 孙八'
+  const trace = `${item.title} 已转派给 ${nextOwner}，要求在 ${item.dueAt} 前反馈处置结果。`
+  if (!recordRiskAction({ ...item, owner: nextOwner }, 'assigned', trace)) {
+    actionError.value = `风险转派失败：${errorMessage(lastRiskActionTraceError.value, '请稍后重试')}`
+    return
+  }
   item.status = 'assigned'
-  item.owner = '班组长 孙八'
-  actionRecords.value.unshift(`${item.title} 已转派给 ${item.owner}，要求在 ${item.dueAt} 前反馈处置结果。`)
-  recordRiskAction(item, 'assigned', `${item.title} 已转派给 ${item.owner}，要求在 ${item.dueAt} 前反馈处置结果。`)
+  item.owner = nextOwner
+  actionRecords.value.unshift(trace)
 }
 
 function escalate(id: string) {
   const item = findItem(id)
   if (!item || item.status === 'closed') return
+  const trace = `${item.title} 已升级为跨部门处置，等待生产经理确认资源调整。`
+  if (!recordRiskAction(item, 'escalated', trace)) {
+    actionError.value = `风险升级失败：${errorMessage(lastRiskActionTraceError.value, '请稍后重试')}`
+    return
+  }
   item.status = 'escalated'
   item.owner = '生产经理审批'
-  actionRecords.value.unshift(`${item.title} 已升级为跨部门处置，等待生产经理确认资源调整。`)
-  recordRiskAction(item, 'escalated', `${item.title} 已升级为跨部门处置，等待生产经理确认资源调整。`)
+  actionRecords.value.unshift(trace)
 }
 
 function closeItem(id: string) {
   const item = findItem(id)
   if (!item) return
-  item.status = 'closed'
   const trace = `${item.title} 已关闭，处置结果将进入 OTD 复盘与审计日志。`
+  if (!recordRiskAction(item, 'closed', trace)) {
+    actionError.value = `风险关闭失败：${errorMessage(lastRiskActionTraceError.value, '请稍后重试')}`
+    return
+  }
   if (id.startsWith('risk-monitoring-situation-')) {
     const escalationId = id.replace(/^risk-/, '')
     const closedRecord = closeMonitoringSituationEscalation(escalationId, trace, item.owner)
@@ -364,65 +394,94 @@ function closeItem(id: string) {
       item.suggestion = `${closedRecord.riskSuggestion} 已反写现场处置包，闭环：${closedRecord.closureTrace}`
       item.impact = `${closedRecord.riskImpact} ${closedRecord.statusLabel}。`
       actionRecords.value.unshift(`${item.title} 已关闭并反写实时监控处置包，${closedRecord.traceId} 状态更新为已闭环。`)
-      recordRiskAction(item, 'closed', `${trace} 已反写现场处置包 ${closedRecord.traceId}。`)
+      item.status = 'closed'
       return
     }
   }
+  item.status = 'closed'
   actionRecords.value.unshift(trace)
-  recordRiskAction(item, 'closed', trace)
 }
 
 function findItem(id: string) {
   return actionItems.value.find(item => item.id === id)
 }
 
+const lastRiskActionTraceError = ref<unknown>(null)
+
 function recordRiskAction(item: RiskActionItem, status: RiskActionTraceStatus, trace: string) {
-  appendRiskActionTrace({
-    id: `${item.id}-${status}`,
-    title: item.title,
-    type: item.type,
-    status,
-    statusLabel: statusText(status),
-    owner: item.owner,
-    workOrders: item.workOrders,
-    deliveryImpact: item.deliveryImpact,
-    suggestion: item.suggestion,
-    trace,
-    createdAt: new Date().toISOString(),
-  })
+  try {
+    appendRiskActionTrace({
+      id: `${item.id}-${status}`,
+      title: item.title,
+      type: item.type,
+      status,
+      statusLabel: statusText(status),
+      owner: item.owner,
+      workOrders: item.workOrders,
+      deliveryImpact: item.deliveryImpact,
+      suggestion: item.suggestion,
+      trace,
+      createdAt: new Date().toISOString(),
+    })
+    actionError.value = ''
+    lastRiskActionTraceError.value = null
+    return true
+  } catch (err: unknown) {
+    lastRiskActionTraceError.value = err
+    return false
+  }
 }
 
 function generateSlaReview() {
-  slaReview.value = writeRiskSlaReviewRecord({
-    risks: actionItems.value
-      .filter(item => item.status !== 'closed')
-      .map(item => ({
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        level: item.level,
-        owner: item.owner,
-        dueAt: item.dueAt,
-        workOrders: item.workOrders,
-        deliveryImpact: item.deliveryImpact,
-        status: item.status,
-        statusLabel: statusText(item.status),
-        suggestion: item.suggestion,
-      })),
-  })
+  let review: RiskSlaReviewRecord
+  try {
+    review = writeRiskSlaReviewRecord({
+      risks: actionItems.value
+        .filter(item => item.status !== 'closed')
+        .map(item => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          level: item.level,
+          owner: item.owner,
+          dueAt: item.dueAt,
+          workOrders: item.workOrders,
+          deliveryImpact: item.deliveryImpact,
+          status: item.status,
+          statusLabel: statusText(item.status),
+          suggestion: item.suggestion,
+        })),
+    })
+  } catch (error: unknown) {
+    actionError.value = `风险 SLA 复核包生成失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  slaReview.value = review
   actionRecords.value.unshift(`${slaReview.value.title} 已生成，会议 ${slaReview.value.reviewMeetingId}，审计 ${slaReview.value.auditId}。`)
 }
 
 function closeSlaReview() {
-  const closed = closeRiskSlaReviewRecord('生产经理')
+  let closed: RiskSlaReviewRecord | null
+  try {
+    closed = closeRiskSlaReviewRecord('生产经理')
+  } catch (error: unknown) {
+    actionError.value = `风险 SLA 复核闭环失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   if (!closed) return
   slaReview.value = closed
   actionRecords.value.unshift(`${closed.title} 责任动作已闭环，${closed.closureTraceId} 已写入 OTD 证据链和审计回放。`)
 }
 
-onMounted(() => {
-  slaReview.value = readRiskSlaReviewRecord()
-  syncRiskActionQueue()
+onMounted(async () => {
+  actionError.value = ''
+  try {
+    slaReview.value = await readRiskSlaReviewRecordBackendFirst()
+  } catch (error: unknown) {
+    actionError.value = `风险 SLA 复核加载失败：${errorMessage(error, '请稍后重试')}`
+    slaReview.value = null
+  }
+  await syncRiskActionQueue()
 })
 </script>
 

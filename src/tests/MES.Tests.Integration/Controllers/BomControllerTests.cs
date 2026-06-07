@@ -8,6 +8,7 @@ using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class BomControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;

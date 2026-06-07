@@ -41,6 +41,24 @@ public class BomExplosionServiceTests
     }
 
     [Fact]
+    public async Task ExplodeAsync_ShouldIncludeLossRateInQuantityPerUnit()
+    {
+        var bom = CreateBom("BOM-LOSS", "PROD-LOSS", items:
+        [
+            CreateBomItem("MAT-LOSS", "Loss Material", 10, lossRate: 0.1m),
+        ]);
+
+        _bomRepoMock.Setup(r => r.GetByProductCodeAsync(new ProductCode("PROD-LOSS"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([bom]);
+
+        var result = await _service.ExplodeAsync("PROD-LOSS");
+
+        result.Should().ContainSingle();
+        result[0].QuantityPerUnit.Should().Be(11, "10% BOM loss must reserve 11 units for each finished product");
+        result[0].LossRate.Should().Be(0.1m);
+    }
+
+    [Fact]
     public async Task ExplodeAsync_MultiLevel_ReturnsAggregatedQuantities()
     {
         var child1 = CreateBomItem("MAT-001", "Raw Material", 2);    // level 2
@@ -141,14 +159,16 @@ public class BomExplosionServiceTests
     }
 
     private static BomItem CreateBomItem(string materialCode, string materialName, decimal quantity,
-        List<BomItem>? children = null)
+        List<BomItem>? children = null,
+        decimal? lossRate = null)
     {
         var item = new BomItem(
             new MaterialCode(materialCode),
             materialName,
             quantity,
             "PCS",
-            1);
+            1,
+            lossRate);
         if (children is not null)
         {
             foreach (var child in children)

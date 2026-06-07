@@ -104,6 +104,87 @@ public class SchedulingAgentTests
         result.OptimizationNotes.Should().Contain("LLM 调用失败");
     }
 
+    [Fact]
+    public async Task OptimizeScheduleAsync_LlmOutputInvalid_FallsBackToRules()
+    {
+        var request = CreateRequest();
+        var context = CreateContext();
+        var ruleResult = CreateRuleResult(valid: true);
+        var llmResult = new SchedulingResult
+        {
+            Assignments = ruleResult.Assignments,
+            EstimatedCompletion = Now.AddDays(3),
+            UtilizationRate = 0.8,
+            OnTimeDeliveryRate = 0.95
+        };
+
+        _contextMock.Setup(x => x.GetContextAsync(request.WorkshopId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        _ruleEngineMock.Setup(x => x.GenerateInitialScheduleAsync(request, context, It.IsAny<PriorityRule>(), It.IsAny<CapacitySelectionStrategy>(), It.IsAny<WeightedSchedulingConfig>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ruleResult);
+        _llmMock.Setup(x => x.GenerateJsonAsync<SchedulingResult>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(llmResult);
+        _validatorMock.Setup(x => x.Validate(It.IsAny<List<ScheduleAssignment>>(), request, context))
+            .Returns(new ConstraintValidationResult
+            {
+                Violations =
+                [
+                    new() { WorkOrderId = "O1", Rule = "Capacity", Level = ConstraintViolationLevel.Error, Message = "超出产能" }
+                ]
+            });
+
+        var result = await _agent.OptimizeScheduleAsync(request);
+
+        result.UtilizationRate.Should().Be(ruleResult.UtilizationRate);
+        result.OptimizationNotes.Should().Contain("LLM 输出未通过约束验证");
+    }
+
+    [Fact]
+    public async Task OptimizeScheduleAsync_WhenPromptWouldOverflow_SendsBoundedPrompt()
+    {
+        string? capturedPrompt = null;
+        var request = CreateRequest();
+        request.Orders.Add(new WorkOrderInfo { Id = "O3", OrderNumber = new string('O', 12000), ProductCode = new string('P', 12000), Quantity = 1, DueDate = Now.AddDays(1) });
+        var context = CreateContext();
+        var ruleResult = CreateRuleResult(valid: true);
+
+        _contextMock.Setup(x => x.GetContextAsync(request.WorkshopId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        _ruleEngineMock.Setup(x => x.GenerateInitialScheduleAsync(request, context, It.IsAny<PriorityRule>(), It.IsAny<CapacitySelectionStrategy>(), It.IsAny<WeightedSchedulingConfig>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ruleResult);
+        _llmMock.Setup(x => x.GenerateJsonAsync<SchedulingResult>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((prompt, _) => capturedPrompt = prompt)
+            .ReturnsAsync(new SchedulingResult { Assignments = ruleResult.Assignments });
+        _validatorMock.Setup(x => x.Validate(It.IsAny<List<ScheduleAssignment>>(), request, context))
+            .Returns(new ConstraintValidationResult());
+
+        var result = await _agent.OptimizeScheduleAsync(request);
+
+        capturedPrompt.Should().NotBeNull();
+        (capturedPrompt ?? string.Empty).Length.Should().BeLessThanOrEqualTo(16_000);
+        result.AiDecisionTrace.PromptHash.Should().NotBeNullOrWhiteSpace();
+        result.AiDecisionTrace.TokensInput.Should().BeLessThanOrEqualTo(4000);
+    }
+
+    [Fact]
+    public async Task OptimizeScheduleAsync_RuleFallback_AddsTraceForAudit()
+    {
+        var request = CreateRequest();
+        var context = CreateContext();
+        var ruleResult = CreateRuleResult(valid: false);
+
+        _contextMock.Setup(x => x.GetContextAsync(request.WorkshopId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        _ruleEngineMock.Setup(x => x.GenerateInitialScheduleAsync(request, context, It.IsAny<PriorityRule>(), It.IsAny<CapacitySelectionStrategy>(), It.IsAny<WeightedSchedulingConfig>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ruleResult);
+
+        var result = await _agent.OptimizeScheduleAsync(request);
+
+        result.AiDecisionTrace.AgentName.Should().Be(nameof(SchedulingAgent));
+        result.AiDecisionTrace.ModelName.Should().Be("SchedulingOptimization");
+        result.AiDecisionTrace.OutputSummary.Should().Contain("Assignments=2");
+    }
+
     private static ScheduleRequest CreateRequest()
     {
         return new ScheduleRequest

@@ -1,5 +1,6 @@
 using MES.Application.DTOs;
 using MES.Domain.Entities;
+using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
 
 namespace MES.Application.Services;
@@ -8,7 +9,7 @@ public interface IAuditLogAppService
 {
     Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, int page, int pageSize, CancellationToken ct = default);
     Task<AuditLogDetailDto?> GetAuditLogByIdAsync(string id, CancellationToken ct = default);
-    Task WriteAuditLogAsync(string userId, string action, string resource, string? resourceId, string? oldValues, string? newValues, string? ipAddress, string? userAgent, CancellationToken ct = default);
+    Task WriteAuditLogAsync(string userId, string action, string resource, string? resourceId, string? oldValues, string? newValues, string? ipAddress, string? userAgent, AuditInitiatedBy initiatedBy = AuditInitiatedBy.User, CancellationToken ct = default);
 }
 
 public class AuditLogAppService : IAuditLogAppService
@@ -31,9 +32,12 @@ public class AuditLogAppService : IAuditLogAppService
             {
                 Id = l.Id,
                 UserId = l.UserId,
+                InitiatedBy = l.InitiatedBy.ToString(),
                 Action = l.Action,
                 Resource = l.Resource,
                 ResourceId = l.ResourceId,
+                BusinessKey = l.BusinessKey,
+                TraceId = l.TraceId,
                 CreatedAt = l.CreatedAt,
             }).ToList(),
             TotalCount = total,
@@ -51,11 +55,16 @@ public class AuditLogAppService : IAuditLogAppService
         {
             Id = log.Id,
             UserId = log.UserId,
+            InitiatedBy = log.InitiatedBy.ToString(),
             Action = log.Action,
             Resource = log.Resource,
             ResourceId = log.ResourceId,
+            BusinessKey = log.BusinessKey,
+            TraceId = log.TraceId,
             OldValues = log.OldValues,
             NewValues = log.NewValues,
+            PromptHash = log.PromptHash,
+            ContextHash = log.ContextHash,
             IpAddress = log.IpAddress,
             UserAgent = log.UserAgent,
             CreatedAt = log.CreatedAt,
@@ -65,11 +74,13 @@ public class AuditLogAppService : IAuditLogAppService
     public async Task WriteAuditLogAsync(
         string userId, string action, string resource, string? resourceId,
         string? oldValues, string? newValues, string? ipAddress, string? userAgent,
+        AuditInitiatedBy initiatedBy = AuditInitiatedBy.User,
         CancellationToken ct = default)
     {
         var log = new AuditLog
         {
             UserId = userId,
+            InitiatedBy = initiatedBy,
             Action = action,
             Resource = resource,
             ResourceId = resourceId,

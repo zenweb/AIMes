@@ -1,4 +1,5 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
+import { queryBarcodeScanEvidence, upsertBarcodeScanEvidence } from '../api/executionEvidence'
 
 const STORAGE_KEY = 'aimes_barcode_scan_evidence'
 
@@ -59,7 +60,16 @@ function readRawRecords(): BarcodeScanEvidenceRecord[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isEvidenceRecord) : []
+    if (!Array.isArray(parsed)) return []
+    const records = parsed.filter(isEvidenceRecord)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return []
@@ -68,6 +78,11 @@ function readRawRecords(): BarcodeScanEvidenceRecord[] {
 
 export function readBarcodeScanEvidenceRecords(): BarcodeScanEvidenceRecord[] {
   return readRawRecords()
+}
+
+export async function readBarcodeScanEvidenceRecordsBackendFirst(): Promise<BarcodeScanEvidenceRecord[]> {
+  const records = await queryBarcodeScanEvidence()
+  return records.length > 0 ? records : readBarcodeScanEvidenceRecords()
 }
 
 export function createBarcodeScanEvidenceRecord(input: BarcodeScanEvidenceInput): BarcodeScanEvidenceRecord {
@@ -132,6 +147,7 @@ export function writeBarcodeScanEvidenceRecord(record: BarcodeScanEvidenceRecord
   if (!canUseStorage()) return record
   const next = [record, ...readRawRecords().filter(item => item.id !== record.id)].slice(0, 20)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  void upsertBarcodeScanEvidence(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `barcode-${record.id}`,
     stage: '扫码执行',

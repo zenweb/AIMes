@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace MES.Domain.Entities.Equipment;
 
 /// <summary>
@@ -11,7 +9,6 @@ public class EquipmentTelemetry
     public string EquipmentId { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
-    [NotMapped]
     public Dictionary<string, double> Parameters { get; set; } = new();
 
     public string ErrorCode { get; set; } = string.Empty;

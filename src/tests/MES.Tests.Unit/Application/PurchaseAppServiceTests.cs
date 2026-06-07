@@ -2,7 +2,9 @@ using FluentAssertions;
 using MES.Application.DTOs;
 using MES.Application.Services;
 using MES.Domain.Entities.Purchase;
+using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
+using MES.Domain.Interfaces.Services;
 using Moq;
 using Xunit;
 
@@ -11,6 +13,8 @@ namespace MES.Tests.Unit.Application;
 public class PurchaseAppServiceTests
 {
     private readonly Mock<IPurchaseOrderRepository> _orderRepoMock;
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IAuditLogAppService> _auditLogMock;
     private readonly PurchaseAppService _sut;
     private readonly List<PurchaseOrder> _store;
 
@@ -18,9 +22,19 @@ public class PurchaseAppServiceTests
     {
         _store = [];
         _orderRepoMock = new Mock<IPurchaseOrderRepository>();
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _auditLogMock = new Mock<IAuditLogAppService>();
 
         _orderRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => [.. _store]);
+        _orderRepoMock.Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int page, int pageSize, CancellationToken _) => _store
+                .OrderByDescending(o => o.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList());
+        _orderRepoMock.Setup(r => r.CountAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => _store.Count);
         _orderRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, CancellationToken _) => _store.FirstOrDefault(o => o.Id == id));
         _orderRepoMock.Setup(r => r.AddAsync(It.IsAny<PurchaseOrder>(), It.IsAny<CancellationToken>()))
@@ -35,8 +49,16 @@ public class PurchaseAppServiceTests
             .Returns(Task.CompletedTask);
         _orderRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, CancellationToken _) => _store.Any(o => o.Id == id));
+        _unitOfWorkMock
+            .Setup(u => u.ExecuteAsync(It.IsAny<Func<CancellationToken, Task<PurchaseOrderDetailDto>>>(), It.IsAny<CancellationToken>()))
+            .Returns<Func<CancellationToken, Task<PurchaseOrderDetailDto>>, CancellationToken>(
+                (action, ct) => action(ct));
+        _unitOfWorkMock
+            .Setup(u => u.ExecuteAsync(It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+            .Returns<Func<CancellationToken, Task>, CancellationToken>(
+                (action, ct) => action(ct));
 
-        _sut = new PurchaseAppService(_orderRepoMock.Object);
+        _sut = new PurchaseAppService(_orderRepoMock.Object, _unitOfWorkMock.Object, _auditLogMock.Object);
     }
 
     [Fact]
@@ -109,6 +131,17 @@ public class PurchaseAppServiceTests
         var result = await _sut.SubmitAsync(created.Id);
 
         result.Status.Should().Be("Submitted");
+        _auditLogMock.Verify(a => a.WriteAuditLogAsync(
+            "admin",
+            "PurchaseSubmit",
+            "PurchaseOrder",
+            created.Id,
+            null,
+            It.Is<string>(value => value.Contains("Submitted", StringComparison.Ordinal)),
+            null,
+            null,
+            AuditInitiatedBy.User,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

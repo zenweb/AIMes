@@ -1,7 +1,7 @@
 using System.Security.Claims;
-using System.Text.Json;
-using MES.Domain.Entities;
-using MES.Infrastructure.Data;
+using MES.Application.Services;
+using MES.Domain.Enums;
+using MES.Domain.Interfaces.Services;
 
 namespace MES.Api.Filters;
 
@@ -15,7 +15,7 @@ public sealed class AuditEndpointFilter(string resource) : IEndpointFilter
         if (!IsAuditableMethod(request.Method))
             return result;
 
-        var dbContext = context.HttpContext.RequestServices.GetRequiredService<MesDbContext>();
+        var auditLogService = context.HttpContext.RequestServices.GetRequiredService<IAuditLogAppService>();
         var userId = context.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? context.HttpContext.User.FindFirstValue("sub")
             ?? "anonymous";
@@ -30,19 +30,25 @@ public sealed class AuditEndpointFilter(string resource) : IEndpointFilter
             .ToList();
         var newValues = newValuesArgs.Count != 0 ? AuditRedaction.RedactAndSerialize(newValuesArgs) : null;
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = request.Method,
-            Resource = resource,
-            ResourceId = idValue?.ToString(),
-            NewValues = newValues,
-            IpAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = request.Headers.UserAgent.ToString(),
-            CreatedAt = DateTime.UtcNow
-        });
+        var initiatedBy = context.HttpContext.Request.Headers.TryGetValue("X-Initiated-By", out var initiatedByHeader)
+            && Enum.TryParse<AuditInitiatedBy>(initiatedByHeader.ToString(), ignoreCase: true, out var parsed)
+            ? parsed
+            : AuditInitiatedBy.User;
 
-        await dbContext.SaveChangesAsync(context.HttpContext.RequestAborted);
+        var unitOfWork = context.HttpContext.RequestServices.GetRequiredService<IUnitOfWork>();
+        await unitOfWork.ExecuteAsync(innerCt =>
+            auditLogService.WriteAuditLogAsync(
+                userId,
+                request.Method,
+                resource,
+                idValue?.ToString(),
+                oldValues: null,
+                newValues,
+                context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+                request.Headers.UserAgent.ToString(),
+                initiatedBy,
+                innerCt),
+            context.HttpContext.RequestAborted);
 
         return result;
     }

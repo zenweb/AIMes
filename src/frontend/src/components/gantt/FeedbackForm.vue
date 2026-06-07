@@ -29,7 +29,7 @@
             ></textarea>
           </div>
 
-          <div v-if="error" class="error-msg">{{ error }}</div>
+          <div v-if="error" class="error-msg" role="alert" aria-live="assertive">{{ error }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-cancel" @click="$emit('close')">取消</button>
@@ -49,6 +49,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import * as api from '../../api/scheduling'
+import { errorMessage } from '../../utils/error-message'
 
 const props = defineProps<{
   visible: boolean
@@ -98,8 +99,8 @@ async function handleSubmit() {
       aiTraceId: props.aiTraceId,
     })
     emit('submitted')
-  } catch (e: any) {
-    error.value = `提交失败: ${e?.response?.data?.message || e?.message || '未知错误'}`
+  } catch (e: unknown) {
+    error.value = `提交失败: ${errorMessage(e, '未知错误')}`
   } finally {
     submitting.value = false
   }

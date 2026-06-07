@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -26,15 +24,15 @@
   }
 
   .mes-sidebar {
-    @apply fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-800 bg-slate-950 text-slate-100 lg:flex lg:flex-col;
+    @apply fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-800 bg-slate-950 text-slate-100 lg:flex lg:flex-col;
   }
 
   .mes-main {
-    @apply min-h-screen lg:pl-64;
+    @apply min-h-screen lg:pl-72;
   }
 
   .mes-topbar {
-    @apply sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm lg:px-6;
+    @apply sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm lg:px-6;
   }
 
   .mes-card {

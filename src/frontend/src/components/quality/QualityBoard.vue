@@ -32,6 +32,15 @@
         </div>
       </div>
 
+      <section v-if="auditFocus" class="audit-focus-banner" aria-label="审计对象定位">
+        <div>
+          <span>来自审计回放</span>
+          <strong>{{ auditFocus.label }}</strong>
+          <p>对象 {{ auditFocus.objectId }} 已定位到质检记录，追踪号 {{ auditFocus.traceId }}。</p>
+        </div>
+        <code>{{ auditFocus.objectType }}</code>
+      </section>
+
       <QualityReworkImpactPanel
         :event="qualityReworkEvent"
         :sync-message="reworkSyncMessage"
@@ -50,6 +59,8 @@
         :quality-knowledge-sample="qualityKnowledgeSample"
         :quality-knowledge-reuse-draft="qualityKnowledgeReuseDraft"
       />
+
+      <div v-if="qualityError" class="quality-error" role="alert" aria-live="assertive">{{ qualityError }}</div>
 
       <section v-if="barcodeQualityGateRecords.length" class="barcode-quality-gate-panel" aria-label="扫码质量门回放">
         <div class="panel-heading">
@@ -142,7 +153,7 @@
         <div class="card spc-card">
           <div class="card-header">
             <h3>SPC 趋势分析</h3>
-            <select v-model="spcParam" class="param-select" @change="loadSpc">
+            <select v-model="spcParam" class="param-select" aria-label="选择 SPC 参数" @change="loadSpc">
               <option value="surface_roughness">表面粗糙度</option>
               <option value="dimension_tolerance">尺寸公差</option>
               <option value="hardness">硬度</option>
@@ -166,6 +177,7 @@
                 <text :x="pad"   :y="clY - 6"  font-size="10" fill="#52c41a">CL</text>
                 <text :x="pad"   :y="lclY - 6" font-size="10" fill="#ff4d4f">LCL</text>
               </svg>
+              <div v-if="!spcData.length" class="spc-empty-state">暂无 SPC 数据</div>
             </div>
             <div v-if="spcAlert" class="spc-alert" :class="spcAlert.type">
               {{ spcAlert.message }}
@@ -204,7 +216,7 @@
         <div class="card-header">
           <h3>检验批次</h3>
           <div class="inspection-filters">
-            <select v-model="resultFilter" class="filter-select">
+            <select v-model="resultFilter" class="filter-select" aria-label="筛选检验结果">
               <option value="">全部结果</option>
               <option value="pass">合格</option>
               <option value="fail">不合格</option>
@@ -238,13 +250,13 @@
                   <span class="result-badge" :class="ins.result">{{ ins.result === 'pass' ? '合格' : ins.result === 'fail' ? '不合格' : '返工' }}</span>
                 </td>
                 <td>
-                  <button class="action-btn" @click="showAnalysis(ins.id)" :disabled="!!analysisMap[ins.id]">
+                  <button class="action-btn" :aria-label="`查看 ${ins.id} 根因分析`" @click="showAnalysis(ins.id)">
                     根因分析
                   </button>
                 </td>
               </tr>
-              <tr v-if="!inspections.length">
-                <td colspan="10" class="empty-state">暂无检验记录</td>
+              <tr v-if="!filteredInspections.length">
+                <td colspan="10" class="empty-state">{{ inspectionEmptyMessage }}</td>
               </tr>
             </tbody>
           </table>
@@ -253,10 +265,16 @@
 
       <!-- 根因分析浮动面板 -->
       <Transition name="slide-up">
-        <div v-if="currentAnalysis" class="analysis-panel">
+        <div
+          v-if="currentAnalysis"
+          class="analysis-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="root-cause-analysis-title"
+        >
           <div class="analysis-header">
-            <h4>根因分析 — {{ currentAnalysis.inspectionId }}</h4>
-            <button class="close-btn" @click="currentAnalysis = null">✕</button>
+            <h4 id="root-cause-analysis-title">根因分析 — {{ currentAnalysis.inspectionId }}</h4>
+            <button class="close-btn" aria-label="关闭根因分析" @click="currentAnalysis = null">✕</button>
           </div>
           <div class="analysis-body">
             <div class="analysis-section">
@@ -291,9 +309,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import http from '../../api/http'
 import { getInspections, getQualityStatistics, analyzeRootCause, analyzeSpcTrend } from '../../api/quality'
-import type { InspectionDto, QualityStatisticsDto, RootCauseAnalysisDto, SpcAnalysisDto, AnomalyDto } from '../../types/quality'
+import type { InspectionDto, QualityStatisticsDto, RootCauseAnalysisDto, AnomalyDto } from '../../types/quality'
 import QualityReworkImpactPanel from './QualityReworkImpactPanel.vue'
 import QualityCapaTaskPanel from './QualityCapaTaskPanel.vue'
 import QualityMrbDispositionPanel from './QualityMrbDispositionPanel.vue'
@@ -307,6 +326,7 @@ import {
   buildQualityMrbDispositionRecord,
   closeQualityMrbDispositionRecord,
   readQualityMrbDispositionRecord,
+  readQualityMrbDispositionRecordBackendFirst,
   writeQualityMrbDispositionRecord,
   type QualityMrbDispositionRecord,
 } from '../../utils/quality-mrb-disposition-sync'
@@ -332,10 +352,14 @@ const stats = reactive<QualityStatisticsDto>({
 })
 
 const inspections = ref<InspectionDto[]>([])
+const route = useRoute()
 const anomalies = ref<AnomalyDto[]>([])
 const resultFilter = ref('')
 const analysisMap = reactive<Record<string, RootCauseAnalysisDto>>({})
+const analysisPendingMap: Record<string, Promise<RootCauseAnalysisDto>> = {}
+let latestAnalysisInspectionId = ''
 const currentAnalysis = ref<RootCauseAnalysisDto | null>(null)
+const qualityError = ref('')
 const reworkSyncMessage = ref('')
 const mrbSyncMessage = ref('')
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
@@ -367,6 +391,15 @@ const qualityReworkEvent = ref<QualityReworkImpact>({
   createdAt: '2026-05-20T10:00:00',
 })
 
+const auditFocus = computed(() => {
+  const objectType = String(route.query.auditObjectType ?? '')
+  const objectId = String(route.query.auditObjectId ?? '')
+  const traceId = String(route.query.auditTraceId ?? '')
+  const label = String(route.query.auditObjectLabel ?? objectId)
+  if (objectType !== 'quality-inspection' || !objectId || !traceId) return null
+  return { objectType, objectId, traceId, label }
+})
+
 // SPC
 const spcParam = ref('surface_roughness')
 const spcData = ref<{ x: number; y: number; label: string }[]>([])
@@ -378,6 +411,9 @@ const filteredInspections = computed(() => {
   if (!resultFilter.value) return inspections.value
   return inspections.value.filter(i => i.result === resultFilter.value)
 })
+const inspectionEmptyMessage = computed(() =>
+  inspections.value.length ? '暂无匹配检验记录' : '暂无检验记录'
+)
 
 const barcodeQualityGateRecords = computed(() =>
   otdEvidenceRecords.value.filter(record =>
@@ -423,26 +459,41 @@ function handleCreateReworkEvent(event: QualityReworkImpact) {
   reworkSyncMessage.value = '返工排产事件已生成：排产工作台将出现质量返工触发器，报表中心会纳入 OTD 复盘。'
 }
 
-function refreshQualityMrbDisposition() {
-  qualityMrbDisposition.value = readQualityMrbDispositionRecord()
+async function refreshQualityMrbDisposition() {
+  try {
+    qualityMrbDisposition.value = await readQualityMrbDispositionRecordBackendFirst()
+    qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `MRB 处置证据加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
   qualityMrbPreview.value = qualityMrbDisposition.value ?? buildQualityMrbDispositionRecord('2026-05-21T09:30:00.000Z')
 }
 
 function handleCreateMrbDisposition() {
-  const record = writeQualityMrbDispositionRecord(buildQualityMrbDispositionRecord(new Date().toISOString()))
-  qualityMrbDisposition.value = record
-  qualityMrbPreview.value = record
-  refreshOtdEvidenceRecords()
-  mrbSyncMessage.value = 'MRB 报废补料决策已生成：排产工作台将出现 WO-004 报废补料重排事件，报表、治理和审计回放将读取同一追踪号。'
+  try {
+    const record = writeQualityMrbDispositionRecord(buildQualityMrbDispositionRecord(new Date().toISOString()))
+    qualityMrbDisposition.value = record
+    qualityMrbPreview.value = record
+    refreshOtdEvidenceRecords()
+    mrbSyncMessage.value = 'MRB 报废补料决策已生成：排产工作台将出现 WO-004 报废补料重排事件，报表、治理和审计回放将读取同一追踪号。'
+    if (qualityError.value.startsWith('MRB 处置证据写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `MRB 处置证据写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
 }
 
 function handleCloseMrbDisposition() {
-  const record = closeQualityMrbDispositionRecord('生产经理')
-  if (!record) return
-  qualityMrbDisposition.value = record
-  qualityMrbPreview.value = record
-  refreshOtdEvidenceRecords()
-  mrbSyncMessage.value = 'MRB 处置闭环已确认：隔离、补料 ETA、排产重建和客户说明均已回写，排产事件转为复核状态。'
+  try {
+    const record = closeQualityMrbDispositionRecord('生产经理')
+    if (!record) return
+    qualityMrbDisposition.value = record
+    qualityMrbPreview.value = record
+    refreshOtdEvidenceRecords()
+    mrbSyncMessage.value = 'MRB 处置闭环已确认：隔离、补料 ETA、排产重建和客户说明均已回写，排产事件转为复核状态。'
+    if (qualityError.value.startsWith('MRB 处置闭环写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `MRB 处置闭环写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
 }
 
 function syncQualityReworkFromInspections() {
@@ -467,18 +518,28 @@ function refreshQualityKnowledgeReuseDraft() {
 }
 
 function publishBarcodeQualityKnowledgeSample() {
-  const record = writeQualityKnowledgeSample(createBarcodeQualityKnowledgeSample(new Date().toISOString()))
-  qualityKnowledgeSample.value = record
-  refreshOtdEvidenceRecords()
-  barcodeReleaseMessage.value = '扫码质量样本已沉淀：CAPA 推荐、知识库引用和审计回放将复用同一条质量知识证据。'
+  try {
+    const record = writeQualityKnowledgeSample(createBarcodeQualityKnowledgeSample(new Date().toISOString()))
+    qualityKnowledgeSample.value = record
+    refreshOtdEvidenceRecords()
+    barcodeReleaseMessage.value = '扫码质量样本已沉淀：CAPA 推荐、知识库引用和审计回放将复用同一条质量知识证据。'
+    if (qualityError.value.startsWith('质量知识样本写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `质量知识样本写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
 }
 
 function generateQualityKnowledgeReuseDraft() {
   if (!qualityKnowledgeSample.value) return
-  const draft = writeQualityKnowledgeReuseDraft(createBarcodeQualityReuseDraft(qualityKnowledgeSample.value, new Date().toISOString()))
-  qualityKnowledgeReuseDraft.value = draft
-  refreshOtdEvidenceRecords()
-  barcodeReleaseMessage.value = `同类缺陷处置草案已生成：${draft.targetWorkOrderId} 命中 ${draft.matchScore}%，复用效果评分 ${draft.effectScore} 分，等待质量工程师复核。`
+  try {
+    const draft = writeQualityKnowledgeReuseDraft(createBarcodeQualityReuseDraft(qualityKnowledgeSample.value, new Date().toISOString()))
+    qualityKnowledgeReuseDraft.value = draft
+    refreshOtdEvidenceRecords()
+    barcodeReleaseMessage.value = `同类缺陷处置草案已生成：${draft.targetWorkOrderId} 命中 ${draft.matchScore}%，复用效果评分 ${draft.effectScore} 分，等待质量工程师复核。`
+    if (qualityError.value.startsWith('质量知识复用草案写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `质量知识复用草案写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
 }
 
 function closeExistingBarcodeFreezeRecord(id: string, traceId: string, stage: string, title: string, statusLabel: string) {
@@ -495,123 +556,187 @@ function closeExistingBarcodeFreezeRecord(id: string, traceId: string, stage: st
 }
 
 function releaseBarcodeReworkGate() {
-  closeExistingBarcodeFreezeRecord(
-    'barcode-rework-WO-RUSH-9001-OP-10',
-    'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
-    '扫码返工',
-    'WO-RUSH-9001 CNC 精加工 扫码返工复验通过',
-    '返工复验已通过'
-  )
-  closeExistingBarcodeFreezeRecord(
-    'barcode-hold-WO-RUSH-9001-OP-10-OP-20',
-    'TRACE-QR-WO-RUSH-9001-OP-10-HOLD-OP-20',
-    '交接冻结',
-    'WO-RUSH-9001 OP-10 到 OP-20 冻结已释放',
-    '交接冻结已释放'
-  )
-  closeExistingBarcodeFreezeRecord(
-    'barcode-capa-WO-RUSH-9001-OP-10',
-    'TRACE-QR-WO-RUSH-9001-OP-10-CAPA',
-    '质量CAPA',
-    'WO-RUSH-9001 CNC 精加工 扫码 CAPA 已验证',
-    'CAPA 已验证'
-  )
-  closeExistingBarcodeFreezeRecord(
-    'barcode-isolation-WO-RUSH-9001-OP-10',
-    'TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION',
-    '质量隔离',
-    'WO-RUSH-9001 CNC 精加工 AL-202605 隔离批次复验释放',
-    '隔离已解除'
-  )
-  closeExistingBarcodeFreezeRecord(
-    'barcode-rework-cost-WO-RUSH-9001-OP-10',
-    'TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST',
-    '返工成本',
-    'WO-RUSH-9001 CNC 精加工 返工工时成本已结算',
-    '成本已归档'
-  )
-  closeExistingBarcodeFreezeRecord(
-    'barcode-label-hold-WO-RUSH-9001-OP-10',
-    'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD',
-    '标签状态',
-    'WO-RUSH-9001 流转卡标签冻结已解除',
-    '冻结标签已解除'
-  )
-  const createdAt = new Date().toISOString()
-  upsertOtdEvidenceChainRecord({
-    id: 'barcode-recheck-WO-RUSH-9001-OP-10',
-    stage: '质量复验',
-    title: 'WO-RUSH-9001 CNC 精加工 返工复验放行',
-    summary: '扫码返工证据 TRACE-QR-WO-RUSH-9001-OP-10-REWORK 已完成复验：返工后首件尺寸和 Ra 粗糙度复检合格，允许释放下道接收。',
-    object: 'WO-RUSH-9001 / OP-10',
-    source: '质量闭环 / 复验放行 / 质量工程师 周工',
-    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RECHECK',
-    status: 'closed',
-    statusLabel: '复验已放行',
-    createdAt,
-  })
-  upsertOtdEvidenceChainRecord({
-    id: 'barcode-release-WO-RUSH-9001-OP-10-OP-20',
-    stage: '交接释放',
-    title: 'WO-RUSH-9001 OP-20 接收已释放',
-    summary: '质量复验放行后解除 OP-10 到 OP-20 的交接冻结，OP-20 装配复检可接收 30 件并按更新后的排产窗口开工。',
-    object: 'WO-RUSH-9001',
-    source: '质量闭环 / 工序交接 / OP-20',
-    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20',
-    status: 'ready',
-    statusLabel: 'OP-20 可接收',
-    createdAt,
-  })
-  upsertOtdEvidenceChainRecord({
-    id: 'barcode-schedule-release-WO-RUSH-9001-OP-20',
-    stage: '排产回写',
-    title: 'WO-RUSH-9001 OP-20 接收窗口已恢复',
-    summary: '质量冻结解除后，AI 排产可重新安排 OP-20 装配复检窗口，保留返工复验耗时并更新 OTD 复盘口径。',
-    object: 'WO-RUSH-9001 / OP-20',
-    source: '质量闭环 / AI 排产',
-    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
-    status: 'ready',
-    statusLabel: '后段可排',
-    createdAt,
-  })
-  upsertOtdEvidenceChainRecord({
-    id: 'barcode-label-release-WO-RUSH-9001-OP-10',
-    stage: '标签状态',
-    title: 'WO-RUSH-9001 流转卡标签已解冻',
-    summary: '实物流转卡标签状态已从质量冻结更新为复验放行，现场扫码可继续进入 OP-20 接收确认。',
-    object: 'WO-RUSH-9001',
-    source: '条码 / QR 打印 / 质量复验',
-    traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
-    status: 'closed',
-    statusLabel: '质量冻结已解除',
-    createdAt,
-  })
-  refreshOtdEvidenceRecords()
-  barcodeReleaseMessage.value = '返工复验已放行：OP-20 接收、排产窗口和流转卡标签状态均已更新。'
+  try {
+    closeExistingBarcodeFreezeRecord(
+      'barcode-rework-WO-RUSH-9001-OP-10',
+      'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+      '扫码返工',
+      'WO-RUSH-9001 CNC 精加工 扫码返工复验通过',
+      '返工复验已通过'
+    )
+    closeExistingBarcodeFreezeRecord(
+      'barcode-hold-WO-RUSH-9001-OP-10-OP-20',
+      'TRACE-QR-WO-RUSH-9001-OP-10-HOLD-OP-20',
+      '交接冻结',
+      'WO-RUSH-9001 OP-10 到 OP-20 冻结已释放',
+      '交接冻结已释放'
+    )
+    closeExistingBarcodeFreezeRecord(
+      'barcode-capa-WO-RUSH-9001-OP-10',
+      'TRACE-QR-WO-RUSH-9001-OP-10-CAPA',
+      '质量CAPA',
+      'WO-RUSH-9001 CNC 精加工 扫码 CAPA 已验证',
+      'CAPA 已验证'
+    )
+    closeExistingBarcodeFreezeRecord(
+      'barcode-isolation-WO-RUSH-9001-OP-10',
+      'TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION',
+      '质量隔离',
+      'WO-RUSH-9001 CNC 精加工 AL-202605 隔离批次复验释放',
+      '隔离已解除'
+    )
+    closeExistingBarcodeFreezeRecord(
+      'barcode-rework-cost-WO-RUSH-9001-OP-10',
+      'TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST',
+      '返工成本',
+      'WO-RUSH-9001 CNC 精加工 返工工时成本已结算',
+      '成本已归档'
+    )
+    closeExistingBarcodeFreezeRecord(
+      'barcode-label-hold-WO-RUSH-9001-OP-10',
+      'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD',
+      '标签状态',
+      'WO-RUSH-9001 流转卡标签冻结已解除',
+      '冻结标签已解除'
+    )
+    const createdAt = new Date().toISOString()
+    upsertOtdEvidenceChainRecord({
+      id: 'barcode-recheck-WO-RUSH-9001-OP-10',
+      stage: '质量复验',
+      title: 'WO-RUSH-9001 CNC 精加工 返工复验放行',
+      summary: '扫码返工证据 TRACE-QR-WO-RUSH-9001-OP-10-REWORK 已完成复验：返工后首件尺寸和 Ra 粗糙度复检合格，允许释放下道接收。',
+      object: 'WO-RUSH-9001 / OP-10',
+      source: '质量闭环 / 复验放行 / 质量工程师 周工',
+      traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RECHECK',
+      status: 'closed',
+      statusLabel: '复验已放行',
+      createdAt,
+    })
+    upsertOtdEvidenceChainRecord({
+      id: 'barcode-release-WO-RUSH-9001-OP-10-OP-20',
+      stage: '交接释放',
+      title: 'WO-RUSH-9001 OP-20 接收已释放',
+      summary: '质量复验放行后解除 OP-10 到 OP-20 的交接冻结，OP-20 装配复检可接收 30 件并按更新后的排产窗口开工。',
+      object: 'WO-RUSH-9001',
+      source: '质量闭环 / 工序交接 / OP-20',
+      traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20',
+      status: 'ready',
+      statusLabel: 'OP-20 可接收',
+      createdAt,
+    })
+    upsertOtdEvidenceChainRecord({
+      id: 'barcode-schedule-release-WO-RUSH-9001-OP-20',
+      stage: '排产回写',
+      title: 'WO-RUSH-9001 OP-20 接收窗口已恢复',
+      summary: '质量冻结解除后，AI 排产可重新安排 OP-20 装配复检窗口，保留返工复验耗时并更新 OTD 复盘口径。',
+      object: 'WO-RUSH-9001 / OP-20',
+      source: '质量闭环 / AI 排产',
+      traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
+      status: 'ready',
+      statusLabel: '后段可排',
+      createdAt,
+    })
+    upsertOtdEvidenceChainRecord({
+      id: 'barcode-label-release-WO-RUSH-9001-OP-10',
+      stage: '标签状态',
+      title: 'WO-RUSH-9001 流转卡标签已解冻',
+      summary: '实物流转卡标签状态已从质量冻结更新为复验放行，现场扫码可继续进入 OP-20 接收确认。',
+      object: 'WO-RUSH-9001',
+      source: '条码 / QR 打印 / 质量复验',
+      traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
+      status: 'closed',
+      statusLabel: '质量冻结已解除',
+      createdAt,
+    })
+    refreshOtdEvidenceRecords()
+    barcodeReleaseMessage.value = '返工复验已放行：OP-20 接收、排产窗口和流转卡标签状态均已更新。'
+    if (qualityError.value.startsWith('扫码质量门释放写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `扫码质量门释放写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
+  }
+}
+
+function buildDemoRootCauseAnalysis(id: string): RootCauseAnalysisDto {
+  return {
+    inspectionId: id,
+    rootCauses: [
+      { cause: '刀具磨损超差', probability: 0.65, evidence: 'CNC-001 已连续运行 320 小时，超过推荐换刀周期 240 小时' },
+      { cause: '冷却液温度偏高', probability: 0.25, evidence: '加工区域温度 38°C，超出工艺要求 35°C' },
+      { cause: '来料硬度波动', probability: 0.10, evidence: '批次 AL-6061 硬度检测值 HB95-105，标准要求 HB100±3' },
+    ],
+    correctiveActions: ['立即更换 CNC-001 刀具', '检查冷却系统循环泵', '对该批次来料进行 100% 硬度分选'],
+    preventiveMeasures: ['建立刀具寿命看板，提前 20 小时预警', '加装冷却液温度在线监测', '来料检验增加硬度检测频次'],
+    analysisSummary: '主要根因为刀具磨损导致表面粗糙度超差，建议加强刀具寿命管理和冷却系统维护。',
+  }
 }
 
 async function showAnalysis(id: string) {
+  latestAnalysisInspectionId = id
   if (analysisMap[id]) { currentAnalysis.value = analysisMap[id]; return }
-  try {
-    const result = await analyzeRootCause(id)
-    analysisMap[id] = result
-    currentAnalysis.value = result
-  } catch {
-    // 演示分析
-    const demo: RootCauseAnalysisDto = {
-      inspectionId: id,
-      rootCauses: [
-        { cause: '刀具磨损超差', probability: 0.65, evidence: 'CNC-001 已连续运行 320 小时，超过推荐换刀周期 240 小时' },
-        { cause: '冷却液温度偏高', probability: 0.25, evidence: '加工区域温度 38°C，超出工艺要求 35°C' },
-        { cause: '来料硬度波动', probability: 0.10, evidence: '批次 AL-6061 硬度检测值 HB95-105，标准要求 HB100±3' },
-      ],
-      correctiveActions: ['立即更换 CNC-001 刀具', '检查冷却系统循环泵', '对该批次来料进行 100% 硬度分选'],
-      preventiveMeasures: ['建立刀具寿命看板，提前 20 小时预警', '加装冷却液温度在线监测', '来料检验增加硬度检测频次'],
-      analysisSummary: '主要根因为刀具磨损导致表面粗糙度超差，建议加强刀具寿命管理和冷却系统维护。',
-    }
-    analysisMap[id] = demo
-    currentAnalysis.value = demo
+  currentAnalysis.value = null
+
+  const pendingAnalysis = analysisPendingMap[id]
+  if (pendingAnalysis) {
+    const result = await pendingAnalysis
+    if (latestAnalysisInspectionId === id) currentAnalysis.value = result
+    return
   }
+
+  const request = analyzeRootCause(id)
+    .then(result => {
+      if (latestAnalysisInspectionId === id && qualityError.value.startsWith('根因分析加载失败')) qualityError.value = ''
+      return result
+    })
+    .catch((e: unknown) => {
+      if (latestAnalysisInspectionId === id) {
+        qualityError.value = `根因分析加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
+      }
+      return buildDemoRootCauseAnalysis(id)
+    })
+    .then(result => {
+      analysisMap[id] = result
+      return result
+    })
+    .finally(() => {
+      delete analysisPendingMap[id]
+    })
+
+  analysisPendingMap[id] = request
+  const result = await request
+  if (latestAnalysisInspectionId === id) currentAnalysis.value = result
+}
+
+async function applyAuditFocus() {
+  const focus = auditFocus.value
+  if (!focus) return
+  let target = inspections.value.find(inspection => inspection.id === focus.objectId)
+  let createdAuditPlaceholder = false
+  if (!target) {
+    target = {
+      id: focus.objectId,
+      workOrderId: '审计回放对象',
+      productCode: 'AUDIT-TRACE',
+      processName: 'Agent 质量处置',
+      inspectionPoint: '审计定位',
+      inspectionQuantity: 2,
+      qualifiedQuantity: 0,
+      defectQuantity: 2,
+      result: 'fail',
+      inspectorId: 'agent-audit',
+      inspectedAt: new Date().toISOString(),
+      passRate: 0,
+    }
+    createdAuditPlaceholder = true
+    inspections.value = [target, ...inspections.value]
+  }
+  if (createdAuditPlaceholder) {
+    const analysis = buildDemoRootCauseAnalysis(target.id)
+    analysisMap[target.id] = analysis
+    latestAnalysisInspectionId = target.id
+    currentAnalysis.value = analysis
+    return
+  }
+  await showAnalysis(target.id)
 }
 
 function generateSpcData(param: string) {
@@ -642,8 +767,10 @@ function generateSpcData(param: string) {
 }
 
 async function loadSpc() {
+  const requestedParam = spcParam.value
   try {
-    const result = await analyzeSpcTrend(spcParam.value)
+    const result = await analyzeSpcTrend(requestedParam)
+    if (spcParam.value !== requestedParam) return
     const drawW = chartW - pad * 2
     spcData.value = result.dataPoints.map((v, i) => ({
       x: pad + (i / Math.max(result.dataPoints.length - 1, 1)) * drawW,
@@ -654,8 +781,12 @@ async function loadSpc() {
       spcAlert.value = { type: 'warning', message: `⚠ ${result.trendDirection}趋势，建议关注` }
     } else { spcAlert.value = null }
     spcRecommend.value = result.recommendedAction || ''
-  } catch {
-    generateSpcData(spcParam.value)
+    if (qualityError.value.startsWith('SPC 趋势分析加载失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    if (spcParam.value === requestedParam) {
+      qualityError.value = `SPC 趋势分析加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
+      generateSpcData(requestedParam)
+    }
   }
 }
 
@@ -663,7 +794,7 @@ onMounted(async () => {
   refreshOtdEvidenceRecords()
   refreshQualityKnowledgeSample()
   refreshQualityKnowledgeReuseDraft()
-  refreshQualityMrbDisposition()
+  await refreshQualityMrbDisposition()
 
   // 加载统计数据
   try {
@@ -678,8 +809,11 @@ onMounted(async () => {
 
   // 加载检验批次
   try {
-    inspections.value = await getInspections()
-  } catch {
+    const result = await getInspections()
+    if (!Array.isArray(result)) throw new Error('后端返回非数组质检载荷')
+    inspections.value = result
+  } catch (e: unknown) {
+    qualityError.value = `质检批次加载失败，已显示本地演示批次：${e instanceof Error ? e.message : '请稍后重试'}`
     inspections.value = [
       { id: 'INS-001', workOrderId: 'WO-001', productCode: 'PRD-001', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 50, qualifiedQuantity: 48, defectQuantity: 2, result: 'pass', inspectorId: 'USR-001', inspectedAt: '2026-05-11T10:30:00', passRate: 96 },
       { id: 'INS-002', workOrderId: 'WO-002', productCode: 'PRD-002', processName: '注塑成型', inspectionPoint: '外观检验', inspectionQuantity: 100, qualifiedQuantity: 97, defectQuantity: 3, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-11T14:00:00', passRate: 97 },
@@ -688,13 +822,15 @@ onMounted(async () => {
       { id: 'INS-005', workOrderId: 'WO-005', productCode: 'PRD-004', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 40, qualifiedQuantity: 40, defectQuantity: 0, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-12T11:00:00', passRate: 100 },
     ]
   }
+  await applyAuditFocus()
   syncQualityReworkFromInspections()
 
   // 异常数据
   try {
     const { data } = await http.get('/anomaly')
     anomalies.value = data.items ?? data
-  } catch {
+  } catch (e: unknown) {
+    qualityError.value = `质量异常告警加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
     anomalies.value = [
       { id: 'ANM-001', workOrderId: 'WO-004', anomalyType: '尺寸超差', severity: 'critical', description: '装配后轴孔配合间隙 0.12mm，超过 0.08mm 标准上限', status: 'open', detectedAt: '2026-05-12T09:15:00' },
       { id: 'ANM-002', workOrderId: 'WO-003', anomalyType: '硬度不足', severity: 'major', description: '热处理后硬度 HB89，低于 HB95 标准下限', status: 'investigating', detectedAt: '2026-05-12T08:30:00' },
@@ -738,6 +874,33 @@ onMounted(async () => {
 .kpi-body { display: flex; flex-direction: column; }
 .kpi-value { font-size: 28px; font-weight: 700; line-height: 1.2; }
 .kpi-label { font-size: 13px; color: #888; }
+
+.audit-focus-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+}
+.audit-focus-banner span { display: block; color: #4338ca; font-size: 12px; font-weight: 700; }
+.audit-focus-banner strong { display: block; color: #111827; font-size: 14px; }
+.audit-focus-banner p { margin: 2px 0 0; color: #4b5563; font-size: 12px; }
+.audit-focus-banner code { color: #3730a3; font-size: 12px; }
+
+.quality-error {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff1f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+}
 
 .barcode-quality-gate-panel {
   display: flex;
@@ -1096,6 +1259,12 @@ onMounted(async () => {
 }
 .spc-chart-container { width: 100%; }
 .spc-chart { width: 100%; height: 200px; }
+.spc-empty-state {
+  margin-top: -16px;
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+}
 .spc-alert {
   margin-top: 8px;
   padding: 8px 12px;

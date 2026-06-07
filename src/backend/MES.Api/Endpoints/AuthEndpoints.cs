@@ -2,11 +2,13 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using MES.Api.Configuration;
 using MES.Api.Filters;
 using MES.Api.Services;
 using MES.Application.DTOs;
 using MES.Domain.Entities.Admin;
 using MES.Domain.Interfaces.Repositories;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace MES.Api.Endpoints;
@@ -18,6 +20,10 @@ public static class AuthEndpoints
     public static RouteGroupBuilder MapAuthEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/login", LoginAsync)
+             .WithTags("认证")
+             .AddEndpointFilter<ValidationEndpointFilter>()
+             .RequireRateLimiting("Auth");
+        group.MapPost("/change-password", ChangePasswordAsync)
              .WithTags("认证")
              .AddEndpointFilter<ValidationEndpointFilter>()
              .RequireRateLimiting("Auth");
@@ -35,27 +41,42 @@ public static class AuthEndpoints
         LoginRequestDto request,
         IAuthService authService,
         SigningKeyStore keyStore,
-        IConfiguration configuration,
+        IOptions<JwtOptions> jwtOptions,
         IRefreshTokenRepository refreshTokenRepo,
         CancellationToken ct)
     {
-        var (valid, role, displayName) = await authService.ValidateAsync(request.Username, request.Password, ct);
+        var (valid, role, displayName, mustChangePassword) = await authService.ValidateAsync(request.Username, request.Password, ct);
         if (!valid)
+            return TypedResults.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(displayName))
             return TypedResults.Unauthorized();
 
         await authService.RecordLoginAsync(request.Username, ct);
 
-        var (token, expiresAt) = GenerateToken(request.Username, role!, displayName!, keyStore, configuration);
-        var refreshTokenStr = await CreateRefreshTokenAsync(request.Username, role!, displayName!, refreshTokenRepo, ct);
+        var (token, expiresAt) = GenerateToken(request.Username, role, displayName, mustChangePassword, keyStore, jwtOptions.Value);
+        var refreshTokenStr = await CreateRefreshTokenAsync(request.Username, role, displayName, refreshTokenRepo, ct);
 
-        return TypedResults.Ok(new LoginResponseDto(token, refreshTokenStr, request.Username, displayName!, role!, expiresAt));
+        return TypedResults.Ok(new LoginResponseDto(token, refreshTokenStr, request.Username, displayName, role, expiresAt, mustChangePassword));
+    }
+
+    private static async Task<IResult> ChangePasswordAsync(
+        ChangePasswordRequestDto request,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var changed = await authService.ChangePasswordAsync(request.Username, request.CurrentPassword, request.NewPassword, ct);
+        return changed
+            ? TypedResults.Ok(new { message = "密码已更新" })
+            : TypedResults.Unauthorized();
     }
 
     private static async Task<IResult> RefreshTokenAsync(
         RefreshTokenRequestDto request,
         SigningKeyStore keyStore,
-        IConfiguration configuration,
+        IOptions<JwtOptions> jwtOptions,
         IRefreshTokenRepository refreshTokenRepo,
+        IUserRepository userRepo,
         CancellationToken ct)
     {
         var tokenHash = HashToken(request.RefreshToken);
@@ -72,7 +93,9 @@ public static class AuthEndpoints
         // 删除旧 token，签发新 token
         await refreshTokenRepo.DeleteAsync(stored.Id, ct);
 
-        var (token, expiresAt) = GenerateToken(stored.Username, stored.Role, stored.DisplayName, keyStore, configuration);
+        var user = await userRepo.GetByUsernameAsync(stored.Username, ct);
+        var mustChangePassword = user?.MustChangePassword ?? false;
+        var (token, expiresAt) = GenerateToken(stored.Username, stored.Role, stored.DisplayName, mustChangePassword, keyStore, jwtOptions.Value);
         var newRefreshToken = await CreateRefreshTokenAsync(stored.Username, stored.Role, stored.DisplayName, refreshTokenRepo, ct);
 
         return TypedResults.Ok(new RefreshTokenResponseDto(token, newRefreshToken, expiresAt));
@@ -146,11 +169,8 @@ public static class AuthEndpoints
     }
 
     private static (string Token, DateTime ExpiresAt) GenerateToken(
-        string username, string role, string displayName, SigningKeyStore keyStore, IConfiguration configuration)
+        string username, string role, string displayName, bool mustChangePassword, SigningKeyStore keyStore, JwtOptions jwtOptions)
     {
-        var jwtSection = configuration.GetSection("Jwt");
-        var issuer = jwtSection["Issuer"] ?? "AIMes";
-        var audience = jwtSection["Audience"] ?? "AIMes-Client";
         var (kid, key) = keyStore.CurrentKey;
 
         var expiresAt = DateTime.UtcNow.AddHours(8);
@@ -159,14 +179,15 @@ public static class AuthEndpoints
             new Claim(ClaimTypes.Name, username),
             new Claim(ClaimTypes.Role, role),
             new Claim(ClaimTypes.GivenName, displayName),
+            new Claim("must_change_password", mustChangePassword ? "true" : "false"),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
+            issuer: jwtOptions.Issuer,
+            audience: jwtOptions.Audience,
             claims: claims,
             expires: expiresAt,
             signingCredentials: creds

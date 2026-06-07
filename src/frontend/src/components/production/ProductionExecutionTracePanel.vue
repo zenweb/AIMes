@@ -1,5 +1,10 @@
 <template>
-  <section class="execution-trace-panel" aria-label="生产执行闭环">
+  <section
+    class="execution-trace-panel"
+    role="status"
+    aria-live="polite"
+    :aria-label="`生产执行闭环：${traces.length} 条记录`"
+  >
     <div class="trace-heading">
       <div>
         <span class="eyebrow">执行闭环</span>
@@ -8,8 +13,15 @@
       <span class="trace-count">{{ traces.length }} 条记录</span>
     </div>
 
-    <div v-if="traces.length" class="trace-list">
-      <article v-for="trace in traces" :key="trace.id" class="trace-card" :class="trace.type">
+    <div v-if="traces.length" class="trace-list" role="list" aria-label="生产执行闭环记录">
+      <article
+        v-for="trace in traces"
+        :key="trace.id"
+        class="trace-card"
+        :class="trace.type"
+        role="listitem"
+        :aria-label="traceAriaLabel(trace)"
+      >
         <div class="trace-topline">
           <span class="trace-type">{{ trace.typeLabel }}</span>
           <span class="trace-time">{{ trace.createdAt }}</span>
@@ -45,6 +57,10 @@ export interface ProductionExecutionTrace {
 defineProps<{
   traces: ProductionExecutionTrace[]
 }>()
+
+function traceAriaLabel(trace: ProductionExecutionTrace) {
+  return `${trace.typeLabel}：${trace.title}，${trace.createdAt}`
+}
 </script>
 
 <style scoped>

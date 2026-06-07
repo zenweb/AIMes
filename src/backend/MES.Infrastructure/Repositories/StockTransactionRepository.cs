@@ -41,9 +41,9 @@ public class StockTransactionRepository : IStockTransactionRepository
         return await _context.StockTransactions.CountAsync(t => t.CreatedAt.Date == today, ct);
     }
 
-    public async Task AddAsync(StockTransaction transaction, CancellationToken ct = default)
+    public Task AddAsync(StockTransaction transaction, CancellationToken ct = default)
     {
         _context.StockTransactions.Add(transaction);
-        await _context.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 }

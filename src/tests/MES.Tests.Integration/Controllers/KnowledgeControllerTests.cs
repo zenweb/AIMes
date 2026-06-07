@@ -5,6 +5,7 @@ using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class KnowledgeControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;

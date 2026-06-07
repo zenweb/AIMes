@@ -1,11 +1,17 @@
 using FluentAssertions;
 using MES.Api.Services;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace MES.Tests.Unit.Services;
 
 public class SigningKeyStoreTests
 {
+    private static IDistributedCache CreateCache() =>
+        new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+
     [Fact]
     public void Constructor_ShouldCreateInitialKey()
     {
@@ -82,5 +88,62 @@ public class SigningKeyStoreTests
 
         var oldKey = store.GetKeyById(oldKid);
         oldKey.Should().NotBeNull("旧密钥在 24h 缓冲期内应仍有效");
+    }
+
+    [Fact]
+    public void Rotate_ShouldStoreNewKeyBeforePublishingCurrentKid()
+    {
+        var source = File.ReadAllText(GetSigningKeyStoreSourcePath());
+        var rotateStart = source.IndexOf("public void Rotate", StringComparison.Ordinal);
+        var rotateBody = source.Substring(
+            rotateStart,
+            source.IndexOf("private static (string Kid", StringComparison.Ordinal) - rotateStart);
+
+        rotateBody.IndexOf("_keys[kid]", StringComparison.Ordinal)
+            .Should().BeLessThan(
+                rotateBody.IndexOf("Volatile.Write(ref _currentKid, kid)", StringComparison.Ordinal),
+                "readers must never observe a current kid before its key is visible in the dictionary");
+    }
+
+    [Fact]
+    public void Constructor_WithDistributedCache_ShouldPublishCurrentKeyForOtherInstances()
+    {
+        var cache = CreateCache();
+        var first = new SigningKeyStore("test-key-material-at-least-16-chars", cache);
+        var second = new SigningKeyStore("fallback-key-material-at-least-16-chars", cache);
+
+        var (kid, _) = first.CurrentKey;
+        var key = second.GetKeyById(kid);
+
+        key.Should().NotBeNull("Redis-backed deployments must let another API replica validate tokens signed by the publishing replica");
+    }
+
+    [Fact]
+    public void Rotate_WithDistributedCache_ShouldPublishRotatedKeyForOtherInstances()
+    {
+        var cache = CreateCache();
+        var first = new SigningKeyStore("test-key-material-at-least-16-chars", cache);
+        var second = new SigningKeyStore("fallback-key-material-at-least-16-chars", cache);
+
+        first.Rotate("new-key-material-at-least-16-chars-different");
+        var (kid, _) = first.CurrentKey;
+        var key = second.GetKeyById(kid);
+
+        key.Should().NotBeNull("rotated signing keys must be visible to other API replicas during the validation grace period");
+    }
+
+    private static string GetSigningKeyStoreSourcePath()
+    {
+        return Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "backend",
+            "MES.Api",
+            "Services",
+            "SigningKeyStore.cs"));
     }
 }

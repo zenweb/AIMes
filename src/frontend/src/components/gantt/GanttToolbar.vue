@@ -1,19 +1,19 @@
 <template>
   <div class="toolbar">
     <div class="toolbar-left">
-      <button class="btn btn-primary" :disabled="loading" @click="$emit('optimize')">
+      <button type="button" class="btn btn-primary" :disabled="loading" @click="$emit('optimize')">
         {{ loading ? '优化中...' : '排产优化' }}
       </button>
-      <button class="btn btn-secondary" @click="$emit('refresh')">
+      <button type="button" class="btn btn-secondary" @click="$emit('refresh')">
         刷新
       </button>
-      <button class="btn btn-feedback" @click="$emit('feedback')">
+      <button type="button" class="btn btn-feedback" @click="$emit('feedback')">
         采纳反馈
       </button>
-      <button class="btn btn-compare" @click="$emit('compare')">
+      <button type="button" class="btn btn-compare" @click="$emit('compare')">
         多目标对比
       </button>
-      <button class="btn btn-export" @click="$emit('export-csv')">
+      <button type="button" class="btn btn-export" @click="$emit('export-csv')">
         导出 CSV
       </button>
       <label class="objective-label">

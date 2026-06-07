@@ -52,13 +52,13 @@ public class QualityAppService : IQualityAppService
             request.QualifiedQuantity, request.DefectQuantity, request.InspectorId,
             Enum.Parse<DomainInspectionResult>(request.Result));
 
-        var created = await _inspectionRepo.CreateAsync(inspection);
+        var created = await _inspectionRepo.CreateAsync(inspection, ct);
         return MapToInspectionDto(created);
     }
 
     public async Task<InspectionDto?> GetInspectionByIdAsync(string id, CancellationToken ct = default)
     {
-        var inspection = await _inspectionRepo.GetByIdAsync(id);
+        var inspection = await _inspectionRepo.GetByIdAsync(id, ct);
         return inspection != null ? MapToInspectionDto(inspection) : null;
     }
 
@@ -70,13 +70,13 @@ public class QualityAppService : IQualityAppService
 
     public async Task<List<InspectionDto>> GetInspectionsByWorkOrderAsync(string workOrderId, CancellationToken ct = default)
     {
-        var inspections = await _inspectionRepo.GetByWorkOrderAsync(workOrderId);
+        var inspections = await _inspectionRepo.GetByWorkOrderAsync(workOrderId, ct);
         return inspections.Select(MapToInspectionDto).ToList();
     }
 
     public async Task<QualityStatisticsDto> GetStatisticsAsync(string? productCode = null, CancellationToken ct = default)
     {
-        var inspections = await _inspectionRepo.GetAllAsync();
+        var inspections = await _inspectionRepo.GetAllAsync(ct);
 
         if (!string.IsNullOrEmpty(productCode))
             inspections = inspections.Where(i => i.ProductCode == productCode).ToList();
@@ -100,7 +100,7 @@ public class QualityAppService : IQualityAppService
 
     public async Task<RootCauseAnalysisDto> AnalyzeRootCauseAsync(string inspectionId, CancellationToken ct = default)
     {
-        var inspection = await _inspectionRepo.GetByIdAsync(inspectionId);
+        var inspection = await _inspectionRepo.GetByIdAsync(inspectionId, ct);
         if (inspection == null)
             throw new InvalidOperationException($"质检记录 {inspectionId} 不存在");
 
@@ -124,7 +124,7 @@ public class QualityAppService : IQualityAppService
     public async Task<SpcAnalysisDto> AnalyzeSpcTrendAsync(string processParameter, int windowSize = 20, CancellationToken ct = default)
     {
         // 获取最近的测量数据
-        var recentInspections = await _inspectionRepo.GetRecentInspectionsAsync(processParameter, windowSize);
+        var recentInspections = await _inspectionRepo.GetRecentInspectionsAsync(processParameter, windowSize, ct);
 
         // 从测量数据中提取数值（这里简化处理，实际需要从MeasurementData中提取）
         var data = recentInspections

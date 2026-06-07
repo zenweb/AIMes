@@ -6,7 +6,7 @@ test.describe('Scheduling 排产甘特图', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
@@ -45,6 +45,415 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(panel.getByText('人工调整')).toBeVisible()
     await expect(panel.getByText('锁定期后的第一个 CNC 空窗')).toBeVisible()
     await expect(panel.getByText('等待调度员决策')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台提供后端建议采纳拒绝入口', async ({ page }) => {
+    const panel = page.locator('.agent-workbench-panel')
+    await expect(panel.getByRole('button', { name: '生成后端建议' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: '采纳推荐' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: '拒绝建议' })).toBeVisible()
+    await expect(panel.getByText(/demo fallback/)).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+    await mockAgentApi(page, { adoptStatus: 200 })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+    await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
+
+    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
+    await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+    await mockAgentApi(page, { adoptStatus: 403 })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+
+    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await expect(panel.getByText('采纳失败，请确认当前用户具有 Admin 或 Planner 权限。')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端建议生成失败，已保留 demo fallback。')).toBeVisible()
+    await expect(panel.getByText(/API 不可用 \/ demo fallback/)).toBeVisible()
+  })
+
+  test('后端返回空排产计划时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'empty-plan-e2e',
+        planName: '空排产计划',
+        items: [],
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.91,
+      }),
+    }))
+    await page.route('**/api/v1/equipment**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端排产计划缺少可执行任务')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('排产计划返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><body>schedule SPA fallback from chromium</body></html>',
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端排产计划载荷不完整')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('设备列表返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/equipment**', route => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><body>equipment SPA fallback from chromium</body></html>',
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端设备列表载荷不完整')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('A/B 报告读取失败时真实浏览器展示 OTD 对比来源提示', async ({ page }) => {
+    await page.route('**/reports/latest-ab-report.json', route => route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'schedule A/B report missing from chromium' }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('A/B 报告读取失败')
+    await expect(warning).toContainText('基线 vs Agent OTD 对比暂用排产计划推导值')
+    await expect(warning).toContainText('latest A/B report HTTP 404')
+  })
+
+  test('排产优化失败时真实浏览器保留当前甘特图并展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium optimizer unavailable' }),
+    }))
+
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    const taskCountBefore = await page.locator('.gantt_task_line').count()
+
+    await page.getByRole('button', { name: '排产优化' }).click()
+
+    const alert = page.locator('.error-banner[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('优化失败')
+    await expect(alert).toContainText('chromium optimizer unavailable')
+    await expect(page.locator('.gantt_task_line')).toHaveCount(taskCountBefore)
+  })
+
+  test('风险看板读取失败时真实浏览器展示本地事件 fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'risk-fallback-plan-e2e',
+        planName: '风险 fallback 排产计划',
+        planStartDate: '2026-06-01T08:00:00.000Z',
+        planEndDate: '2026-06-01T12:00:00.000Z',
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.9,
+        totalChangeoverMinutes: 35,
+        groupCount: 1,
+        createdAt: '2026-06-01T08:00:00.000Z',
+        items: [
+          {
+            id: 'risk-fallback-item-1',
+            workOrderId: 'risk-fallback-wo-1',
+            workOrderNumber: 'WO-RISK-FALLBACK-001',
+            equipmentId: 'risk-fallback-eq-1',
+            equipmentName: 'CNC 风险复核机台',
+            plannedStartTime: '2026-06-01T08:00:00.000Z',
+            plannedEndTime: '2026-06-01T12:00:00.000Z',
+            sequence: 1,
+            setupTime: '30 分钟',
+            dependentItems: [],
+          },
+        ],
+      }),
+    }))
+    await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['risk-fallback-eq-1']),
+    }))
+    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            id: 'risk-fallback-eq-1',
+            equipmentCode: 'CNC-RISK-01',
+            equipmentName: 'CNC 风险复核机台',
+            equipmentType: 'CNC',
+            status: 'running',
+            capacity: 100,
+            utilizationRate: 0.82,
+          },
+        ],
+        totalCount: 1,
+        page: 1,
+        pageSize: 50,
+      }),
+    }))
+    let riskRequests = 0
+    await page.route('**/api/v1/risk/dashboard**', route => {
+      riskRequests += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium risk dashboard unavailable' }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await expect.poll(() => riskRequests).toBeGreaterThan(0)
+
+    const note = page.locator('.risk-event-sync-note')
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('风险事件加载失败')
+    await expect(note).toContainText('已显示本地演示事件')
+    await expect(note).toContainText('chromium risk dashboard unavailable')
+
+    const panel = page.locator('.event-queue-panel')
+    await expect(panel.getByText('缺料事件')).toBeVisible()
+    await expect(panel.getByText('设备故障事件')).toBeVisible()
+    await expect(panel.getByText('急单插单事件')).toBeVisible()
+  })
+
+  test('批量方案反馈同步失败时真实浏览器保留本地目标切换并展示原因', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    const comparedPlan = {
+      id: 'batch-balanced-plan-e2e',
+      planName: '综合平衡方案',
+      planStartDate: '2026-06-01T08:00:00.000Z',
+      planEndDate: '2026-06-01T12:00:00.000Z',
+      overallUtilizationRate: 0.86,
+      onTimeDeliveryRate: 0.93,
+      totalChangeoverMinutes: 28,
+      groupCount: 1,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      items: [
+        {
+          id: 'batch-balanced-item-1',
+          workOrderId: 'batch-balanced-wo-1',
+          workOrderNumber: 'WO-BATCH-BALANCED-001',
+          equipmentId: 'batch-balanced-eq-1',
+          equipmentName: 'CNC 批量对比机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '20 分钟',
+          dependentItems: [],
+        },
+      ],
+    }
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡',
+            plan: comparedPlan,
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.95,
+            totalWorkOrders: 1,
+          },
+        ],
+      }),
+    }))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        plan: comparedPlan,
+        assignments: [],
+        estimatedCompletionRate: 0.95,
+        utilizationRate: 0.86,
+        warnings: ['综合平衡方案已应用'],
+      }),
+    }))
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium batch feedback unavailable' }),
+      })
+    })
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('.recommend-card')).toContainText('综合平衡')
+
+    await dialog.getByRole('button', { name: '采用此方案' }).click()
+    await expect.poll(() => feedbackRequests).toBeGreaterThan(0)
+
+    const note = page.locator('.sync-note').filter({ hasText: '批量方案采纳反馈同步失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('批量方案采纳反馈同步失败')
+    await expect(note).toContainText('当前仅保留本地目标切换')
+    await expect(note).toContainText('chromium batch feedback unavailable')
+    await expect(page.locator('.toolbar')).toContainText('综合平衡方案')
+    await expect(page.locator('.warnings-bar')).toContainText('综合平衡方案已应用')
+  })
+
+  test('外协到货建议被采纳后真实浏览器归档排产释放证据', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
+        {
+          id: 'outsourcing-commitment-product-flange',
+          sourceKpiId: 'product-flange',
+          dimensionLabel: '产品族',
+          targetName: '法兰盘 DN100',
+          title: '法兰盘 DN100 外协承诺包',
+          auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
+          traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
+          actor: '经营复盘 王经理',
+          baselineOtd: 84,
+          agentOtd: 91,
+          lift: 7,
+          delayedReduced: 3,
+          statusLabel: '外协到货已确认',
+          commitment: '法兰盘 DN100 外协到货口径：华东精密外协厂已按 2026-05-23 到货，厂外等待可关闭但仍需排产释放复核。',
+          owner: '采购 / 计划联合确认',
+          dueAt: '2026-05-23',
+          summary: '外协等待未闭环转为外协承诺口径，外协到货后等待 AI 排产采纳释放。',
+          actions: [
+            {
+              module: '外协协同',
+              owner: '采购 / 计划',
+              action: '向 华东精密外协厂 锁定 法兰盘 DN100 的外协承诺日期 2026-05-23',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-20260521',
+            },
+            {
+              module: '采购协同',
+              owner: '采购员 周工',
+              action: '确认 华东精密外协厂 的 法兰盘 DN100 外协到货并触发排产释放复核',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+            },
+          ],
+          partnerName: '华东精密外协厂',
+          promiseDate: '2026-05-23',
+          affectedOrders: 'WO-DEMO-1013',
+          sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
+          createdAt: '2026-05-21T08:00:00.000Z',
+          receivedAt: '2026-05-23T09:30:00.000Z',
+          receivedBy: '采购员 周工',
+          receiptAuditId: 'AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001',
+          receiptTraceId: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+          receiptMessage: '华东精密外协厂 已按 2026-05-23 完成 法兰盘 DN100 外协到货，WO-DEMO-1013 可从厂外等待转为排产释放复核。',
+        },
+      ]))
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const outsourcingEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
+    await expect(outsourcingEvent.locator('.event-severity').getByText('已到货', { exact: true })).toBeVisible()
+    await expect(outsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521')).toBeVisible()
+
+    await outsourcingEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.locator('.agent-suggestion').getByText('外协到货后的排产释放复核')).toBeVisible()
+    await expect(eventPanel.locator('.agent-suggestion').getByText(/关闭 WO-DEMO-1013 的厂外等待口径/)).toBeVisible()
+
+    await eventPanel.locator('.agent-suggestion').getByRole('button', { name: '采纳此建议' }).click()
+    const suggestion = eventPanel.locator('.agent-suggestion')
+    await expect(suggestion.getByText('外协排产释放已确认')).toBeVisible()
+    await expect(suggestion.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
+    await expect(suggestion.getByText('AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001')).toBeVisible()
+    await expect(suggestion.getByText('OTD +2% 已释放归档')).toBeVisible()
+    await expect(suggestion.getByText('延期 0 单外部等待')).toBeVisible()
+
+    const releasedEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协排产释放已确认' })
+    await expect(releasedEvent.locator('.event-severity').getByText('已释放', { exact: true })).toBeVisible()
+    await expect(releasedEvent.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
+
+    const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]'))
+    expect(packageSnapshot[0].scheduleReleaseTraceId).toBe('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+    expect(packageSnapshot[0].scheduleReleaseAuditId).toBe('AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001')
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot.some((item: { traceId?: string }) => item.traceId === 'TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBe(true)
   })
 
   test('展示急单插单前影响分析', async ({ page }) => {
@@ -166,11 +575,17 @@ test.describe('Scheduling 排产甘特图', () => {
     const panel = page.locator('.event-queue-panel')
     await expect(panel).toBeVisible()
     await expect(panel.getByText('三类事件重排队列')).toBeVisible()
+    const eventList = panel.locator('.event-grid')
+    await expect(eventList).toHaveAttribute('role', 'list')
+    await expect(eventList).toHaveAttribute('aria-label', /排产事件重排队列：\d+ 个待评估事件/)
     await expect(panel.getByText('缺料事件')).toBeVisible()
     await expect(panel.getByText('设备故障事件')).toBeVisible()
     await expect(panel.getByText('急单插单事件')).toBeVisible()
 
-    await panel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' }).getByRole('button', { name: '生成重排建议' }).click()
+    const materialEvent = panel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' })
+    await expect(materialEvent).toHaveAttribute('role', 'listitem')
+    await expect(materialEvent).toHaveAttribute('aria-label', /缺料事件：M-AL-6061 齐套缺口/)
+    await materialEvent.getByRole('button', { name: '生成重排建议' }).click()
     await expect(panel.getByText('缺料约束重排建议')).toBeVisible()
     await expect(panel.getByText(/BOM-A100 替代料规则/)).toBeVisible()
     await expect(panel.getByText(/R-A100 CNC 能力要求/)).toBeVisible()
@@ -267,6 +682,58 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(summary.getByText('可替代方案')).toBeVisible()
   })
 
+  test('工单详情接口失败时真实浏览器展示本地排产解释兜底', async ({ page }) => {
+    let detailRequests = 0
+    await page.route('**/api/v1/scheduling/workorders/**', async route => {
+      detailRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'work order detail unavailable from chromium' }),
+      })
+    })
+
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel).toHaveAttribute('role', 'dialog')
+    await expect(panel).toHaveAttribute('aria-modal', 'true')
+    await expect(panel).toHaveAttribute('aria-label', /工单详情/)
+    await expect(panel.getByRole('button', { name: '关闭工单详情' })).toBeVisible()
+    const error = panel.locator('.panel-body.error')
+    await expect(error).toHaveAttribute('role', 'alert')
+    await expect(error).toHaveAttribute('aria-live', 'assertive')
+    await expect(error).toContainText('工单详情加载失败')
+    await expect(error).toContainText('已显示本地排产解释兜底')
+    await expect(error).toContainText('work order detail unavailable from chromium')
+    expect(detailRequests).toBeGreaterThan(0)
+  })
+
+  test('甘特图路由往返后仍可用键盘打开工单详情', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.detail-panel')).toHaveClass(/open/)
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel).toHaveAttribute('role', 'dialog')
+    await expect(panel).toHaveAttribute('aria-label', /工单详情/)
+  })
+
   test('工具栏显示', async ({ page }) => {
     await expect(page.locator('.toolbar')).toBeVisible()
 
@@ -333,3 +800,79 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(page.locator('.toolbar')).toBeVisible()
   })
 })
+
+async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+  const pendingDecision = {
+    id: 'agent-decision-e2e-001',
+    triggerEventId: 'trigger-e2e-001',
+    boundedContext: 'Scheduling',
+    decisionType: 'MultiScenario',
+    status: 'PendingReview',
+    recommendedScenarioId: 'scenario-weighted',
+    agentName: 'SchedulingAgent',
+    agentVersion: 'v1.5-e2e',
+    traceId: 'trace-agent-e2e-001',
+    promptHash: 'prompt-hash-e2e',
+    contextHash: 'context-hash-e2e',
+    inputSummary: 'Workshop=ws-001;Orders=30',
+    outputSummary: 'Scenarios=2;Recommended=WeightedComposite',
+    businessKey: 'Workshop:ws-001',
+    createdAt: '2026-05-23T08:00:00.000Z',
+    scenarios: [
+      {
+        id: 'scenario-fcfs',
+        strategyName: 'FCFS',
+        priorityRule: 'FCFS',
+        capacityStrategy: 'LeastLoaded',
+        objective: 'due_date',
+        otdProjection: 26.67,
+        utilizationProjection: 71,
+        changeoverProjection: 218,
+        explanation: '先到先服务基线。',
+      },
+      {
+        id: 'scenario-weighted',
+        strategyName: 'WeightedComposite',
+        priorityRule: 'WeightedComposite',
+        capacityStrategy: 'LeastLoaded',
+        objective: 'due_date',
+        otdProjection: 30,
+        utilizationProjection: 82,
+        changeoverProjection: 145,
+        explanation: '交期、优先级、加工时长加权后推荐。',
+      },
+    ],
+  }
+
+  await page.route('**/api/v1/scheduling/agent/decisions**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([]),
+  }))
+  await page.route('**/api/v1/scheduling/agent/recommend', route => route.fulfill({
+    status: 201,
+    contentType: 'application/json',
+    body: JSON.stringify(pendingDecision),
+  }))
+  await page.route('**/api/v1/scheduling/agent/agent-decision-e2e-001/adopt', route => {
+    if (options.adoptStatus === 403) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
+      })
+    }
+
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...pendingDecision,
+        status: 'Adopted',
+        adoptedScenarioId: 'scenario-weighted',
+      }),
+    })
+  })
+}

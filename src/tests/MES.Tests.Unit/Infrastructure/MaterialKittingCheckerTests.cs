@@ -57,6 +57,23 @@ public class MaterialKittingCheckerTests
     }
 
     [Fact]
+    public async Task CheckAsync_ShouldUseLossAdjustedBomRequirement()
+    {
+        SetupBom("PROD-LOSS", [("MAT-LOSS", 10, 0.1m)]);
+        var availabilities = new List<MaterialAvailabilitySummary>
+        {
+            CreateMatAvail("MAT-LOSS", 20, 0),
+        };
+
+        var result = await _checker.CheckAsync("PROD-LOSS", 2, availabilities);
+
+        result.IsAllSufficient.Should().BeFalse("10% BOM loss means 10 * 2 requires 22, not the nominal 20");
+        result.ShortageCount.Should().Be(1);
+        result.Items[0].RequiredQuantity.Should().Be(22);
+        result.Items[0].ShortageQuantity.Should().Be(2);
+    }
+
+    [Fact]
     public async Task CheckAsync_MissingMaterial_ReturnsShortage()
     {
         SetupBom("PROD-A", [("MAT-NOEXIST", 1)]);
@@ -109,6 +126,19 @@ public class MaterialKittingCheckerTests
         foreach (var (code, qty) in materials)
         {
             bom.AddItem(new BomItem(new MaterialCode(code), $"Material {code}", qty, "PCS", 1));
+        }
+        _bomRepoMock.Setup(r => r.GetByProductCodeAsync(new ProductCode(productCode), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([bom]);
+    }
+
+    private void SetupBom(string productCode, List<(string code, decimal qty, decimal? lossRate)> materials)
+    {
+        var bom = new BillOfMaterial($"BOM-{productCode}", $"BOM for {productCode}",
+            new ProductCode(productCode), $"Product {productCode}",
+            BomType.Manufacturing, "V1");
+        foreach (var (code, qty, lossRate) in materials)
+        {
+            bom.AddItem(new BomItem(new MaterialCode(code), $"Material {code}", qty, "PCS", 1, lossRate));
         }
         _bomRepoMock.Setup(r => r.GetByProductCodeAsync(new ProductCode(productCode), It.IsAny<CancellationToken>()))
             .ReturnsAsync([bom]);

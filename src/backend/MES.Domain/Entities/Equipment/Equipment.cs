@@ -1,4 +1,5 @@
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 
 namespace MES.Domain.Entities.Equipment;
 
@@ -51,7 +52,7 @@ public class Equipment
     public void StartWork(string workOrderId)
     {
         if (!CanStartWork)
-            throw new InvalidOperationException($"设备当前状态 {Status} 无法开始工作");
+            throw new DomainRuleViolationException($"设备当前状态 {Status} 无法开始工作");
 
         ArgumentException.ThrowIfNullOrWhiteSpace(workOrderId);
 
@@ -63,7 +64,7 @@ public class Equipment
     public void CompleteWork()
     {
         if (!CanCompleteWork)
-            throw new InvalidOperationException($"设备当前状态 {Status} 无法完成工作");
+            throw new DomainRuleViolationException($"设备当前状态 {Status} 无法完成工作");
 
         CurrentWorkOrderId = string.Empty;
         Status = EquipmentStatus.Available;
@@ -73,7 +74,7 @@ public class Equipment
     public void SetIdle()
     {
         if (Status != EquipmentStatus.Available)
-            throw new InvalidOperationException("只有可用状态的设备可以设为空闲");
+            throw new DomainRuleViolationException("只有可用状态的设备可以设为空闲");
 
         Status = EquipmentStatus.Idle;
         UpdatedAt = DateTime.UtcNow;
@@ -82,7 +83,7 @@ public class Equipment
     public void SetFault()
     {
         if (Status != EquipmentStatus.Running && Status != EquipmentStatus.Idle)
-            throw new InvalidOperationException("只有运行中或空闲的设备可以报告故障");
+            throw new DomainRuleViolationException("只有运行中或空闲的设备可以报告故障");
 
         Status = EquipmentStatus.Fault;
         UpdatedAt = DateTime.UtcNow;
@@ -91,7 +92,7 @@ public class Equipment
     public void SetMaintenance()
     {
         if (Status == EquipmentStatus.Fault || Status == EquipmentStatus.Offline)
-            throw new InvalidOperationException("故障或离线设备无法设置为维护状态");
+            throw new DomainRuleViolationException("故障或离线设备无法设置为维护状态");
 
         Status = EquipmentStatus.Maintenance;
         UpdatedAt = DateTime.UtcNow;
@@ -100,7 +101,7 @@ public class Equipment
     public void CompleteMaintenance()
     {
         if (Status != EquipmentStatus.Maintenance)
-            throw new InvalidOperationException("只有维护中的设备可以完成维护");
+            throw new DomainRuleViolationException("只有维护中的设备可以完成维护");
 
         LastMaintenanceDate = DateTime.UtcNow;
         Status = EquipmentStatus.Available;
@@ -110,7 +111,7 @@ public class Equipment
     public void SetOffline()
     {
         if (Status != EquipmentStatus.Available && Status != EquipmentStatus.Idle)
-            throw new InvalidOperationException("只有可用或空闲的设备可以设为离线");
+            throw new DomainRuleViolationException("只有可用或空闲的设备可以设为离线");
 
         Status = EquipmentStatus.Offline;
         UpdatedAt = DateTime.UtcNow;
@@ -119,7 +120,7 @@ public class Equipment
     public void SetOnline()
     {
         if (Status != EquipmentStatus.Offline)
-            throw new InvalidOperationException("只有离线的设备可以设为在线");
+            throw new DomainRuleViolationException("只有离线的设备可以设为在线");
 
         Status = EquipmentStatus.Available;
         UpdatedAt = DateTime.UtcNow;
@@ -135,7 +136,7 @@ public class Equipment
             case EquipmentStatus.Fault: SetFault(); return;
             case EquipmentStatus.Offline: SetOffline(); return;
             case EquipmentStatus.Available: TransitionToAvailable(); return;
-            default: throw new InvalidOperationException($"不支持转换到状态 {target}");
+            default: throw new DomainRuleViolationException($"不支持转换到状态 {target}");
         }
     }
 

@@ -34,7 +34,12 @@ psql -d mes -f db/seed.sql
 ### Docker 环境
 
 ```bash
-docker compose up -d
-# API 启动时自动 MigrateAsync 建表；docker-compose.yml 仅挂 seed.sql 灌演示数据。
-```
+# 1. 先启动 PostgreSQL 等外部依赖
+docker compose up -d postgresql redis rabbitmq qdrant
 
+# 2. Production 环境不允许 API 启动时自动迁移；先显式应用 schema
+dotnet ef database update --project src/backend/MES.Infrastructure --startup-project src/backend/MES.Api
+
+# 3. 再启动 API；若存在 pending migration，API 会拒绝启动
+docker compose up -d api
+```

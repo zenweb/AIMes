@@ -28,7 +28,7 @@ public class ProcessRoute : AggregateRoot
     public void AddStep(RoutingStep step)
     {
         Steps.Add(step);
-        ReorderSteps(Steps.Select(s => s.Id).ToList());
+        Steps = Steps.OrderBy(s => s.StepSequence).ToList();
     }
 
     public void RemoveStep(string stepId)

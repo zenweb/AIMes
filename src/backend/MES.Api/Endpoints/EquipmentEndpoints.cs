@@ -20,6 +20,7 @@ public static class EquipmentEndpoints
         group.MapGet("/", GetEquipmentsAsync).WithTags("设备管理");
         group.MapGet("/{id}", GetEquipmentByIdAsync).WithTags("设备管理");
         group.MapPatch("/{id}/status", UpdateStatusAsync)
+             .WithTags("设备管理")
              .AddEndpointFilter<ValidationEndpointFilter>()
              .AddEndpointFilter(Audit);
         group.MapGet("/{id}/health", GetHealthReportAsync).WithTags("设备管理");

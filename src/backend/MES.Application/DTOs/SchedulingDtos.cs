@@ -203,4 +203,16 @@ public class AdoptionFeedbackRequest
     public string? AiTraceId { get; set; }
 }
 
+public record AdoptionFeedbackSnapshotDto(
+    string Decision,
+    string DecisionLabel,
+    string ReasonCategory,
+    string CategoryLabel,
+    string? ReasonDetail,
+    string ObjectiveLabel,
+    DateTime CreatedAt,
+    string? TraceId,
+    string Source,
+    string? AgentDecisionId);
+
 public record UpdateStatusRequest(string Status);

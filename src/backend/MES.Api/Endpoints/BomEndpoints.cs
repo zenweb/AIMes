@@ -6,11 +6,13 @@ namespace MES.Api.Endpoints;
 
 public static class BomEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("bom");
+
     public static RouteGroupBuilder MapBomEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/", GetAllAsync).WithTags("BOM管理");
         group.MapGet("/{id}", GetByIdAsync).WithTags("BOM管理");
-        group.MapPost("/", CreateAsync).WithTags("BOM管理").AddEndpointFilter<ValidationEndpointFilter>();
+        group.MapPost("/", CreateAsync).WithTags("BOM管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
         group.MapGet("/{id}/explode", ExplodeAsync).WithTags("BOM管理");
         group.MapGet("/{id}/kitting", KittingAsync).WithTags("BOM管理");
         return group;
@@ -41,9 +43,9 @@ public static class BomEndpoints
 
     private static async Task<IResult> ExplodeAsync(
         string id,
-        decimal quantity = 1,
-        IBomAppService bomService = default!,
-        CancellationToken ct = default)
+        IBomAppService bomService,
+        CancellationToken ct,
+        decimal quantity = 1)
     {
         var result = await bomService.ExplodeBomAsync(id, quantity, ct);
         return TypedResults.Ok(result);
@@ -51,9 +53,9 @@ public static class BomEndpoints
 
     private static async Task<IResult> KittingAsync(
         string id,
-        decimal quantity = 1,
-        IBomAppService bomService = default!,
-        CancellationToken ct = default)
+        IBomAppService bomService,
+        CancellationToken ct,
+        decimal quantity = 1)
     {
         var result = await bomService.CheckKittingAsync(id, quantity, ct);
         return TypedResults.Ok(result);

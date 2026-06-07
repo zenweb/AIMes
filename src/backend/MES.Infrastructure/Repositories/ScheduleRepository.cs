@@ -14,18 +14,23 @@ public class ScheduleRepository : IScheduleRepository
         _context = context;
     }
 
-    public async Task<List<SchedulePlan>> GetAllAsync(CancellationToken ct = default)
+    public async Task<List<SchedulePlan>> GetAllAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         return await _context.SchedulePlans
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(p => p.Items)
             .OrderByDescending(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
     }
 
     public async Task<SchedulePlan?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.SchedulePlans
+            .AsNoTracking()
             .Include(p => p.Items)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
@@ -58,6 +63,7 @@ public class ScheduleRepository : IScheduleRepository
     {
         var now = DateTime.UtcNow;
         return await _context.SchedulePlans
+            .AsNoTracking()
             .Include(p => p.Items)
             .Where(p => p.PlanStartDate <= now && p.PlanEndDate >= now)
             .OrderByDescending(p => p.CreatedAt)
@@ -68,5 +74,13 @@ public class ScheduleRepository : IScheduleRepository
     {
         _context.ScheduleAdoptionFeedbacks.Add(feedback);
         await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task<ScheduleAdoptionFeedback?> GetLatestFeedbackAsync(CancellationToken ct = default)
+    {
+        return await _context.ScheduleAdoptionFeedbacks
+            .AsNoTracking()
+            .OrderByDescending(f => f.CreatedAt)
+            .FirstOrDefaultAsync(ct);
     }
 }

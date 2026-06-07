@@ -11,6 +11,7 @@ const app = createApp(App)
 // 全局 Vue 运行时错误处理
 app.config.errorHandler = (err, _instance, _info) => {
   const msg = err instanceof Error ? err.message : String(err)
+  console.error('Vue runtime error:', err)
   addToast('error', '系统错误', msg)
 }
 

@@ -30,10 +30,17 @@ public class AnomalyAgent
     {
         if (_llmGateway != null && _vectorStore != null)
         {
-            var llmResponse = await AnalyzeWithLLMAsync(anomaly);
-            if (llmResponse.Count > 0)
+            try
             {
-                return llmResponse;
+                var llmResponse = await AnalyzeWithLLMAsync(anomaly);
+                if (llmResponse.Count > 0)
+                {
+                    return llmResponse;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Fall through to deterministic rules when the optional LLM path is unavailable.
             }
         }
 
@@ -52,9 +59,9 @@ public class AnomalyAgent
         var sw = Stopwatch.StartNew();
         var query = $"production anomaly type={anomaly.AnomalyType} severity={anomaly.Severity} title={anomaly.Title} description={anomaly.Description}";
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        var historicalCases = await _vectorStore.SearchAsync("production-anomalies", embedding, 5);
+        var historicalCases = await _vectorStore.SearchAsync("production-anomalies", embedding, 5, ct);
         var context = JsonSerializer.Serialize(historicalCases.Select(ToContext));
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             你是MES生产异常处置专家。请结合历史异常案例，分析当前异常并给出处置建议。
 
             当前异常：
@@ -70,7 +77,7 @@ public class AnomalyAgent
             {context}
 
             请输出JSON数组，每个元素包含 Description、SuggestedAction、Confidence。
-            """;
+            """);
 
         var suggestions = await _llmGateway.GenerateJsonAsync<List<AnomalySuggestion>>(prompt, ct)
             ?? new List<AnomalySuggestion>();

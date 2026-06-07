@@ -1,3 +1,5 @@
+import { queryAgentConfigApprovals, upsertAgentConfigApproval } from '../api/governanceEvidence'
+
 const STORAGE_KEY = 'aimes_agent_config_approvals'
 
 export type AgentConfigApprovalStatus = 'pending' | 'reviewing' | 'approved' | 'rejected'
@@ -104,14 +106,26 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isApprovalStatus(status: unknown): status is AgentConfigApprovalStatus {
+  return status === 'pending' || status === 'reviewing' || status === 'approved' || status === 'rejected'
+}
+
+function isApprovalOverride(item: unknown): item is Partial<AgentConfigApprovalRecord> {
+  if (!item || typeof item !== 'object') return false
+  const override = item as Partial<AgentConfigApprovalRecord>
+  return typeof override.id === 'string'
+    && (override.status === undefined || isApprovalStatus(override.status))
+}
+
 function readOverrides(): Partial<AgentConfigApprovalRecord>[] {
   if (!canUseStorage()) return []
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.filter(isApprovalOverride) : []
   } catch {
+    window.localStorage.removeItem(STORAGE_KEY)
     return []
   }
 }
@@ -129,6 +143,19 @@ export function readAgentConfigApprovals(): AgentConfigApprovalRecord[] {
   })
 }
 
+export async function readAgentConfigApprovalsBackendFirst(options?: { failLoud?: boolean }): Promise<AgentConfigApprovalRecord[]> {
+  const backendRecords = await queryAgentConfigApprovals(12, options)
+  if (!Array.isArray(backendRecords)) {
+    if (options?.failLoud) throw new Error('后端返回非数组审计载荷')
+    return readAgentConfigApprovals()
+  }
+  if (backendRecords.length === 0) return readAgentConfigApprovals()
+  return DEFAULT_APPROVALS.map(defaultRecord => {
+    const backendRecord = backendRecords.find(item => item.id === defaultRecord.id)
+    return backendRecord ? { ...defaultRecord, ...backendRecord } : { ...defaultRecord }
+  })
+}
+
 export function decideAgentConfigApproval(
   id: string,
   decision: Extract<AgentConfigApprovalStatus, 'approved' | 'rejected'>,
@@ -141,7 +168,9 @@ export function decideAgentConfigApproval(
       : record
   ))
   writeOverrides(nextRecords)
-  return nextRecords.find(record => record.id === id) ?? null
+  const decided = nextRecords.find(record => record.id === id) ?? null
+  if (decided) void upsertAgentConfigApproval(decided).catch(() => undefined)
+  return decided
 }
 
 export function approvalStatusLabel(status: AgentConfigApprovalStatus) {

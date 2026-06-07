@@ -1,4 +1,10 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
+import {
+  queryLaborQualificationBlocks,
+  queryLaborReassignments,
+  upsertLaborQualificationBlock,
+  upsertLaborReassignment,
+} from '../api/executionEvidence'
 
 const LABOR_REASSIGNMENT_KEY = 'aimes_labor_reassignment'
 const LABOR_QUALIFICATION_BLOCK_KEY = 'aimes_labor_qualification_block'
@@ -131,7 +137,10 @@ function readRawLaborReassignments(): LaborReassignmentRecord[] {
     const raw = window.localStorage.getItem(LABOR_REASSIGNMENT_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isLaborReassignmentRecord) : []
+    if (!Array.isArray(parsed)) return []
+    const records = parsed.filter(isLaborReassignmentRecord)
+    if (records.length !== parsed.length) writeRawLaborReassignments(records)
+    return records
   } catch {
     window.localStorage.removeItem(LABOR_REASSIGNMENT_KEY)
     return []
@@ -153,7 +162,10 @@ function readRawLaborQualificationBlocks(): LaborQualificationBlockRecord[] {
     const raw = window.localStorage.getItem(LABOR_QUALIFICATION_BLOCK_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isLaborQualificationBlockRecord) : []
+    if (!Array.isArray(parsed)) return []
+    const records = parsed.filter(isLaborQualificationBlockRecord)
+    if (records.length !== parsed.length) writeRawLaborQualificationBlocks(records)
+    return records
   } catch {
     window.localStorage.removeItem(LABOR_QUALIFICATION_BLOCK_KEY)
     return []
@@ -235,12 +247,22 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
   return readRawLaborReassignments()
 }
 
+export async function readLaborReassignmentsBackendFirst(): Promise<LaborReassignmentRecord[]> {
+  const records = await queryLaborReassignments()
+  return records.length > 0 ? records : readLaborReassignments()
+}
+
 export function readLaborReassignment(): LaborReassignmentRecord | null {
   return readRawLaborReassignments()[0] ?? null
 }
 
 export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[] {
   return readRawLaborQualificationBlocks()
+}
+
+export async function readLaborQualificationBlocksBackendFirst(): Promise<LaborQualificationBlockRecord[]> {
+  const records = await queryLaborQualificationBlocks()
+  return records.length > 0 ? records : readLaborQualificationBlocks()
 }
 
 export function readLaborQualificationBlock(): LaborQualificationBlockRecord | null {
@@ -299,6 +321,7 @@ export function writeLaborReassignment(record = createDefaultLaborReassignment()
     ...readRawLaborReassignments().filter(item => item.id !== record.id),
   ].slice(0, 12)
   writeRawLaborReassignments(next)
+  void upsertLaborReassignment(record).catch(() => undefined)
   writeRawLaborQualificationBlocks(readRawLaborQualificationBlocks().filter(item =>
     !isLaborQualificationBlockForOperation(item, record.workOrderNumber, record.operationCode, record.operationName)
   ))
@@ -324,6 +347,7 @@ export function writeLaborQualificationBlock(record = createDefaultLaborQualific
     ...readRawLaborQualificationBlocks().filter(item => item.id !== record.id),
   ].slice(0, 12)
   writeRawLaborQualificationBlocks(next)
+  void upsertLaborQualificationBlock(record).catch(() => undefined)
   writeRawLaborReassignments(readRawLaborReassignments().filter(item =>
     !isLaborReassignmentForOperation(item, record.workOrderNumber, record.operationCode, record.operationName)
   ))
@@ -354,6 +378,7 @@ export function writeLaborQualificationBlockReview(record: LaborQualificationBlo
     nextRecord,
     ...readRawLaborQualificationBlocks().filter(item => item.id !== record.id),
   ])
+  void upsertLaborQualificationBlock(nextRecord).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `labor-qualification-review-${record.id}`,
     stage: '人员复核',
@@ -390,6 +415,7 @@ export function releaseLaborQualificationBlock(
     releasedBlock,
     ...readRawLaborQualificationBlocks().filter(item => item.id !== block.id),
   ])
+  void upsertLaborQualificationBlock(releasedBlock).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `labor-qualification-release-${block.id}`,
     stage: '人员放行',

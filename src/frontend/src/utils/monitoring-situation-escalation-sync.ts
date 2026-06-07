@@ -59,10 +59,26 @@ function isMonitoringSituationEscalation(item: Partial<MonitoringSituationEscala
     && typeof item.id === 'string'
     && typeof item.sourceEventId === 'string'
     && typeof item.title === 'string'
-    && typeof item.traceId === 'string'
+    && typeof item.source === 'string'
     && typeof item.workOrders === 'string'
+    && (item.priority === 'critical' || item.priority === 'warning')
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.auditId === 'string'
+    && typeof item.traceId === 'string'
+    && (item.status === 'escalated' || item.status === 'closed')
+    && typeof item.statusLabel === 'string'
+    && typeof item.scheduleWindow === 'string'
+    && typeof item.scheduleAction === 'string'
+    && typeof item.riskImpact === 'string'
+    && typeof item.riskSuggestion === 'string'
+    && typeof item.otdImpact === 'string'
+    && typeof item.delayImpact === 'string'
+    && typeof item.changeoverImpact === 'string'
+    && typeof item.summary === 'string'
     && Array.isArray(item.evidence)
     && Array.isArray(item.dispatchSteps)
+    && typeof item.createdAt === 'string'
 }
 
 function readRawEscalations(): MonitoringSituationEscalation[] {
@@ -71,7 +87,16 @@ function readRawEscalations(): MonitoringSituationEscalation[] {
     const raw = window.localStorage.getItem(MONITORING_SITUATION_ESCALATION_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isMonitoringSituationEscalation) : []
+    if (!Array.isArray(parsed)) return []
+    const records = parsed.filter(isMonitoringSituationEscalation)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(MONITORING_SITUATION_ESCALATION_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(MONITORING_SITUATION_ESCALATION_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(MONITORING_SITUATION_ESCALATION_KEY)
     return []
@@ -80,6 +105,17 @@ function readRawEscalations(): MonitoringSituationEscalation[] {
 
 export function readMonitoringSituationEscalations(): MonitoringSituationEscalation[] {
   return readRawEscalations()
+}
+
+export async function readMonitoringSituationEscalationsBackendFirst(options?: { failLoud?: boolean }): Promise<MonitoringSituationEscalation[]> {
+  try {
+    const { queryMonitoringSituationEscalations } = await import('../api/riskEvidence')
+    const records = await queryMonitoringSituationEscalations(MAX_ESCALATIONS, options)
+    return records.length > 0 ? records : readMonitoringSituationEscalations()
+  } catch (error) {
+    if (options?.failLoud) throw error
+    return readMonitoringSituationEscalations()
+  }
 }
 
 export function closeMonitoringSituationEscalation(id: string, trace: string, owner: string): MonitoringSituationEscalation | null {
@@ -110,6 +146,9 @@ export function closeMonitoringSituationEscalation(id: string, trace: string, ow
 
   const next = [record, ...records.filter(item => item.id !== id)].slice(0, MAX_ESCALATIONS)
   window.localStorage.setItem(MONITORING_SITUATION_ESCALATION_KEY, JSON.stringify(next))
+  void import('../api/riskEvidence')
+    .then(({ upsertMonitoringSituationEscalation }) => upsertMonitoringSituationEscalation(record))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: record.id,
@@ -169,6 +208,9 @@ export function writeMonitoringSituationEscalation(input: WriteMonitoringSituati
     const next = [record, ...readRawEscalations().filter(item => item.id !== record.id)].slice(0, MAX_ESCALATIONS)
     window.localStorage.setItem(MONITORING_SITUATION_ESCALATION_KEY, JSON.stringify(next))
   }
+  void import('../api/riskEvidence')
+    .then(({ upsertMonitoringSituationEscalation }) => upsertMonitoringSituationEscalation(record))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: record.id,

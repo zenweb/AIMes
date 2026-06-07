@@ -2,6 +2,7 @@ using FluentAssertions;
 using MES.AI.Pro.Agents;
 using MES.AI.Pro.Models;
 using MES.Domain.Entities.Equipment;
+using MES.Domain.Entities.Knowledge;
 using MES.Domain.Interfaces.Services;
 using Moq;
 
@@ -27,7 +28,7 @@ public class MaintenanceAgentTests
         };
         _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new float[] { 0.1f });
-        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5))
+        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _llmMock.Setup(x => x.GenerateJsonAsync<FailurePredictionResult>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FailurePredictionResult
@@ -93,5 +94,102 @@ public class MaintenanceAgentTests
         result.Should().NotBeNull();
         result.Anomalies.Should().Contain(a => a.ParameterName == "temperature");
         result.RecommendedAction.Should().Be("检查冷却系统");
+    }
+
+    [Fact]
+    public async Task PredictFailureAsync_WhenLlmReturnsNull_FallsBackToEmptyPredictionWithTrace()
+    {
+        var telemetry = CreateTelemetry("EQ1", "temperature", 85.0);
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var result = await _agent.PredictFailureAsync("EQ1", telemetry);
+
+        result.EquipmentId.Should().Be("EQ1");
+        result.PredictedFailures.Should().BeEmpty();
+        result.AiDecisionTrace.Confidence.Should().Be(0.72m);
+    }
+
+    [Fact]
+    public async Task PredictFailureAsync_PassesCancellationTokenToVectorSearch()
+    {
+        using var cts = new CancellationTokenSource();
+        var telemetry = CreateTelemetry("EQ1", "temperature", 85.0);
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        await _agent.PredictFailureAsync("EQ1", telemetry, cts.Token);
+
+        _vectorMock.Verify(
+            x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, cts.Token),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PredictFailureAsync_WhenLlmThrows_FallsBackToEmptyPredictionWithTrace()
+    {
+        var telemetry = CreateTelemetry("EQ1", "temperature", 85.0);
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new DocumentChunk { Id = "case-1", Content = "历史高温故障", Source = "维修记录" }
+            ]);
+        _llmMock.Setup(x => x.GenerateJsonAsync<FailurePredictionResult>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("LLM unavailable"));
+
+        var result = await _agent.PredictFailureAsync("EQ1", telemetry);
+
+        result.EquipmentId.Should().Be("EQ1");
+        result.Reasoning.Should().Contain("LLM 调用失败");
+        result.AiDecisionTrace.ModelName.Should().Be("MaintenanceReasoningFallback");
+    }
+
+    [Fact]
+    public async Task PredictFailureAsync_WhenRetrievalThrows_FallsBackToEmptyPredictionWithTrace()
+    {
+        var telemetry = CreateTelemetry("EQ1", "temperature", 85.0);
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("embedding unavailable"));
+
+        var result = await _agent.PredictFailureAsync("EQ1", telemetry);
+
+        result.EquipmentId.Should().Be("EQ1");
+        result.Reasoning.Should().Contain("检索失败");
+        result.AiDecisionTrace.ModelName.Should().Be("MaintenanceReasoningFallback");
+    }
+
+    [Fact]
+    public async Task PredictFailureAsync_WhenPromptWouldOverflow_SendsBoundedPromptAndTraceTokens()
+    {
+        string? capturedPrompt = null;
+        var telemetry = CreateTelemetry("EQ1", "temperature", 85.0);
+        _llmMock.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new float[] { 0.1f });
+        _vectorMock.Setup(x => x.SearchAsync("equipment-failures", It.IsAny<float[]>(), 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new DocumentChunk { Id = "case-1", Content = new string('F', 24000), Source = "长维修记录" }
+            ]);
+        _llmMock.Setup(x => x.GenerateJsonAsync<FailurePredictionResult>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((prompt, _) => capturedPrompt = prompt)
+            .ReturnsAsync(new FailurePredictionResult { Confidence = 0.74 });
+
+        var result = await _agent.PredictFailureAsync("EQ1", telemetry);
+
+        capturedPrompt.Should().NotBeNull();
+        (capturedPrompt ?? string.Empty).Length.Should().BeLessThanOrEqualTo(16_000);
+        result.AiDecisionTrace.TokensInput.Should().BeLessThanOrEqualTo(4000);
+    }
+
+    private static List<EquipmentTelemetry> CreateTelemetry(string equipmentId, string parameterName, double value)
+    {
+        return
+        [
+            new() { EquipmentId = equipmentId, Timestamp = DateTime.UtcNow, Parameters = new() { [parameterName] = value } }
+        ];
     }
 }

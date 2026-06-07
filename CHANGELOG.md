@@ -4,9 +4,35 @@
 
 > 内部开发日记请见 `_docs/_changelog/`，不在本文件追溯。
 
+## Release Process
+
+当前 `VERSION` 为 `0.1.0-remediation.20260531`，表示 v0.1.0 之后的 remediation 工作仍在 `Unreleased` 阶段。不得仅凭本地测试、文档补齐或 CI 文件接入创建 `v1.0.0` tag。
+
+`v1.0.0` tag 只能在以下证据齐备后创建：
+
+- Sprint 0-3 安全、数据、合规底线全部通过。
+- 显式 EF migration、staging 启动和外部依赖 readiness 已实跑。
+- 安全自评、攻击链 A/B/C 人工验证和维护者签字已完成。
+- 首次灰度后生产运行 2 周墙钟无 P0/P1。
+- `README.md`、`CHANGELOG.md`、`_docs/SOP.md`、`_docs/_adr/` 和 release notes 已复核。
+
+满足以上条件后，发布执行顺序：
+
+```powershell
+git tag -a v1.0.0 -m "AIMes v1.0.0"
+git push origin v1.0.0
+```
+
+随后在 GitHub Release 中粘贴 `CHANGELOG.md` 对应版本段落，并附上灰度、安全签字和观察窗口证据链接。
+
 ## [Unreleased]
 
 ### Added
+- `VERSION` 新增当前预发布标记 `0.1.0-remediation.20260531`，避免把 remediation 进展误读为 `v1.0.0` 已发布
+- `CHANGELOG.md` 新增 `Release Process`，明确 `v1.0.0` tag 前置门槛、tag 命令和 GitHub Release 证据要求
+- `_docs/_adr` 新增 ADR-001 至 ADR-006 与 ADR-010，记录生产迁移、发布分层、审计分层、UoW 边界、架构门禁、AI 辅助安全合规审查和 CC remediation 审计决策
+- `CONTRIBUTING.md` 与 `SECURITY.md` 补齐贡献、PR、本地检查、漏洞报告、安全响应和披露规则
+- `AI 生产助手` 新增“生成设备停机复核包”，可直接从聊天生成 `CNC-001` 停机事件，写入设备维护、`AI 排产` 设备故障事件、OTD `设备维护` 证据链、风险预警和审计回放，保留 `AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001` 与 `TRACE-EQ-DOWNTIME-CNC-001` 作为统一追踪
 - `AI 生产助手` 新增“生成 BOM 展开齐套检查包”，可直接从聊天生成 `BOM-A100 / WO-RUSH-9001` 齐套包，写入库存齐套缺口事件、`AI 排产` 缺料事件、OTD `库存齐套` 证据链、系统治理和审计回放，保留 `AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522` 与 `TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001` 作为统一追踪
 - `AI 生产助手` 新增“生成客户交付恢复承诺包”，可直接从聊天生成 `华东新能源` OTD 恢复承诺，写入报表中心、`AI 排产` 客户承诺事件、OTD `客户承诺包` 证据链、CSV 导出和审计回放，保留 `AUD-KPI-COMMITMENT-HUADONG-20260521-001` 与 `TRACE-KPI-COMMITMENT-HUADONG-20260521` 作为统一追踪
 - `AI 生产助手` 新增“生成工程约束复核包”，可把 `BOM-A100`、`ECN-BOM-A100-6061B-20260521`、`R-B200 OP-090` 和 `WO-RUSH-9001 / WO-DEMO-1002 / WO-DEMO-1007` 统一打包为跨模块责任动作，并同步写入 `AI 排产` 事件队列、OTD `助手工程约束` 证据链和审计回放，保留 `AUD-CHAT-ENG-CONSTRAINT-20260523-001` 与 `TRACE-CHAT-ENG-CONSTRAINT-PACKAGE-20260523` 作为统一追踪

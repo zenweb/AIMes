@@ -4,7 +4,7 @@ test.describe('Audit 审计决策回放', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('audit-logs')
     await page.waitForSelector('.audit-board', { timeout: 20000 })
@@ -26,11 +26,1277 @@ test.describe('Audit 审计决策回放', () => {
     const panel = page.locator('.audit-replay-panel')
     await panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' }).getByRole('button', { name: '回放决策链' }).click()
 
-    const detail = panel.locator('.replay-detail')
+    const detail = panel.getByRole('region', { name: 'WO-RUSH-9001 急单插入重排建议 回放链' })
     await expect(detail.getByText('TRACE-SCH-20260520-001')).toBeVisible()
     await expect(detail.getByText(/风险队列收到 WO-RUSH-9001 客户插单事件/)).toBeVisible()
     await expect(detail.getByText(/调度员填写/)).toBeVisible()
     await expect(detail.getByText(/AI 建议、人工采纳、反馈原因已归档/)).toBeVisible()
+  })
+
+  test('业务落库审计接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let auditLogRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      auditLogRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'audit log unavailable from chromium' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计加载失败')
+    await expect(alert).toContainText('audit log unavailable from chromium')
+    expect(auditLogRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计列表载荷非数组时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let malformedAuditListRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('action') === 'AgentExecutePurchaseAction') {
+        malformedAuditListRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: { rows: [] },
+            totalCount: 1,
+            page: 1,
+            pageSize: 8,
+            totalPages: 1,
+          }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/poc-review-signoff/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/agent-config-approvals**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/assistant-action-audits**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计加载失败')
+    await expect(alert).toContainText('后端返回非数组审计载荷')
+    expect(malformedAuditListRequests).toBeGreaterThan(0)
+  })
+
+  test('审计日志列表接口失败时真实浏览器展示本地演示日志 fail-loud', async ({ page }) => {
+    let auditLogRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      auditLogRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'audit list unavailable from chromium' }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const board = page.locator('.audit-board')
+    const alert = board.locator('.audit-list-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('审计日志列表加载失败')
+    await expect(alert).toContainText('已显示本地演示日志')
+    await expect(alert).toContainText('audit list unavailable from chromium')
+    await expect(board.getByText('operator1')).toBeVisible()
+    await expect(board.getByText('Production')).toBeVisible()
+    expect(auditLogRequests).toBeGreaterThan(0)
+  })
+
+  test('审计日志列表载荷非数组时真实浏览器展示本地演示日志 fail-loud', async ({ page }) => {
+    let malformedListRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      if (!url.searchParams.has('action')) {
+        malformedListRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: { rows: [] },
+            totalCount: 1,
+            page: 1,
+            pageSize: 20,
+            totalPages: 1,
+          }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const board = page.locator('.audit-board')
+    const alert = board.locator('.audit-list-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('审计日志列表加载失败')
+    await expect(alert).toContainText('已显示本地演示日志')
+    await expect(alert).toContainText('后端返回非数组审计日志载荷')
+    await expect(board.getByText('operator1')).toBeVisible()
+    await expect(board.getByText('Production')).toBeVisible()
+    expect(malformedListRequests).toBeGreaterThan(0)
+  })
+
+  test('审计日志列表单项载荷坏形状时真实浏览器展示本地演示日志 fail-loud', async ({ page }) => {
+    let malformedItemRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      if (!url.searchParams.has('action')) {
+        malformedItemRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [{
+              id: 'audit-list-item-shape',
+              userId: 'operator1',
+              resource: 'Production',
+              resourceId: 'wo-001',
+              createdAt: '2026-06-01T09:00:00.000Z',
+            }],
+            totalCount: 1,
+            page: 1,
+            pageSize: 20,
+            totalPages: 1,
+          }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const board = page.locator('.audit-board')
+    const alert = board.locator('.audit-list-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('审计日志列表加载失败')
+    await expect(alert).toContainText('已显示本地演示日志')
+    await expect(alert).toContainText('audit-list-item-shape 后端返回非对象审计日志载荷')
+    await expect(board.getByText('operator1')).toBeVisible()
+    await expect(board.getByText('Production')).toBeVisible()
+    expect(malformedItemRequests).toBeGreaterThan(0)
+  })
+
+  test('审计日志详情接口失败时真实浏览器不打开空弹窗并告警', async ({ page }) => {
+    let detailRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === 'audit-board-detail-fail') {
+        detailRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'audit detail unavailable from board chromium' }),
+        })
+        return
+      }
+
+      const items = url.searchParams.has('action')
+        ? []
+        : [{
+            id: 'audit-board-detail-fail',
+            userId: 'operator1',
+            action: 'PUT',
+            resource: 'Production',
+            resourceId: 'wo-001',
+            createdAt: '2026-06-01T09:00:00.000Z',
+          }]
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 20,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const board = page.locator('.audit-board')
+    await board.getByRole('button', { name: '查看审计日志详情：operator1 更新 Production wo-001' }).click()
+
+    const alert = board.locator('.audit-list-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('审计日志详情加载失败')
+    await expect(alert).toContainText('audit detail unavailable from board chromium')
+    await expect(board.locator('.detail-modal')).toBeHidden()
+    expect(detailRequests).toBeGreaterThan(0)
+  })
+
+  test('审计日志详情载荷非详情对象时真实浏览器不打开空弹窗并告警', async ({ page }) => {
+    let malformedDetailRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === 'audit-board-detail-shape') {
+        malformedDetailRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [] }),
+        })
+        return
+      }
+
+      const items = url.searchParams.has('action')
+        ? []
+        : [{
+            id: 'audit-board-detail-shape',
+            userId: 'operator1',
+            action: 'PUT',
+            resource: 'Production',
+            resourceId: 'wo-001',
+            createdAt: '2026-06-01T09:00:00.000Z',
+          }]
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 20,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const board = page.locator('.audit-board')
+    await board.getByRole('button', { name: '查看审计日志详情：operator1 更新 Production wo-001' }).click()
+
+    const alert = board.locator('.audit-list-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('审计日志详情加载失败')
+    await expect(alert).toContainText('audit-board-detail-shape 后端返回非对象审计详情载荷')
+    await expect(board.locator('.detail-modal')).toBeHidden()
+    expect(malformedDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计详情失败时真实浏览器保留成功回放并告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const successfulDetail = {
+      id: 'audit-agent-purchase-ok',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-purchase-ok',
+      businessKey: 'PurchaseOrder:po-agent-ok',
+      traceId: 'trace-agent-purchase-ok',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'receive-expedited-material',
+        reason: 'Agent confirmed expedited supply arrival',
+        businessWrite: {
+          resource: 'purchase-order',
+          purchaseOrderId: 'po-agent-ok',
+          orderNumber: 'PO-DETAIL-OK-001',
+          materialCode: 'MAT-DETAIL-6061',
+          receivedQuantity: 12,
+          status: 'Completed',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:20:00.000Z',
+    }
+    let failedDetailRequests = 0
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === 'audit-agent-purchase-failed') {
+        failedDetailRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'audit detail unavailable from chromium' }),
+        })
+        return
+      }
+      if (id === successfulDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(successfulDetail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'AgentExecutePurchaseAction'
+        ? [
+            {
+              id: successfulDetail.id,
+              userId: successfulDetail.userId,
+              initiatedBy: successfulDetail.initiatedBy,
+              action: successfulDetail.action,
+              resource: successfulDetail.resource,
+              resourceId: successfulDetail.resourceId,
+              businessKey: successfulDetail.businessKey,
+              traceId: successfulDetail.traceId,
+              createdAt: successfulDetail.createdAt,
+            },
+            {
+              id: 'audit-agent-purchase-failed',
+              userId: 'purchase.wang',
+              initiatedBy: 'User',
+              action: 'AgentExecutePurchaseAction',
+              resource: 'scheduling-agent',
+              resourceId: 'agent-decision-purchase-failed',
+              businessKey: 'PurchaseOrder:po-agent-failed',
+              traceId: 'trace-agent-purchase-failed',
+              createdAt: '2026-05-25T01:21:00.000Z',
+            },
+          ]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length > 0 ? 1 : 0,
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    const successfulCard = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-DETAIL-OK-001' })
+    await expect(successfulCard).toBeVisible()
+    await expect(successfulCard.getByText(/MAT-DETAIL-6061 收货 12/)).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计详情加载失败')
+    await expect(alert).toContainText('audit detail unavailable from chromium')
+    expect(failedDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计详情载荷非详情对象时真实浏览器保留成功回放并告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const successfulDetail = {
+      id: 'audit-agent-detail-shape-ok',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-detail-shape-ok',
+      businessKey: 'PurchaseOrder:po-agent-detail-shape-ok',
+      traceId: 'trace-agent-detail-shape-ok',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'receive-expedited-material',
+        reason: 'Agent confirmed expedited supply arrival before reviewing malformed detail shape',
+        businessWrite: {
+          resource: 'purchase-order',
+          purchaseOrderId: 'po-agent-detail-shape-ok',
+          orderNumber: 'PO-DETAIL-SHAPE-OK-001',
+          materialCode: 'MAT-DETAIL-SHAPE-6061',
+          receivedQuantity: 14,
+          status: 'Completed',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:25:00.000Z',
+    }
+    const malformedDetailId = 'audit-agent-detail-shape-broken'
+    let malformedDetailRequests = 0
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === successfulDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(successfulDetail),
+        })
+        return
+      }
+      if (id === malformedDetailId) {
+        malformedDetailRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [] }),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'AgentExecutePurchaseAction'
+        ? [
+            {
+              id: successfulDetail.id,
+              userId: successfulDetail.userId,
+              initiatedBy: successfulDetail.initiatedBy,
+              action: successfulDetail.action,
+              resource: successfulDetail.resource,
+              resourceId: successfulDetail.resourceId,
+              businessKey: successfulDetail.businessKey,
+              traceId: successfulDetail.traceId,
+              createdAt: successfulDetail.createdAt,
+            },
+            {
+              id: malformedDetailId,
+              userId: 'purchase.wang',
+              initiatedBy: 'User',
+              action: 'AgentExecutePurchaseAction',
+              resource: 'scheduling-agent',
+              resourceId: 'agent-decision-detail-shape-broken',
+              businessKey: 'PurchaseOrder:po-agent-detail-shape-broken',
+              traceId: 'trace-agent-detail-shape-broken',
+              createdAt: '2026-05-25T01:26:00.000Z',
+            },
+          ]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    const successfulCard = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-DETAIL-SHAPE-OK-001' })
+    await expect(successfulCard).toBeVisible()
+    await expect(successfulCard.getByText(/MAT-DETAIL-SHAPE-6061 收货 14/)).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计详情加载失败')
+    await expect(alert).toContainText('audit-agent-detail-shape-broken 后端返回非对象审计载荷')
+    expect(malformedDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计载荷损坏时真实浏览器保留成功回放并告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const successfulDetail = {
+      id: 'audit-agent-payload-ok',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-payload-ok',
+      businessKey: 'PurchaseOrder:po-agent-payload-ok',
+      traceId: 'trace-agent-payload-ok',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'receive-expedited-material',
+        reason: 'Agent confirmed expedited supply arrival before reviewing malformed payload evidence',
+        businessWrite: {
+          resource: 'purchase-order',
+          purchaseOrderId: 'po-agent-payload-ok',
+          orderNumber: 'PO-PAYLOAD-OK-001',
+          materialCode: 'MAT-PAYLOAD-6061',
+          receivedQuantity: 16,
+          status: 'Completed',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:30:00.000Z',
+    }
+    const malformedDetail = {
+      id: 'audit-agent-payload-broken',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-payload-broken',
+      businessKey: 'PurchaseOrder:po-agent-payload-broken',
+      traceId: 'trace-agent-payload-broken',
+      oldValues: null,
+      newValues: '{broken-business-write-payload',
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:31:00.000Z',
+    }
+    let malformedDetailRequests = 0
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === successfulDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(successfulDetail),
+        })
+        return
+      }
+      if (id === malformedDetail.id) {
+        malformedDetailRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(malformedDetail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'AgentExecutePurchaseAction'
+        ? [
+            {
+              id: successfulDetail.id,
+              userId: successfulDetail.userId,
+              initiatedBy: successfulDetail.initiatedBy,
+              action: successfulDetail.action,
+              resource: successfulDetail.resource,
+              resourceId: successfulDetail.resourceId,
+              businessKey: successfulDetail.businessKey,
+              traceId: successfulDetail.traceId,
+              createdAt: successfulDetail.createdAt,
+            },
+            {
+              id: malformedDetail.id,
+              userId: malformedDetail.userId,
+              initiatedBy: malformedDetail.initiatedBy,
+              action: malformedDetail.action,
+              resource: malformedDetail.resource,
+              resourceId: malformedDetail.resourceId,
+              businessKey: malformedDetail.businessKey,
+              traceId: malformedDetail.traceId,
+              createdAt: malformedDetail.createdAt,
+            },
+          ]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    const successfulCard = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-PAYLOAD-OK-001' })
+    await expect(successfulCard).toBeVisible()
+    await successfulCard.getByRole('button', { name: '回放决策链' }).click()
+    const detail = panel.locator('.replay-detail')
+    await expect(detail.getByText('trace-agent-payload-ok', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 purchase-order：po-agent-payload-ok \/ MAT-PAYLOAD-6061 \/ 收货 16/)).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计详情加载失败')
+    await expect(alert).toContainText('audit-agent-payload-broken 审计载荷解析失败')
+    expect(malformedDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计资源未知时真实浏览器保留成功回放并告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const successfulDetail = {
+      id: 'audit-agent-resource-ok',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-resource-ok',
+      businessKey: 'PurchaseOrder:po-agent-resource-ok',
+      traceId: 'trace-agent-resource-ok',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'receive-expedited-material',
+        reason: 'Agent confirmed expedited supply arrival before reviewing unsupported resource evidence',
+        businessWrite: {
+          resource: 'purchase-order',
+          purchaseOrderId: 'po-agent-resource-ok',
+          orderNumber: 'PO-RESOURCE-OK-001',
+          materialCode: 'MAT-RESOURCE-6061',
+          receivedQuantity: 18,
+          status: 'Completed',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:32:00.000Z',
+    }
+    const unsupportedDetail = {
+      id: 'audit-agent-resource-unsupported',
+      userId: 'warehouse.zhao',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-resource-unsupported',
+      businessKey: 'WarehouseTransfer:wt-agent-unsupported',
+      traceId: 'trace-agent-resource-unsupported',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'transfer-warehouse-stock',
+        reason: 'Agent attempted unsupported warehouse transfer evidence',
+        businessWrite: {
+          resource: 'warehouse-transfer',
+          materialCode: 'MAT-RESOURCE-6061',
+          receivedQuantity: 9,
+          status: 'Transferred',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:33:00.000Z',
+    }
+    let unsupportedDetailRequests = 0
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === successfulDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(successfulDetail),
+        })
+        return
+      }
+      if (id === unsupportedDetail.id) {
+        unsupportedDetailRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(unsupportedDetail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'AgentExecutePurchaseAction'
+        ? [
+            {
+              id: successfulDetail.id,
+              userId: successfulDetail.userId,
+              initiatedBy: successfulDetail.initiatedBy,
+              action: successfulDetail.action,
+              resource: successfulDetail.resource,
+              resourceId: successfulDetail.resourceId,
+              businessKey: successfulDetail.businessKey,
+              traceId: successfulDetail.traceId,
+              createdAt: successfulDetail.createdAt,
+            },
+            {
+              id: unsupportedDetail.id,
+              userId: unsupportedDetail.userId,
+              initiatedBy: unsupportedDetail.initiatedBy,
+              action: unsupportedDetail.action,
+              resource: unsupportedDetail.resource,
+              resourceId: unsupportedDetail.resourceId,
+              businessKey: unsupportedDetail.businessKey,
+              traceId: unsupportedDetail.traceId,
+              createdAt: unsupportedDetail.createdAt,
+            },
+          ]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    const successfulCard = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-RESOURCE-OK-001' })
+    await expect(successfulCard).toBeVisible()
+    await successfulCard.getByRole('button', { name: '回放决策链' }).click()
+    const detail = panel.locator('.replay-detail')
+    await expect(detail.getByText('trace-agent-resource-ok', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 purchase-order：po-agent-resource-ok \/ MAT-RESOURCE-6061 \/ 收货 18/)).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计详情加载失败')
+    await expect(alert).toContainText('audit-agent-resource-unsupported 不支持的业务落库资源：warehouse-transfer')
+    expect(unsupportedDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('业务落库审计载荷缺失时真实浏览器保留成功回放并告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const successfulDetail = {
+      id: 'audit-agent-missing-payload-ok',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-missing-payload-ok',
+      businessKey: 'PurchaseOrder:po-agent-missing-payload-ok',
+      traceId: 'trace-agent-missing-payload-ok',
+      oldValues: null,
+      newValues: JSON.stringify({
+        actionName: 'ExecutePurchaseAction',
+        requestActionName: 'receive-expedited-material',
+        reason: 'Agent confirmed expedited supply arrival before reviewing missing payload evidence',
+        businessWrite: {
+          resource: 'purchase-order',
+          purchaseOrderId: 'po-agent-missing-payload-ok',
+          orderNumber: 'PO-MISSING-PAYLOAD-OK-001',
+          materialCode: 'MAT-MISSING-PAYLOAD-6061',
+          receivedQuantity: 20,
+          status: 'Completed',
+        },
+      }),
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:34:00.000Z',
+    }
+    const missingPayloadDetail = {
+      id: 'audit-agent-missing-payload',
+      userId: 'purchase.wang',
+      initiatedBy: 'User',
+      action: 'AgentExecutePurchaseAction',
+      resource: 'scheduling-agent',
+      resourceId: 'agent-decision-missing-payload',
+      businessKey: 'PurchaseOrder:po-agent-missing-payload',
+      traceId: 'trace-agent-missing-payload',
+      oldValues: null,
+      newValues: null,
+      promptHash: 'prompt-hash',
+      contextHash: 'context-hash',
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-05-25T01:35:00.000Z',
+    }
+    let missingPayloadDetailRequests = 0
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const id = url.pathname.split('/').at(-1)
+      if (id === successfulDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(successfulDetail),
+        })
+        return
+      }
+      if (id === missingPayloadDetail.id) {
+        missingPayloadDetailRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(missingPayloadDetail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'AgentExecutePurchaseAction'
+        ? [
+            {
+              id: successfulDetail.id,
+              userId: successfulDetail.userId,
+              initiatedBy: successfulDetail.initiatedBy,
+              action: successfulDetail.action,
+              resource: successfulDetail.resource,
+              resourceId: successfulDetail.resourceId,
+              businessKey: successfulDetail.businessKey,
+              traceId: successfulDetail.traceId,
+              createdAt: successfulDetail.createdAt,
+            },
+            {
+              id: missingPayloadDetail.id,
+              userId: missingPayloadDetail.userId,
+              initiatedBy: missingPayloadDetail.initiatedBy,
+              action: missingPayloadDetail.action,
+              resource: missingPayloadDetail.resource,
+              resourceId: missingPayloadDetail.resourceId,
+              businessKey: missingPayloadDetail.businessKey,
+              traceId: missingPayloadDetail.traceId,
+              createdAt: missingPayloadDetail.createdAt,
+            },
+          ]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length ? 1 : 0,
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    const successfulCard = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-MISSING-PAYLOAD-OK-001' })
+    await expect(successfulCard).toBeVisible()
+    await successfulCard.getByRole('button', { name: '回放决策链' }).click()
+    const detail = panel.locator('.replay-detail')
+    await expect(detail.getByText('trace-agent-missing-payload-ok', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 purchase-order：po-agent-missing-payload-ok \/ MAT-MISSING-PAYLOAD-6061 \/ 收货 20/)).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('业务落库审计详情加载失败')
+    await expect(alert).toContainText('audit-agent-missing-payload 审计载荷缺失')
+    expect(missingPayloadDetailRequests).toBeGreaterThan(0)
+  })
+
+  test('POC 证据治理接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let pocEvidenceRequests = 0
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      pocEvidenceRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'poc order evidence unavailable from chromium' }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      pocEvidenceRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'poc equipment evidence unavailable from chromium' }),
+      })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('POC 证据治理加载失败')
+    await expect(alert).toContainText('poc order evidence unavailable from chromium')
+    expect(pocEvidenceRequests).toBeGreaterThan(0)
+  })
+
+  test('知识治理接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let knowledgeGovernanceRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      knowledgeGovernanceRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'knowledge governance unavailable from chromium' }),
+      })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+      localStorage.removeItem('aimes_knowledge_governance_reviews')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('知识治理加载失败')
+    await expect(alert).toContainText('knowledge governance unavailable from chromium')
+    expect(knowledgeGovernanceRequests).toBeGreaterThan(0)
+  })
+
+  test('质量灰度决策接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let grayDecisionRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('evidenceType') === 'QualityKnowledgeGrayReleaseDecision') {
+        grayDecisionRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'quality gray release unavailable from chromium' }),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+      localStorage.removeItem('aimes_knowledge_governance_reviews')
+      localStorage.removeItem('aimes_quality_knowledge_recommendation_feedback')
+      localStorage.removeItem('aimes_quality_knowledge_retraining_versions')
+      localStorage.removeItem('aimes_quality_knowledge_gray_release_decisions')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量灰度决策加载失败')
+    await expect(alert).toContainText('quality gray release unavailable from chromium')
+    expect(grayDecisionRequests).toBeGreaterThan(0)
+  })
+
+  test('质量灰度决策载荷非数组时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let grayDecisionRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('evidenceType') === 'QualityKnowledgeGrayReleaseDecision') {
+        grayDecisionRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [] }),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+      localStorage.removeItem('aimes_knowledge_governance_reviews')
+      localStorage.removeItem('aimes_quality_knowledge_recommendation_feedback')
+      localStorage.removeItem('aimes_quality_knowledge_retraining_versions')
+      localStorage.removeItem('aimes_quality_knowledge_gray_release_decisions')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量灰度决策加载失败')
+    await expect(alert).toContainText('后端返回非数组审计载荷')
+    expect(grayDecisionRequests).toBeGreaterThan(0)
+  })
+
+  test('质量推荐反馈接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let recommendationFeedbackRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('evidenceType') === 'QualityKnowledgeRecommendationFeedback') {
+        recommendationFeedbackRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'quality recommendation feedback unavailable from chromium' }),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+      localStorage.removeItem('aimes_knowledge_governance_reviews')
+      localStorage.removeItem('aimes_quality_knowledge_recommendation_feedback')
+      localStorage.removeItem('aimes_quality_knowledge_retraining_versions')
+      localStorage.removeItem('aimes_quality_knowledge_gray_release_decisions')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量推荐反馈加载失败')
+    await expect(alert).toContainText('quality recommendation feedback unavailable from chromium')
+    expect(recommendationFeedbackRequests).toBeGreaterThan(0)
+  })
+
+  test('质量再训练版本接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let retrainingVersionRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('evidenceType') === 'QualityKnowledgeRetrainingVersion') {
+        retrainingVersionRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'quality retraining version unavailable from chromium' }),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_customer_order_import')
+      localStorage.removeItem('aimes_customer_equipment_fault_evidence')
+      localStorage.removeItem('aimes_knowledge_governance_reviews')
+      localStorage.removeItem('aimes_quality_knowledge_recommendation_feedback')
+      localStorage.removeItem('aimes_quality_knowledge_retraining_versions')
+      localStorage.removeItem('aimes_quality_knowledge_gray_release_decisions')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量再训练版本加载失败')
+    await expect(alert).toContainText('quality retraining version unavailable from chromium')
+    expect(retrainingVersionRequests).toBeGreaterThan(0)
   })
 
   test('回放客户 POC 证据导入与设备故障样例链路', async ({ page }) => {
@@ -65,8 +1331,11 @@ test.describe('Audit 审计决策回放', () => {
     await expect(cards.filter({ hasText: '客户工单导入样例治理' })).toBeVisible()
     await expect(cards.filter({ hasText: '客户设备故障样例治理' })).toBeVisible()
 
-    await cards.filter({ hasText: '客户设备故障样例治理' }).getByRole('button', { name: '回放决策链' }).click()
+    const equipmentFaultCard = cards.filter({ hasText: '客户设备故障样例治理' })
+    await equipmentFaultCard.scrollIntoViewIfNeeded()
+    await equipmentFaultCard.getByRole('button', { name: '回放决策链' }).click()
     const detail = panel.locator('.replay-detail')
+    await expect(detail.getByRole('heading', { name: '客户设备故障样例治理 回放链' })).toBeVisible({ timeout: 15000 })
     await expect(detail.getByText('AUD-POC-EQ-001')).toBeVisible()
     await expect(detail.getByText(/客户设备联网平台/)).toBeVisible()
     await expect(detail.getByText(/同步进入 AI 排产事件队列/)).toBeVisible()
@@ -120,6 +1389,223 @@ test.describe('Audit 审计决策回放', () => {
     await expect(detail.getByText(/留痕状态：生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档/)).toBeVisible()
   })
 
+  test('OTD 本地证据链损坏时真实浏览器保留基础回放并告警', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_otd_evidence_chain', '{bad json')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'M-AL-6061 收货后释放冻结工序' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('OTD 证据链加载失败')
+    await expect(alert).toContainText('本地审计证据链载荷损坏')
+    const otdMetric = panel.locator('.metric-chip').filter({ hasText: 'OTD 证据回放' })
+    await expect(otdMetric.locator('strong')).toHaveText('0')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'OTD 证据链' })).not.toBeVisible()
+    await expect(page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))).resolves.toBeNull()
+  })
+
+  test('回放后端 Agent execute 业务落库证据', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const auditDetails = {
+      'audit-agent-purchase-1': {
+        id: 'audit-agent-purchase-1',
+        userId: 'purchase.wang',
+        initiatedBy: 'User',
+        action: 'AgentExecutePurchaseAction',
+        resource: 'scheduling-agent',
+        resourceId: 'agent-decision-purchase-1',
+        businessKey: 'PurchaseOrder:po-agent-1',
+        traceId: 'trace-agent-purchase-1',
+        oldValues: null,
+        newValues: JSON.stringify({
+          actionName: 'ExecutePurchaseAction',
+          requestActionName: 'receive-expedited-material',
+          reason: 'Agent confirmed expedited supply arrival',
+          businessWrite: {
+            resource: 'purchase-order',
+            purchaseOrderId: 'po-agent-1',
+            orderNumber: 'PO-AGENT-001',
+            materialCode: 'MAT-AGENT-6061',
+            receivedQuantity: 10,
+            status: 'Completed',
+          },
+        }),
+        promptHash: 'prompt-hash',
+        contextHash: 'context-hash',
+        ipAddress: null,
+        userAgent: null,
+        createdAt: '2026-05-25T01:20:00.000Z',
+      },
+      'audit-agent-quality-1': {
+        id: 'audit-agent-quality-1',
+        userId: 'qc.zhang',
+        initiatedBy: 'User',
+        action: 'AgentExecuteQualityDisposition',
+        resource: 'scheduling-agent',
+        resourceId: 'agent-decision-quality-1',
+        businessKey: 'QualityInspection:insp-agent-1',
+        traceId: 'trace-agent-quality-1',
+        oldValues: null,
+        newValues: JSON.stringify({
+          actionName: 'ExecuteQualityDisposition',
+          requestActionName: 'record-defect-and-capa',
+          reason: 'Agent confirmed MRB disposition should be recorded',
+          businessWrite: {
+            resource: 'quality-inspection',
+            inspectionId: 'insp-agent-1',
+            result: 'Failed',
+            defectType: '尺寸超差',
+            quantity: 2,
+            severity: 'Major',
+          },
+        }),
+        promptHash: 'prompt-hash',
+        contextHash: 'context-hash',
+        ipAddress: null,
+        userAgent: null,
+        createdAt: '2026-05-25T01:25:00.000Z',
+      },
+      'audit-agent-equipment-1': {
+        id: 'audit-agent-equipment-1',
+        userId: 'equipment.liu',
+        initiatedBy: 'User',
+        action: 'AgentExecuteMaintenanceAction',
+        resource: 'scheduling-agent',
+        resourceId: 'agent-decision-equipment-1',
+        businessKey: 'Equipment:eq-agent-1',
+        traceId: 'trace-agent-equipment-1',
+        oldValues: null,
+        newValues: JSON.stringify({
+          actionName: 'ExecuteMaintenanceAction',
+          requestActionName: 'switch-equipment-maintenance',
+          reason: 'Agent confirmed maintenance window should be locked',
+          businessWrite: {
+            resource: 'equipment',
+            equipmentId: 'eq-agent-1',
+            equipmentCode: 'CNC-AGENT-01',
+            targetStatus: 'Maintenance',
+          },
+        }),
+        promptHash: 'prompt-hash',
+        contextHash: 'context-hash',
+        ipAddress: null,
+        userAgent: null,
+        createdAt: '2026-05-25T01:30:00.000Z',
+      },
+    } as const
+    const auditListByAction = {
+      AgentExecutePurchaseAction: ['audit-agent-purchase-1'],
+      AgentExecuteQualityDisposition: ['audit-agent-quality-1'],
+      AgentExecuteMaintenanceAction: ['audit-agent-equipment-1'],
+    } as const
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const parts = url.pathname.split('/')
+      const id = parts[parts.length - 1]
+      if (id in auditDetails) {
+        const detail = auditDetails[id as keyof typeof auditDetails]
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(detail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const ids = action && action in auditListByAction
+        ? auditListByAction[action as keyof typeof auditListByAction]
+        : []
+      const items = ids.map(itemId => {
+        const detail = auditDetails[itemId]
+        return {
+          id: detail.id,
+          userId: detail.userId,
+          initiatedBy: detail.initiatedBy,
+          action: detail.action,
+          resource: detail.resource,
+          resourceId: detail.resourceId,
+          businessKey: detail.businessKey,
+          traceId: detail.traceId,
+          createdAt: detail.createdAt,
+        }
+      })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length > 0 ? 1 : 0,
+        }),
+      })
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.getByText('业务落库回放')).toBeVisible()
+    const card = panel.locator('.decision-card').filter({ hasText: '采购收货落库：PO-AGENT-001' })
+    await expect(card).toBeVisible()
+    await expect(card.getByText(/MAT-AGENT-6061 收货 10/)).toBeVisible()
+    await card.getByRole('button', { name: '回放决策链' }).click()
+
+    const detail = panel.locator('.replay-detail')
+    await expect(detail.getByText('trace-agent-purchase-1', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 purchase-order：po-agent-1 \/ MAT-AGENT-6061 \/ 收货 10/)).toBeVisible()
+    await expect(detail.getByText(/PurchaseOrder.Receive、AgentActionResult 和 AuditLog 已归档/)).toBeVisible()
+    const purchaseLink = detail.getByRole('link', { name: '打开采购协同' })
+    await expect(purchaseLink).toBeVisible()
+    await purchaseLink.click()
+    await expect(page.locator('.audit-focus-banner').getByText('PO-AGENT-001')).toBeVisible()
+    await expect(page.locator('.audit-focus-banner').getByText('po-agent-1')).toBeVisible()
+    await expect(page.locator('.detail-header').getByText('PO-AGENT-001')).toBeVisible()
+    await page.goto('audit-logs')
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    await expect(panel.getByText('业务落库回放')).toBeVisible()
+    const qualityCard = panel.locator('.decision-card').filter({ hasText: '质量处置落库：insp-agent-1' })
+    await expect(qualityCard).toBeVisible()
+    await expect(qualityCard.getByText(/尺寸超差 2 件/)).toBeVisible()
+    await qualityCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(detail.getByText('trace-agent-quality-1', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 quality-inspection：insp-agent-1，缺陷 尺寸超差 \/ 数量 2/)).toBeVisible()
+    await expect(detail.getByText(/QualityInspection.RecordDefect、AgentActionResult 和 AuditLog 已归档/)).toBeVisible()
+    const qualityLink = detail.getByRole('link', { name: '打开质量闭环' })
+    await expect(qualityLink).toBeVisible()
+    await qualityLink.click()
+    await expect(page.locator('.audit-focus-banner strong')).toHaveText('insp-agent-1')
+    await expect(page.locator('.analysis-header').getByText('insp-agent-1')).toBeVisible()
+    await page.goto('audit-logs')
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    await expect(panel.getByText('业务落库回放')).toBeVisible()
+    const equipmentCard = panel.locator('.decision-card').filter({ hasText: '设备状态落库：CNC-AGENT-01' })
+    await expect(equipmentCard).toBeVisible()
+    await expect(equipmentCard.getByText(/状态切换为 Maintenance/)).toBeVisible()
+    await equipmentCard.getByRole('button', { name: '回放决策链' }).click()
+    await expect(detail.getByText('trace-agent-equipment-1', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/业务写入 equipment：eq-agent-1 \/ CNC-AGENT-01/)).toBeVisible()
+    await expect(detail.getByText(/Equipment.TransitionTo、AgentActionResult 和 AuditLog 已归档/)).toBeVisible()
+    const equipmentLink = detail.getByRole('link', { name: '打开设备维护' })
+    await expect(equipmentLink).toBeVisible()
+    await equipmentLink.click()
+    await expect(page.locator('.audit-focus-banner').getByText('CNC-AGENT-01')).toBeVisible()
+    await expect(page.locator('.audit-focus-banner').getByText('eq-agent-1')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'CNC-AGENT-01 审计定位设备' })).toBeVisible()
+  })
+
   test('回放关键配置审批通过链路', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_agent_config_approvals', JSON.stringify([
@@ -170,6 +1656,179 @@ test.describe('Audit 审计决策回放', () => {
     await expect(detail.getByText(/门禁指标调整：推荐采纳率 100% -> 100% \/ 复验通过率 100% -> >=95% \/ 负样本误召回 0 次 -> 0 次/)).toBeVisible()
     await expect(detail.getByText(/R4\/R6\/R7 扩大灰度必须同时满足推荐采纳率 100%、复验通过率 >=95%、负样本误召回 0 次/)).toBeVisible()
     await expect(detail.getByText(/质量主管 刘工 审批通过/)).toBeVisible()
+  })
+
+  test('配置审批接口失败时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let approvalRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/poc-review-signoff/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/agent-config-approvals**', async route => {
+      approvalRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'agent config approvals unavailable from chromium' }),
+      })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_agent_config_approvals')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.approval-badge')).toHaveText('0 个配置待审批')
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('配置审批加载失败')
+    await expect(alert).toContainText('agent config approvals unavailable from chromium')
+    expect(approvalRequests).toBeGreaterThan(0)
+  })
+
+  test('配置审批载荷非数组时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let approvalRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/poc-review-signoff/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/agent-config-approvals**', async route => {
+      approvalRequests += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [] }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/assistant-action-audits**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_agent_config_approvals')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.approval-badge')).toHaveText('0 个配置待审批')
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('配置审批加载失败')
+    await expect(alert).toContainText('后端返回非数组审计载荷')
+    expect(approvalRequests).toBeGreaterThan(0)
+  })
+
+  test('助手动作审计载荷非数组时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let assistantAuditRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/assistant-action-audits**', async route => {
+      assistantAuditRequests += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [] }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/poc-review-signoff/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/agent-config-approvals**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_assistant_action_audits')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('助手动作审计加载失败')
+    await expect(alert).toContainText('后端返回非数组审计载荷')
+    expect(assistantAuditRequests).toBeGreaterThan(0)
   })
 
   test('回放 R5 回滚后的 R6 R7 实验候选链路', async ({ page }) => {
@@ -321,6 +1980,70 @@ test.describe('Audit 审计决策回放', () => {
     await expect(detail.getByText(/评分结果 100 \/ 100，通过线 85 分/)).toBeVisible()
     await expect(detail.getByText(/IMP-POC-WO-20260520-001/)).toBeVisible()
     await expect(detail.getByText(/POC 评分、证据批次、签署人和复盘结论已归档/)).toBeVisible()
+  })
+
+  test('POC 复盘签署载荷缺失时真实浏览器保留基础回放并告警', async ({ page }) => {
+    let signoffRequests = 0
+    await page.route('**/api/v1/audit-logs**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          page: 1,
+          pageSize: 8,
+          totalPages: 0,
+        }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/customer-order-import/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/customer-equipment-fault/latest', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    })
+    await page.route('**/api/v1/scheduling/knowledge-governance-reviews**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/quality-knowledge-evidence**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/scheduling/poc-review-signoff/latest', async route => {
+      signoffRequests += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'poc-review-signoff-missing-payload',
+          meetingId: 'POC-REVIEW-MISSING-PAYLOAD',
+          targetCustomer: '离散制造工厂 POC',
+          totalScore: 92,
+          passScore: 85,
+          result: 'approved',
+          signedBy: '客户代表 / 项目经理',
+          signedAt: '2026-06-02T01:20:00.000Z',
+          auditId: 'AUD-POC-REVIEW-MISSING-PAYLOAD',
+          summary: '复盘证据齐套，评分达到通过线。',
+        }),
+      })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_poc_review_signoff')
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.locator('.decision-card').filter({ hasText: 'WO-RUSH-9001 急单插入重排建议' })).toBeVisible()
+    await expect(panel.locator('.decision-card').filter({ hasText: 'AUD-POC-REVIEW-MISSING-PAYLOAD' })).toHaveCount(0)
+
+    const alert = panel.locator('.replay-sync-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('POC 复盘签署加载失败')
+    await expect(alert).toContainText('poc-review-signoff-missing-payload 复盘签署审计载荷缺失')
+    expect(signoffRequests).toBeGreaterThan(0)
   })
 
   test('回放知识治理复核与索引重建链路', async ({ page }) => {

@@ -1,5 +1,7 @@
+using System.Text.Json;
 using MES.Application.DTOs;
 using MES.Domain.Entities.Inventory;
+using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
 
@@ -22,17 +24,19 @@ public class InventoryAppService : IInventoryAppService
     private readonly IMaterialRepository _materialRepo;
     private readonly IStockTransactionRepository _txRepo;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogAppService _auditLog;
 
-    public InventoryAppService(IMaterialRepository materialRepo, IStockTransactionRepository txRepo, IUnitOfWork unitOfWork)
+    public InventoryAppService(IMaterialRepository materialRepo, IStockTransactionRepository txRepo, IUnitOfWork unitOfWork, IAuditLogAppService auditLog)
     {
         _materialRepo = materialRepo;
         _txRepo = txRepo;
         _unitOfWork = unitOfWork;
+        _auditLog = auditLog;
     }
 
     public async Task<InventoryDashboardDto> GetDashboardAsync(CancellationToken ct = default)
     {
-        var materials = await _materialRepo.GetAllAsync();
+        var materials = await _materialRepo.GetAllAsync(ct);
         var lowStock = materials.Count(m => m.AvailableQuantity - m.ReservedQuantity <= m.SafetyStock && m.AvailableQuantity > 0);
         var outOfStock = materials.Count(m => m.AvailableQuantity <= 0);
         var todayTx = await _txRepo.CountTodayAsync(ct);
@@ -48,7 +52,7 @@ public class InventoryAppService : IInventoryAppService
 
     public async Task<List<InventoryItemDto>> GetAllItemsAsync(CancellationToken ct = default)
     {
-        var materials = await _materialRepo.GetAllAsync();
+        var materials = await _materialRepo.GetAllAsync(ct);
         return materials.Select(m => new InventoryItemDto
         {
             Id = m.Id,
@@ -67,7 +71,7 @@ public class InventoryAppService : IInventoryAppService
 
     public async Task<InventoryItemDto?> GetItemByCodeAsync(string materialCode, CancellationToken ct = default)
     {
-        var material = await _materialRepo.GetByCodeAsync(materialCode);
+        var material = await _materialRepo.GetByCodeAsync(materialCode, ct);
         if (material == null) return null;
 
         return new InventoryItemDto
@@ -96,17 +100,18 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var before = material.AvailableQuantity;
             material.StockIn(request.Quantity);
-            await _materialRepo.UpdateAsync(material);
+            await _materialRepo.UpdateAsync(material, innerCt);
 
             var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockIn,
                 request.Quantity, before, material.AvailableQuantity,
                 request.ReferenceType, request.ReferenceNumber, request.Remark, request.Warehouse, request.Location, request.Operator);
             await _txRepo.AddAsync(tx, innerCt);
+            await WriteTransactionAuditAsync("InventoryStockIn", tx, innerCt);
 
             return MapTransaction(tx);
         }, ct);
@@ -116,7 +121,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var realQty = material.NetAvailable;
@@ -125,12 +130,13 @@ public class InventoryAppService : IInventoryAppService
 
             var before = material.AvailableQuantity;
             material.Consume(request.Quantity);
-            await _materialRepo.UpdateAsync(material);
+            await _materialRepo.UpdateAsync(material, innerCt);
 
             var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.StockOut,
                 request.Quantity, before, material.AvailableQuantity,
                 request.ReferenceType, request.ReferenceNumber, request.Remark, null, null, request.Operator);
             await _txRepo.AddAsync(tx, innerCt);
+            await WriteTransactionAuditAsync("InventoryStockOut", tx, innerCt);
 
             return MapTransaction(tx);
         }, ct);
@@ -140,7 +146,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var realQty = material.NetAvailable;
@@ -150,12 +156,13 @@ public class InventoryAppService : IInventoryAppService
             var before = material.AvailableQuantity;
             material.Consume(request.Quantity);
             material.UpdateLocation(request.ToWarehouse);
-            await _materialRepo.UpdateAsync(material);
+            await _materialRepo.UpdateAsync(material, innerCt);
 
             var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.TransferOut,
                 request.Quantity, before, material.AvailableQuantity,
                 "Transfer", $"{request.FromWarehouse}->{request.ToWarehouse}", request.Remark, request.FromWarehouse, request.ToWarehouse, request.Operator);
             await _txRepo.AddAsync(tx, innerCt);
+            await WriteTransactionAuditAsync("InventoryTransfer", tx, innerCt);
 
             return MapTransaction(tx);
         }, ct);
@@ -165,22 +172,48 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode)
+            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var before = material.AvailableQuantity;
             var diff = request.NewQuantity - before;
             if (diff > 0) material.StockIn(diff);
             else if (diff < 0) material.Consume(-diff);
-            await _materialRepo.UpdateAsync(material);
+            await _materialRepo.UpdateAsync(material, innerCt);
 
             var tx = CreateTransaction(material.MaterialCode, material.MaterialName, TransactionType.Adjustment,
                 Math.Abs(diff), before, material.AvailableQuantity,
                 "Adjustment", null, request.Remark, null, null, request.Operator);
             await _txRepo.AddAsync(tx, innerCt);
+            await WriteTransactionAuditAsync("InventoryAdjust", tx, innerCt);
 
             return MapTransaction(tx);
         }, ct);
+    }
+
+    private Task WriteTransactionAuditAsync(string action, StockTransaction tx, CancellationToken ct)
+    {
+        return _auditLog.WriteAuditLogAsync(
+            userId: tx.Operator ?? "system",
+            action,
+            resource: "Inventory",
+            resourceId: tx.Id,
+            oldValues: null,
+            newValues: JsonSerializer.Serialize(new
+            {
+                tx.MaterialCode,
+                tx.MaterialName,
+                TransactionType = tx.TransactionType.ToString(),
+                tx.Quantity,
+                tx.BalanceBefore,
+                tx.BalanceAfter,
+                tx.ReferenceType,
+                tx.ReferenceNumber
+            }),
+            ipAddress: null,
+            userAgent: null,
+            AuditInitiatedBy.User,
+            ct);
     }
 
     private static StockTransaction CreateTransaction(

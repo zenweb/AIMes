@@ -6,14 +6,16 @@ namespace MES.Api.Endpoints;
 
 public static class EmployeeEndpoints
 {
+    private static readonly AuditEndpointFilter Audit = new("employee");
+
     public static RouteGroupBuilder MapEmployeeEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/team/{team}", GetByTeamAsync).WithTags("人员管理");
         group.MapGet("/{id}", GetByIdAsync).WithTags("人员管理");
         group.MapGet("/", GetAllAsync).WithTags("人员管理");
-        group.MapPost("/", CreateAsync).WithTags("人员管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPut("/{id}", UpdateAsync).WithTags("人员管理").AddEndpointFilter<ValidationEndpointFilter>();
-        group.MapPost("/{id}/deactivate", DeactivateAsync).WithTags("人员管理");
+        group.MapPost("/", CreateAsync).WithTags("人员管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPut("/{id}", UpdateAsync).WithTags("人员管理").AddEndpointFilter<ValidationEndpointFilter>().AddEndpointFilter(Audit);
+        group.MapPost("/{id}/deactivate", DeactivateAsync).WithTags("人员管理").AddEndpointFilter(Audit);
         return group;
     }
 

@@ -66,14 +66,43 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isDispatchStep(item: Partial<AssistantRecoveryDispatchStep> | null | undefined): item is AssistantRecoveryDispatchStep {
+  return !!item
+    && typeof item.module === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.action === 'string'
+    && typeof item.evidence === 'string'
+    && (typeof item.status === 'undefined' || ['pending', 'closed'].includes(String(item.status)))
+    && (typeof item.result === 'undefined' || typeof item.result === 'string')
+    && (typeof item.closedAt === 'undefined' || typeof item.closedAt === 'string')
+}
+
 function isAssistantRecoveryPackage(item: Partial<AssistantRecoveryPackage> | null | undefined): item is AssistantRecoveryPackage {
   return !!item
     && typeof item.id === 'string'
     && typeof item.title === 'string'
     && typeof item.auditCode === 'string'
     && typeof item.traceId === 'string'
+    && typeof item.actor === 'string'
+    && typeof item.role === 'string'
     && typeof item.workOrders === 'string'
+    && ['critical', 'warning'].includes(String(item.priority))
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.scheduleWindow === 'string'
+    && typeof item.scheduleAction === 'string'
+    && typeof item.riskImpact === 'string'
+    && typeof item.riskSuggestion === 'string'
+    && typeof item.otdImpact === 'string'
+    && typeof item.delayImpact === 'string'
+    && typeof item.changeoverImpact === 'string'
+    && (typeof item.status === 'undefined' || ['active', 'closed'].includes(String(item.status)))
+    && typeof item.statusLabel === 'string'
+    && typeof item.summary === 'string'
     && Array.isArray(item.dispatchSteps)
+    && item.dispatchSteps.length > 0
+    && item.dispatchSteps.every(isDispatchStep)
+    && typeof item.createdAt === 'string'
 }
 
 function readRawAssistantRecoveryPackages(): AssistantRecoveryPackage[] {
@@ -82,7 +111,19 @@ function readRawAssistantRecoveryPackages(): AssistantRecoveryPackage[] {
     const raw = window.localStorage.getItem(ASSISTANT_RECOVERY_PACKAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isAssistantRecoveryPackage) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(ASSISTANT_RECOVERY_PACKAGE_KEY)
+      return []
+    }
+    const records = parsed.filter(isAssistantRecoveryPackage)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(ASSISTANT_RECOVERY_PACKAGE_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(ASSISTANT_RECOVERY_PACKAGE_KEY)
     return []
@@ -91,6 +132,16 @@ function readRawAssistantRecoveryPackages(): AssistantRecoveryPackage[] {
 
 export function readAssistantRecoveryPackages(): AssistantRecoveryPackage[] {
   return readRawAssistantRecoveryPackages()
+}
+
+export async function readAssistantRecoveryPackagesBackendFirst(): Promise<AssistantRecoveryPackage[]> {
+  try {
+    const { queryAssistantRecoveryPackages } = await import('../api/assistantEvidence')
+    const records = await queryAssistantRecoveryPackages(MAX_PACKAGES)
+    return records.length > 0 ? records : readAssistantRecoveryPackages()
+  } catch {
+    return readAssistantRecoveryPackages()
+  }
 }
 
 export function writeAssistantRecoveryPackage(input: WriteAssistantRecoveryPackageInput): AssistantRecoveryPackage {
@@ -108,9 +159,9 @@ export function writeAssistantRecoveryPackage(input: WriteAssistantRecoveryPacka
     dueAt: '今日 15:30',
     scheduleWindow: '锁定期后第一个 CNC 空窗 + 夜班加班',
     scheduleAction: '保护 8h 锁定期，释放 M-AL-6061B 替代料复核，把 WO-RUSH-9001 插入 CNC-003 夜班窗口，并后移低优先级标准件。',
-    riskImpact: '急单、缺料和 CNC-001 维护窗口叠加，若不处置会让 30 单样本从 96% 回落到 82% OTD。',
+    riskImpact: '急单、缺料和 CNC-001 维护窗口叠加，若不处置会让 DEMO-OTD-30-202605 的 30 单样本回到 26.67% 基线；当前 Agent 方案为 30.00% OTD。',
     riskSuggestion: '风险队列转生产经理审批，采购确认替代批次，调度员采纳锁定期后插入方案，质量保留首件复核。',
-    otdImpact: '+14%',
+    otdImpact: '+3.33pt / p=0.7745',
     delayImpact: '-4 单延期风险',
     changeoverImpact: '+20min 可控',
     status: 'active',
@@ -153,6 +204,9 @@ export function writeAssistantRecoveryPackage(input: WriteAssistantRecoveryPacka
     const next = [record, ...readRawAssistantRecoveryPackages().filter(item => item.id !== record.id)].slice(0, MAX_PACKAGES)
     window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(next))
   }
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantRecoveryPackage }) => upsertAssistantRecoveryPackage(record))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: `assistant-recovery-${record.id}`,
@@ -210,6 +264,9 @@ export function closeAssistantRecoveryPurchaseAction(
 
   const next = [updated, ...readRawAssistantRecoveryPackages().filter(item => item.id !== id)].slice(0, MAX_PACKAGES)
   window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(next))
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantRecoveryPackage }) => upsertAssistantRecoveryPackage(updated))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: `assistant-recovery-purchase-${updated.id}`,
@@ -267,6 +324,9 @@ export function closeAssistantRecoveryQualityAction(
 
   const next = [updated, ...readRawAssistantRecoveryPackages().filter(item => item.id !== id)].slice(0, MAX_PACKAGES)
   window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(next))
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantRecoveryPackage }) => upsertAssistantRecoveryPackage(updated))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: `assistant-recovery-quality-${updated.id}`,
@@ -306,6 +366,9 @@ export function closeAssistantRecoveryPackage(id: string, actor = '调度员 李
 
   const next = [closed, ...readRawAssistantRecoveryPackages().filter(item => item.id !== id)].slice(0, MAX_PACKAGES)
   window.localStorage.setItem(ASSISTANT_RECOVERY_PACKAGE_KEY, JSON.stringify(next))
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantRecoveryPackage }) => upsertAssistantRecoveryPackage(closed))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: `assistant-recovery-${closed.id}`,

@@ -9,6 +9,31 @@
       </div>
     </div>
 
+    <section class="report-pro-hero" aria-label="经营复盘驾驶舱">
+      <div>
+        <span class="report-eyebrow">Executive Review Pack</span>
+        <h1>AI MES 经营复盘驾驶舱</h1>
+        <p>从真实 A/B runner、OTD 证据链、Monte Carlo 口径到 POC 验收，把演示结论沉淀成可审计报告。</p>
+      </div>
+      <div class="report-hero-metrics">
+        <div>
+          <span>OTD 提升</span>
+          <strong>+{{ pctPoint(otdReport.otdLift) }}</strong>
+          <em>{{ fmtPct(otdReport.baselineOtd) }} -> {{ fmtPct(otdReport.agentOtd) }}</em>
+        </div>
+        <div>
+          <span>延期减少</span>
+          <strong>{{ otdReport.delayedOrdersReduced }} 单</strong>
+          <em>{{ otdReport.demoDatasetSize }} 单数据集</em>
+        </div>
+        <div>
+          <span>决策留痕</span>
+          <strong>{{ otdReport.decisionTraceCount }}</strong>
+          <em>可回放证据</em>
+        </div>
+      </div>
+    </section>
+
     <!-- OTD 改善复盘 -->
     <section class="section otd-report-section">
       <div class="section-title-row">
@@ -325,6 +350,7 @@
               type="button"
               :class="{ active: activeOtdKpiDimension === option.value }"
               role="tab"
+              :aria-selected="activeOtdKpiDimension === option.value"
               @click="activeOtdKpiDimension = option.value"
             >
               {{ option.label }}
@@ -576,6 +602,10 @@
           <strong>{{ customerOrderImport?.batchId }}</strong>
           <span>{{ customerEquipmentFault?.batchId }}</span>
         </div>
+      </div>
+
+      <div v-if="reportActionError" class="report-action-error" role="alert" aria-live="assertive">
+        {{ reportActionError }}
       </div>
 
       <div v-if="customerPocEvidenceReady" class="poc-review-panel" :class="{ signed: pocReviewSignoff }">
@@ -871,29 +901,33 @@
 import { ref, computed, onMounted } from 'vue'
 import type { ChartDataPoint, OtdDemoOrder, OtdImprovementReport, PocEvaluationTemplate, ReportDashboard } from '../../types/report'
 import { getReportDashboard } from '../../api/report'
+import { getLatestAdoptionFeedback } from '../../api/scheduling'
 import { useExport } from '../../composables/useExport'
-import { readQualityReworkImpact, type QualityReworkImpact } from '../../utils/quality-rework-sync'
-import { readQualityCapaClosure, type QualityCapaClosure } from '../../utils/quality-capa-sync'
-import { readQualityMrbDispositionRecord, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
-import { readCustomerOrderImportEvidence, type CustomerOrderImportEvidence } from '../../utils/customer-order-import-sync'
-import { readCustomerEquipmentFaultEvidence, type CustomerEquipmentFaultEvidence } from '../../utils/equipment-risk-sync'
-import { readPocReviewSignoffRecord, writePocReviewSignoffRecord, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
-import { readPocRolloutPackageRecord, writePocRolloutPackageRecord, type PocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
-import { readPocPilotRunRecord, writePocPilotRunRecord, type PocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
-import { readPocHypercareAcceptanceRecord, writePocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
-import { readRiskSlaReviewRecord, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+import { readQualityReworkImpactBackendFirst, type QualityReworkImpact } from '../../utils/quality-rework-sync'
+import { readQualityCapaClosureBackendFirst, type QualityCapaClosure } from '../../utils/quality-capa-sync'
+import { readQualityMrbDispositionRecordBackendFirst, type QualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
+import { readCustomerOrderImportEvidenceBackendFirst, type CustomerOrderImportEvidence } from '../../utils/customer-order-import-sync'
+import { readCustomerEquipmentFaultEvidenceBackendFirst, type CustomerEquipmentFaultEvidence } from '../../utils/equipment-risk-sync'
+import { readPocReviewSignoffRecordBackendFirst, writePocReviewSignoffRecord, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
+import { readPocRolloutPackageRecordBackendFirst, writePocRolloutPackageRecord, type PocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
+import { readPocPilotRunRecordBackendFirst, writePocPilotRunRecord, type PocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
+import { readPocHypercareAcceptanceRecordBackendFirst, writePocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readScheduleFeedbackSnapshot, type ScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
-import { readRiskActionTraces, type RiskActionTrace } from '../../utils/risk-action-sync'
-import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
-import { readOtdKpiCommitmentPackages, writeOtdKpiCommitmentPackage, type OtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
-import { readOutsourcingCommitmentPackages, writeOutsourcingCommitmentPackage, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
+import { readRiskActionTracesBackendFirst, type RiskActionTrace } from '../../utils/risk-action-sync'
+import { readOtdEvidenceChainRecordsBackendFirst, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
+import { readOtdKpiCommitmentPackagesBackendFirst, writeOtdKpiCommitmentPackage, type OtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
+import { readOutsourcingCommitmentPackagesBackendFirst, writeOutsourcingCommitmentPackage, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
+import { appAssetPath } from '../../utils/offline-demo-mode'
+import { getLocalUserReportActor } from '../../utils/local-user'
+import { errorMessage } from '../../utils/error-message'
 import {
   buildQualityKnowledgeRecommendationExperimentCandidateRecords,
   buildQualityKnowledgeGrayReleaseMonitorRecords,
   buildQualityKnowledgeRecommendationExperimentComparisonRecords,
-  readQualityKnowledgeGrayReleaseDecisionRecords,
-  readQualityKnowledgeRecommendationFeedbackRecords,
-  readQualityKnowledgeRetrainingVersionRecords,
+  readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
+  readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
+  readQualityKnowledgeRetrainingVersionRecordsBackendFirst,
   type QualityKnowledgeGrayReleaseDecisionRecord,
   type QualityKnowledgeGrayReleaseMonitorRecord,
   type QualityKnowledgeRecommendationExperimentCandidateRecord,
@@ -920,9 +954,11 @@ const riskActionTraces = ref<RiskActionTrace[]>([])
 const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const otdKpiCommitmentPackages = ref<OtdKpiCommitmentPackage[]>([])
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
+const reportActionError = ref('')
 const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
 const qualityGrayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>([])
+const latestAbReport = ref<LatestAbReport | null>(null)
 const chartW = 700
 const yLines = [0, 1, 2, 3]
 
@@ -946,24 +982,29 @@ interface OtdKpiDrilldownItem {
   traceId: string
 }
 
+interface LatestAbReport {
+  datasetId: string
+  seed: number
+  sampleSize: number
+  baseline: { otd: number; delayed: number; changeoverMinutes: number }
+  agent: { otd: number; delayed: number; changeoverMinutes: number }
+  delta: { otd: number; delayedOrdersReduced: number; changeoverMinutesReduced: number }
+  confidence: { lower95: number; upper95: number; pValue: number; significantAt95: boolean }
+}
+
 function fmtPct(v: number | undefined) { return v != null ? (v * 100).toFixed(1) + '%' : '-' }
-function pctPoint(v: number | undefined) { return v != null ? (v * 100).toFixed(0) + '%' : '-' }
+function pctPoint(v: number | undefined) { return v != null ? (v * 100).toFixed(1) + '%' : '-' }
 
 const releasedFlangeOutsourcing = computed(() =>
   outsourcingCommitmentPackages.value.find(item => item.sourceKpiId === 'product-flange' && item.scheduleReleaseTraceId) ?? null
 )
 const otdReport = computed<OtdImprovementReport>(() => {
-  const base = r.value?.otdImprovement ?? demoOtdReport
+  const base = latestAbReport.value ? mapAbReportToOtdReport(latestAbReport.value) : (r.value?.otdImprovement ?? demoOtdReport)
   const released = releasedFlangeOutsourcing.value
   if (!released) return base
 
   return {
     ...base,
-    agentOtd: Math.max(base.agentOtd, 0.97),
-    otdLift: Math.max(base.otdLift, 0.15),
-    agentDelayedOrders: Math.min(base.agentDelayedOrders, 0),
-    delayedOrdersReduced: Math.max(base.delayedOrdersReduced, 5),
-    decisionTraceCount: Math.max(base.decisionTraceCount, 10),
     headline: `${base.headline} ${released.targetName} 外协到货和 AI 排产释放已关闭厂外等待口径，最后 1 单延期进入恢复复盘。`,
     reasons: [
       ...base.reasons,
@@ -983,6 +1024,27 @@ const otdReport = computed<OtdImprovementReport>(() => {
     ),
   }
 })
+
+function mapAbReportToOtdReport(report: LatestAbReport): OtdImprovementReport {
+  return {
+    ...demoOtdReport,
+    demoDatasetSize: report.sampleSize,
+    baselineOtd: report.baseline.otd,
+    agentOtd: report.agent.otd,
+    otdLift: report.delta.otd,
+    baselineDelayedOrders: report.baseline.delayed,
+    agentDelayedOrders: report.agent.delayed,
+    delayedOrdersReduced: report.delta.delayedOrdersReduced,
+    changeoverMinutesReduced: report.delta.changeoverMinutesReduced,
+    headline: `基于 ${report.datasetId} / seed ${report.seed} 的可重放 A/B 报告：Agent OTD 提升 ${(report.delta.otd * 100).toFixed(1)} 个百分点，95% CI ${(report.confidence.lower95 * 100).toFixed(1)}-${(report.confidence.upper95 * 100).toFixed(1)} 个百分点，p=${report.confidence.pValue}。`,
+    reasons: [
+      { label: '可重放基准', contribution: `${report.sampleSize} 单固定数据集，baseline 与 Agent 使用同一 ScheduleRequest 输入。` },
+      { label: '显著性口径', contribution: report.confidence.significantAt95 ? '95% 置信水平下通过显著性 smoke 检验。' : '当前样本未达到 95% 显著性。' },
+      { label: '换线减少', contribution: `换线从 ${report.baseline.changeoverMinutes} 分钟降到 ${report.agent.changeoverMinutes} 分钟，减少 ${report.delta.changeoverMinutesReduced} 分钟。` },
+      { label: '延期减少', contribution: `延期从 ${report.baseline.delayed} 单降到 ${report.agent.delayed} 单，减少 ${report.delta.delayedOrdersReduced} 单。` },
+    ],
+  }
+}
 const customerPocEvidenceReady = computed(() => !!customerOrderImport.value && !!customerEquipmentFault.value)
 const qualityGrayReleaseMonitorRecords = computed<QualityKnowledgeGrayReleaseMonitorRecord[]>(() =>
   buildQualityKnowledgeGrayReleaseMonitorRecords(qualityRetrainingVersionRecords.value, qualityRecommendationFeedbackRecords.value)
@@ -1134,7 +1196,7 @@ const otdKpiDrilldownItems: OtdKpiDrilldownItem[] = [
     status: 'recovered',
     statusLabel: '周窗口达标',
     driver: '缺料闭环 + 设备分流 + 质量放行',
-    explanation: '本周窗口对应 30 单演示数据集，OTD 从 82% 到 96%，是对外演示的主口径；所有改善必须能回到证据链和责任模块。',
+    explanation: '本周窗口对应 DEMO-OTD-30-202605 30 单数据集，当前可重跑口径为 OTD 从 26.67% 到 30.00%，p=0.7745；所有改善必须能回到证据链和责任模块。',
     nextActions: ['将本周窗口作为 POC 通过口径', '检查仍延期的外协订单是否剔除厂内改善口径', 'CSV 导出多维 KPI 钻取给客户复盘'],
     traceId: 'TRACE-KPI-TIME-WEEK-OTD-20260521',
   },
@@ -1239,7 +1301,7 @@ const otdEvidenceChain = computed<OtdEvidenceItem[]>(() => {
       id: 'agent-baseline',
       stage: 'Agent 建议',
       title: '锁定期后插入 + 采购加急 + 瓶颈保护',
-      summary: 'Agent 推荐方案把 30 单样本 OTD 从 82.0% 提升到 96.0%。',
+      summary: 'Agent 推荐方案把 30 单样本 OTD 从 26.67% 提升到 30.00%，当前 30 单样本下未达到 95% 显著性。',
       object: '30 单演示数据集',
       source: 'AI 排产',
       traceId: 'TRACE-SCH-20260520-001',
@@ -1259,7 +1321,7 @@ const otdEvidenceChain = computed<OtdEvidenceItem[]>(() => {
       summary: `${scheduleFeedback.value.categoryLabel}：${scheduleFeedback.value.reasonDetail}`,
       object: scheduleFeedback.value.objectiveLabel,
       source: 'AI 排产 / 人机协同复盘',
-      traceId: scheduleFeedback.value.traceId,
+      traceId: scheduleFeedback.value.traceId ?? 'TRACE-SCH-FEEDBACK-BACKEND',
       status: scheduleFeedback.value.decision === 'accepted' ? 'ready' : 'active',
       statusLabel: scheduleFeedback.value.decision === 'accepted' ? '已采纳' : '已拒绝',
       createdAt: scheduleFeedback.value.createdAt,
@@ -1357,7 +1419,6 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
   const isInventory = stage.includes('库存') || item.title.includes('齐套') || item.summary.includes('缺口')
   const isQuality = stage.includes('质量') || source.includes('质量') || item.title.includes('返工') || item.title.includes('CAPA')
   const isProduction = stage.includes('生产') || source.includes('生产报工')
-  const isSchedule = stage.includes('Agent') || stage.includes('排产') || source.includes('AI 排产')
   const isRisk = stage.includes('风险') || source.includes('风险')
   const isAssistant = stage.includes('助手') || source.includes('AI 生产助手')
 
@@ -1546,208 +1607,229 @@ const anomalyData = computed(() => {
 
 function handleExportCsv() {
   if (!r.value) return
-  const d = r.value
-  const otd = otdReport.value
-  const poc = pocTemplate.value
-  const headers = ['指标类别', '指标名称', '值']
-  const rows: string[][] = [
-    ['OTD复盘', '演示数据集', `${otd.demoDatasetSize}单`],
-    ['OTD复盘', '人工基线OTD', fmtPct(otd.baselineOtd)],
-    ['OTD复盘', 'Agent推荐OTD', fmtPct(otd.agentOtd)],
-    ['OTD复盘', 'OTD提升', `+${pctPoint(otd.otdLift)}`],
-    ['OTD复盘', '延期减少', `${otd.delayedOrdersReduced}单`],
-    ['OTD复盘', '换线减少', `${otd.changeoverMinutesReduced}分钟`],
-    ['生产', '工单总数', String(d.production.totalWorkOrders)],
-    ['生产', '已完成', String(d.production.completedOrders)],
-    ['生产', '进行中', String(d.production.inProgressOrders)],
-    ['生产', '准时率', String((d.production.onTimeRate * 100).toFixed(1) + '%')],
-    ['质量', '合格率', String((d.quality.passRate * 100).toFixed(1) + '%')],
-    ['质量', '不良率', String((d.quality.defectRate * 100).toFixed(1) + '%')],
-    ['质量', '检验批数', String(d.quality.totalInspections)],
-    ['质量', '不良数', String(d.quality.defectCount)],
-    ['设备', '总数', String(d.equipment.totalEquipment)],
-    ['设备', '运行中', String(d.equipment.runningCount)],
-    ['设备', '利用率', String((d.equipment.utilizationRate * 100).toFixed(1) + '%')],
-    ['设备', '可动率', String((d.equipment.availabilityRate * 100).toFixed(1) + '%')],
-    ['异常', '总数', String(d.anomaly.totalAnomalies)],
-    ['异常', '待处理', String(d.anomaly.openCount)],
-    ['异常', '已解决', String(d.anomaly.resolvedCount)],
-    ['异常', '平均响应', String(d.anomaly.avgResolveHours) + 'h'],
-  ]
-  for (const dp of d.production.dailyOutput) {
-    rows.push(['生产趋势', dp.label, String(dp.value)])
-  }
-  for (const reason of otd.reasons) {
-    rows.push(['OTD改善原因', reason.label, reason.contribution])
-  }
-  for (const drilldown of enhancedOtdKpiDrilldownItems.value) {
-    rows.push(['OTD KPI多维钻取', `${drilldown.dimensionLabel} / ${drilldown.name}`, `基线 ${drilldown.baselineOtd}% / Agent ${drilldown.agentOtd}% / 提升 +${drilldown.lift}% / 延期减少 ${drilldown.delayedReduced} 单 / ${drilldown.statusLabel}`])
-    rows.push(['OTD KPI多维钻取', `${drilldown.name} 主因`, `${drilldown.driver} / ${drilldown.traceId}`])
-    rows.push(['OTD KPI多维钻取', `${drilldown.name} 下一步`, drilldown.nextActions.join(' / ')])
-  }
-  for (const commitment of otdKpiCommitmentPackages.value) {
-    rows.push(['客户交付恢复承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
-    rows.push(['客户交付恢复承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
-  }
-  for (const commitment of outsourcingCommitmentPackages.value) {
-    rows.push(['外协承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
-    rows.push(['外协承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
-  }
-  for (const drilldown of otdDrilldownItems.value) {
-    rows.push(['OTD经营钻取', `${drilldown.stage} / ${drilldown.businessQuestion}`, `${drilldown.effectLabel} / ${drilldown.owner} / ${drilldown.routeLabel} / ${drilldown.nextAction}`])
-  }
-  for (const evidence of otdEvidenceChain.value) {
-    rows.push(['OTD复盘证据链', `${evidence.stage} / ${evidence.title}`, `${evidence.statusLabel} / ${evidence.object} / ${evidence.traceId}`])
-  }
-  for (const record of qualityRecommendationFeedbackRecords.value) {
-    rows.push(['质量推荐学习闭环', `${record.targetWorkOrderId} ${record.operationCode}`, `${record.trainingSetVersion} -> ${record.nextTrainingSetVersion} / ${record.effectTrendLabel} / ${record.auditId}`])
-    rows.push(['质量推荐学习闭环', '下一轮训练追踪', record.nextTrainingTraceId])
-  }
-  for (const record of qualityGrayReleaseMonitorRecords.value) {
-    rows.push(['质量推荐灰度监控', `${record.title} / ${record.scopeLabel}`, `${record.statusLabel} / 推荐采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 负样本误召回 ${record.falseRecallLabel}`])
-    rows.push(['质量推荐灰度监控', '灰度周期', record.releaseCycleLabel])
-    rows.push(['质量推荐灰度监控', '灰度审计追踪', `${record.auditId} / ${record.traceId}`])
-  }
-  if (qualityGrayReleaseDecisionRecords.value.length) {
-    rows.push(['质量灰度决策统计', '扩大/回滚', `${qualityGrayReleaseDecisionSummary.value.expanded} 次扩大 / ${qualityGrayReleaseDecisionSummary.value.rolledBack} 次回滚`])
-    rows.push(['质量灰度决策统计', '待确认/问题单', `${qualityGrayReleaseDecisionSummary.value.pendingApproval} 待主管确认 / ${qualityGrayReleaseDecisionSummary.value.openReviewIssues} 个待复核问题单`])
-    rows.push(['质量灰度决策统计', '关闭/重开校验', `${qualityGrayReleaseDecisionSummary.value.closedReviewIssues} 个已关闭 / ${qualityGrayReleaseDecisionSummary.value.reopenedPrevalidation} 个重开灰度前校验`])
-  }
-  for (const cycle of qualityGrayReleaseDecisionCycleSummaries.value) {
-    rows.push(['质量灰度决策周期', cycle.label, `${cycle.expanded} 次扩大 / ${cycle.rolledBack} 次回滚 / ${cycle.pendingApproval} 待确认 / ${cycle.openReviewIssues} 待复核`])
-  }
-  for (const record of qualityGrayReleaseDecisionRecords.value) {
-    rows.push(['质量灰度决策', `${record.trainingSetVersion} / ${record.releaseCycleLabel} / ${record.decisionLabel}`, `${record.approvalLabel} / ${record.auditId} / ${record.traceId}`])
-    rows.push(['质量灰度决策', '发布周期审计', `${record.releaseCycleLabel} / ${record.releaseAuditId} / ${record.releaseTraceId}`])
-    rows.push(['质量灰度决策', '指标快照', record.metricSnapshot.map(metric => `${metric.label} ${metric.value}`).join(' / ')])
-    if (record.reviewIssueId) {
-      rows.push(['质量灰度决策', '待复核问题单', `${record.reviewIssueId} / ${record.reviewIssueTraceId} / ${record.reviewIssueLabel ?? '待复核'}`])
-      if (record.reviewIssueValidationAuditId) {
-        rows.push(['质量灰度决策', '问题单处置', `${record.reviewIssueValidationAuditId} / ${record.reviewIssueValidationTraceId}`])
+  try {
+    const d = r.value
+    const otd = otdReport.value
+    const poc = pocTemplate.value
+    const headers = ['指标类别', '指标名称', '值']
+    const rows: string[][] = [
+      ['OTD复盘', '演示数据集', `${otd.demoDatasetSize}单`],
+      ['OTD复盘', '人工基线OTD', fmtPct(otd.baselineOtd)],
+      ['OTD复盘', 'Agent推荐OTD', fmtPct(otd.agentOtd)],
+      ['OTD复盘', 'OTD提升', `+${pctPoint(otd.otdLift)}`],
+      ['OTD复盘', '延期减少', `${otd.delayedOrdersReduced}单`],
+      ['OTD复盘', '换线减少', `${otd.changeoverMinutesReduced}分钟`],
+      ['生产', '工单总数', String(d.production.totalWorkOrders)],
+      ['生产', '已完成', String(d.production.completedOrders)],
+      ['生产', '进行中', String(d.production.inProgressOrders)],
+      ['生产', '准时率', String((d.production.onTimeRate * 100).toFixed(1) + '%')],
+      ['质量', '合格率', String((d.quality.passRate * 100).toFixed(1) + '%')],
+      ['质量', '不良率', String((d.quality.defectRate * 100).toFixed(1) + '%')],
+      ['质量', '检验批数', String(d.quality.totalInspections)],
+      ['质量', '不良数', String(d.quality.defectCount)],
+      ['设备', '总数', String(d.equipment.totalEquipment)],
+      ['设备', '运行中', String(d.equipment.runningCount)],
+      ['设备', '利用率', String((d.equipment.utilizationRate * 100).toFixed(1) + '%')],
+      ['设备', '可动率', String((d.equipment.availabilityRate * 100).toFixed(1) + '%')],
+      ['异常', '总数', String(d.anomaly.totalAnomalies)],
+      ['异常', '待处理', String(d.anomaly.openCount)],
+      ['异常', '已解决', String(d.anomaly.resolvedCount)],
+      ['异常', '平均响应', String(d.anomaly.avgResolveHours) + 'h'],
+    ]
+    for (const dp of d.production.dailyOutput) {
+      rows.push(['生产趋势', dp.label, String(dp.value)])
+    }
+    for (const reason of otd.reasons) {
+      rows.push(['OTD改善原因', reason.label, reason.contribution])
+    }
+    for (const drilldown of enhancedOtdKpiDrilldownItems.value) {
+      rows.push(['OTD KPI多维钻取', `${drilldown.dimensionLabel} / ${drilldown.name}`, `基线 ${drilldown.baselineOtd}% / Agent ${drilldown.agentOtd}% / 提升 +${drilldown.lift}% / 延期减少 ${drilldown.delayedReduced} 单 / ${drilldown.statusLabel}`])
+      rows.push(['OTD KPI多维钻取', `${drilldown.name} 主因`, `${drilldown.driver} / ${drilldown.traceId}`])
+      rows.push(['OTD KPI多维钻取', `${drilldown.name} 下一步`, drilldown.nextActions.join(' / ')])
+    }
+    for (const commitment of otdKpiCommitmentPackages.value) {
+      rows.push(['客户交付恢复承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
+      rows.push(['客户交付恢复承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
+    }
+    for (const commitment of outsourcingCommitmentPackages.value) {
+      rows.push(['外协承诺包', `${commitment.dimensionLabel} / ${commitment.targetName}`, `${commitment.commitment} / ${commitment.owner} / ${commitment.dueAt}`])
+      rows.push(['外协承诺包', `${commitment.targetName} 审计`, `${commitment.auditId} / ${commitment.traceId}`])
+    }
+    for (const drilldown of otdDrilldownItems.value) {
+      rows.push(['OTD经营钻取', `${drilldown.stage} / ${drilldown.businessQuestion}`, `${drilldown.effectLabel} / ${drilldown.owner} / ${drilldown.routeLabel} / ${drilldown.nextAction}`])
+    }
+    for (const evidence of otdEvidenceChain.value) {
+      rows.push(['OTD复盘证据链', `${evidence.stage} / ${evidence.title}`, `${evidence.statusLabel} / ${evidence.object} / ${evidence.traceId}`])
+    }
+    for (const record of qualityRecommendationFeedbackRecords.value) {
+      rows.push(['质量推荐学习闭环', `${record.targetWorkOrderId} ${record.operationCode}`, `${record.trainingSetVersion} -> ${record.nextTrainingSetVersion} / ${record.effectTrendLabel} / ${record.auditId}`])
+      rows.push(['质量推荐学习闭环', '下一轮训练追踪', record.nextTrainingTraceId])
+    }
+    for (const record of qualityGrayReleaseMonitorRecords.value) {
+      rows.push(['质量推荐灰度监控', `${record.title} / ${record.scopeLabel}`, `${record.statusLabel} / 推荐采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 负样本误召回 ${record.falseRecallLabel}`])
+      rows.push(['质量推荐灰度监控', '灰度周期', record.releaseCycleLabel])
+      rows.push(['质量推荐灰度监控', '灰度审计追踪', `${record.auditId} / ${record.traceId}`])
+    }
+    if (qualityGrayReleaseDecisionRecords.value.length) {
+      rows.push(['质量灰度决策统计', '扩大/回滚', `${qualityGrayReleaseDecisionSummary.value.expanded} 次扩大 / ${qualityGrayReleaseDecisionSummary.value.rolledBack} 次回滚`])
+      rows.push(['质量灰度决策统计', '待确认/问题单', `${qualityGrayReleaseDecisionSummary.value.pendingApproval} 待主管确认 / ${qualityGrayReleaseDecisionSummary.value.openReviewIssues} 个待复核问题单`])
+      rows.push(['质量灰度决策统计', '关闭/重开校验', `${qualityGrayReleaseDecisionSummary.value.closedReviewIssues} 个已关闭 / ${qualityGrayReleaseDecisionSummary.value.reopenedPrevalidation} 个重开灰度前校验`])
+    }
+    for (const cycle of qualityGrayReleaseDecisionCycleSummaries.value) {
+      rows.push(['质量灰度决策周期', cycle.label, `${cycle.expanded} 次扩大 / ${cycle.rolledBack} 次回滚 / ${cycle.pendingApproval} 待确认 / ${cycle.openReviewIssues} 待复核`])
+    }
+    for (const record of qualityGrayReleaseDecisionRecords.value) {
+      rows.push(['质量灰度决策', `${record.trainingSetVersion} / ${record.releaseCycleLabel} / ${record.decisionLabel}`, `${record.approvalLabel} / ${record.auditId} / ${record.traceId}`])
+      rows.push(['质量灰度决策', '发布周期审计', `${record.releaseCycleLabel} / ${record.releaseAuditId} / ${record.releaseTraceId}`])
+      rows.push(['质量灰度决策', '指标快照', record.metricSnapshot.map(metric => `${metric.label} ${metric.value}`).join(' / ')])
+      if (record.reviewIssueId) {
+        rows.push(['质量灰度决策', '待复核问题单', `${record.reviewIssueId} / ${record.reviewIssueTraceId} / ${record.reviewIssueLabel ?? '待复核'}`])
+        if (record.reviewIssueValidationAuditId) {
+          rows.push(['质量灰度决策', '问题单处置', `${record.reviewIssueValidationAuditId} / ${record.reviewIssueValidationTraceId}`])
+        }
       }
     }
-  }
-  for (const record of qualityRecommendationExperimentComparisonRecords.value) {
-    rows.push(['质量推荐实验对比', `${record.trainingSetVersion} / ${record.releaseCycleLabel} / ${record.releaseScopeLabel}`, `${record.statusLabel} / 采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 误召回 ${record.falseRecallLabel} / 实验评分 ${record.experimentScoreLabel}`])
-    rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 扩大门禁`, `${record.gatePassLabel} / ${record.gatePolicyLabel} / ${record.gateAuditLabel}`])
-    rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 效果趋势`, `${record.effectTrendLabel} / ${record.feedbackAuditLabel} / ${record.feedbackTraceLabel}`])
-    rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 灰度审计`, `${record.releaseAuditId} / ${record.releaseTraceId}`])
-    rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 决策`, record.decisionAuditId ? `${record.decisionLabel} / ${record.decisionAuditId} / ${record.decisionTraceId}` : record.decisionLabel])
-  }
-  for (const record of qualityExperimentCandidateRecords.value) {
-    rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} / ${record.triggerLabel}`, `${record.statusLabel} / 负样本覆盖 ${record.negativeCoverageLabel} / 覆盖率 ${record.coveragePercentLabel} / ${record.gapLabel}`])
-    rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} 指标`, `采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 误召回 ${record.falseRecallLabel} / ${record.gatePolicyLabel}`])
-    rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} 审计`, `${record.sourceAuditId} / ${record.sourceTraceId} / ${record.auditId} / ${record.traceId}`])
-  }
-  for (const order of otd.sampleOrders) {
-    rows.push(['30单样本节选', order.orderNumber, `${order.productName} / ${order.risk} / ${order.action}`])
-  }
-  rows.push(['POC评估', '目标客户', poc.targetCustomer])
-  rows.push(['POC评估', '周期', poc.duration])
-  rows.push(['POC评估', '通过线', `${poc.passScore}分`])
-  rows.push(['POC评估', '当前评分', `${pocEvaluationResult.value.totalScore}分`])
-  rows.push(['POC评估', '通过状态', pocEvaluationResult.value.passed ? '达到通过线' : '未达到通过线'])
-  for (const dimension of poc.dimensions) {
-    rows.push(['POC评分维度', `${dimension.name}(${dimension.actualScore ?? dimension.weight}/${dimension.weight}分)`, `${dimension.target} / ${dimension.evidence}`])
-  }
-  for (const gap of pocEvaluationResult.value.gaps) {
-    rows.push(['POC补齐缺口', gap.name, gap.gap])
-  }
-  for (const item of poc.evidenceChecklist) {
-    rows.push(['POC验收证据', item.item, `${item.owner} / ${item.status === 'ready' ? '已准备' : '待补充'}`])
-  }
-  for (const item of poc.demoChecklist) {
-    rows.push(['售前Demo Checklist', item.step, item.proof])
-  }
-  if (qualityCapaClosure.value) {
-    rows.push(['质量CAPA', '验证任务', qualityCapaClosure.value.taskTitle])
-    rows.push(['质量CAPA', 'OTD复盘口径', qualityCapaClosure.value.otdImpact])
-    rows.push(['质量CAPA', '审计编号', qualityCapaClosure.value.traceId])
-  }
-  if (qualityMrbDisposition.value) {
-    rows.push(['质量MRB处置', '标题', qualityMrbDisposition.value.title])
-    rows.push(['质量MRB处置', 'OTD影响', qualityMrbDisposition.value.otdImpact])
-    rows.push(['质量MRB处置', '审计编号', `${qualityMrbDisposition.value.auditId} / ${qualityMrbDisposition.value.traceId} / ${qualityMrbDisposition.value.scheduleTraceId}`])
-    if (qualityMrbDisposition.value.closureTraceId) {
-      rows.push(['质量MRB处置', '闭环追踪', `${qualityMrbDisposition.value.closureAuditId} / ${qualityMrbDisposition.value.closureTraceId}`])
-      rows.push(['质量MRB处置', '闭环结论', qualityMrbDisposition.value.closureSummary ?? 'MRB 处置已闭环'])
+    for (const record of qualityRecommendationExperimentComparisonRecords.value) {
+      rows.push(['质量推荐实验对比', `${record.trainingSetVersion} / ${record.releaseCycleLabel} / ${record.releaseScopeLabel}`, `${record.statusLabel} / 采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 误召回 ${record.falseRecallLabel} / 实验评分 ${record.experimentScoreLabel}`])
+      rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 扩大门禁`, `${record.gatePassLabel} / ${record.gatePolicyLabel} / ${record.gateAuditLabel}`])
+      rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 效果趋势`, `${record.effectTrendLabel} / ${record.feedbackAuditLabel} / ${record.feedbackTraceLabel}`])
+      rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 灰度审计`, `${record.releaseAuditId} / ${record.releaseTraceId}`])
+      rows.push(['质量推荐实验对比', `${record.trainingSetVersion} 决策`, record.decisionAuditId ? `${record.decisionLabel} / ${record.decisionAuditId} / ${record.decisionTraceId}` : record.decisionLabel])
     }
-    for (const action of qualityMrbDisposition.value.actions) {
-      rows.push(['质量MRB动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}${action.result ? ` / ${action.result}` : ''}`])
+    for (const record of qualityExperimentCandidateRecords.value) {
+      rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} / ${record.triggerLabel}`, `${record.statusLabel} / 负样本覆盖 ${record.negativeCoverageLabel} / 覆盖率 ${record.coveragePercentLabel} / ${record.gapLabel}`])
+      rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} 指标`, `采纳率 ${record.adoptionRateLabel} / 复验通过率 ${record.recheckPassRateLabel} / 误召回 ${record.falseRecallLabel} / ${record.gatePolicyLabel}`])
+      rows.push(['质量推荐实验候选', `${record.candidateTrainingSetVersion} 审计`, `${record.sourceAuditId} / ${record.sourceTraceId} / ${record.auditId} / ${record.traceId}`])
     }
+    for (const order of otd.sampleOrders) {
+      rows.push(['30单样本节选', order.orderNumber, `${order.productName} / ${order.risk} / ${order.action}`])
+    }
+    rows.push(['POC评估', '目标客户', poc.targetCustomer])
+    rows.push(['POC评估', '周期', poc.duration])
+    rows.push(['POC评估', '通过线', `${poc.passScore}分`])
+    rows.push(['POC评估', '当前评分', `${pocEvaluationResult.value.totalScore}分`])
+    rows.push(['POC评估', '通过状态', pocEvaluationResult.value.passed ? '达到通过线' : '未达到通过线'])
+    for (const dimension of poc.dimensions) {
+      rows.push(['POC评分维度', `${dimension.name}(${dimension.actualScore ?? dimension.weight}/${dimension.weight}分)`, `${dimension.target} / ${dimension.evidence}`])
+    }
+    for (const gap of pocEvaluationResult.value.gaps) {
+      rows.push(['POC补齐缺口', gap.name, gap.gap])
+    }
+    for (const item of poc.evidenceChecklist) {
+      rows.push(['POC验收证据', item.item, `${item.owner} / ${item.status === 'ready' ? '已准备' : '待补充'}`])
+    }
+    for (const item of poc.demoChecklist) {
+      rows.push(['售前Demo Checklist', item.step, item.proof])
+    }
+    if (qualityCapaClosure.value) {
+      rows.push(['质量CAPA', '验证任务', qualityCapaClosure.value.taskTitle])
+      rows.push(['质量CAPA', 'OTD复盘口径', qualityCapaClosure.value.otdImpact])
+      rows.push(['质量CAPA', '审计编号', qualityCapaClosure.value.traceId])
+    }
+    if (qualityMrbDisposition.value) {
+      rows.push(['质量MRB处置', '标题', qualityMrbDisposition.value.title])
+      rows.push(['质量MRB处置', 'OTD影响', qualityMrbDisposition.value.otdImpact])
+      rows.push(['质量MRB处置', '审计编号', `${qualityMrbDisposition.value.auditId} / ${qualityMrbDisposition.value.traceId} / ${qualityMrbDisposition.value.scheduleTraceId}`])
+      if (qualityMrbDisposition.value.closureTraceId) {
+        rows.push(['质量MRB处置', '闭环追踪', `${qualityMrbDisposition.value.closureAuditId} / ${qualityMrbDisposition.value.closureTraceId}`])
+        rows.push(['质量MRB处置', '闭环结论', qualityMrbDisposition.value.closureSummary ?? 'MRB 处置已闭环'])
+      }
+      for (const action of qualityMrbDisposition.value.actions) {
+        rows.push(['质量MRB动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}${action.result ? ` / ${action.result}` : ''}`])
+      }
+    }
+    if (pocReviewSignoff.value) {
+      rows.push(['POC复盘签署', '会议编号', pocReviewSignoff.value.meetingId])
+      rows.push(['POC复盘签署', '审计编号', pocReviewSignoff.value.auditId])
+      rows.push(['POC复盘签署', '签署人', pocReviewSignoff.value.signedBy])
+    }
+    if (pocRolloutPackage.value) {
+      rows.push(['POC上线交付包', '标题', pocRolloutPackage.value.title])
+      rows.push(['POC上线交付包', '上线窗口', pocRolloutPackage.value.rolloutWindow])
+      rows.push(['POC上线交付包', '上线门禁', pocRolloutPackage.value.goLiveGate])
+      rows.push(['POC上线交付包', '审计编号', `${pocRolloutPackage.value.auditId} / ${pocRolloutPackage.value.traceId}`])
+      for (const action of pocRolloutPackage.value.actions) {
+        rows.push(['POC上线交付动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}`])
+      }
+    }
+    if (pocPilotRun.value) {
+      rows.push(['POC试点运行', '标题', pocPilotRun.value.title])
+      rows.push(['POC试点运行', '批次', `${pocPilotRun.value.batchId} / ${pocPilotRun.value.sampleSize} 单 / OTD ${pocPilotRun.value.actualOtd}`])
+      rows.push(['POC试点运行', '审计编号', `${pocPilotRun.value.auditId} / ${pocPilotRun.value.traceId}`])
+      for (const order of pocPilotRun.value.workOrders) {
+        rows.push(['POC试点工单', `${order.workOrderNumber} / ${order.productName}`, `${order.quantity} 件 / ${order.route} / ${order.scheduleDecision} / ${order.executionStatus}`])
+      }
+      for (const checkpoint of pocPilotRun.value.checkpoints) {
+        rows.push(['POC试点检查点', `${checkpoint.module} / ${checkpoint.owner}`, `${checkpoint.summary} / ${checkpoint.evidence}`])
+      }
+    }
+    if (pocHypercareAcceptance.value) {
+      rows.push(['POCHypercare验收', '标题', pocHypercareAcceptance.value.title])
+      rows.push(['POCHypercare验收', '上线窗口', pocHypercareAcceptance.value.goLiveWindow])
+      rows.push(['POCHypercare验收', '门禁', pocHypercareAcceptance.value.acceptanceGate])
+      rows.push(['POCHypercare验收', '审计编号', `${pocHypercareAcceptance.value.auditId} / ${pocHypercareAcceptance.value.traceId}`])
+      for (const monitor of pocHypercareAcceptance.value.monitors) {
+        rows.push(['POCHypercare指标', `${monitor.label} / ${monitor.statusLabel}`, `${monitor.current} / 目标 ${monitor.target} / ${monitor.evidence}`])
+      }
+      for (const checkpoint of pocHypercareAcceptance.value.checkpoints) {
+        rows.push(['POCHypercare动作', `${checkpoint.module} / ${checkpoint.owner}`, `${checkpoint.action} / ${checkpoint.evidence}`])
+      }
+    }
+    if (riskSlaReview.value) {
+      rows.push(['风险SLA复核', '标题', riskSlaReview.value.title])
+      rows.push(['风险SLA复核', '晨会编号', `${riskSlaReview.value.reviewMeetingId} / ${riskSlaReview.value.statusLabel}`])
+      rows.push(['风险SLA复核', '风险概览', `逾期 ${riskSlaReview.value.overdueCount} 项 / 关键 ${riskSlaReview.value.criticalCount} 项 / ${riskSlaReview.value.otdImpact}`])
+      rows.push(['风险SLA复核', '审计编号', `${riskSlaReview.value.auditId} / ${riskSlaReview.value.traceId}`])
+      if (riskSlaReview.value.closureTraceId) {
+        rows.push(['风险SLA复核', '闭环追踪', `${riskSlaReview.value.closureAuditId} / ${riskSlaReview.value.closureTraceId}`])
+        rows.push(['风险SLA复核', '闭环结论', riskSlaReview.value.closureSummary ?? '责任动作已闭环'])
+      }
+      for (const risk of riskSlaReview.value.risks) {
+        rows.push(['风险SLA风险项', `${risk.type} / ${risk.title}`, `${risk.owner} / ${risk.dueAt} / ${risk.deliveryImpact}`])
+      }
+      for (const action of riskSlaReview.value.actions) {
+        rows.push(['风险SLA责任动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}${action.result ? ` / ${action.result}` : ''}`])
+      }
+    }
+    downloadCsv(csvFilename('报表'), headers, rows)
+    reportActionError.value = ''
+  } catch (error: unknown) {
+    reportActionError.value = `报表 CSV 导出失败：${errorMessage(error, '请稍后重试')}`
   }
-  if (pocReviewSignoff.value) {
-    rows.push(['POC复盘签署', '会议编号', pocReviewSignoff.value.meetingId])
-    rows.push(['POC复盘签署', '审计编号', pocReviewSignoff.value.auditId])
-    rows.push(['POC复盘签署', '签署人', pocReviewSignoff.value.signedBy])
-  }
-  if (pocRolloutPackage.value) {
-    rows.push(['POC上线交付包', '标题', pocRolloutPackage.value.title])
-    rows.push(['POC上线交付包', '上线窗口', pocRolloutPackage.value.rolloutWindow])
-    rows.push(['POC上线交付包', '上线门禁', pocRolloutPackage.value.goLiveGate])
-    rows.push(['POC上线交付包', '审计编号', `${pocRolloutPackage.value.auditId} / ${pocRolloutPackage.value.traceId}`])
-    for (const action of pocRolloutPackage.value.actions) {
-      rows.push(['POC上线交付动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}`])
-    }
-  }
-  if (pocPilotRun.value) {
-    rows.push(['POC试点运行', '标题', pocPilotRun.value.title])
-    rows.push(['POC试点运行', '批次', `${pocPilotRun.value.batchId} / ${pocPilotRun.value.sampleSize} 单 / OTD ${pocPilotRun.value.actualOtd}`])
-    rows.push(['POC试点运行', '审计编号', `${pocPilotRun.value.auditId} / ${pocPilotRun.value.traceId}`])
-    for (const order of pocPilotRun.value.workOrders) {
-      rows.push(['POC试点工单', `${order.workOrderNumber} / ${order.productName}`, `${order.quantity} 件 / ${order.route} / ${order.scheduleDecision} / ${order.executionStatus}`])
-    }
-    for (const checkpoint of pocPilotRun.value.checkpoints) {
-      rows.push(['POC试点检查点', `${checkpoint.module} / ${checkpoint.owner}`, `${checkpoint.summary} / ${checkpoint.evidence}`])
-    }
-  }
-  if (pocHypercareAcceptance.value) {
-    rows.push(['POCHypercare验收', '标题', pocHypercareAcceptance.value.title])
-    rows.push(['POCHypercare验收', '上线窗口', pocHypercareAcceptance.value.goLiveWindow])
-    rows.push(['POCHypercare验收', '门禁', pocHypercareAcceptance.value.acceptanceGate])
-    rows.push(['POCHypercare验收', '审计编号', `${pocHypercareAcceptance.value.auditId} / ${pocHypercareAcceptance.value.traceId}`])
-    for (const monitor of pocHypercareAcceptance.value.monitors) {
-      rows.push(['POCHypercare指标', `${monitor.label} / ${monitor.statusLabel}`, `${monitor.current} / 目标 ${monitor.target} / ${monitor.evidence}`])
-    }
-    for (const checkpoint of pocHypercareAcceptance.value.checkpoints) {
-      rows.push(['POCHypercare动作', `${checkpoint.module} / ${checkpoint.owner}`, `${checkpoint.action} / ${checkpoint.evidence}`])
-    }
-  }
-  if (riskSlaReview.value) {
-    rows.push(['风险SLA复核', '标题', riskSlaReview.value.title])
-    rows.push(['风险SLA复核', '晨会编号', `${riskSlaReview.value.reviewMeetingId} / ${riskSlaReview.value.statusLabel}`])
-    rows.push(['风险SLA复核', '风险概览', `逾期 ${riskSlaReview.value.overdueCount} 项 / 关键 ${riskSlaReview.value.criticalCount} 项 / ${riskSlaReview.value.otdImpact}`])
-    rows.push(['风险SLA复核', '审计编号', `${riskSlaReview.value.auditId} / ${riskSlaReview.value.traceId}`])
-    if (riskSlaReview.value.closureTraceId) {
-      rows.push(['风险SLA复核', '闭环追踪', `${riskSlaReview.value.closureAuditId} / ${riskSlaReview.value.closureTraceId}`])
-      rows.push(['风险SLA复核', '闭环结论', riskSlaReview.value.closureSummary ?? '责任动作已闭环'])
-    }
-    for (const risk of riskSlaReview.value.risks) {
-      rows.push(['风险SLA风险项', `${risk.type} / ${risk.title}`, `${risk.owner} / ${risk.dueAt} / ${risk.deliveryImpact}`])
-    }
-    for (const action of riskSlaReview.value.actions) {
-      rows.push(['风险SLA责任动作', `${action.module} / ${action.owner}`, `${action.action} / ${action.dueAt} / ${action.evidence}${action.result ? ` / ${action.result}` : ''}`])
-    }
-  }
-  downloadCsv(csvFilename('报表'), headers, rows)
 }
 
 function currentActor() {
-  try {
-    const raw = localStorage.getItem('aimes_user')
-    if (!raw) return 'report.viewer'
-    const user = JSON.parse(raw)
-    return user.username ?? user.displayName ?? 'report.viewer'
-  } catch {
-    return 'report.viewer'
-  }
+  return getLocalUserReportActor()
 }
 
-function handleGenerateOtdKpiCommitment() {
+async function handleGenerateOtdKpiCommitment() {
   const item = selectedOtdKpiDrilldown.value
   if (!item) return
-  if (item.id === 'product-flange') {
-    const record = writeOutsourcingCommitmentPackage({
+  try {
+    if (item.id === 'product-flange') {
+      const record = writeOutsourcingCommitmentPackage({
+        sourceKpiId: item.id,
+        dimensionLabel: item.dimensionLabel,
+        targetName: item.name,
+        baselineOtd: item.baselineOtd,
+        agentOtd: item.agentOtd,
+        lift: item.lift,
+        delayedReduced: item.delayedReduced,
+        statusLabel: item.statusLabel,
+        driver: item.driver,
+        nextActions: item.nextActions,
+        sourceTraceId: item.traceId,
+        actor: currentActor(),
+        partnerName: '华东精密外协厂',
+        promiseDate: '2026-05-23',
+        affectedOrders: 'WO-DEMO-1013',
+      })
+      outsourcingCommitmentPackages.value = [record, ...outsourcingCommitmentPackages.value.filter(entry => entry.id !== record.id)]
+      reportActionError.value = ''
+      otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+      return
+    }
+    const record = writeOtdKpiCommitmentPackage({
       sourceKpiId: item.id,
       dimensionLabel: item.dimensionLabel,
       targetName: item.name,
@@ -1760,65 +1842,79 @@ function handleGenerateOtdKpiCommitment() {
       nextActions: item.nextActions,
       sourceTraceId: item.traceId,
       actor: currentActor(),
-      partnerName: '华东精密外协厂',
-      promiseDate: '2026-05-23',
-      affectedOrders: 'WO-DEMO-1013',
     })
-    outsourcingCommitmentPackages.value = [record, ...outsourcingCommitmentPackages.value.filter(entry => entry.id !== record.id)]
-    otdEvidenceRecords.value = readOtdEvidenceChainRecords()
-    return
+    otdKpiCommitmentPackages.value = [record, ...otdKpiCommitmentPackages.value.filter(item => item.id !== record.id)]
+    reportActionError.value = ''
+    otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+  } catch (error: unknown) {
+    reportActionError.value = `OTD KPI 承诺包生成失败：${errorMessage(error, '请稍后重试')}`
   }
-  const record = writeOtdKpiCommitmentPackage({
-    sourceKpiId: item.id,
-    dimensionLabel: item.dimensionLabel,
-    targetName: item.name,
-    baselineOtd: item.baselineOtd,
-    agentOtd: item.agentOtd,
-    lift: item.lift,
-    delayedReduced: item.delayedReduced,
-    statusLabel: item.statusLabel,
-    driver: item.driver,
-    nextActions: item.nextActions,
-    sourceTraceId: item.traceId,
-    actor: currentActor(),
-  })
-  otdKpiCommitmentPackages.value = [record, ...otdKpiCommitmentPackages.value.filter(item => item.id !== record.id)]
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
 }
 
 function handleExportExcel() {
-  const a = document.createElement('a')
-  a.href = '/api/v1/report/export/excel'
-  a.download = 'MES_Report.xlsx'
-  a.click()
+  handleReportFileExport('Excel', '/api/v1/report/export/excel', 'MES_Report.xlsx')
 }
 
 function handleExportPdf() {
-  const a = document.createElement('a')
-  a.href = '/api/v1/report/export/pdf'
-  a.download = 'MES_Report.pdf'
-  a.click()
+  handleReportFileExport('PDF', '/api/v1/report/export/pdf', 'MES_Report.pdf')
+}
+
+function handleReportFileExport(label: string, href: string, download: string) {
+  try {
+    const a = document.createElement('a')
+    a.href = href
+    a.download = download
+    a.click()
+    reportActionError.value = ''
+  } catch (error: unknown) {
+    reportActionError.value = `报表 ${label} 导出失败：${errorMessage(error, '请稍后重试')}`
+  }
+}
+
+async function readOptionalReportEvidence<T>(label: string, read: () => Promise<T>, fallback: T) {
+  try {
+    return await read()
+  } catch (error: unknown) {
+    reportActionError.value = `${label}加载失败：${errorMessage(error, '请稍后重试')}`
+    return fallback
+  }
+}
+
+async function readScheduleFeedbackReportEvidence() {
+  try {
+    return await getLatestAdoptionFeedback() ?? readScheduleFeedbackSnapshot()
+  } catch (error: unknown) {
+    reportActionError.value = `排产采纳反馈证据加载失败：${errorMessage(error, '请稍后重试')}`
+    return readScheduleFeedbackSnapshot()
+  }
 }
 
 onMounted(async () => {
-  qualityReworkImpact.value = readQualityReworkImpact()
-  qualityCapaClosure.value = readQualityCapaClosure()
-  qualityMrbDisposition.value = readQualityMrbDispositionRecord()
-  customerOrderImport.value = readCustomerOrderImportEvidence()
-  customerEquipmentFault.value = readCustomerEquipmentFaultEvidence()
-  pocReviewSignoff.value = readPocReviewSignoffRecord()
-  pocRolloutPackage.value = readPocRolloutPackageRecord()
-  pocPilotRun.value = readPocPilotRunRecord()
-  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
-  riskSlaReview.value = readRiskSlaReviewRecord()
-  scheduleFeedback.value = readScheduleFeedbackSnapshot()
-  riskActionTraces.value = readRiskActionTraces()
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
-  otdKpiCommitmentPackages.value = readOtdKpiCommitmentPackages()
-  outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages()
-  qualityRecommendationFeedbackRecords.value = readQualityKnowledgeRecommendationFeedbackRecords()
-  qualityRetrainingVersionRecords.value = readQualityKnowledgeRetrainingVersionRecords()
-  qualityGrayReleaseDecisionRecords.value = readQualityKnowledgeGrayReleaseDecisionRecords()
+  try {
+    latestAbReport.value = await fetch(appAssetPath('reports/latest-ab-report.json'), { cache: 'no-store' }).then(response =>
+      response.ok ? response.json() : null
+    )
+  } catch {
+    latestAbReport.value = null
+  }
+  qualityReworkImpact.value = await readOptionalReportEvidence('质量返工影响证据', readQualityReworkImpactBackendFirst, null)
+  qualityCapaClosure.value = await readOptionalReportEvidence('质量 CAPA 闭环证据', readQualityCapaClosureBackendFirst, null)
+  qualityMrbDisposition.value = await readOptionalReportEvidence('质量 MRB 处置证据', readQualityMrbDispositionRecordBackendFirst, null)
+  customerOrderImport.value = await readOptionalReportEvidence('客户工单导入证据', readCustomerOrderImportEvidenceBackendFirst, null)
+  customerEquipmentFault.value = await readOptionalReportEvidence('客户设备故障证据', readCustomerEquipmentFaultEvidenceBackendFirst, null)
+  pocReviewSignoff.value = await readOptionalReportEvidence('POC 复盘签署证据', readPocReviewSignoffRecordBackendFirst, null)
+  pocRolloutPackage.value = await readOptionalReportEvidence('POC 上线交付包', readPocRolloutPackageRecordBackendFirst, null)
+  pocPilotRun.value = await readOptionalReportEvidence('POC 试点运行证据', readPocPilotRunRecordBackendFirst, null)
+  pocHypercareAcceptance.value = await readOptionalReportEvidence('POC Hypercare 验收证据', readPocHypercareAcceptanceRecordBackendFirst, null)
+  riskSlaReview.value = await readOptionalReportEvidence('风险 SLA 复核证据', readRiskSlaReviewRecordBackendFirst, null)
+  scheduleFeedback.value = await readScheduleFeedbackReportEvidence()
+  riskActionTraces.value = await readOptionalReportEvidence('风险责任动作证据', readRiskActionTracesBackendFirst, [])
+  otdEvidenceRecords.value = await readOptionalReportEvidence('OTD 证据链', readOtdEvidenceChainRecordsBackendFirst, [])
+  otdKpiCommitmentPackages.value = await readOptionalReportEvidence('OTD KPI 承诺包', readOtdKpiCommitmentPackagesBackendFirst, [])
+  outsourcingCommitmentPackages.value = await readOptionalReportEvidence('外协承诺包', readOutsourcingCommitmentPackagesBackendFirst, [])
+  qualityRecommendationFeedbackRecords.value = await readOptionalReportEvidence('质量推荐反馈证据', readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst, [])
+  qualityRetrainingVersionRecords.value = await readOptionalReportEvidence('质量推荐再训练版本证据', readQualityKnowledgeRetrainingVersionRecordsBackendFirst, [])
+  qualityGrayReleaseDecisionRecords.value = await readOptionalReportEvidence('质量灰度决策证据', readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst, [])
   try { r.value = await getReportDashboard() }
   catch {
     r.value = {
@@ -1841,53 +1937,93 @@ function statusText(status: OtdDemoOrder['baselineStatus'] | OtdDemoOrder['agent
   return map[status]
 }
 
-function handlePocReviewSignoff() {
+async function handlePocReviewSignoff() {
   if (!customerOrderImport.value || !customerEquipmentFault.value) return
-  pocReviewSignoff.value = writePocReviewSignoffRecord({
-    targetCustomer: pocTemplate.value.targetCustomer,
-    totalScore: pocEvaluationResult.value.totalScore,
-    passScore: pocTemplate.value.passScore,
-    evidenceBatches: [customerOrderImport.value.batchId, customerEquipmentFault.value.batchId],
-    summary: `POC 评分 ${pocEvaluationResult.value.totalScore} / 100，客户工单导入与设备故障样例证据齐套，达到 ${pocTemplate.value.passScore} 分通过线。`,
-  })
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  try {
+    const signoff = writePocReviewSignoffRecord({
+      targetCustomer: pocTemplate.value.targetCustomer,
+      totalScore: pocEvaluationResult.value.totalScore,
+      passScore: pocTemplate.value.passScore,
+      evidenceBatches: [customerOrderImport.value.batchId, customerEquipmentFault.value.batchId],
+      summary: `POC 评分 ${pocEvaluationResult.value.totalScore} / 100，客户工单导入与设备故障样例证据齐套，达到 ${pocTemplate.value.passScore} 分通过线。`,
+    })
+    if (!signoff) {
+      reportActionError.value = 'POC 复盘签署失败：签署记录未写入，请稍后重试'
+      return
+    }
+    pocReviewSignoff.value = signoff
+    reportActionError.value = ''
+    otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+  } catch (error: unknown) {
+    reportActionError.value = `POC 复盘签署失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function handleGeneratePocRolloutPackage() {
+async function handleGeneratePocRolloutPackage() {
   if (!pocReviewSignoff.value) return
-  pocRolloutPackage.value = writePocRolloutPackageRecord(pocReviewSignoff.value)
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  try {
+    const rolloutPackage = writePocRolloutPackageRecord(pocReviewSignoff.value)
+    if (!rolloutPackage) {
+      reportActionError.value = 'POC 上线交付包生成失败：交付包未写入，请稍后重试'
+      return
+    }
+    pocRolloutPackage.value = rolloutPackage
+    reportActionError.value = ''
+    otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+  } catch (error: unknown) {
+    reportActionError.value = `POC 上线交付包生成失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function handleConfirmPocPilotRun() {
+async function handleConfirmPocPilotRun() {
   if (!pocRolloutPackage.value) return
-  pocPilotRun.value = writePocPilotRunRecord(pocRolloutPackage.value)
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  try {
+    const pilotRun = writePocPilotRunRecord(pocRolloutPackage.value)
+    if (!pilotRun) {
+      reportActionError.value = 'POC 试点运行确认失败：试点运行记录未写入，请稍后重试'
+      return
+    }
+    pocPilotRun.value = pilotRun
+    reportActionError.value = ''
+    otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+  } catch (error: unknown) {
+    reportActionError.value = `POC 试点运行确认失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
-function handleGeneratePocHypercareAcceptance() {
+async function handleGeneratePocHypercareAcceptance() {
   if (!pocPilotRun.value) return
-  pocHypercareAcceptance.value = writePocHypercareAcceptanceRecord(pocPilotRun.value)
-  otdEvidenceRecords.value = readOtdEvidenceChainRecords()
+  try {
+    const hypercareAcceptance = writePocHypercareAcceptanceRecord(pocPilotRun.value)
+    if (!hypercareAcceptance) {
+      reportActionError.value = 'POC Hypercare 验收包生成失败：Hypercare 验收记录未写入，请稍后重试'
+      return
+    }
+    pocHypercareAcceptance.value = hypercareAcceptance
+    reportActionError.value = ''
+    otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
+  } catch (error: unknown) {
+    reportActionError.value = `POC Hypercare 验收包生成失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 const demoOtdReport: OtdImprovementReport = {
   demoDatasetSize: 30,
-  baselineOtd: 0.82,
-  agentOtd: 0.96,
-  otdLift: 0.14,
-  baselineDelayedOrders: 5,
-  agentDelayedOrders: 1,
-  delayedOrdersReduced: 4,
-  changeoverMinutesReduced: 73,
+  baselineOtd: 0.2667,
+  agentOtd: 0.3,
+  otdLift: 0.0333,
+  baselineDelayedOrders: 22,
+  agentDelayedOrders: 21,
+  delayedOrdersReduced: 1,
+  changeoverMinutesReduced: 0,
   protectedRushOrders: 2,
   decisionTraceCount: 9,
-  headline: 'AIMes Agent 通过锁定期保护、瓶颈设备合批、缺料采购闭环和急单加班插入，把 30 单样本的准时交付率从 82% 提升到 96%。',
+  headline: 'AIMes Agent 在 DEMO-OTD-30-202605 30 单数据集上，把准时交付率从 26.67% 提升到 30.00%，p=0.7745；当前样本量下诚实标记为未达到 95% 显著性。',
   reasons: [
-    { label: '瓶颈设备合批', contribution: 'CNC 与热处理工序减少 73 分钟换线，释放 1 个夜班窗口。' },
-    { label: '缺料闭环', contribution: 'M-AL-6061 加急采购收货后，WO-RUSH-9001 与 WO-DEMO-1002 缺料风险下降。' },
-    { label: '锁定期保护', contribution: '8 小时内任务不直接改动，降低现场二次混乱。' },
-    { label: '采纳反馈', contribution: '9 条调度员决策留痕进入复盘，解释为什么接受加班插入方案。' },
+    { label: '可重放基准', contribution: '30 单固定数据集，baseline 与 Agent 使用同一 ScheduleRequest 输入。' },
+    { label: '显著性口径', contribution: '当前样本未达到 95% 显著性，演示时必须如实披露。' },
+    { label: '延期减少', contribution: '延期从 22 单降到 21 单，减少 1 单。' },
+    { label: '证据链闭环', contribution: '调度员决策、执行回写和审计追踪进入 OTD 复盘。' },
   ],
   demoPath: [
     '生产概览查看今日风险与物料状态',
@@ -1930,7 +2066,7 @@ const demoPocTemplate: PocEvaluationTemplate = {
     { step: '进入风险预警', proof: '说明急单、缺料、设备健康下降三类触发器', done: true },
     { step: '进入 AI 排产', proof: '生成 Agent 重排建议并展示 OTD 影响', done: true },
     { step: '处理采购缺料', proof: '生成加急采购单、模拟收货、风险下降', done: true },
-    { step: '打开报表中心', proof: '展示 OTD +14% 改善报告并导出 CSV', done: true },
+    { step: '打开报表中心', proof: '展示可重放 A/B OTD +3.3pt 改善报告并导出 CSV', done: true },
   ],
 }
 </script>
@@ -1940,6 +2076,27 @@ const demoPocTemplate: PocEvaluationTemplate = {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin: 0; }
 .header-actions { display: flex; gap: 8px; }
+.report-pro-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(460px, 0.9fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.96)),
+    #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+.report-eyebrow { color: #1368b4; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; }
+.report-pro-hero h1 { margin: 7px 0 0; color: #0b1220; font-size: 26px; font-weight: 800; }
+.report-pro-hero p { margin: 8px 0 0; color: #5c6b7c; font-size: 13px; line-height: 1.6; }
+.report-hero-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.report-hero-metrics div { padding: 11px; border: 1px solid #d8e2ee; border-left: 3px solid #1368b4; border-radius: 7px; background: #fff; }
+.report-hero-metrics span,
+.report-hero-metrics em { display: block; color: #5c6b7c; font-size: 11px; font-style: normal; }
+.report-hero-metrics strong { display: block; margin: 3px 0; color: #0b1220; font-family: 'Fira Code', monospace; font-size: 18px; }
 .section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
 .section h3 { font-size: 14px; margin: 0 0 12px; color: #333; }
 .section-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
@@ -2244,6 +2401,8 @@ const demoPocTemplate: PocEvaluationTemplate = {
 .chart { display: block; }
 
 @media (max-width: 980px) {
+  .report-pro-hero,
+  .report-hero-metrics,
   .kpi-drilldown-layout,
   .kpi-detail-metrics,
   .drilldown-layout,

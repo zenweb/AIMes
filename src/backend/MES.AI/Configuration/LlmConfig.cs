@@ -7,6 +7,9 @@ public class LlmConfig
     [Required(ErrorMessage = "LLM Provider is required (AzureOpenAI, OpenAI, Ollama)")]
     public string Provider { get; set; } = "AzureOpenAI";
 
+    [Range(1, 32)]
+    public int MaxConcurrency { get; set; } = 2;
+
     [Required]
     public AzureOpenAIConfig AzureOpenAI { get; set; } = new();
 

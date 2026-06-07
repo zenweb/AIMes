@@ -95,10 +95,21 @@ export function readRiskSlaReviewRecord(): RiskSlaReviewRecord | null {
     const raw = window.localStorage.getItem(RISK_SLA_REVIEW_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return isRiskSlaReviewRecord(parsed) ? parsed : null
+    if (isRiskSlaReviewRecord(parsed)) return parsed
+    window.localStorage.removeItem(RISK_SLA_REVIEW_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(RISK_SLA_REVIEW_KEY)
     return null
+  }
+}
+
+export async function readRiskSlaReviewRecordBackendFirst(): Promise<RiskSlaReviewRecord | null> {
+  try {
+    const { getLatestRiskSlaReview } = await import('../api/riskEvidence')
+    return await getLatestRiskSlaReview() ?? readRiskSlaReviewRecord()
+  } catch {
+    return readRiskSlaReviewRecord()
   }
 }
 
@@ -193,6 +204,9 @@ export function writeRiskSlaReviewRecord(input: WriteRiskSlaReviewInput): RiskSl
   if (canUseStorage()) {
     window.localStorage.setItem(RISK_SLA_REVIEW_KEY, JSON.stringify(record))
   }
+  void import('../api/riskEvidence')
+    .then(({ upsertRiskSlaReview }) => upsertRiskSlaReview(record))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: record.id,
@@ -238,6 +252,9 @@ export function closeRiskSlaReviewRecord(actor = '生产经理'): RiskSlaReviewR
   }
 
   window.localStorage.setItem(RISK_SLA_REVIEW_KEY, JSON.stringify(record))
+  void import('../api/riskEvidence')
+    .then(({ upsertRiskSlaReview }) => upsertRiskSlaReview(record))
+    .catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: '风险 SLA 复核',

@@ -1,5 +1,6 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
 import { readQualityExperimentExpansionGatePolicy, type QualityExperimentExpansionGatePolicy } from './agent-config-approval-sync'
+import { queryQualityKnowledgeEvidence, upsertQualityKnowledgeEvidence } from '../api/qualityKnowledgeEvidence'
 
 const STORAGE_KEY = 'aimes_quality_knowledge_samples'
 const REUSE_DRAFT_STORAGE_KEY = 'aimes_quality_knowledge_reuse_drafts'
@@ -406,6 +407,56 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function syncQualityKnowledgeEvidence<T extends { id: string }>(
+  evidenceType: string,
+  title: string,
+  status: string,
+  record: T,
+  auditId: string,
+  traceId: string,
+  createdAt: string
+) {
+  void upsertQualityKnowledgeEvidence({
+    id: record.id,
+    evidenceType,
+    title,
+    auditId,
+    traceId,
+    status,
+    createdAt,
+    payload: record,
+  }).catch(() => undefined)
+}
+
+async function readQualityKnowledgeEvidencePayloads<T>(
+  evidenceType: string,
+  isRecord: (item: Partial<T> | null | undefined) => item is T,
+  take = 20
+): Promise<T[]> {
+  const records = await queryQualityKnowledgeEvidence<T>(evidenceType, take)
+  if (!Array.isArray(records)) {
+    throw new Error('后端返回非数组审计载荷')
+  }
+  return records.map(record => record.payload).filter(isRecord)
+}
+
+async function readQualityKnowledgeRecordsBackendFirst<T>(
+  evidenceType: string,
+  isRecord: (item: Partial<T> | null | undefined) => item is T,
+  readLocalRecords: () => T[],
+  take = 20,
+  normalize: (item: T) => T = item => item
+): Promise<T[]> {
+  try {
+    const records = await readQualityKnowledgeEvidencePayloads(evidenceType, isRecord, take)
+    return records.length > 0 ? records.map(normalize) : readLocalRecords()
+  } catch (error: unknown) {
+    const localRecords = readLocalRecords()
+    if (localRecords.length > 0) return localRecords
+    throw error
+  }
+}
+
 function isQualityKnowledgeSampleRecord(
   item: Partial<QualityKnowledgeSampleRecord> | null | undefined
 ): item is QualityKnowledgeSampleRecord {
@@ -426,8 +477,11 @@ function isQualityKnowledgeSampleRecord(
     && typeof item.createdAt === 'string'
     && typeof item.summary === 'string'
     && Array.isArray(item.capaRecommendations)
+    && hasNonEmptyTextItems(item.capaRecommendations)
     && Array.isArray(item.reuseTargets)
+    && hasNonEmptyTextItems(item.reuseTargets)
     && Array.isArray(item.evidenceTraceIds)
+    && hasNonEmptyTextItems(item.evidenceTraceIds)
 }
 
 function isQualityKnowledgeReuseDraftRecord(
@@ -478,7 +532,9 @@ function isQualityKnowledgeReuseClosureRecord(
     && typeof item.effectScoreAfter === 'number'
     && typeof item.effectReview === 'string'
     && Array.isArray(item.feedbackActions)
+    && hasNonEmptyTextItems(item.feedbackActions)
     && Array.isArray(item.feedbackMetrics)
+    && hasMetricItems(item.feedbackMetrics)
 }
 
 function isQualityKnowledgeReviewQueueRecord(
@@ -548,7 +604,24 @@ function isQualityKnowledgeRecommendationFeedbackRecord(
     && typeof item.nextTrainingSetVersion === 'string'
     && typeof item.nextTrainingTraceId === 'string'
     && Array.isArray(item.feedbackActions)
+    && hasNonEmptyTextItems(item.feedbackActions)
     && Array.isArray(item.feedbackMetrics)
+    && hasMetricItems(item.feedbackMetrics)
+}
+
+function hasNonEmptyTextItems(items: unknown[]): items is string[] {
+  return items.length > 0 && items.every(item => typeof item === 'string' && item.trim().length > 0)
+}
+
+function hasMetricItems(items: unknown[]): items is Array<{ label: string, value: string }> {
+  return items.length > 0 && items.every(item =>
+    !!item
+    && typeof item === 'object'
+    && typeof (item as { label?: unknown }).label === 'string'
+    && (item as { label: string }).label.trim().length > 0
+    && typeof (item as { value?: unknown }).value === 'string'
+    && (item as { value: string }).value.trim().length > 0
+  )
 }
 
 function isQualityKnowledgeGrayReleaseDecisionRecord(
@@ -591,99 +664,118 @@ function qualityGrayReviewIssueEvidenceStatus(record: QualityKnowledgeGrayReleas
   return { status: 'active' as const, statusLabel: '待复核' }
 }
 
-export function readQualityKnowledgeSamples(): QualityKnowledgeSampleRecord[] {
-  if (!canUseStorage()) return []
+function readQualityKnowledgeRecords<T>(
+  storageKey: string,
+  isRecord: (item: Partial<T> | null | undefined) => item is T,
+  normalize: (item: T) => T = item => item
+): T[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeSampleRecord) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(storageKey)
+      return []
+    }
+
+    const validRecords = parsed.filter(isRecord).map(normalize)
+    const serializedRecords = JSON.stringify(validRecords)
+    if (validRecords.length === parsed.length) {
+      if (serializedRecords !== JSON.stringify(parsed)) {
+        window.localStorage.setItem(storageKey, serializedRecords)
+      }
+      return validRecords
+    }
+
+    if (validRecords.length > 0) {
+      window.localStorage.setItem(storageKey, serializedRecords)
+      return validRecords
+    }
+
+    window.localStorage.removeItem(storageKey)
+    return []
   } catch {
-    window.localStorage.removeItem(STORAGE_KEY)
+    window.localStorage.removeItem(storageKey)
     return []
   }
+}
+
+export function readQualityKnowledgeSamples(): QualityKnowledgeSampleRecord[] {
+  if (!canUseStorage()) return []
+  return readQualityKnowledgeRecords(STORAGE_KEY, isQualityKnowledgeSampleRecord)
+}
+
+export async function readQualityKnowledgeSamplesBackendFirst(): Promise<QualityKnowledgeSampleRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst('QualityKnowledgeSample', isQualityKnowledgeSampleRecord, readQualityKnowledgeSamples, 12)
 }
 
 export function readQualityKnowledgeReuseDrafts(): QualityKnowledgeReuseDraftRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(REUSE_DRAFT_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeReuseDraftRecord) : []
-  } catch {
-    window.localStorage.removeItem(REUSE_DRAFT_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(REUSE_DRAFT_STORAGE_KEY, isQualityKnowledgeReuseDraftRecord)
+}
+
+export async function readQualityKnowledgeReuseDraftsBackendFirst(): Promise<QualityKnowledgeReuseDraftRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst('QualityKnowledgeReuseDraft', isQualityKnowledgeReuseDraftRecord, readQualityKnowledgeReuseDrafts, 12)
 }
 
 export function readQualityKnowledgeReuseClosures(): QualityKnowledgeReuseClosureRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(REUSE_CLOSURE_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeReuseClosureRecord) : []
-  } catch {
-    window.localStorage.removeItem(REUSE_CLOSURE_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(REUSE_CLOSURE_STORAGE_KEY, isQualityKnowledgeReuseClosureRecord)
+}
+
+export async function readQualityKnowledgeReuseClosuresBackendFirst(): Promise<QualityKnowledgeReuseClosureRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst('QualityKnowledgeReuseClosure', isQualityKnowledgeReuseClosureRecord, readQualityKnowledgeReuseClosures, 12)
 }
 
 export function readQualityKnowledgeReviewQueueRecords(): QualityKnowledgeReviewQueueRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(REVIEW_QUEUE_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeReviewQueueRecord) : []
-  } catch {
-    window.localStorage.removeItem(REVIEW_QUEUE_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(REVIEW_QUEUE_STORAGE_KEY, isQualityKnowledgeReviewQueueRecord)
+}
+
+export async function readQualityKnowledgeReviewQueueRecordsBackendFirst(): Promise<QualityKnowledgeReviewQueueRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst('QualityKnowledgeReviewQueue', isQualityKnowledgeReviewQueueRecord, readQualityKnowledgeReviewQueueRecords, 12)
 }
 
 export function readQualityKnowledgeRetrainingVersionRecords(): QualityKnowledgeRetrainingVersionRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(RETRAINING_VERSION_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeRetrainingVersionRecord) : []
-  } catch {
-    window.localStorage.removeItem(RETRAINING_VERSION_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(RETRAINING_VERSION_STORAGE_KEY, isQualityKnowledgeRetrainingVersionRecord)
+}
+
+export async function readQualityKnowledgeRetrainingVersionRecordsBackendFirst(): Promise<QualityKnowledgeRetrainingVersionRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst('QualityKnowledgeRetrainingVersion', isQualityKnowledgeRetrainingVersionRecord, readQualityKnowledgeRetrainingVersionRecords, 12)
 }
 
 export function readQualityKnowledgeRecommendationFeedbackRecords(): QualityKnowledgeRecommendationFeedbackRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(RECOMMENDATION_FEEDBACK_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isQualityKnowledgeRecommendationFeedbackRecord) : []
-  } catch {
-    window.localStorage.removeItem(RECOMMENDATION_FEEDBACK_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(RECOMMENDATION_FEEDBACK_STORAGE_KEY, isQualityKnowledgeRecommendationFeedbackRecord)
+}
+
+export async function readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst(): Promise<QualityKnowledgeRecommendationFeedbackRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst(
+    'QualityKnowledgeRecommendationFeedback',
+    isQualityKnowledgeRecommendationFeedbackRecord,
+    readQualityKnowledgeRecommendationFeedbackRecords,
+    12
+  )
 }
 
 export function readQualityKnowledgeGrayReleaseDecisionRecords(): QualityKnowledgeGrayReleaseDecisionRecord[] {
   if (!canUseStorage()) return []
-  try {
-    const raw = window.localStorage.getItem(GRAY_RELEASE_DECISION_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed)
-      ? parsed
-          .filter(isQualityKnowledgeGrayReleaseDecisionRecord)
-          .map(withQualityKnowledgeGrayReleaseDecisionDefaults)
-      : []
-  } catch {
-    window.localStorage.removeItem(GRAY_RELEASE_DECISION_STORAGE_KEY)
-    return []
-  }
+  return readQualityKnowledgeRecords(
+    GRAY_RELEASE_DECISION_STORAGE_KEY,
+    isQualityKnowledgeGrayReleaseDecisionRecord,
+    withQualityKnowledgeGrayReleaseDecisionDefaults
+  )
+}
+
+export async function readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst(): Promise<QualityKnowledgeGrayReleaseDecisionRecord[]> {
+  return readQualityKnowledgeRecordsBackendFirst(
+    'QualityKnowledgeGrayReleaseDecision',
+    isQualityKnowledgeGrayReleaseDecisionRecord,
+    readQualityKnowledgeGrayReleaseDecisionRecords,
+    12,
+    withQualityKnowledgeGrayReleaseDecisionDefaults
+  )
 }
 
 export function readLatestQualityKnowledgeSample() {
@@ -981,6 +1073,7 @@ export function writeQualityKnowledgeSample(record = createBarcodeQualityKnowled
     ...readQualityKnowledgeSamples().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeSample', `${record.workOrderId} ${record.operationCode} 质量知识样本`, 'closed', record, record.auditId, record.traceId, record.createdAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-knowledge-${record.id}`,
     stage: '质量知识',
@@ -1046,6 +1139,7 @@ export function writeQualityKnowledgeReuseDraft(record: QualityKnowledgeReuseDra
     ...readQualityKnowledgeReuseDrafts().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(REUSE_DRAFT_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeReuseDraft', `${record.targetWorkOrderId} ${record.targetOperationCode} 复用草案`, 'ready', record, record.auditId, record.traceId, record.createdAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-reuse-draft-${record.id}`,
     stage: '质量处置草案',
@@ -1106,6 +1200,7 @@ export function writeQualityKnowledgeReuseClosure(record: QualityKnowledgeReuseC
     ...readQualityKnowledgeReuseClosures().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(REUSE_CLOSURE_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeReuseClosure', record.formalCapaTitle, record.status, record, record.auditId, record.traceId, record.verifiedAt ?? record.approvedAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-reuse-formal-capa-${record.id}`,
     stage: '正式CAPA',
@@ -1194,6 +1289,7 @@ export function writeQualityKnowledgeRecommendationFeedbackRecord(
     ...readQualityKnowledgeRecommendationFeedbackRecords().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(RECOMMENDATION_FEEDBACK_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeRecommendationFeedback', `${record.targetWorkOrderId} ${record.operationCode} 推荐反馈`, record.decision, record, record.auditId, record.traceId, record.decidedAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-recommendation-feedback-${record.id}`,
     stage: '推荐采纳反馈',
@@ -1412,6 +1508,7 @@ export function writeQualityKnowledgeReviewQueueRecord(
     ...readQualityKnowledgeReviewQueueRecords().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(REVIEW_QUEUE_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeReviewQueue', record.title, record.status, record, record.decisionAuditId ?? record.auditId, record.decisionTraceId ?? record.traceId, record.closedAt ?? record.createdAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-knowledge-review-${record.id}`,
     stage: '低分复核',
@@ -1495,6 +1592,7 @@ export function writeQualityKnowledgeRetrainingVersionRecord(
     ...readQualityKnowledgeRetrainingVersionRecords().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(RETRAINING_VERSION_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeRetrainingVersion', `${record.trainingSetVersion} ${record.trainingSetName}`, record.status, record, record.approvalAuditId, record.approvalTraceId, record.approvedAt)
   const approvalEvidenceStatus = record.status === 'rolled_back'
     ? { status: 'closed' as const, statusLabel: '审批保留 / 已回滚' }
     : record.status === 'validation_failed'
@@ -2413,6 +2511,7 @@ function writeQualityKnowledgeGrayReleaseDecisionRecord(record: QualityKnowledge
     ...readQualityKnowledgeGrayReleaseDecisionRecords().filter(item => item.id !== record.id),
   ].slice(0, 12)
   window.localStorage.setItem(GRAY_RELEASE_DECISION_STORAGE_KEY, JSON.stringify(next))
+  syncQualityKnowledgeEvidence('QualityKnowledgeGrayReleaseDecision', `${record.trainingSetVersion} ${record.decisionLabel}`, record.decision, record, record.auditId, record.traceId, record.decidedAt)
   upsertOtdEvidenceChainRecord({
     id: `quality-gray-release-decision-${record.id}`,
     stage: record.decision === 'expanded' ? '灰度扩大' : '灰度回滚',

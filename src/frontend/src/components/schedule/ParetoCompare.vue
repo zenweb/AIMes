@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
     <div v-if="visible" class="compare-overlay" @click.self="$emit('close')">
-      <div class="compare-container">
+      <div class="compare-container" role="dialog" aria-modal="true" aria-labelledby="pareto-compare-title">
         <div class="compare-header">
-          <h2>多目标方案对比</h2>
-          <button class="close-btn" @click="$emit('close')">✕</button>
+          <h2 id="pareto-compare-title">多目标方案对比</h2>
+          <button class="close-btn" aria-label="关闭多目标方案对比" @click="$emit('close')">✕</button>
         </div>
 
         <div v-if="loading" class="loading-section">
@@ -19,7 +19,7 @@
 
         <template v-else-if="items.length > 0">
           <!-- 推荐方案卡片 -->
-          <div v-if="bestOverall" class="recommend-card">
+          <div v-if="bestOverall" class="recommend-card" role="status" aria-live="polite">
             <div class="recommend-icon">★</div>
             <div class="recommend-content">
               <span class="recommend-label">推荐方案：</span>
@@ -189,9 +189,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, watch, defineAsyncComponent } from 'vue'
 import * as api from '../../api/scheduling'
 import { getBottleneckEquipmentIds } from '../../api/equipment'
+import { logUnlessOfflineDemo } from '../../utils/offline-demo-mode'
 
 const GanttChart = defineAsyncComponent(() => import('../gantt/GanttChart.vue'))
 import { planToGanttData } from '../../utils/gantt-mapper'
@@ -214,17 +215,12 @@ interface ObjectiveCompareItem {
   totalWorkOrders: number
 }
 
-interface BatchOptimizeResult {
-  items: ObjectiveCompareItem[]
-  bestOverallObjective?: string
-}
-
 const props = defineProps<{
   visible: boolean
   workshopId: string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   close: []
   apply: [objective: string]
 }>()
@@ -552,8 +548,8 @@ async function loadData() {
     for (const item of result.items) {
       ganttDataByObjective[item.objective] = planToGanttData(item.plan, equipment.items, bottleneckSet)
     }
-  } catch (e: any) {
-    console.error('批量优化对比失败，使用演示数据:', e)
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('error', '批量优化对比失败，使用演示数据:', e)
     loadDemoData()
   } finally {
     loading.value = false

@@ -4,9 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants Condition="'$(ExcludeAgentDecisionModels)' == 'true'">$(DefineConstants);EXCLUDE_AGENT_DECISION_MODELS</DefineConstants>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(ExcludeAgentDecisionModels)' == 'true'">
+    <Compile Remove="Data\Configurations\Agent*.cs" />
+    <Compile Remove="Repositories\AgentDecisionRepository.cs" />
+  </ItemGroup>
+
   <ItemGroup>
+    <ProjectReference Include="..\MES.Application\MES.Application.csproj" />
     <ProjectReference Include="..\MES.Domain\MES.Domain.csproj" />
   </ItemGroup>
 
@@ -27,6 +34,12 @@
     <PackageReference Include="RabbitMQ.Client" />
   </ItemGroup>
 
+  <!-- Export rendering -->
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="QuestPDF" />
+  </ItemGroup>
+
   <!-- MediatR -->
   <ItemGroup>
     <PackageReference Include="MediatR" />
@@ -35,6 +48,7 @@
   <!-- IoT Hub -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Devices" />
+    <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
 
   <!-- Configuration -->

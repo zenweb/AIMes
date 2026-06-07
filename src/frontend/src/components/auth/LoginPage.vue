@@ -7,33 +7,52 @@
         <p class="login-subtitle">请登录以继续</p>
       </div>
 
+      <div v-if="passwordChangedNotice" class="login-success" role="status" aria-live="polite">
+        密码已更新，请使用新密码重新登录
+      </div>
+
       <form class="login-form" @submit.prevent="handleLogin">
         <div class="form-group">
           <label for="username">用户名</label>
           <input
             id="username"
+            ref="usernameInput"
             v-model="username"
             type="text"
             :placeholder="usernamePlaceholder"
             :disabled="loading"
             autocomplete="username"
+            @input="clearError"
+            :aria-invalid="usernameFieldInvalid ? 'true' : undefined"
+            :aria-describedby="usernameFieldInvalid ? 'login-error' : undefined"
           />
         </div>
         <div class="form-group">
           <label for="password">密码</label>
           <input
             id="password"
+            ref="passwordInput"
             v-model="password"
             type="password"
             :placeholder="passwordPlaceholder"
             :disabled="loading"
             autocomplete="current-password"
+            @input="clearError"
+            :aria-invalid="passwordFieldInvalid ? 'true' : undefined"
+            :aria-describedby="passwordFieldInvalid ? 'login-error' : undefined"
           />
         </div>
 
-        <div v-if="error" class="login-error">{{ error }}</div>
+        <div v-if="error" id="login-error" class="login-error" role="alert" aria-live="assertive">
+          {{ error }}
+        </div>
 
-        <button type="submit" class="login-btn" :disabled="loading || !username || !password">
+        <button
+          type="submit"
+          class="login-btn"
+          :disabled="loading || !canSubmit"
+          :aria-busy="loading ? 'true' : undefined"
+        >
           {{ loading ? '登录中...' : '登 录' }}
         </button>
       </form>
@@ -41,20 +60,21 @@
       <div v-if="showDemoHints" class="login-hints">
         <p class="hint-title">演示账号 <span class="hint-badge">仅评估环境显示</span></p>
         <div class="hint-row"><span>admin</span><span>admin123</span><span>管理员</span></div>
-        <div class="hint-row"><span>operator</span><span>123456</span><span>操作员</span></div>
-        <div class="hint-row"><span>engineer</span><span>123456</span><span>工程师</span></div>
-        <div class="hint-row"><span>lead</span><span>123456</span><span>组长</span></div>
+        <div class="hint-row"><span>operator</span><span>operator-demo-2026</span><span>操作员</span></div>
+        <div class="hint-row"><span>engineer</span><span>engineer-demo-2026</span><span>工程师</span></div>
+        <div class="hint-row"><span>lead</span><span>lead-demo-2026</span><span>组长</span></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const { login } = useAuth()
 
 // 演示账号 hint：只在 dev 模式或显式启用 VITE_SHOW_DEMO_HINTS 时显示。
@@ -63,23 +83,62 @@ const showDemoHints = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_HINT
 
 // placeholder 同样区分演示/生产。生产环境不在 input placeholder 里泄漏凭证示例。
 const usernamePlaceholder = showDemoHints ? 'admin / operator / engineer / lead' : '请输入用户名'
-const passwordPlaceholder = showDemoHints ? 'admin123 / 123456' : '请输入密码'
+const passwordPlaceholder = showDemoHints ? '见下方演示账号' : '请输入密码'
 
 const username = ref('')
 const password = ref('')
+const usernameInput = ref<HTMLInputElement | null>(null)
+const passwordInput = ref<HTMLInputElement | null>(null)
 const loading = ref(false)
 const error = ref('')
+const usernameFieldInvalid = ref(false)
+const passwordFieldInvalid = ref(false)
+const canSubmit = computed(() => Boolean(username.value.trim() && password.value.trim()))
+const passwordChangedNotice = computed(() => route.query.passwordChanged === '1')
+
+function clearError() {
+  if (error.value) {
+    error.value = ''
+    usernameFieldInvalid.value = false
+    passwordFieldInvalid.value = false
+  }
+}
 
 async function handleLogin() {
   error.value = ''
+  usernameFieldInvalid.value = false
+  passwordFieldInvalid.value = false
+  let focusPasswordAfterLogin = false
+  const trimmedUsername = username.value.trim()
+  const trimmedPassword = password.value.trim()
+  if (!trimmedUsername || !trimmedPassword) {
+    error.value = '请输入用户名和密码'
+    usernameFieldInvalid.value = !trimmedUsername
+    passwordFieldInvalid.value = !trimmedPassword
+    await nextTick()
+    if (!trimmedUsername) {
+      usernameInput.value?.focus()
+    } else {
+      passwordInput.value?.focus()
+    }
+    return
+  }
   loading.value = true
   try {
-    await login(username.value, password.value)
-    router.push('/dashboard')
+    const user = await login(trimmedUsername, trimmedPassword)
+    await router.push(user?.mustChangePassword ? { path: '/change-password' } : '/dashboard')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '登录失败'
+    password.value = ''
+    usernameFieldInvalid.value = true
+    passwordFieldInvalid.value = true
+    focusPasswordAfterLogin = true
   } finally {
     loading.value = false
+  }
+  if (focusPasswordAfterLogin) {
+    await nextTick()
+    passwordInput.value?.focus()
   }
 }
 </script>
@@ -127,6 +186,15 @@ async function handleLogin() {
   margin: 0;
   font-size: 14px;
   color: #999;
+}
+
+.login-success {
+  margin: 0 24px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6ffed;
+  color: #52c41a;
+  font-size: 13px;
 }
 
 .login-form {

@@ -25,12 +25,14 @@ public class MaterialRepository : IMaterialRepository
     public async Task<Material?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.Materials
+            .AsNoTracking()
             .FirstOrDefaultAsync(m => m.Id == id, ct);
     }
 
     public async Task<Material?> GetByCodeAsync(string materialCode, CancellationToken ct = default)
     {
         return await _context.Materials
+            .AsNoTracking()
             .FirstOrDefaultAsync(m => m.MaterialCode == materialCode, ct);
     }
 
@@ -41,11 +43,10 @@ public class MaterialRepository : IMaterialRepository
         return material;
     }
 
-    public async Task<Material> UpdateAsync(Material material, CancellationToken ct = default)
+    public Task<Material> UpdateAsync(Material material, CancellationToken ct = default)
     {
         _context.Materials.Update(material);
-        await _context.SaveChangesAsync(ct);
-        return material;
+        return Task.FromResult(material);
     }
 
     public async Task DeleteAsync(string id, CancellationToken ct = default)

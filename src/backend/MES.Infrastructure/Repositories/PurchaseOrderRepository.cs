@@ -22,23 +22,39 @@ public class PurchaseOrderRepository : IPurchaseOrderRepository
             .ToListAsync(ct);
     }
 
+    public async Task<List<PurchaseOrder>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        return await _context.PurchaseOrders.AsNoTracking()
+            .Include(o => o.Items)
+            .OrderByDescending(o => o.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        return await _context.PurchaseOrders.CountAsync(ct);
+    }
+
     public async Task<PurchaseOrder?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.PurchaseOrders
+            .AsNoTracking()
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.Id == id, ct);
     }
 
-    public async Task AddAsync(PurchaseOrder order, CancellationToken ct = default)
+    public Task AddAsync(PurchaseOrder order, CancellationToken ct = default)
     {
         _context.PurchaseOrders.Add(order);
-        await _context.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 
-    public async Task UpdateAsync(PurchaseOrder order, CancellationToken ct = default)
+    public Task UpdateAsync(PurchaseOrder order, CancellationToken ct = default)
     {
         _context.PurchaseOrders.Update(order);
-        await _context.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 
     public async Task<bool> ExistsAsync(string id, CancellationToken ct = default)

@@ -3,6 +3,7 @@ using MES.Api.Filters;
 using MES.Api.Hubs;
 using MES.Application.DTOs;
 using MES.Application.Services;
+using MES.Domain.Interfaces.Services;
 
 namespace MES.Api.Endpoints;
 
@@ -74,31 +75,37 @@ public static class AnomalyEndpoints
         IAnomalyAppService anomalyService,
         IAuditLogAppService auditLog,
         INotificationService notification,
+        IUnitOfWork unitOfWork,
         CancellationToken ct)
     {
-        var anomaly = await anomalyService.CreateAnomalyAsync(request, ct);
+        var anomaly = await unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            var created = await anomalyService.CreateAnomalyAsync(request, innerCt);
 
-        await auditLog.WriteAuditLogAsync(
-            userId: GetUserId(httpContext),
-            action: "CREATE",
-            resource: "Anomaly",
-            resourceId: anomaly.Id,
-            oldValues: null,
-            newValues: JsonSerializer.Serialize(new
-            {
+            await auditLog.WriteAuditLogAsync(
+                userId: GetUserId(httpContext),
+                action: "CREATE",
+                resource: "Anomaly",
+                resourceId: created.Id,
+                oldValues: null,
+                newValues: JsonSerializer.Serialize(new
+                {
+                    request.WorkOrderNumber,
+                    request.AnomalyType,
+                    request.Severity,
+                    request.Title
+                }),
+                ipAddress: GetIpAddress(httpContext),
+                userAgent: GetUserAgent(httpContext),
+                ct: innerCt);
+
+            await notification.NotifyAnomaly(
                 request.WorkOrderNumber,
-                request.AnomalyType,
-                request.Severity,
-                request.Title
-            }),
-            ipAddress: GetIpAddress(httpContext),
-            userAgent: GetUserAgent(httpContext),
-            ct: ct);
+                $"[{request.Severity}] {request.Title}",
+                request.Severity);
 
-        await notification.NotifyAnomaly(
-            request.WorkOrderNumber,
-            $"[{request.Severity}] {request.Title}",
-            request.Severity);
+            return created;
+        }, ct);
 
         return TypedResults.Created($"/api/v1/anomaly/{anomaly.Id}", anomaly);
     }

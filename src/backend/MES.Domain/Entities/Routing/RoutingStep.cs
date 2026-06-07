@@ -29,4 +29,17 @@ public class RoutingStep : Entity
     {
         StepSequence = sequence;
     }
+
+    public void ConfigureStandards(double standardSetupMinutes, double standardRunMinutesPerUnit, string equipmentType, bool inspectionRequired)
+    {
+        StandardSetupMinutes = standardSetupMinutes;
+        StandardRunMinutesPerUnit = standardRunMinutesPerUnit;
+        EquipmentType = equipmentType;
+        InspectionRequired = inspectionRequired;
+    }
+
+    public void AddParameter(StepParameter parameter)
+    {
+        Parameters.Add(parameter);
+    }
 }

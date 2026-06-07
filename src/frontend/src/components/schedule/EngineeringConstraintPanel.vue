@@ -40,7 +40,7 @@
       <p>{{ trace.detail }}</p>
     </div>
 
-    <div class="sync-note">
+    <div class="sync-note" :role="syncRole" :aria-live="syncAriaLive">
       <strong>{{ syncTitle }}</strong>
       <span>{{ syncMessage }}</span>
     </div>
@@ -49,6 +49,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { errorMessage } from '../../utils/error-message'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 
 export type EngineeringConstraintKind = 'bom' | 'route' | 'labor'
@@ -77,6 +78,8 @@ const props = defineProps<{
 
 const syncTitle = ref('等待同步')
 const syncMessage = ref('同步后，BOM、工艺路线、质量门和技能资质约束会进入 OTD 复盘证据链。')
+const syncRole = ref<'status' | 'alert'>('status')
+const syncAriaLive = ref<'polite' | 'assertive'>('polite')
 
 function traceIdFor(constraint: EngineeringConstraintItem) {
   return `TRACE-ENG-${constraint.id.replace(/[^a-z0-9]+/gi, '-').toUpperCase()}`
@@ -90,22 +93,31 @@ function statusLabelFor(constraint: EngineeringConstraintItem) {
 
 function syncEngineeringEvidence() {
   const createdAt = new Date().toISOString()
-  props.constraints.forEach((constraint) => {
-    upsertOtdEvidenceChainRecord({
-      id: `engineering-constraint-${constraint.id}`,
-      stage: '工程约束',
-      title: `${constraint.kindLabel}：${constraint.title}`,
-      summary: `${constraint.explanation} 影响：${constraint.affectedOrders}；Agent 用途：${constraint.agentUsage}。`,
-      object: constraint.sourceCode,
-      source: 'AI 排产 / 工程数据约束',
-      traceId: traceIdFor(constraint),
-      status: constraint.kind === 'labor' ? 'active' : 'ready',
-      statusLabel: statusLabelFor(constraint),
-      createdAt,
+  try {
+    props.constraints.forEach((constraint) => {
+      upsertOtdEvidenceChainRecord({
+        id: `engineering-constraint-${constraint.id}`,
+        stage: '工程约束',
+        title: `${constraint.kindLabel}：${constraint.title}`,
+        summary: `${constraint.explanation} 影响：${constraint.affectedOrders}；Agent 用途：${constraint.agentUsage}。`,
+        object: constraint.sourceCode,
+        source: 'AI 排产 / 工程数据约束',
+        traceId: traceIdFor(constraint),
+        status: constraint.kind === 'labor' ? 'active' : 'ready',
+        statusLabel: statusLabelFor(constraint),
+        createdAt,
+      })
     })
-  })
-  syncTitle.value = '工程约束证据已同步 OTD 复盘'
-  syncMessage.value = `${props.constraints.length} 条工程约束已写入统一证据链，可在报表中心、Agent 治理和审计回放核对。`
+    syncRole.value = 'status'
+    syncAriaLive.value = 'polite'
+    syncTitle.value = '工程约束证据已同步 OTD 复盘'
+    syncMessage.value = `${props.constraints.length} 条工程约束已写入统一证据链，可在报表中心、Agent 治理和审计回放核对。`
+  } catch (err: unknown) {
+    syncRole.value = 'alert'
+    syncAriaLive.value = 'assertive'
+    syncTitle.value = '工程约束证据同步失败'
+    syncMessage.value = `当前页面仍保留工程约束解释，OTD 复盘证据未完整写入：${errorMessage(err, '请稍后重试')}`
+  }
 }
 </script>
 

@@ -6,6 +6,8 @@ namespace MES.Domain.Interfaces.Repositories;
 public interface IBomRepository
 {
     Task<List<BillOfMaterial>> GetAllAsync(CancellationToken ct = default);
+    Task<List<BillOfMaterial>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
+    Task<int> CountAsync(CancellationToken ct = default);
     Task<BillOfMaterial?> GetByIdAsync(string id, CancellationToken ct = default);
     Task<List<BillOfMaterial>> GetByProductCodeAsync(ProductCode productCode, CancellationToken ct = default);
     Task<BillOfMaterial?> GetByBomCodeAsync(string bomCode, CancellationToken ct = default);

@@ -17,7 +17,7 @@ export async function getInventoryByCode(materialCode: string): Promise<Inventor
 }
 
 export async function getStockTransactions(materialCode?: string, page = 1, pageSize = 20): Promise<StockTransaction[]> {
-  const params: any = { page, pageSize }
+  const params: { page: number; pageSize: number; materialCode?: string } = { page, pageSize }
   if (materialCode) params.materialCode = materialCode
   const { data } = await http.get<StockTransaction[]>('/inventory/transactions', { params })
   return data

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading;
 using FluentAssertions;
 using MES.AI.Core.Models;
@@ -5,6 +6,7 @@ using MES.AI.Core.Scheduling;
 using MES.Domain.Entities.Scheduling;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace MES.Tests.Unit.AI;
 
@@ -12,10 +14,12 @@ public class SchedulingRuleEngineTests
 {
     private static readonly DateTime Now = new(2026, 5, 12, 8, 0, 0, DateTimeKind.Utc);
     private readonly SchedulingRuleEngine _engine;
+    private readonly ITestOutputHelper _output;
     private readonly ConstraintValidator _validator;
 
-    public SchedulingRuleEngineTests()
+    public SchedulingRuleEngineTests(ITestOutputHelper output)
     {
+        _output = output;
         _validator = new ConstraintValidator();
         _engine = new SchedulingRuleEngine(_validator, NullLogger<SchedulingRuleEngine>.Instance);
     }
@@ -540,6 +544,48 @@ public class SchedulingRuleEngineTests
         await FluentActions.Awaiting(() =>
             _engine.GenerateInitialScheduleAsync(request, context, ct: cts.Token))
             .Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GenerateInitialSchedule_OneHundredWorkOrders_CompletesUnderGrayReleaseGate()
+    {
+        var orders = Enumerable.Range(1, 100)
+            .Select(i => new WorkOrderInfo
+            {
+                Id = $"O{i:D3}",
+                OrderNumber = $"WO-PERF-{i:D3}",
+                ProductCode = $"PROD-{i % 6:D2}",
+                Quantity = 50 + i,
+                DueDate = Now.AddDays(1 + i % 14),
+                Priority = i % 10,
+                RouteCode = i % 4 == 0 ? "R-LONG" : "R-SHORT"
+            })
+            .ToList();
+        var request = CreateRequest(orders);
+        request.Deadlines = orders.ToDictionary(o => o.Id, o => o.DueDate);
+        var context = CreateContext();
+        context.Routings =
+        [
+            new("R-SHORT", "短工序", 3, ["OP-CNC"], 120),
+            new("R-LONG", "长工序", 6, ["OP-CNC", "OP-ASM"], 240)
+        ];
+
+        await _engine.GenerateInitialScheduleAsync(request, context, ct: CancellationToken.None);
+
+        var samples = new List<long>(3);
+        for (var i = 0; i < 3; i++)
+        {
+            var sw = Stopwatch.StartNew();
+            var result = await _engine.GenerateInitialScheduleAsync(request, context, ct: CancellationToken.None);
+            sw.Stop();
+
+            result.Assignments.Should().HaveCount(100, "灰度性能门必须覆盖完整 100 工单排产，而不是只验证查询接口");
+            samples.Add(sw.ElapsedMilliseconds);
+        }
+
+        var bestElapsed = samples.Min();
+        _output.WriteLine($"100 work order scheduling samples: {string.Join(", ", samples)}ms; best={bestElapsed}ms");
+        bestElapsed.Should().BeLessThan(3000, "Sprint 3 首次灰度门要求 100 工单排产在 3s 内完成");
     }
 
     #endregion

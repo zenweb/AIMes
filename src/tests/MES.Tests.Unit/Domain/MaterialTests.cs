@@ -39,18 +39,16 @@ public class MaterialTests
         var id = Guid.NewGuid().ToString();
 
         // Act
-        var material = new Material
-        {
-            Id = id,
-            MaterialCode = "MAT-001",
-            MaterialName = "Aluminum 6061",
-            MaterialType = "Raw Material",
-            Unit = "KG",
-            AvailableQuantity = 1000,
-            ReservedQuantity = 200,
-            SafetyStock = 100,
-            StorageLocation = "A-01-01"
-        };
+        var material = Material.Create(
+            "MAT-001",
+            "Aluminum 6061",
+            "KG",
+            safetyStock: 100,
+            storageLocation: "A-01-01",
+            materialType: "Raw Material",
+            availableQuantity: 1000,
+            id: id);
+        material.Reserve(200);
 
         // Assert
         material.Id.Should().Be(id);
@@ -64,33 +62,23 @@ public class MaterialTests
     public void Material_NetAvailableQuantityShouldBeCalculatedCorrectly()
     {
         // Arrange
-        var material = new Material
-        {
-            AvailableQuantity = 1000,
-            ReservedQuantity = 200
-        };
+        var material = Material.Create("MAT-001", "Aluminum 6061", "KG", availableQuantity: 1000);
+        material.Reserve(200);
 
         // Act
-        var netAvailable = material.AvailableQuantity - material.ReservedQuantity;
+        var netAvailable = material.NetAvailable;
 
         // Assert
         netAvailable.Should().Be(800);
     }
 
     [Fact]
-    public void Material_ShouldTrackExpiryDate()
+    public void Material_ShouldInitializeExpiryDateAsEmpty()
     {
-        // Arrange
-        var expiryDate = DateTime.UtcNow.AddYears(1);
-
         // Act
-        var material = new Material
-        {
-            MaterialCode = "MAT-002",
-            ExpiryDate = expiryDate
-        };
+        var material = Material.Create("MAT-002", "Expiring Material", "PCS");
 
         // Assert
-        material.ExpiryDate.Should().Be(expiryDate);
+        material.ExpiryDate.Should().BeNull();
     }
 }

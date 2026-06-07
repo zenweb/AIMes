@@ -1,5 +1,6 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
 import type { PocReviewSignoffRecord } from './poc-review-signoff-sync'
+import { getLatestPocRolloutPackage, upsertPocRolloutPackage } from '../api/pocEvidence'
 
 const STORAGE_KEY = 'aimes_poc_rollout_package'
 
@@ -34,6 +35,15 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isPocRolloutAction(action: Partial<PocRolloutAction> | null | undefined): action is PocRolloutAction {
+  return !!action
+    && typeof action.module === 'string'
+    && typeof action.owner === 'string'
+    && typeof action.action === 'string'
+    && typeof action.dueAt === 'string'
+    && typeof action.evidence === 'string'
+}
+
 function isPocRolloutPackageRecord(record: Partial<PocRolloutPackageRecord> | null | undefined): record is PocRolloutPackageRecord {
   return !!record
     && typeof record.id === 'string'
@@ -48,6 +58,7 @@ function isPocRolloutPackageRecord(record: Partial<PocRolloutPackageRecord> | nu
     && typeof record.owner === 'string'
     && Array.isArray(record.successCriteria)
     && Array.isArray(record.actions)
+    && record.actions.every(isPocRolloutAction)
     && typeof record.auditId === 'string'
     && typeof record.traceId === 'string'
     && typeof record.createdAt === 'string'
@@ -60,11 +71,18 @@ export function readPocRolloutPackageRecord(): PocRolloutPackageRecord | null {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return isPocRolloutPackageRecord(parsed) ? parsed : null
+    if (isPocRolloutPackageRecord(parsed)) return parsed
+    window.localStorage.removeItem(STORAGE_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return null
   }
+}
+
+export async function readPocRolloutPackageRecordBackendFirst(): Promise<PocRolloutPackageRecord | null> {
+  const record = await getLatestPocRolloutPackage()
+  return record ?? readPocRolloutPackageRecord()
 }
 
 export function writePocRolloutPackageRecord(signoff: PocReviewSignoffRecord) {
@@ -122,6 +140,7 @@ export function writePocRolloutPackageRecord(signoff: PocReviewSignoffRecord) {
     summary: `${signoff.targetCustomer} 已从 POC 签署进入试点上线准备，交付、接口、现场运行和治理审计责任动作已固化。`,
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record))
+  void upsertPocRolloutPackage(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: 'POC 上线交付包',

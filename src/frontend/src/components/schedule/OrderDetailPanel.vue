@@ -1,13 +1,19 @@
 <template>
-  <div class="detail-panel" :class="{ open: visible }">
+  <div
+    class="detail-panel"
+    :class="{ open: visible }"
+    role="dialog"
+    :aria-modal="visible ? 'true' : 'false'"
+    :aria-label="panelAriaLabel"
+  >
     <div class="panel-header">
       <h3>工单详情</h3>
-      <button class="close-btn" @click="$emit('close')">×</button>
+      <button class="close-btn" aria-label="关闭工单详情" @click="$emit('close')">×</button>
     </div>
 
-    <div v-if="loading" class="panel-body loading">加载中...</div>
+    <div v-if="loading" class="panel-body loading" role="status" aria-live="polite">加载中...</div>
 
-    <div v-else-if="error" class="panel-body error">{{ error }}</div>
+    <div v-else-if="error" class="panel-body error" role="alert" aria-live="assertive">{{ error }}</div>
 
     <div v-else-if="order" class="panel-body">
       <div class="detail-row">
@@ -90,7 +96,7 @@
       </section>
     </div>
 
-    <div v-else class="panel-body empty">
+    <div v-else class="panel-body empty" role="status" aria-live="polite">
       请点击甘特图上的工单查看详情
     </div>
   </div>
@@ -135,6 +141,13 @@ const statusText = computed(() => {
     scheduled: '已排产',
   }
   return map[props.order?.status ?? ''] ?? props.order?.status ?? ''
+})
+
+const panelAriaLabel = computed(() => {
+  if (props.order?.orderNumber) return `工单详情：${props.order.orderNumber}`
+  if (props.loading) return '工单详情：加载中'
+  if (props.error) return '工单详情：加载失败'
+  return '工单详情'
 })
 
 const explanation = computed<ScheduleTaskExplanation>(() => {

@@ -1,17 +1,28 @@
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
+import { runCommand } from '@nuxt/cli'
 
 const e2eBuildId = process.env.AIMES_E2E_BUILD_ID ?? process.pid.toString()
 const e2ePort = process.env.AIMES_E2E_PORT ?? await findAvailablePort(4173)
+const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' ? 'false' : 'true'
 
 const testEnv = {
   ...process.env,
   AIMES_E2E_PORT: e2ePort,
   VITE_SHOW_DEMO_HINTS: 'true',
+  VITE_OFFLINE_DEMO: e2eOfflineDemo,
   NUXT_BUILD_DIR: process.env.NUXT_BUILD_DIR ?? `.nuxt-e2e-${e2eBuildId}`,
   NITRO_OUTPUT_DIR: process.env.NITRO_OUTPUT_DIR ?? resolve(process.cwd(), `.output-e2e-${e2eBuildId}`),
 }
+
+Object.assign(process.env, {
+  AIMES_E2E_PORT: testEnv.AIMES_E2E_PORT,
+  VITE_SHOW_DEMO_HINTS: testEnv.VITE_SHOW_DEMO_HINTS,
+  VITE_OFFLINE_DEMO: testEnv.VITE_OFFLINE_DEMO,
+  NUXT_BUILD_DIR: testEnv.NUXT_BUILD_DIR,
+  NITRO_OUTPUT_DIR: testEnv.NITRO_OUTPUT_DIR,
+})
 
 function canListen(port) {
   return new Promise((resolve) => {
@@ -51,5 +62,14 @@ function run(command, args) {
   })
 }
 
-await run(process.execPath, ['./node_modules/nuxt/bin/nuxt.mjs', 'build'])
+// Windows EPERM 保护：构建前清理旧的临时目录
+if (process.platform === 'win32') {
+  const buildDir = testEnv.NUXT_BUILD_DIR ?? `.nuxt-e2e-${e2eBuildId}`
+  const outputDir = testEnv.NITRO_OUTPUT_DIR ?? resolve(process.cwd(), `.output-e2e-${e2eBuildId}`)
+  for (const dir of [buildDir, outputDir]) {
+    try { execSync(`powershell.exe -NoProfile -Command "Remove-Item '${dir}' -Recurse -Force -ErrorAction SilentlyContinue"`, { stdio: 'ignore' }) } catch { /* 忽略清理失败 */ }
+  }
+}
+
+await runCommand('build', [])
 await run(process.execPath, ['./node_modules/@playwright/test/cli.js', 'test', ...process.argv.slice(2)])

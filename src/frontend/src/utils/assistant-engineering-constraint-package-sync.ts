@@ -47,6 +47,16 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isAssistantEngineeringConstraintStep(
+  item: Partial<AssistantEngineeringConstraintStep> | null | undefined,
+): item is AssistantEngineeringConstraintStep {
+  return !!item
+    && typeof item.module === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.action === 'string'
+    && typeof item.evidence === 'string'
+}
+
 function isAssistantEngineeringConstraintPackage(
   item: Partial<AssistantEngineeringConstraintPackage> | null | undefined,
 ): item is AssistantEngineeringConstraintPackage {
@@ -55,8 +65,23 @@ function isAssistantEngineeringConstraintPackage(
     && typeof item.title === 'string'
     && typeof item.auditCode === 'string'
     && typeof item.traceId === 'string'
+    && typeof item.actor === 'string'
+    && typeof item.role === 'string'
     && typeof item.workOrders === 'string'
+    && ['critical', 'warning'].includes(String(item.priority))
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.bomCode === 'string'
+    && typeof item.ecnCode === 'string'
+    && typeof item.routeCode === 'string'
+    && typeof item.operationCode === 'string'
+    && typeof item.otdImpact === 'string'
+    && typeof item.statusLabel === 'string'
+    && typeof item.summary === 'string'
     && Array.isArray(item.dispatchSteps)
+    && item.dispatchSteps.length > 0
+    && item.dispatchSteps.every(isAssistantEngineeringConstraintStep)
+    && typeof item.createdAt === 'string'
 }
 
 function readRawAssistantEngineeringConstraintPackages(): AssistantEngineeringConstraintPackage[] {
@@ -65,7 +90,19 @@ function readRawAssistantEngineeringConstraintPackages(): AssistantEngineeringCo
     const raw = window.localStorage.getItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isAssistantEngineeringConstraintPackage) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY)
+      return []
+    }
+    const records = parsed.filter(isAssistantEngineeringConstraintPackage)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY)
     return []
@@ -74,6 +111,16 @@ function readRawAssistantEngineeringConstraintPackages(): AssistantEngineeringCo
 
 export function readAssistantEngineeringConstraintPackages(): AssistantEngineeringConstraintPackage[] {
   return readRawAssistantEngineeringConstraintPackages()
+}
+
+export async function readAssistantEngineeringConstraintPackagesBackendFirst(): Promise<AssistantEngineeringConstraintPackage[]> {
+  try {
+    const { queryAssistantEngineeringConstraintPackages } = await import('../api/assistantEvidence')
+    const records = await queryAssistantEngineeringConstraintPackages(MAX_PACKAGES)
+    return records.length > 0 ? records : readAssistantEngineeringConstraintPackages()
+  } catch {
+    return readAssistantEngineeringConstraintPackages()
+  }
 }
 
 export function writeAssistantEngineeringConstraintPackage(
@@ -142,6 +189,9 @@ export function writeAssistantEngineeringConstraintPackage(
       .slice(0, MAX_PACKAGES)
     window.localStorage.setItem(ASSISTANT_ENGINEERING_CONSTRAINT_PACKAGE_KEY, JSON.stringify(next))
   }
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantEngineeringConstraintPackage }) => upsertAssistantEngineeringConstraintPackage(record))
+    .catch(() => undefined)
 
   upsertOtdEvidenceChainRecord({
     id: `assistant-engineering-constraint-${record.id}`,

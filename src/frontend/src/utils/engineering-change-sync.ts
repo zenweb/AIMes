@@ -81,6 +81,85 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function hasText(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function isEngineeringChangeDecision(value: unknown): value is EngineeringChangeDecision {
+  return value === 'pending' || value === 'approved' || value === 'rejected'
+}
+
+function isAlternateMaterialApproval(value: unknown): value is AlternateMaterialApproval {
+  if (!value || typeof value !== 'object') return false
+  const approval = value as Partial<AlternateMaterialApproval>
+  return hasText(approval.id)
+    && hasText(approval.bomCode)
+    && hasText(approval.bomVersion)
+    && hasText(approval.sourceMaterialCode)
+    && hasText(approval.alternateMaterialCode)
+    && hasText(approval.alternateMaterialName)
+    && hasText(approval.affectedOrders)
+    && hasText(approval.approvedBy)
+    && hasText(approval.approvedAt)
+    && hasText(approval.auditId)
+    && hasText(approval.traceId)
+    && approval.status === 'approved'
+    && hasText(approval.summary)
+}
+
+function isEngineeringChangeImpactAnalysis(value: unknown): value is EngineeringChangeImpactAnalysis {
+  if (!value || typeof value !== 'object') return false
+  const impact = value as Partial<EngineeringChangeImpactAnalysis>
+  return hasText(impact.id)
+    && hasText(impact.changeId)
+    && hasText(impact.bomCode)
+    && hasText(impact.bomVersion)
+    && hasText(impact.changeTitle)
+    && hasText(impact.sourceMaterialCode)
+    && hasText(impact.alternateMaterialCode)
+    && hasText(impact.alternateMaterialName)
+    && hasText(impact.affectedOrders)
+    && hasText(impact.inventoryImpact)
+    && hasText(impact.qualityImpact)
+    && hasText(impact.supplierImpact)
+    && hasText(impact.costImpact)
+    && hasText(impact.otdImpact)
+    && hasText(impact.scheduleWindow)
+    && hasText(impact.recommendedDecision)
+    && hasText(impact.analyzedBy)
+    && hasText(impact.analyzedAt)
+    && hasText(impact.auditId)
+    && hasText(impact.traceId)
+    && isEngineeringChangeDecision(impact.decision)
+    && hasText(impact.decisionLabel)
+    && hasText(impact.statusLabel)
+    && hasText(impact.summary)
+}
+
+function isRouteCapabilityValidation(value: unknown): value is RouteCapabilityValidation {
+  if (!value || typeof value !== 'object') return false
+  const validation = value as Partial<RouteCapabilityValidation>
+  return hasText(validation.id)
+    && hasText(validation.routeCode)
+    && hasText(validation.routeVersion)
+    && hasText(validation.routeName)
+    && hasText(validation.operationCode)
+    && hasText(validation.operationName)
+    && hasText(validation.bottleneckResource)
+    && hasText(validation.candidateEquipment)
+    && hasText(validation.affectedOrders)
+    && typeof validation.capacityGapHours === 'number'
+    && typeof validation.changeoverMinutes === 'number'
+    && hasText(validation.batchWindow)
+    && (validation.decision === 'validated' || validation.decision === 'released')
+    && hasText(validation.validatedBy)
+    && hasText(validation.validatedAt)
+    && hasText(validation.auditId)
+    && hasText(validation.traceId)
+    && hasText(validation.statusLabel)
+    && hasText(validation.summary)
+}
+
 function engineeringChangeDecisionLabel(decision: EngineeringChangeDecision) {
   if (decision === 'approved') return '已批准'
   if (decision === 'rejected') return '已驳回'
@@ -162,6 +241,9 @@ function upsertEngineeringChangeEvidence(record: EngineeringChangeImpactAnalysis
 function persistEngineeringChangeImpactAnalysis(record: EngineeringChangeImpactAnalysis) {
   if (!canUseStorage()) return null
   window.localStorage.setItem(ENGINEERING_CHANGE_IMPACT_KEY, JSON.stringify(record))
+  void import('../api/engineeringEvidence')
+    .then(({ upsertEngineeringChangeImpact }) => upsertEngineeringChangeImpact(record))
+    .catch(() => undefined)
   upsertEngineeringChangeEvidence(record)
   return record
 }
@@ -186,6 +268,9 @@ export function writeAlternateMaterialApproval(input?: Partial<AlternateMaterial
   }
 
   window.localStorage.setItem(ALTERNATE_MATERIAL_APPROVAL_KEY, JSON.stringify(record))
+  void import('../api/engineeringEvidence')
+    .then(({ upsertAlternateMaterialApproval }) => upsertAlternateMaterialApproval(record))
+    .catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: '工程放行',
@@ -206,11 +291,22 @@ export function readAlternateMaterialApproval(): AlternateMaterialApproval | nul
   try {
     const raw = window.localStorage.getItem(ALTERNATE_MATERIAL_APPROVAL_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as AlternateMaterialApproval
-    return parsed?.status === 'approved' && parsed?.alternateMaterialCode ? parsed : null
+    const parsed = JSON.parse(raw)
+    if (isAlternateMaterialApproval(parsed)) return parsed
+    window.localStorage.removeItem(ALTERNATE_MATERIAL_APPROVAL_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(ALTERNATE_MATERIAL_APPROVAL_KEY)
     return null
+  }
+}
+
+export async function readAlternateMaterialApprovalBackendFirst(): Promise<AlternateMaterialApproval | null> {
+  try {
+    const { getLatestAlternateMaterialApproval } = await import('../api/engineeringEvidence')
+    return await getLatestAlternateMaterialApproval() ?? readAlternateMaterialApproval()
+  } catch {
+    return readAlternateMaterialApproval()
   }
 }
 
@@ -258,10 +354,23 @@ export function readEngineeringChangeImpactAnalysis(): EngineeringChangeImpactAn
   try {
     const raw = window.localStorage.getItem(ENGINEERING_CHANGE_IMPACT_KEY)
     if (!raw) return null
-    return normalizeEngineeringChangeImpact(JSON.parse(raw) as Partial<EngineeringChangeImpactAnalysis>)
+    const parsed = JSON.parse(raw)
+    if (isEngineeringChangeImpactAnalysis(parsed)) return normalizeEngineeringChangeImpact(parsed)
+    window.localStorage.removeItem(ENGINEERING_CHANGE_IMPACT_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(ENGINEERING_CHANGE_IMPACT_KEY)
     return null
+  }
+}
+
+export async function readEngineeringChangeImpactAnalysisBackendFirst(): Promise<EngineeringChangeImpactAnalysis | null> {
+  try {
+    const { getLatestEngineeringChangeImpact } = await import('../api/engineeringEvidence')
+    const record = await getLatestEngineeringChangeImpact()
+    return record ? normalizeEngineeringChangeImpact(record) : readEngineeringChangeImpactAnalysis()
+  } catch {
+    return readEngineeringChangeImpactAnalysis()
   }
 }
 
@@ -339,6 +448,9 @@ export function writeRouteCapabilityValidation(input?: Partial<RouteCapabilityVa
   }
 
   window.localStorage.setItem(ROUTE_CAPABILITY_VALIDATION_KEY, JSON.stringify(record))
+  void import('../api/engineeringEvidence')
+    .then(({ upsertRouteCapabilityValidation }) => upsertRouteCapabilityValidation(record))
+    .catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: decision === 'released' ? '工艺能力放行' : '工艺能力校验',
@@ -359,10 +471,22 @@ export function readRouteCapabilityValidation(): RouteCapabilityValidation | nul
   try {
     const raw = window.localStorage.getItem(ROUTE_CAPABILITY_VALIDATION_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as RouteCapabilityValidation
-    return parsed?.routeCode && parsed?.operationCode && parsed?.traceId ? parsed : null
+    const parsed = JSON.parse(raw)
+    if (isRouteCapabilityValidation(parsed)) return parsed
+    window.localStorage.removeItem(ROUTE_CAPABILITY_VALIDATION_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(ROUTE_CAPABILITY_VALIDATION_KEY)
     return null
+  }
+}
+
+export async function readRouteCapabilityValidationBackendFirst(options?: { failLoud?: boolean }): Promise<RouteCapabilityValidation | null> {
+  try {
+    const { getLatestRouteCapabilityValidation } = await import('../api/engineeringEvidence')
+    return await getLatestRouteCapabilityValidation(options) ?? readRouteCapabilityValidation()
+  } catch (error) {
+    if (options?.failLoud) throw error
+    return readRouteCapabilityValidation()
   }
 }

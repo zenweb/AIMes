@@ -27,6 +27,9 @@ export interface CustomerEquipmentFaultEvidence {
 export function writeEquipmentDowntimeEvent(event: EquipmentDowntimeEvent) {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(EQUIPMENT_DOWNTIME_EVENT_KEY, JSON.stringify(event))
+  void import('../api/equipmentEvidence')
+    .then(({ upsertEquipmentDowntime }) => upsertEquipmentDowntime(event))
+    .catch(() => undefined)
 }
 
 export function readEquipmentDowntimeEvent(): EquipmentDowntimeEvent | null {
@@ -35,10 +38,61 @@ export function readEquipmentDowntimeEvent(): EquipmentDowntimeEvent | null {
   if (!raw) return null
 
   try {
-    return JSON.parse(raw) as EquipmentDowntimeEvent
+    const parsed = JSON.parse(raw)
+    if (isEquipmentDowntimeEvent(parsed)) {
+      return parsed
+    }
+    localStorage.removeItem(EQUIPMENT_DOWNTIME_EVENT_KEY)
+    return null
   } catch {
     localStorage.removeItem(EQUIPMENT_DOWNTIME_EVENT_KEY)
     return null
+  }
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isEquipmentDowntimeEvent(value: unknown): value is EquipmentDowntimeEvent {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<EquipmentDowntimeEvent>
+  return isNonEmptyString(candidate.equipmentCode)
+    && isNonEmptyString(candidate.equipmentName)
+    && isFiniteNumber(candidate.downtimeHours)
+    && isNonEmptyString(candidate.affectedOrders)
+    && isNonEmptyString(candidate.alternativeEquipment)
+    && isNonEmptyString(candidate.maintenanceWindow)
+    && isNonEmptyString(candidate.protectionStrategy)
+    && isNonEmptyString(candidate.createdAt)
+}
+
+function isCustomerEquipmentFaultEvidence(value: unknown): value is CustomerEquipmentFaultEvidence {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<CustomerEquipmentFaultEvidence>
+  return isNonEmptyString(candidate.batchId)
+    && isNonEmptyString(candidate.fileName)
+    && isNonEmptyString(candidate.source)
+    && isNonEmptyString(candidate.equipmentCode)
+    && isFiniteNumber(candidate.faultSamples)
+    && isNonEmptyString(candidate.affectedOrders)
+    && isFiniteNumber(candidate.downtimeHours)
+    && Array.isArray(candidate.capturedSignals)
+    && candidate.capturedSignals.length > 0
+    && candidate.capturedSignals.every(isNonEmptyString)
+    && isNonEmptyString(candidate.preparedAt)
+}
+
+export async function readEquipmentDowntimeEventBackendFirst(): Promise<EquipmentDowntimeEvent | null> {
+  try {
+    const { getLatestEquipmentDowntime } = await import('../api/equipmentEvidence')
+    return await getLatestEquipmentDowntime() ?? readEquipmentDowntimeEvent()
+  } catch {
+    return readEquipmentDowntimeEvent()
   }
 }
 
@@ -56,6 +110,9 @@ export function writeCustomerEquipmentFaultEvidence(evidence?: Partial<CustomerE
     preparedAt: evidence?.preparedAt ?? new Date().toISOString(),
   }
   localStorage.setItem(CUSTOMER_EQUIPMENT_FAULT_KEY, JSON.stringify(next))
+  void import('../api/equipmentEvidence')
+    .then(({ upsertCustomerEquipmentFault }) => upsertCustomerEquipmentFault(next))
+    .catch(() => undefined)
   return next
 }
 
@@ -65,10 +122,23 @@ export function readCustomerEquipmentFaultEvidence(): CustomerEquipmentFaultEvid
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as CustomerEquipmentFaultEvidence
-    return parsed?.batchId && parsed?.equipmentCode ? parsed : null
+    const parsed = JSON.parse(raw)
+    if (isCustomerEquipmentFaultEvidence(parsed)) {
+      return parsed
+    }
+    localStorage.removeItem(CUSTOMER_EQUIPMENT_FAULT_KEY)
+    return null
   } catch {
     localStorage.removeItem(CUSTOMER_EQUIPMENT_FAULT_KEY)
     return null
+  }
+}
+
+export async function readCustomerEquipmentFaultEvidenceBackendFirst(): Promise<CustomerEquipmentFaultEvidence | null> {
+  try {
+    const { getLatestCustomerEquipmentFault } = await import('../api/equipmentEvidence')
+    return await getLatestCustomerEquipmentFault() ?? readCustomerEquipmentFaultEvidence()
+  } catch {
+    return readCustomerEquipmentFaultEvidence()
   }
 }

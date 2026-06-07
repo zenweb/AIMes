@@ -1,4 +1,5 @@
 using System.Net;
+using MES.Domain.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MES.Api.Middleware;
@@ -28,11 +29,26 @@ public class ExceptionMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException)
+        {
+            await HandleOperationCanceledAsync(context);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An unhandled exception occurred during request processing");
             await HandleExceptionAsync(context, ex);
         }
+    }
+
+    private static Task HandleOperationCanceledAsync(HttpContext context)
+    {
+        if (!context.Response.HasStarted)
+        {
+            context.Response.Clear();
+            context.Response.StatusCode = 499;
+        }
+
+        return Task.CompletedTask;
     }
 
     private Task HandleExceptionAsync(HttpContext context, Exception exception)
@@ -45,6 +61,13 @@ public class ExceptionMiddleware
 
         switch (exception)
         {
+            case DomainRuleViolationException domainRuleEx:
+                problem.Type = "https://httpstatuses.io/400";
+                problem.Title = "Domain Rule Violation";
+                problem.Status = (int)HttpStatusCode.BadRequest;
+                problem.Detail = domainRuleEx.Message;
+                break;
+
             case ArgumentException argEx:
                 problem.Type = "https://httpstatuses.io/400";
                 problem.Title = "Validation Error";
@@ -89,7 +112,10 @@ public class ExceptionMiddleware
                 break;
         }
 
-        context.Response.StatusCode = problem.Status!.Value;
+        var problemStatus = problem.Status
+            ?? throw new InvalidOperationException("ProblemDetails.Status must be set before writing the response.");
+
+        context.Response.StatusCode = problemStatus;
         context.Response.ContentType = "application/problem+json";
 
         return context.Response.WriteAsJsonAsync(problem);

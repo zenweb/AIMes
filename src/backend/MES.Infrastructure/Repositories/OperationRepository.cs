@@ -16,32 +16,31 @@ public class OperationRepository : IOperationRepository
 
     public async Task<OperationExecution?> GetExecutionByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.OperationExecutions.FirstOrDefaultAsync(e => e.Id == id, ct);
+        return await _context.OperationExecutions.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<OperationExecution?> GetExecutionByCodeAsync(string operationCode, CancellationToken ct = default)
     {
-        return await _context.OperationExecutions.FirstOrDefaultAsync(e => e.OperationCode == operationCode || e.Id == operationCode, ct);
+        return await _context.OperationExecutions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.OperationCode == operationCode || e.Id == operationCode, ct);
     }
 
-    public async Task<OperationExecution> AddExecutionAsync(OperationExecution execution, CancellationToken ct = default)
+    public Task<OperationExecution> AddExecutionAsync(OperationExecution execution, CancellationToken ct = default)
     {
         _context.OperationExecutions.Add(execution);
-        await _context.SaveChangesAsync(ct);
-        return execution;
+        return Task.FromResult(execution);
     }
 
-    public async Task<OperationExecution> UpdateExecutionAsync(OperationExecution execution, CancellationToken ct = default)
+    public Task<OperationExecution> UpdateExecutionAsync(OperationExecution execution, CancellationToken ct = default)
     {
         _context.OperationExecutions.Update(execution);
-        await _context.SaveChangesAsync(ct);
-        return execution;
+        return Task.FromResult(execution);
     }
 
-    public async Task<OperationReport> AddReportAsync(OperationReport report, CancellationToken ct = default)
+    public Task<OperationReport> AddReportAsync(OperationReport report, CancellationToken ct = default)
     {
         _context.OperationReports.Add(report);
-        await _context.SaveChangesAsync(ct);
-        return report;
+        return Task.FromResult(report);
     }
 }

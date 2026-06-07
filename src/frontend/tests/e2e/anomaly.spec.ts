@@ -6,7 +6,7 @@ test.describe('Anomaly 现场事件中心', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('anomaly', { waitUntil: 'domcontentloaded' })
   })
@@ -15,6 +15,12 @@ test.describe('Anomaly 现场事件中心', () => {
     const panel = page.locator('.event-center')
     await expect(panel.getByText('现场事件中心')).toBeVisible()
     await expect(panel.getByText('异常到处置闭环')).toBeVisible()
+    const laneList = panel.locator('.event-lanes')
+    await expect(laneList).toHaveAttribute('role', 'list')
+    await expect(laneList).toHaveAttribute('aria-label', '异常分流事件队列：3 条')
+    const equipmentLane = panel.locator('.event-lane').filter({ hasText: 'CNC-001 主轴温升异常' })
+    await expect(equipmentLane).toHaveAttribute('role', 'listitem')
+    await expect(equipmentLane).toHaveAttribute('aria-label', /设备事件：CNC-001 主轴温升异常/)
     await expect(panel.getByText('CNC-001 主轴温升异常')).toBeVisible()
     await expect(panel.getByText('装配间隙超差')).toBeVisible()
     await expect(panel.getByText('原料批次来料异常')).toBeVisible()
@@ -25,10 +31,35 @@ test.describe('Anomaly 现场事件中心', () => {
     await expect(page).toHaveURL(/\/scheduling\/risk$/)
   })
 
+  test('异常分流证据写入失败时真实浏览器展示 fail-loud 且不伪造分流', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithAnomalyDispatchFailure(key: string, value: string) {
+        if (key === 'aimes_anomaly_dispatch_records') {
+          throw new Error('anomaly dispatch storage unavailable from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.event-center')
+    const qualityLane = panel.locator('.event-lane').filter({ hasText: '装配间隙超差' })
+
+    await qualityLane.getByRole('button', { name: '确认分流' }).click()
+
+    const alert = page.locator('.anomaly-notification')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('异常分流确认失败')
+    await expect(alert).toContainText('anomaly dispatch storage unavailable from chromium')
+    await expect(qualityLane.getByRole('button', { name: '确认分流' })).toBeVisible()
+    await expect(panel.locator('.dispatch-trace')).toBeHidden()
+  })
+
   test('异常详情仍可打开 AI 分析建议', async ({ page }) => {
     await page.locator('.anomaly-card').filter({ hasText: 'CNC-001 主轴温升异常' }).click()
-    const drawer = page.locator('.panel-content')
+    const drawer = page.getByRole('dialog', { name: 'CNC-001 主轴温升异常' })
     await expect(drawer.getByRole('heading', { name: 'CNC-001 主轴温升异常' })).toBeVisible()
+    await expect(drawer.getByRole('button', { name: '关闭异常详情' })).toBeVisible()
     await drawer.getByRole('button', { name: 'AI 分析建议' }).click()
     const analysis = drawer.locator('.analysis-results')
     await expect(analysis.getByText('立即停机检查主轴冷却系统，检查冷却液位和循环泵')).toBeVisible()

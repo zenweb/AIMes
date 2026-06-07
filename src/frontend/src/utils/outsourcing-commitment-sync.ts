@@ -68,18 +68,41 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isCommitmentAction(item: Partial<OutsourcingCommitmentAction> | null | undefined): item is OutsourcingCommitmentAction {
+  return !!item
+    && typeof item.module === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.action === 'string'
+    && typeof item.evidence === 'string'
+}
+
 function isCommitmentPackage(item: Partial<OutsourcingCommitmentPackage> | null | undefined): item is OutsourcingCommitmentPackage {
   return !!item
     && typeof item.id === 'string'
     && typeof item.sourceKpiId === 'string'
+    && typeof item.dimensionLabel === 'string'
     && typeof item.targetName === 'string'
+    && typeof item.title === 'string'
     && typeof item.auditId === 'string'
     && typeof item.traceId === 'string'
+    && typeof item.actor === 'string'
+    && typeof item.baselineOtd === 'number'
+    && typeof item.agentOtd === 'number'
+    && typeof item.lift === 'number'
+    && typeof item.delayedReduced === 'number'
+    && typeof item.statusLabel === 'string'
+    && typeof item.commitment === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.summary === 'string'
+    && Array.isArray(item.actions)
+    && item.actions.length > 0
+    && item.actions.every(isCommitmentAction)
     && typeof item.partnerName === 'string'
     && typeof item.promiseDate === 'string'
     && typeof item.affectedOrders === 'string'
     && typeof item.sourceTraceId === 'string'
-    && Array.isArray(item.actions)
+    && typeof item.createdAt === 'string'
 }
 
 function slugify(value: string) {
@@ -95,7 +118,19 @@ function readRawPackages(): OutsourcingCommitmentPackage[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isCommitmentPackage) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(STORAGE_KEY)
+      return []
+    }
+    const records = parsed.filter(isCommitmentPackage)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return []
@@ -106,8 +141,33 @@ export function readOutsourcingCommitmentPackages(): OutsourcingCommitmentPackag
   return readRawPackages()
 }
 
+export async function readOutsourcingCommitmentPackagesBackendFirst(): Promise<OutsourcingCommitmentPackage[]> {
+  try {
+    const { queryOutsourcingCommitments } = await import('../api/outsourcingEvidence')
+    const records = await queryOutsourcingCommitments(MAX_RECORDS)
+    return records.length > 0 ? records : readOutsourcingCommitmentPackages()
+  } catch {
+    return readOutsourcingCommitmentPackages()
+  }
+}
+
 export function readLatestOutsourcingCommitmentPackage(): OutsourcingCommitmentPackage | null {
   return readRawPackages()[0] ?? null
+}
+
+export async function readLatestOutsourcingCommitmentPackageBackendFirst(): Promise<OutsourcingCommitmentPackage | null> {
+  try {
+    const { getLatestOutsourcingCommitment } = await import('../api/outsourcingEvidence')
+    return await getLatestOutsourcingCommitment() ?? readLatestOutsourcingCommitmentPackage()
+  } catch {
+    return readLatestOutsourcingCommitmentPackage()
+  }
+}
+
+function upsertOutsourcingCommitmentBackend(record: OutsourcingCommitmentPackage) {
+  void import('../api/outsourcingEvidence')
+    .then(({ upsertOutsourcingCommitment }) => upsertOutsourcingCommitment(record))
+    .catch(() => undefined)
 }
 
 export function writeOutsourcingCommitmentPackage(input: WriteOutsourcingCommitmentPackageInput): OutsourcingCommitmentPackage {
@@ -171,6 +231,7 @@ export function writeOutsourcingCommitmentPackage(input: WriteOutsourcingCommitm
     const next = [record, ...readRawPackages().filter(item => item.id !== record.id)].slice(0, MAX_RECORDS)
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }
+  upsertOutsourcingCommitmentBackend(record)
 
   upsertOtdEvidenceChainRecord({
     id: `outsourcing-commitment-${input.sourceKpiId}`,
@@ -227,6 +288,7 @@ export function confirmOutsourcingCommitmentArrival(sourceKpiId: string, actor: 
 
   const next = [updated, ...readRawPackages().filter(item => item.id !== updated.id)].slice(0, MAX_RECORDS)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  upsertOutsourcingCommitmentBackend(updated)
 
   upsertOtdEvidenceChainRecord({
     id: `outsourcing-receipt-${current.sourceKpiId}`,
@@ -283,6 +345,7 @@ export function confirmOutsourcingScheduleRelease(sourceKpiId: string, actor: st
 
   const next = [updated, ...readRawPackages().filter(item => item.id !== updated.id)].slice(0, MAX_RECORDS)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  upsertOutsourcingCommitmentBackend(updated)
 
   upsertOtdEvidenceChainRecord({
     id: `outsourcing-schedule-release-${current.sourceKpiId}`,

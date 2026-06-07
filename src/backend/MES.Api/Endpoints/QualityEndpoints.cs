@@ -84,9 +84,9 @@ public static class QualityEndpoints
 
     private static async Task<IResult> AnalyzeSpcTrendAsync(
         string? processParameter,
-        int windowSize = 20,
-        IQualityAppService qualityService = default!,
-        CancellationToken ct = default)
+        IQualityAppService qualityService,
+        CancellationToken ct,
+        int windowSize = 20)
     {
         if (string.IsNullOrWhiteSpace(processParameter))
             return TypedResults.BadRequest(new { message = "工序参数不能为空" });

@@ -1,3 +1,5 @@
+using MES.Domain.Exceptions;
+
 namespace MES.Domain.Entities.Admin;
 
 public class SystemUser
@@ -10,6 +12,7 @@ public class SystemUser
     public string PasswordHash { get; private set; } = string.Empty;
     public string Role { get; private set; } = "Operator";
     public bool IsActive { get; private set; } = true;
+    public bool MustChangePassword { get; private set; } = true;
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; private set; }
 
@@ -28,6 +31,7 @@ public class SystemUser
             DisplayName = displayName,
             PasswordHash = passwordHash,
             Role = role,
+            MustChangePassword = true,
             CreatedAt = createdAt ?? DateTime.UtcNow,
         };
     }
@@ -47,7 +51,7 @@ public class SystemUser
     public void Deactivate()
     {
         if (!IsActive)
-            throw new InvalidOperationException("用户已处于禁用状态");
+            throw new DomainRuleViolationException("用户已处于禁用状态");
         IsActive = false;
     }
 
@@ -68,5 +72,6 @@ public class SystemUser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(newPasswordHash);
         PasswordHash = newPasswordHash;
+        MustChangePassword = false;
     }
 }

@@ -42,7 +42,12 @@
           <span v-for="action in order.actions" :key="action">{{ action }}</span>
         </div>
 
-        <button type="button" @click="publishShortage(order)" :disabled="order.status === 'ready'">
+        <button
+          type="button"
+          :aria-label="shortageActionLabel(order)"
+          @click="publishShortage(order)"
+          :disabled="order.status === 'ready'"
+        >
           生成缺料排产事件
         </button>
       </article>
@@ -104,11 +109,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { writeShortageKittingEvent } from '../../utils/shortage-risk-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
-import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
-import { readBomKittingPackage, type BomKittingPackage } from '../../utils/shortage-risk-sync'
+import { readAnomalyDispatchRecordByType, readAnomalyDispatchRecordByTypeBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readBomKittingPackage, readBomKittingPackageBackendFirst, type BomKittingPackage } from '../../utils/shortage-risk-sync'
 
 type KittingStatus = 'shortage' | 'warning' | 'ready'
 
@@ -199,8 +204,18 @@ function statusText(status: KittingStatus) {
   }[status]
 }
 
+function firstShortageItem(order: KittingOrder) {
+  return order.materials.find(item => item.shortage > 0)
+}
+
+function shortageActionLabel(order: KittingOrder) {
+  const shortageItem = firstShortageItem(order)
+  if (!shortageItem) return `生成缺料排产事件：${order.workOrderNumber} 已齐套`
+  return `生成缺料排产事件：${order.workOrderNumber} / ${shortageItem.materialCode} 缺 ${shortageItem.shortage}${shortageItem.unit}`
+}
+
 function publishShortage(order: KittingOrder) {
-  const shortageItem = order.materials.find(item => item.shortage > 0)
+  const shortageItem = firstShortageItem(order)
   if (!shortageItem) return
 
   const event = {
@@ -265,6 +280,11 @@ function publishMaterialIsolation() {
   syncTitle.value = '批次隔离已同步 AI 排产'
   syncMessage.value = `${dispatch.title} 已生成库存齐套复核，${event.materialCode} 缺 ${event.shortageQuantity} 件并进入事件触发 Agent。`
 }
+
+onMounted(async () => {
+  materialDispatch.value = await readAnomalyDispatchRecordByTypeBackendFirst('material')
+  bomKittingPackage.value = await readBomKittingPackageBackendFirst()
+})
 </script>
 
 <style scoped>

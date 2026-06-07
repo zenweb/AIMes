@@ -1,19 +1,26 @@
 <template>
   <Transition name="slide">
     <div v-if="visible" class="chat-overlay" @click.self="$emit('close')">
-      <div class="chat-panel">
+      <div class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-panel-title">
         <!-- 头部 -->
         <div class="chat-header">
           <div class="header-left">
-            <h3>AI 生产助手</h3>
+            <h3 id="chat-panel-title">AI 生产助手</h3>
             <span v-if="modelLabel" class="model-badge" :title="modelFullLabel">{{ modelLabel }}</span>
           </div>
           <button class="close-btn" @click="$emit('close')" aria-label="关闭聊天">✕</button>
         </div>
 
         <!-- 消息列表 -->
-        <div class="chat-messages" ref="messagesRef">
-          <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.role">
+        <div class="chat-messages" ref="messagesRef" role="log" aria-live="polite" aria-label="AI 生产助手消息">
+          <div
+            v-for="msg in messages"
+            :key="msg.id"
+            class="message"
+            :class="msg.role"
+            :role="msg.liveRole"
+            :aria-live="msg.liveRole === 'alert' ? 'assertive' : msg.liveRole === 'status' ? 'polite' : undefined"
+          >
             <div class="msg-avatar">{{ msg.role === 'user' ? 'U' : 'AI' }}</div>
             <div class="msg-bubble">
               <div class="msg-content" v-html="renderMarkdown(msg.content)"></div>
@@ -51,9 +58,14 @@
                 </button>
               </div>
               <div v-if="msg.sources && msg.sources.length" class="msg-sources">
-                <span class="sources-toggle" @click="toggleSources(msg.id)">
+                <button
+                  type="button"
+                  class="sources-toggle"
+                  :aria-expanded="expandedSources.has(msg.id)"
+                  @click="toggleSources(msg.id)"
+                >
                   参考来源 ({{ msg.sources.length }})
-                </span>
+                </button>
                 <div v-if="expandedSources.has(msg.id)" class="sources-list">
                   <div v-for="src in msg.sources" :key="src.sourceId" class="source-item">
                     <span class="source-name">{{ src.sourceName }}</span>
@@ -66,7 +78,13 @@
           </div>
 
           <!-- 加载指示器 -->
-          <div v-if="loading" class="message assistant">
+          <div
+            v-if="loading"
+            class="message assistant typing"
+            role="status"
+            aria-live="polite"
+            aria-label="AI 生产助手正在生成回复"
+          >
             <div class="msg-avatar">AI</div>
             <div class="msg-bubble">
               <div class="typing-dots"><span>.</span><span>.</span><span>.</span></div>
@@ -87,6 +105,7 @@
             <textarea
               v-model="inputText"
               class="chat-input"
+              aria-label="输入生产相关问题"
               placeholder="输入生产相关问题..."
               rows="1"
               @keydown.enter.exact.prevent="sendMessage"
@@ -118,17 +137,21 @@ import { readLatestOtdKpiCommitmentPackage, writeOtdKpiCommitmentPackage, type O
 import { readPocRolloutPackageRecord } from '../../utils/poc-rollout-package-sync'
 import { readPocPilotRunRecord } from '../../utils/poc-pilot-run-sync'
 import { readPocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
-import { readMonitoringSituationEscalations, type MonitoringSituationEscalation } from '../../utils/monitoring-situation-escalation-sync'
+import { readMonitoringSituationEscalations, readMonitoringSituationEscalationsBackendFirst, type MonitoringSituationEscalation } from '../../utils/monitoring-situation-escalation-sync'
 import { readLatestOutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
-import { readRiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+import { readRiskSlaReviewRecord, readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import { readQualityMrbDispositionRecord } from '../../utils/quality-mrb-disposition-sync'
 import { readQualityReworkImpact } from '../../utils/quality-rework-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
-import { readAnomalyDispatchRecords, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readAnomalyDispatchRecords, readAnomalyDispatchRecordsBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import { readEngineeringChangeImpactAnalysis, readRouteCapabilityValidation } from '../../utils/engineering-change-sync'
 import { readBomKittingPackage, writeBomKittingPackage, type BomKittingPackage } from '../../utils/shortage-risk-sync'
+import { writeEquipmentDowntimeEvent, type EquipmentDowntimeEvent } from '../../utils/equipment-risk-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 import { readLaborQualificationBlocks, readLaborReassignments } from '../../utils/labor-assignment-sync'
+import { getLocalUserDisplayName, getLocalUserRole } from '../../utils/local-user'
+import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import {
   readLatestQualityKnowledgeReuseClosure,
   readLatestQualityKnowledgeReuseDraft,
@@ -153,6 +176,9 @@ const expandedSources = ref(new Set<string>())
 const messagesRef = ref<HTMLElement | null>(null)
 const modelLabel = ref('')
 const modelFullLabel = ref('')
+const cachedAnomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
+const cachedMonitoringSituationEscalations = ref<MonitoringSituationEscalation[]>([])
+const cachedRiskSlaReview = ref<RiskSlaReviewRecord | null>(null)
 
 watch(() => props.visible, async (show) => {
   if (show) {
@@ -203,7 +229,14 @@ function scrollToBottom() {
   }
 }
 
-function addMessage(role: 'user' | 'assistant', content: string, sources?: KnowledgeSourceDto[], actions?: ChatAction[], actionPackages?: ChatActionPackage[]) {
+function addMessage(
+  role: 'user' | 'assistant',
+  content: string,
+  sources?: KnowledgeSourceDto[],
+  actions?: ChatAction[],
+  actionPackages?: ChatActionPackage[],
+  liveRole?: 'alert' | 'status'
+) {
   messages.value.push({
     id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     role,
@@ -211,13 +244,29 @@ function addMessage(role: 'user' | 'assistant', content: string, sources?: Knowl
     sources,
     actions,
     actionPackages,
+    liveRole,
     timestamp: new Date(),
   })
+}
+
+function isChatHistoryPayload(value: unknown): value is { messages: unknown[] } {
+  return Boolean(value)
+    && typeof value === 'object'
+    && Array.isArray((value as { messages?: unknown }).messages)
+}
+
+function isKnowledgeQueryPayload(value: unknown): value is { answer: string; sources: KnowledgeSourceDto[] } {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { answer?: unknown; sources?: unknown }
+  return typeof candidate.answer === 'string' && Array.isArray(candidate.sources)
 }
 
 async function loadHistory() {
   try {
     const history = await getChatHistory(sessionId.value, 50)
+    if (!isChatHistoryPayload(history)) {
+      throw new Error('后端返回非聊天历史载荷')
+    }
     if (history.messages?.length) {
       messages.value = history.messages.map(m => ({
         id: `hist-${m.timestamp}-${Math.random().toString(36).slice(2, 6)}`,
@@ -226,8 +275,16 @@ async function loadHistory() {
         timestamp: new Date(m.timestamp),
       }))
     }
-  } catch {
-    // 历史加载失败 — 静默使用空状态
+  } catch (err: unknown) {
+    if (isOfflineDemoError(err)) return
+    addMessage(
+      'assistant',
+      `聊天历史加载失败：${errorMessage(err, '请稍后重试')}。已保留聊天入口，可继续发起新的生产问答。`,
+      undefined,
+      undefined,
+      undefined,
+      'alert'
+    )
   }
 }
 
@@ -246,10 +303,23 @@ async function sendMessage() {
       sessionId: sessionId.value,
       topK: 5,
     })
+    if (!isKnowledgeQueryPayload(res)) {
+      throw new Error('后端返回非知识问答载荷')
+    }
     addMessage('assistant', res.answer, res.sources, getExecutableActions(text))
-  } catch {
+  } catch (err) {
     // 后端不可用 — 演示回复
-    addMessage('assistant', getDemoReply(text), getDemoSources(text), getExecutableActions(text))
+    addMessage(
+      'assistant',
+      [
+        `知识问答服务暂不可用，已切换到离线演示回答。原因：${errorMessage(err, '请稍后重试')}`,
+        getDemoReply(text),
+      ].join('\n\n'),
+      getDemoSources(text),
+      getExecutableActions(text),
+      undefined,
+      'alert'
+    )
   } finally {
     loading.value = false
     await nextTick()
@@ -258,24 +328,11 @@ async function sendMessage() {
 }
 
 function currentUserRole() {
-  try {
-    const raw = localStorage.getItem('aimes_user')
-    if (!raw) return 'Unknown'
-    return JSON.parse(raw).role ?? 'Unknown'
-  } catch {
-    return 'Unknown'
-  }
+  return getLocalUserRole() ?? 'Unknown'
 }
 
 function currentUsername() {
-  try {
-    const raw = localStorage.getItem('aimes_user')
-    if (!raw) return 'Unknown'
-    const user = JSON.parse(raw)
-    return user.username ?? user.displayName ?? 'Unknown'
-  } catch {
-    return 'Unknown'
-  }
+  return getLocalUserDisplayName()
 }
 
 function canExecuteAction(action: ChatAction) {
@@ -286,154 +343,375 @@ function canExecuteAction(action: ChatAction) {
 
 async function executeAction(action: ChatAction) {
   if (!canExecuteAction(action)) {
-    recordAssistantActionAudit({
-      action,
-      actor: currentUsername(),
-      role: currentUserRole(),
-      permitted: false,
-    })
-    addMessage('assistant', `动作已拒绝：当前用户缺少 ${action.requiredRole} 权限，未执行 ${action.label}。`)
+    try {
+      recordAssistantActionAudit({
+        action,
+        actor: currentUsername(),
+        role: currentUserRole(),
+        permitted: false,
+      })
+      addMessage('assistant', `动作已拒绝：当前用户缺少 ${action.requiredRole} 权限，未执行 ${action.label}。`, undefined, undefined, undefined, 'alert')
+    } catch (err: unknown) {
+      addMessage('assistant', `动作已拒绝：当前用户缺少 ${action.requiredRole} 权限，未执行 ${action.label}。拒绝审计写入失败：${errorMessage(err, '请稍后重试')}`, undefined, undefined, undefined, 'alert')
+    }
     return
   }
 
-  if (action.type === 'navigate' || action.type === 'schedule_suggestion') {
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
+  try {
+    if (action.type === 'navigate' || action.type === 'schedule_suggestion') {
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          addMessage(
+            'assistant',
+            `打开${action.label.replace(/^打开/, '')}页面跳转失败：${errorMessage(err, '请稍后重试')}`,
+            undefined,
+            undefined,
+            undefined,
+            'alert'
+          )
+        }
+      }
     }
-  }
 
-  if (action.type === 'export_report') {
-    exportActionReport()
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
+    let exportReportNavigationError = ''
+    let exportReportCleanupError = ''
+    if (action.type === 'export_report') {
+      exportReportCleanupError = exportActionReport()
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          exportReportNavigationError = errorMessage(err, '请稍后重试')
+        }
+      }
     }
-  }
 
-  if (action.type === 'delivery_recovery_package') {
-    const recoveryPackage = writeAssistantRecoveryPackage({
-      actor: currentUsername(),
-      role: currentUserRole(),
-    })
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
+    if (action.type === 'delivery_recovery_package') {
+      const recoveryPackage = writeAssistantRecoveryPackage({
+        actor: currentUsername(),
+        role: currentUserRole(),
+      })
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可生成交期恢复执行包。`,
+          `审计编号：${recoveryPackage.auditCode}`,
+          `动作已执行：${action.resultMessage}`,
+          `已同步到 AI 排产事件队列、风险处置队列、OTD 复盘证据链和审计回放。`,
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapRecoveryPackageToChatPackage(recoveryPackage)],
+        'status'
+      )
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `交期恢复执行包已生成，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else if (action.type === 'create_anomaly_card') {
+      const anomalyPackage = writeAssistantAnomalyDispositionPackage({
+        actor: currentUsername(),
+        role: currentUserRole(),
+      })
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可创建异常处置卡。`,
+          `审计编号：${anomalyPackage.auditCode}`,
+          `动作已执行：${action.resultMessage}`,
+          '已同步到异常管理、风险处置队列、AI 排产事件队列、OTD 复盘证据链和审计回放。',
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapAnomalyPackageToChatPackage(anomalyPackage)],
+        'status'
+      )
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `异常处置卡已创建，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else if (action.type === 'engineering_constraint_package') {
+      const engineeringPackage = writeAssistantEngineeringConstraintPackage({
+        actor: currentUsername(),
+        role: currentUserRole(),
+      })
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可生成工程约束复核包。`,
+          `审计编号：${engineeringPackage.auditCode}`,
+          `追踪编号：${engineeringPackage.traceId}`,
+          `动作已执行：${action.resultMessage}`,
+          '已同步到 BOM 管理、工艺路线、AI 排产、OTD 复盘证据链和审计回放。',
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapEngineeringConstraintPackageToChatPackage(engineeringPackage)],
+        'status'
+      )
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `工程约束复核包已生成，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else if (action.type === 'customer_commitment_package') {
+      const commitmentPackage = writeOtdKpiCommitmentPackage({
+        sourceKpiId: 'customer-huadong',
+        dimensionLabel: '客户',
+        targetName: '华东新能源',
+        baselineOtd: 76,
+        agentOtd: 94,
+        lift: 18,
+        delayedReduced: 3,
+        statusLabel: '客户恢复承诺',
+        driver: '急单插入、M-AL-6061 缺料闭环和 CNC 瓶颈保护共同支撑华东新能源交付恢复',
+        nextActions: [
+          '客户成功同步 OTD 恢复承诺和延期减少口径',
+          '调度员复核 WO-RUSH-9001 锁定期后插入与 CNC-003 夜班窗口',
+          '采购确认 M-AL-6061B 替代批次，质量保留 OP-040 扭矩检验窗口',
+        ],
+        sourceTraceId: 'TRACE-KPI-CUSTOMER-HUADONG-OTD-20260521',
+        actor: currentUsername(),
+      })
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可生成客户交付恢复承诺包。`,
+          `审计编号：${commitmentPackage.auditId}`,
+          `追踪编号：${commitmentPackage.traceId}`,
+          `动作已执行：${action.resultMessage}`,
+          '已同步到报表中心、AI 排产、OTD 复盘证据链、CSV 导出和审计回放。',
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapCustomerCommitmentToChatPackage(commitmentPackage)],
+        'status'
+      )
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `客户交付恢复承诺包已生成，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else if (action.type === 'bom_kitting_package') {
+      const bomKittingPackage = writeAssistantBomKittingPackage()
+      let bomKittingEvidenceError = ''
+      try {
+        writeAssistantBomKittingEvidence(bomKittingPackage)
+      } catch (err: unknown) {
+        bomKittingEvidenceError = errorMessage(err, '请稍后重试')
+      }
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可生成 BOM 展开齐套检查包。`,
+          `审计编号：${bomKittingPackage.auditId}`,
+          `追踪编号：${bomKittingPackage.traceId}`,
+          `动作已执行：${action.resultMessage}`,
+          '已同步到 BOM 管理、库存齐套、AI 排产、OTD 复盘证据链、系统治理和审计回放。',
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapBomKittingPackageToChatPackage(bomKittingPackage)],
+        'status'
+      )
+      if (bomKittingEvidenceError) {
+        addMessage(
+          'assistant',
+          `BOM 齐套包已生成，但 OTD 证据写入失败：${bomKittingEvidenceError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `BOM 齐套包已生成，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else if (action.type === 'equipment_downtime_package') {
+      const equipmentPackage = writeAssistantEquipmentDowntimePackage()
+      let equipmentDowntimeEvidenceError = ''
+      try {
+        writeAssistantEquipmentDowntimeEvidence(equipmentPackage)
+      } catch (err: unknown) {
+        equipmentDowntimeEvidenceError = errorMessage(err, '请稍后重试')
+      }
+      let navigationError = ''
+      if (action.targetRoute) {
+        try {
+          await router.push(action.targetRoute)
+        } catch (err: unknown) {
+          navigationError = errorMessage(err, '请稍后重试')
+        }
+      }
+      addMessage(
+        'assistant',
+        [
+          `权限校验通过：${currentUserRole()} 可生成设备停机复核包。`,
+          '审计编号：AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001',
+          `追踪编号：TRACE-EQ-DOWNTIME-${equipmentPackage.equipmentCode}`,
+          `动作已执行：${action.resultMessage}`,
+          '已同步到设备维护、AI 排产事件队列、风险预警、OTD 复盘证据链和审计回放。',
+        ].join('\n'),
+        undefined,
+        undefined,
+        [mapEquipmentDowntimePackageToChatPackage(equipmentPackage)],
+        'status'
+      )
+      if (equipmentDowntimeEvidenceError) {
+        addMessage(
+          'assistant',
+          `设备停机复核包已生成，但 OTD 证据写入失败：${equipmentDowntimeEvidenceError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+      if (navigationError) {
+        addMessage(
+          'assistant',
+          `设备停机复核包已生成，但页面跳转失败：${navigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    } else {
+      addMessage('assistant', `动作已执行：${action.resultMessage}`, undefined, undefined, undefined, 'status')
+      if (action.type === 'export_report' && exportReportNavigationError) {
+        addMessage(
+          'assistant',
+          `OTD/POC 复盘 CSV 已生成，但报表中心跳转失败：${exportReportNavigationError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+      if (exportReportCleanupError) {
+        addMessage(
+          'assistant',
+          `OTD/POC 复盘 CSV 已生成，但下载链接清理失败：${exportReportCleanupError}`,
+          undefined,
+          undefined,
+          undefined,
+          'alert'
+        )
+      }
+    }
+    try {
+      recordAssistantActionAudit({
+        action,
+        actor: currentUsername(),
+        role: currentUserRole(),
+        permitted: true,
+      })
+    } catch (auditErr: unknown) {
+      addMessage(
+        'assistant',
+        `动作已执行，但成功审计写入失败：${errorMessage(auditErr, '请稍后重试')}`,
+        undefined,
+        undefined,
+        undefined,
+        'alert'
+      )
+    }
+  } catch (err: unknown) {
+    let auditFailureMessage = ''
+    try {
+      recordAssistantActionAudit({
+        action,
+        actor: currentUsername(),
+        role: currentUserRole(),
+        permitted: false,
+      })
+    } catch (auditErr: unknown) {
+      auditFailureMessage = `失败审计写入失败：${errorMessage(auditErr, '请稍后重试')}`
     }
     addMessage(
       'assistant',
-      [
-        `权限校验通过：${currentUserRole()} 可生成交期恢复执行包。`,
-        `审计编号：${recoveryPackage.auditCode}`,
-        `动作已执行：${action.resultMessage}`,
-        `已同步到 AI 排产事件队列、风险处置队列、OTD 复盘证据链和审计回放。`,
-      ].join('\n'),
+      `${action.type === 'export_report' ? 'OTD/POC 复盘 CSV 下载准备失败' : `动作执行失败：${action.label}`}。原因：${errorMessage(err, '请稍后重试')}${auditFailureMessage ? `。${auditFailureMessage}` : ''}`,
       undefined,
       undefined,
-      [mapRecoveryPackageToChatPackage(recoveryPackage)]
+      undefined,
+      'alert'
     )
-  } else if (action.type === 'create_anomaly_card') {
-    const anomalyPackage = writeAssistantAnomalyDispositionPackage({
-      actor: currentUsername(),
-      role: currentUserRole(),
-    })
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
-    }
-    addMessage(
-      'assistant',
-      [
-        `权限校验通过：${currentUserRole()} 可创建异常处置卡。`,
-        `审计编号：${anomalyPackage.auditCode}`,
-        `动作已执行：${action.resultMessage}`,
-        '已同步到异常管理、风险处置队列、AI 排产事件队列、OTD 复盘证据链和审计回放。',
-      ].join('\n'),
-      undefined,
-      undefined,
-      [mapAnomalyPackageToChatPackage(anomalyPackage)]
-    )
-  } else if (action.type === 'engineering_constraint_package') {
-    const engineeringPackage = writeAssistantEngineeringConstraintPackage({
-      actor: currentUsername(),
-      role: currentUserRole(),
-    })
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
-    }
-    addMessage(
-      'assistant',
-      [
-        `权限校验通过：${currentUserRole()} 可生成工程约束复核包。`,
-        `审计编号：${engineeringPackage.auditCode}`,
-        `追踪编号：${engineeringPackage.traceId}`,
-        `动作已执行：${action.resultMessage}`,
-        '已同步到 BOM 管理、工艺路线、AI 排产、OTD 复盘证据链和审计回放。',
-      ].join('\n'),
-      undefined,
-      undefined,
-      [mapEngineeringConstraintPackageToChatPackage(engineeringPackage)]
-    )
-  } else if (action.type === 'customer_commitment_package') {
-    const commitmentPackage = writeOtdKpiCommitmentPackage({
-      sourceKpiId: 'customer-huadong',
-      dimensionLabel: '客户',
-      targetName: '华东新能源',
-      baselineOtd: 76,
-      agentOtd: 94,
-      lift: 18,
-      delayedReduced: 3,
-      statusLabel: '客户恢复承诺',
-      driver: '急单插入、M-AL-6061 缺料闭环和 CNC 瓶颈保护共同支撑华东新能源交付恢复',
-      nextActions: [
-        '客户成功同步 OTD 恢复承诺和延期减少口径',
-        '调度员复核 WO-RUSH-9001 锁定期后插入与 CNC-003 夜班窗口',
-        '采购确认 M-AL-6061B 替代批次，质量保留 OP-040 扭矩检验窗口',
-      ],
-      sourceTraceId: 'TRACE-KPI-CUSTOMER-HUADONG-OTD-20260521',
-      actor: currentUsername(),
-    })
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
-    }
-    addMessage(
-      'assistant',
-      [
-        `权限校验通过：${currentUserRole()} 可生成客户交付恢复承诺包。`,
-        `审计编号：${commitmentPackage.auditId}`,
-        `追踪编号：${commitmentPackage.traceId}`,
-        `动作已执行：${action.resultMessage}`,
-        '已同步到报表中心、AI 排产、OTD 复盘证据链、CSV 导出和审计回放。',
-      ].join('\n'),
-      undefined,
-      undefined,
-      [mapCustomerCommitmentToChatPackage(commitmentPackage)]
-    )
-  } else if (action.type === 'bom_kitting_package') {
-    const bomKittingPackage = writeAssistantBomKittingPackage()
-    if (action.targetRoute) {
-      await router.push(action.targetRoute)
-    }
-    addMessage(
-      'assistant',
-      [
-        `权限校验通过：${currentUserRole()} 可生成 BOM 展开齐套检查包。`,
-        `审计编号：${bomKittingPackage.auditId}`,
-        `追踪编号：${bomKittingPackage.traceId}`,
-        `动作已执行：${action.resultMessage}`,
-        '已同步到 BOM 管理、库存齐套、AI 排产、OTD 复盘证据链、系统治理和审计回放。',
-      ].join('\n'),
-      undefined,
-      undefined,
-      [mapBomKittingPackageToChatPackage(bomKittingPackage)]
-    )
-  } else {
-    addMessage('assistant', `动作已执行：${action.resultMessage}`)
+  } finally {
+    await nextTick()
+    scrollToBottom()
   }
-  recordAssistantActionAudit({
-    action,
-    actor: currentUsername(),
-    role: currentUserRole(),
-    permitted: true,
-  })
-  await nextTick()
-  scrollToBottom()
 }
 
 function mapRecoveryPackageToChatPackage(record: AssistantRecoveryPackage): ChatActionPackage {
@@ -545,6 +823,10 @@ function writeAssistantBomKittingPackage(): BomKittingPackage {
     ],
   }
   writeBomKittingPackage(record)
+  return record
+}
+
+function writeAssistantBomKittingEvidence(record: BomKittingPackage) {
   upsertOtdEvidenceChainRecord({
     id: record.id,
     stage: '库存齐套',
@@ -555,9 +837,8 @@ function writeAssistantBomKittingPackage(): BomKittingPackage {
     traceId: record.traceId,
     status: 'active',
     statusLabel: record.statusLabel,
-    createdAt,
+    createdAt: record.createdAt,
   })
-  return record
 }
 
 function mapBomKittingPackageToChatPackage(record: BomKittingPackage): ChatActionPackage {
@@ -580,12 +861,83 @@ function mapBomKittingPackageToChatPackage(record: BomKittingPackage): ChatActio
   }
 }
 
+function writeAssistantEquipmentDowntimePackage(): EquipmentDowntimeEvent {
+  const createdAt = new Date().toISOString()
+  const record: EquipmentDowntimeEvent = {
+    equipmentCode: 'CNC-001',
+    equipmentName: 'CNC-001 加工中心',
+    downtimeHours: 4,
+    affectedOrders: 'WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001',
+    alternativeEquipment: 'CNC-002 / CNC-003',
+    maintenanceWindow: '今日夜班 22:00-02:00',
+    protectionStrategy: '减少换线、优先关键订单、推荐预防维护窗口',
+    createdAt,
+  }
+  writeEquipmentDowntimeEvent(record)
+  return record
+}
+
+function writeAssistantEquipmentDowntimeEvidence(record: EquipmentDowntimeEvent) {
+  upsertOtdEvidenceChainRecord({
+    id: 'assistant-equipment-downtime-cnc-001',
+    stage: '设备维护',
+    title: 'CNC-001 停机窗口已同步排产复核',
+    summary: `${record.downtimeHours}h 停机影响 ${record.affectedOrders}，替代设备 ${record.alternativeEquipment}，按 ${record.protectionStrategy} 保护瓶颈设备。`,
+    object: record.affectedOrders,
+    source: `AI 生产助手 / ${currentUsername()}`,
+    traceId: `TRACE-EQ-DOWNTIME-${record.equipmentCode}`,
+    status: 'active',
+    statusLabel: '待维护',
+    createdAt: record.createdAt,
+  })
+}
+
+function mapEquipmentDowntimePackageToChatPackage(record: EquipmentDowntimeEvent): ChatActionPackage {
+  return {
+    id: 'assistant-equipment-downtime-cnc-001',
+    title: `${record.equipmentCode} 设备停机复核包`,
+    auditCode: 'AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001',
+    traceId: `TRACE-EQ-DOWNTIME-${record.equipmentCode}`,
+    statusLabel: '待维护',
+    workOrders: record.affectedOrders,
+    otdImpact: `停机 ${record.downtimeHours}h / +1 单延期风险`,
+    owner: '设备 张工 / 计划员 李工',
+    dueAt: record.maintenanceWindow,
+    steps: [
+      {
+        module: '设备维护',
+        owner: '设备 张工',
+        action: `${record.equipmentName} 标记停机，确认主轴检查和维护窗口。`,
+        evidence: `TRACE-EQ-DOWNTIME-${record.equipmentCode}-MAINT`,
+      },
+      {
+        module: 'AI 排产',
+        owner: '计划员 李工',
+        action: `读取 ${record.affectedOrders}，复核 ${record.alternativeEquipment} 分流与加班窗口。`,
+        evidence: `TRACE-EQ-DOWNTIME-${record.equipmentCode}-SCHEDULE`,
+      },
+      {
+        module: '风险预警',
+        owner: '交付 PM',
+        action: '锁定急单保护，低优先级工单至少后移 1 个班次。',
+        evidence: `TRACE-EQ-DOWNTIME-${record.equipmentCode}-RISK`,
+      },
+      {
+        module: '现场班组',
+        owner: '班组长 王工',
+        action: record.protectionStrategy,
+        evidence: `TRACE-EQ-DOWNTIME-${record.equipmentCode}-SHOPFLOOR`,
+      },
+    ],
+  }
+}
+
 function exportActionReport() {
   const headers = ['类别', '项目', '值']
   const rows = [
-    ['OTD复盘', '人工基线OTD', '82.0%'],
-    ['OTD复盘', 'Agent推荐OTD', '96.0%'],
-    ['OTD复盘', 'OTD提升', '+14%'],
+    ['OTD复盘', '人工基线OTD', '26.67%'],
+    ['OTD复盘', 'Agent推荐OTD', '30.00%'],
+    ['OTD复盘', 'OTD提升', '+3.33pt / p=0.7745'],
     ['POC评估', '通过线', '85分'],
     ['Demo路径', '主线', '生产概览 -> 风险预警 -> AI排产 -> 采购协同 -> 报表中心'],
   ]
@@ -597,8 +949,22 @@ function exportActionReport() {
   const a = document.createElement('a')
   a.href = url
   a.download = 'AI-MES-OTD-POC-Report.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    a.click()
+  } catch (err: unknown) {
+    try {
+      URL.revokeObjectURL(url)
+    } catch {
+      // Preserve the download preparation failure as the user-facing cause.
+    }
+    throw err
+  }
+  try {
+    URL.revokeObjectURL(url)
+  } catch (err: unknown) {
+    return errorMessage(err, '请稍后重试')
+  }
+  return ''
 }
 
 function latestKittingEvidenceForRushOrder(): OtdEvidenceChainItem | null {
@@ -628,12 +994,14 @@ function latestProductionExecutionEvidence(stage: '生产完工' | '生产复核
 }
 
 function latestAnomalyDispatchRecord(): AnomalyDispatchRecord | null {
-  return readAnomalyDispatchRecords()
+  const records = cachedAnomalyDispatchRecords.value.length ? cachedAnomalyDispatchRecords.value : readAnomalyDispatchRecords()
+  return records
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
 function latestMonitoringSituationEscalation(): MonitoringSituationEscalation | null {
-  return readMonitoringSituationEscalations()
+  const records = cachedMonitoringSituationEscalations.value.length ? cachedMonitoringSituationEscalations.value : readMonitoringSituationEscalations()
+  return records
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
 }
 
@@ -1054,7 +1422,7 @@ function getBusinessAnalysisReply(question: string): string {
     q.includes('风险')
     && (q.includes('sla') || q.includes('晨会') || q.includes('复核') || q.includes('逾期'))
   ) {
-    const review = readRiskSlaReviewRecord()
+    const review = cachedRiskSlaReview.value ?? readRiskSlaReviewRecord()
     if (!review) {
       return [
         '**风险 SLA 晨会复核：当前还没有生成复核包。**',
@@ -1514,7 +1882,7 @@ function getBusinessAnalysisReply(question: string): string {
       '- 次因：`CNC-001` 是瓶颈设备，夜班维护窗口会挤占 4h 可用产能。',
       '- 质量影响：`INS-003` 热处理返工占用 `HT-01` 复验窗口，影响同批 `WO-DEMO-1007`。',
       '- Agent 建议：启用 `M-AL-6061B` 替代料评估，急单放入锁定期后的第一个 CNC 空窗，并把低优先级工单后移。',
-      '- 预计恢复：采购收货和重排采纳后，30 单样本 OTD 可从 82% 恢复到 96%。',
+      '- 预计恢复：采购收货和重排采纳后，30 单样本 OTD 当前可重跑口径为从 26.67% 恢复到 30.00%，p=0.7745，未达到 95% 显著性。',
     ].join('\n') + citationLine
   }
 
@@ -1766,6 +2134,18 @@ function getExecutableActions(question: string): ChatAction[] {
     })
   }
 
+  if (isEquipmentDowntimePackageIntent(q)) {
+    actions.push({
+      id: 'create-equipment-downtime-package',
+      label: '生成设备停机复核包',
+      type: 'equipment_downtime_package',
+      targetRoute: '/equipment',
+      requiredRole: 'Admin',
+      auditCode: 'AUD-CHAT-EQ-DOWNTIME-CNC001-20260523-001',
+      resultMessage: '已生成 CNC-001 设备停机复核包，包含维护窗口、替代设备、影响工单和排产保护策略。',
+    })
+  }
+
   if (q.includes('重排') || q.includes('排产建议') || q.includes('生成建议')) {
     actions.push({
       id: 'generate-schedule-suggestion',
@@ -1862,6 +2242,13 @@ function isBomKittingPackageIntent(q: string) {
   const createIntent = q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键')
   const subject = q.includes('bom') || q.includes('物料清单') || q.includes('齐套包') || q.includes('展开齐套') || q.includes('工单齐套')
   const packageIntent = q.includes('齐套') || q.includes('缺料') || q.includes('检查包') || q.includes('排产事件')
+  return createIntent && subject && packageIntent
+}
+
+function isEquipmentDowntimePackageIntent(q: string) {
+  const createIntent = q.includes('生成') || q.includes('创建') || q.includes('帮我') || q.includes('一键')
+  const subject = q.includes('cnc-001') || q.includes('cnc-01') || q.includes('设备') || q.includes('设备维护')
+  const packageIntent = q.includes('停机') || q.includes('故障') || q.includes('复核包') || q.includes('排产事件')
   return createIntent && subject && packageIntent
 }
 
@@ -2274,7 +2661,26 @@ function dedupeActions(actions: ChatAction[]): ChatAction[] {
   })
 }
 
+async function readStartupContextSource<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader()
+  } catch (err: unknown) {
+    addMessage(
+      'assistant',
+      `助手上下文同步失败：${errorMessage(err, '请稍后重试')}。已保留聊天入口，可继续使用离线/本地上下文回答。`,
+      undefined,
+      undefined,
+      undefined,
+      'alert'
+    )
+    return fallback
+  }
+}
+
 onMounted(async () => {
+  cachedAnomalyDispatchRecords.value = await readStartupContextSource(readAnomalyDispatchRecordsBackendFirst, [])
+  cachedMonitoringSituationEscalations.value = await readStartupContextSource(readMonitoringSituationEscalationsBackendFirst, [])
+  cachedRiskSlaReview.value = await readStartupContextSource(readRiskSlaReviewRecordBackendFirst, null)
   try {
     const status = await getLlmStatus()
     if (status.provider === 'Ollama') {
@@ -2284,8 +2690,16 @@ onMounted(async () => {
       modelLabel.value = status.provider
       modelFullLabel.value = `${status.provider} / ${status.model}`
     }
-  } catch {
-    // LLM 状态不可用时静默忽略
+  } catch (err: unknown) {
+    if (isOfflineDemoError(err)) return
+    addMessage(
+      'assistant',
+      `LLM 状态加载失败：${errorMessage(err, '请稍后重试')}。已保留聊天入口，可继续使用知识库或离线演示回答。`,
+      undefined,
+      undefined,
+      undefined,
+      'alert'
+    )
   }
 })
 
@@ -2562,6 +2976,10 @@ function getDemoSources(question = ''): KnowledgeSourceDto[] {
 }
 
 .sources-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   color: #1890ff;
   cursor: pointer;

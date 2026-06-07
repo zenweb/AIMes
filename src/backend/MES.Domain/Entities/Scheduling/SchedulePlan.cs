@@ -1,4 +1,5 @@
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 
 namespace MES.Domain.Entities.Scheduling;
 
@@ -47,7 +48,7 @@ public class SchedulePlan
     public void Unlock()
     {
         if (Status != SchedulePlanStatus.Locked)
-            throw new InvalidOperationException($"当前状态 {Status} 不允许解锁");
+            throw new DomainRuleViolationException($"当前状态 {Status} 不允许解锁");
         Status = SchedulePlanStatus.Active;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -55,7 +56,7 @@ public class SchedulePlan
     public void Adopt()
     {
         if (Status != SchedulePlanStatus.Locked && Status != SchedulePlanStatus.Active)
-            throw new InvalidOperationException($"当前状态 {Status} 不允许采纳");
+            throw new DomainRuleViolationException($"当前状态 {Status} 不允许采纳");
         Status = SchedulePlanStatus.Adopted;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -89,7 +90,7 @@ public class SchedulePlan
     {
         var item = _items.FirstOrDefault(i => i.Id == itemId);
         if (item == null)
-            throw new InvalidOperationException($"排产项 {itemId} 不存在");
+            throw new DomainRuleViolationException($"排产项 {itemId} 不存在");
         _items.Remove(item);
         UpdatedAt = DateTime.UtcNow;
     }

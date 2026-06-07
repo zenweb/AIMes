@@ -4,7 +4,7 @@ test.describe('Scanner 条码现场入口', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('scanner')
     await page.waitForSelector('.scanner-board', { timeout: 20000 })
@@ -94,6 +94,37 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(detail.getByText(/条码扫描读取 条码扫描 \/ 现场工位 \/ 管理员/)).toBeVisible()
     await expect(detail.getByText(/同步给报表、审计回放和生产报工入口/)).toBeVisible()
     await expect(detail.getByText(/核对扫码到站、报工入口、开工校验和后续工序是否连续/)).toBeVisible()
+  })
+
+  test('扫码证据写入失败时真实浏览器展示 fail-loud 且不伪造证据链', async ({ page }) => {
+    await page.locator('.code-input').fill('WO-RUSH-9001')
+    await page.getByRole('button', { name: '查询' }).click()
+
+    const result = page.locator('.scan-result')
+    await expect(result.getByText('确认工单到站并进入报工入口')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithBarcodeScanEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_barcode_scan_evidence') {
+          throw new Error('chromium barcode scan evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await result.getByRole('button', { name: '确认并写入证据链' }).click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: '扫码证据写入失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('chromium barcode scan evidence storage unavailable')
+    await expect(result.getByText('确认工单到站并进入报工入口')).toBeVisible()
+    await expect(result.getByText('TRACE-QR-WO-RUSH-9001-ARRIVAL')).not.toBeVisible()
+
+    const scanEvidenceSnapshot = await page.evaluate(() => localStorage.getItem('aimes_barcode_scan_evidence'))
+    const otdEvidenceSnapshot = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(scanEvidenceSnapshot).toBeNull()
+    expect(otdEvidenceSnapshot ?? '').not.toContain('TRACE-QR-WO-RUSH-9001-ARRIVAL')
   })
 
   test('扫码工单带入生产报工并生成开工证据', async ({ page }) => {

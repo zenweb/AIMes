@@ -48,6 +48,69 @@ export interface QualityMrbDispositionRecord {
   closedBy?: string
 }
 
+const QUALITY_MRB_DISPOSITION_STRING_FIELDS = [
+  'id',
+  'title',
+  'inspectionId',
+  'workOrderId',
+  'productCode',
+  'processName',
+  'equipmentCode',
+  'materialBatchCode',
+  'batchCode',
+  'inspectionPoint',
+  'defectPattern',
+  'dispositionLabel',
+  'statusLabel',
+  'owner',
+  'dueAt',
+  'otdImpact',
+  'scheduleImpact',
+  'recommendedAction',
+  'auditId',
+  'traceId',
+  'scheduleTraceId',
+  'createdAt',
+] as const
+
+const QUALITY_MRB_DISPOSITION_ACTION_STRING_FIELDS = [
+  'module',
+  'owner',
+  'action',
+  'dueAt',
+  'evidence',
+] as const
+
+function hasNonEmptyString(record: Record<string, unknown>, field: string) {
+  const value = record[field]
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isQualityMrbDispositionAction(value: unknown): value is QualityMrbDispositionAction {
+  if (!value || typeof value !== 'object') return false
+
+  const action = value as Record<string, unknown>
+  return QUALITY_MRB_DISPOSITION_ACTION_STRING_FIELDS.every(field => hasNonEmptyString(action, field))
+    && (action.result === undefined || typeof action.result === 'string')
+}
+
+function isQualityMrbDispositionRecord(value: unknown): value is QualityMrbDispositionRecord {
+  if (!value || typeof value !== 'object') return false
+
+  const record = value as Record<string, unknown>
+  return QUALITY_MRB_DISPOSITION_STRING_FIELDS.every(field => hasNonEmptyString(record, field))
+    && typeof record.defectQuantity === 'number'
+    && ['scrap_rebuild', 'rework', 'concession'].includes(String(record.disposition))
+    && ['active', 'closed'].includes(String(record.status))
+    && Array.isArray(record.actions)
+    && record.actions.every(isQualityMrbDispositionAction)
+    && (record.closureAuditId === undefined || typeof record.closureAuditId === 'string')
+    && (record.closureTraceId === undefined || typeof record.closureTraceId === 'string')
+    && (record.closureSummary === undefined || typeof record.closureSummary === 'string')
+    && (record.closedAt === undefined || typeof record.closedAt === 'string')
+    && (record.closedBy === undefined || typeof record.closedBy === 'string')
+}
+
 function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
@@ -132,6 +195,9 @@ function upsertQualityMrbOtdEvidence(record: QualityMrbDispositionRecord) {
 export function writeQualityMrbDispositionRecord(record: QualityMrbDispositionRecord) {
   if (!canUseStorage()) return record
   window.localStorage.setItem(QUALITY_MRB_DISPOSITION_KEY, JSON.stringify(record))
+  void import('../api/qualityEvidence')
+    .then(({ upsertQualityMrbDisposition }) => upsertQualityMrbDisposition(record))
+    .catch(() => undefined)
   upsertQualityMrbOtdEvidence(record)
   return record
 }
@@ -142,10 +208,23 @@ export function readQualityMrbDispositionRecord(): QualityMrbDispositionRecord |
   if (!raw) return null
 
   try {
-    return JSON.parse(raw) as QualityMrbDispositionRecord
+    const parsed = JSON.parse(raw)
+    if (isQualityMrbDispositionRecord(parsed)) return parsed
+
+    window.localStorage.removeItem(QUALITY_MRB_DISPOSITION_KEY)
+    return null
   } catch {
     window.localStorage.removeItem(QUALITY_MRB_DISPOSITION_KEY)
     return null
+  }
+}
+
+export async function readQualityMrbDispositionRecordBackendFirst(): Promise<QualityMrbDispositionRecord | null> {
+  try {
+    const { getLatestQualityMrbDisposition } = await import('../api/qualityEvidence')
+    return await getLatestQualityMrbDisposition() ?? readQualityMrbDispositionRecord()
+  } catch {
+    return readQualityMrbDispositionRecord()
   }
 }
 

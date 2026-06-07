@@ -1,5 +1,5 @@
-using MES.Domain.Entities.Bom;
 using MES.Domain.Entities.Anomalies;
+using MES.Domain.Entities.Bom;
 using MES.Domain.Entities.Inventory;
 using MES.Domain.Entities.Purchase;
 using MES.Domain.Entities.Quality;

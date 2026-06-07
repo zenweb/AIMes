@@ -5,6 +5,19 @@
       <button class="btn btn-export" @click="handleExport" v-if="orders.length">导出 CSV</button>
     </div>
 
+    <section v-if="auditFocus" class="audit-focus-banner" aria-label="审计对象定位">
+      <div>
+        <span>来自审计回放</span>
+        <strong>{{ auditFocus.label }}</strong>
+        <p>对象 {{ auditFocus.objectId }} 已定位到采购单详情，追踪号 {{ auditFocus.traceId }}。</p>
+      </div>
+      <code>{{ auditFocus.objectType }}</code>
+    </section>
+
+    <div v-if="notification" class="purchase-notification" role="alert">
+      {{ notification }}
+    </div>
+
     <ShortageActionPanel
       :shortage="shortageAction"
       :trace="shortageTrace"
@@ -207,13 +220,19 @@
           <span class="badge-count">{{ orders.length }}</span>
           <button class="btn btn-add" @click="showCreate = true">+ 新建</button>
         </div>
-        <div class="list-items">
+        <div class="list-items" role="listbox" aria-label="采购订单列表">
           <div
             v-for="o in orders"
             :key="o.id"
             class="list-item"
             :class="{ active: selected?.id === o.id }"
+            role="option"
+            tabindex="0"
+            :aria-selected="selected?.id === o.id"
+            :aria-label="purchaseOrderOptionLabel(o)"
             @click="selectOrder(o)"
+            @keydown.enter.prevent="selectOrder(o)"
+            @keydown.space.prevent="selectOrder(o)"
           >
             <div class="item-title">{{ o.orderNumber }}</div>
             <div class="item-sub">
@@ -290,8 +309,13 @@
 
     <!-- 新建对话框 -->
     <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false">
-      <div class="modal-content wide">
-        <h3>新建采购订单</h3>
+      <div
+        class="modal-content wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-purchase-order-title"
+      >
+        <h3 id="create-purchase-order-title">新建采购订单</h3>
         <div class="form-row">
           <div class="form-group"><label>订单编号</label><input v-model="form.orderNumber" class="form-input" /></div>
           <div class="form-group"><label>供应商</label><input v-model="form.supplierName" class="form-input" /></div>
@@ -322,8 +346,13 @@
 
     <!-- 收货对话框 -->
     <div v-if="showReceive && selected" class="modal-overlay" @click.self="showReceive = false">
-      <div class="modal-content">
-        <h3>收货</h3>
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="receive-purchase-order-title"
+      >
+        <h3 id="receive-purchase-order-title">收货</h3>
         <div class="form-group">
           <label>物料</label>
           <select v-model="receiveMaterial" class="form-input">
@@ -344,20 +373,24 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import type { PurchaseOrderSummary, PurchaseOrderDetail, CreatePurchaseOrderRequest } from '../../types/purchase'
 import { getPurchaseList, getPurchaseById, createPurchaseOrder, submitPurchaseOrder, confirmPurchaseOrder, receivePurchaseOrder, cancelPurchaseOrder } from '../../api/purchase'
 import { exportToCsv } from '../../utils/export'
 import { formatDate } from '../../utils/date'
+import { errorMessage } from '../../utils/error-message'
 import ShortageActionPanel, {
   type ShortageAction,
   type ShortageTrace,
 } from './ShortageActionPanel.vue'
 import {
   readSupplierNetworkDecision,
-  readSupplyRiskEscalation,
+  readSupplierNetworkDecisionBackendFirst,
+  readSupplyRiskEscalationBackendFirst,
   writeShortageRiskResolution,
   writeSupplierNetworkDecision,
   writeSupplyRiskEscalation,
+  type SupplyRiskEscalation,
   type SupplierNetworkCandidate,
   type SupplierNetworkDecision,
 } from '../../utils/shortage-risk-sync'
@@ -365,18 +398,20 @@ import {
   closeOtdEvidenceChainRecords,
   upsertOtdEvidenceChainRecord,
 } from '../../utils/otd-evidence-chain-sync'
-import { readAnomalyDispatchRecordByType, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
+import { readAnomalyDispatchRecordByType, readAnomalyDispatchRecordByTypeBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
 import {
   closeAssistantRecoveryPurchaseAction,
-  readAssistantRecoveryPackages,
+  readAssistantRecoveryPackagesBackendFirst,
 } from '../../utils/assistant-action-package-sync'
 import {
   confirmOutsourcingCommitmentArrival,
   readLatestOutsourcingCommitmentPackage,
+  readLatestOutsourcingCommitmentPackageBackendFirst,
   type OutsourcingCommitmentPackage,
 } from '../../utils/outsourcing-commitment-sync'
 
 const orders = ref<PurchaseOrderSummary[]>([])
+const route = useRoute()
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalCount = ref(0)
@@ -401,10 +436,19 @@ function goToPage(p: number | string) {
   refreshList()
 }
 const selected = ref<PurchaseOrderDetail | null>(null)
+const auditFocus = computed(() => {
+  const objectType = String(route.query.auditObjectType ?? '')
+  const objectId = String(route.query.auditObjectId ?? '')
+  const traceId = String(route.query.auditTraceId ?? '')
+  const label = String(route.query.auditObjectLabel ?? objectId)
+  if (objectType !== 'purchase-order' || !objectId || !traceId) return null
+  return { objectType, objectId, traceId, label }
+})
 const showCreate = ref(false)
 const showReceive = ref(false)
 const receiveMaterial = ref('')
 const receiveQty = ref(1)
+const notification = ref('')
 const form = ref<CreatePurchaseOrderRequest>({
   orderNumber: '', supplierName: '', supplierContact: '', expectedDeliveryDate: '', remark: '', createdBy: 'operator1',
   items: [],
@@ -566,43 +610,87 @@ function statusLabel(s: string) {
   return map[s.toLowerCase()] || s
 }
 
+function purchaseOrderOptionLabel(o: PurchaseOrderSummary) {
+  return `${o.orderNumber}，${o.supplierName}，${statusLabel(o.status)}，${o.itemCount} 项`
+}
+
 async function selectOrder(o: PurchaseOrderSummary) {
-  try { selected.value = await getPurchaseById(o.id) }
-  catch { selected.value = demoDetail[o.id] || null }
+  try {
+    selected.value = await getPurchaseById(o.id)
+    if (notification.value.startsWith('采购订单详情加载失败')) notification.value = ''
+  } catch (error: unknown) {
+    notification.value = `采购订单详情加载失败，已保留当前列表状态：${errorMessage(error, '请稍后重试')}`
+    selected.value = demoDetail[o.id] || null
+  }
 }
 
 async function handleCreate() {
+  notification.value = ''
   try { await createPurchaseOrder(form.value) }
-  catch { orders.value.unshift({ id: 'po-new', orderNumber: form.value.orderNumber, supplierName: form.value.supplierName, status: 'Draft', orderDate: new Date().toISOString(), expectedDeliveryDate: form.value.expectedDeliveryDate || null, totalAmount: form.value.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0), itemCount: form.value.items.length, createdBy: 'operator1', createdAt: new Date().toISOString() }) }
+  catch (error) {
+    notification.value = `创建失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   showCreate.value = false
 }
 
 async function handleSubmit() {
   if (!selected.value) return
+  notification.value = ''
   try { selected.value = await submitPurchaseOrder(selected.value.id) }
-  catch { selected.value = { ...selected.value, status: 'Submitted', updatedAt: new Date().toISOString() } }
+  catch (error) {
+    notification.value = `提交失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   await refreshList()
 }
 
 async function handleConfirm() {
   if (!selected.value) return
+  notification.value = ''
   try { selected.value = await confirmPurchaseOrder(selected.value.id) }
-  catch { selected.value = { ...selected.value, status: 'Confirmed', updatedAt: new Date().toISOString() } }
+  catch (error) {
+    notification.value = `确认失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   await refreshList()
+  orders.value = orders.value.map(order =>
+    order.id === selected.value?.id
+      ? {
+          ...order,
+          supplierName: selected.value.supplierName,
+          status: selected.value.status,
+          orderDate: selected.value.orderDate,
+          expectedDeliveryDate: selected.value.expectedDeliveryDate,
+          totalAmount: selected.value.totalAmount,
+          itemCount: selected.value.items.length,
+          createdBy: selected.value.createdBy,
+          createdAt: selected.value.createdAt,
+        }
+      : order
+  )
 }
 
 async function handleReceive() {
   if (!selected.value || !receiveMaterial.value) return
+  notification.value = ''
   try { selected.value = await receivePurchaseOrder(selected.value.id, { materialCode: receiveMaterial.value, quantity: receiveQty.value }) }
-  catch { /* demo */ }
+  catch (error) {
+    notification.value = `收货失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   showReceive.value = false
   await refreshList()
 }
 
 async function handleCancel() {
   if (!selected.value) return
+  notification.value = ''
   try { await cancelPurchaseOrder(selected.value.id) }
-  catch { /* demo */ }
+  catch (error) {
+    notification.value = `取消失败：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   selected.value = { ...selected.value, status: 'Cancelled', completedDate: new Date().toISOString() }
   await refreshList()
 }
@@ -694,7 +782,7 @@ function handleAlternateMaterial() {
   }
 }
 
-function buildSupplyRiskRecord(decision: Exclude<SupplyRiskDecision, 'open'>) {
+function buildSupplyRiskRecord(decision: Exclude<SupplyRiskDecision, 'open'>): SupplyRiskEscalation {
   const auditId = decision === 'alternate_received'
     ? 'AUD-PUR-SUPPLY-ALT-RECEIPT-20260521-001'
     : decision === 'alternate_committed'
@@ -729,48 +817,58 @@ function buildSupplyRiskRecord(decision: Exclude<SupplyRiskDecision, 'open'>) {
 
 function handleEscalateSupplyRisk() {
   const record = buildSupplyRiskRecord('escalated')
+  try {
+    writeSupplyRiskEscalation(record)
+    upsertOtdEvidenceChainRecord({
+      id: `supply-risk-${record.materialCode}`,
+      stage: '供应风险',
+      title: `${record.materialCode} 供应延期已升级`,
+      summary: `${record.purchaseOrderNumber} 原计划 ${record.originalDeliveryDate} 到料，供应商承诺延后到 ${record.promisedDeliveryDate}；${record.affectedOrders} 需排产复核。`,
+      object: record.affectedOrders,
+      source: `采购协同 / ${record.supplierName}`,
+      traceId: record.traceId,
+      status: 'active',
+      statusLabel: record.statusLabel,
+      createdAt: record.createdAt,
+    })
+  } catch (error: unknown) {
+    notification.value = `供应风险升级失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   supplyRiskDecision.value = 'escalated'
   supplyRiskTrace.value = {
     title: '供应延期已升级',
     detail: record.message,
     traceId: record.traceId,
   }
-  writeSupplyRiskEscalation(record)
-  upsertOtdEvidenceChainRecord({
-    id: `supply-risk-${record.materialCode}`,
-    stage: '供应风险',
-    title: `${record.materialCode} 供应延期已升级`,
-    summary: `${record.purchaseOrderNumber} 原计划 ${record.originalDeliveryDate} 到料，供应商承诺延后到 ${record.promisedDeliveryDate}；${record.affectedOrders} 需排产复核。`,
-    object: record.affectedOrders,
-    source: `采购协同 / ${record.supplierName}`,
-    traceId: record.traceId,
-    status: 'active',
-    statusLabel: record.statusLabel,
-    createdAt: record.createdAt,
-  })
 }
 
 function handleCommitAlternateSupplier() {
   const record = buildSupplyRiskRecord('alternate_committed')
+  try {
+    writeSupplyRiskEscalation(record)
+    upsertOtdEvidenceChainRecord({
+      id: `supply-risk-${record.materialCode}`,
+      stage: '供应风险',
+      title: `${record.materialCode} 替代供应商已锁定`,
+      summary: `${record.alternateSupplierName} 承诺 ${record.alternatePromiseDate} 到料，早于原供应商延后承诺 ${record.promisedDeliveryDate}；${record.affectedOrders} 可恢复排产复核。`,
+      object: record.affectedOrders,
+      source: `采购协同 / ${record.alternateSupplierName}`,
+      traceId: record.traceId,
+      status: 'closed',
+      statusLabel: record.statusLabel,
+      createdAt: record.createdAt,
+    })
+  } catch (error: unknown) {
+    notification.value = `替代供应商锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   supplyRiskDecision.value = 'alternate_committed'
   supplyRiskTrace.value = {
     title: '替代供应商已锁定',
     detail: record.message,
     traceId: record.traceId,
   }
-  writeSupplyRiskEscalation(record)
-  upsertOtdEvidenceChainRecord({
-    id: `supply-risk-${record.materialCode}`,
-    stage: '供应风险',
-    title: `${record.materialCode} 替代供应商已锁定`,
-    summary: `${record.alternateSupplierName} 承诺 ${record.alternatePromiseDate} 到料，早于原供应商延后承诺 ${record.promisedDeliveryDate}；${record.affectedOrders} 可恢复排产复核。`,
-    object: record.affectedOrders,
-    source: `采购协同 / ${record.alternateSupplierName}`,
-    traceId: record.traceId,
-    status: 'closed',
-    statusLabel: record.statusLabel,
-    createdAt: record.createdAt,
-  })
 }
 
 function handleReceiveAlternateSupplier() {
@@ -782,25 +880,30 @@ function handleReceiveAlternateSupplier() {
     receiptTraceId: 'TRACE-PUR-MAT-B02-ALT-SUPPLIER-RECEIVED',
     receiptMessage: `${supplyRisk.alternateSupplierName} 已按 ${supplyRisk.alternatePromiseDate} 承诺到货 ${supplyRisk.alternateReceivedQuantity} ${supplyRisk.unit}，${supplyRisk.affectedOrders} 的 ${supplyRisk.materialCode} 供应风险关闭。`,
   }
+  try {
+    writeSupplyRiskEscalation(record)
+    upsertOtdEvidenceChainRecord({
+      id: `supply-risk-${record.materialCode}`,
+      stage: '供应到货',
+      title: `${record.materialCode} 替代供应商到货已确认`,
+      summary: `${record.alternateSupplierName} 已按 ${record.alternatePromiseDate} 承诺到货 ${record.receivedQuantity} ${supplyRisk.unit}，${record.affectedOrders} 的供应风险关闭，AI 排产可释放复核。`,
+      object: record.affectedOrders,
+      source: `采购协同 / ${record.alternateSupplierName}`,
+      traceId: record.receiptTraceId,
+      status: 'closed',
+      statusLabel: record.statusLabel,
+      createdAt: record.createdAt,
+    })
+  } catch (error: unknown) {
+    notification.value = `替代供应商到货确认失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   supplyRiskDecision.value = 'alternate_received'
   supplyRiskTrace.value = {
     title: '替代到货已确认',
     detail: record.receiptMessage,
     traceId: record.receiptTraceId,
   }
-  writeSupplyRiskEscalation(record)
-  upsertOtdEvidenceChainRecord({
-    id: `supply-risk-${record.materialCode}`,
-    stage: '供应到货',
-    title: `${record.materialCode} 替代供应商到货已确认`,
-    summary: `${record.alternateSupplierName} 已按 ${record.alternatePromiseDate} 承诺到货 ${record.receivedQuantity} ${supplyRisk.unit}，${record.affectedOrders} 的供应风险关闭，AI 排产可释放复核。`,
-    object: record.affectedOrders,
-    source: `采购协同 / ${record.alternateSupplierName}`,
-    traceId: record.receiptTraceId,
-    status: 'closed',
-    statusLabel: record.statusLabel,
-    createdAt: record.createdAt,
-  })
 }
 
 function handleSupplierNetworkDecision() {
@@ -822,39 +925,46 @@ function handleSupplierNetworkDecision() {
     message: `${preferredSupplier.supplierName} 以绩效 ${preferredSupplier.performanceScore}、准交 ${preferredSupplier.onTimeRate}% 和 ${preferredSupplier.slaLeadTimeHours}h SLA 成为 ${supplyRisk.materialCode} 首选恢复供应商；${supplyRisk.supplierName} 标记 SLA 违约，北方精密协作厂保留二供观察。`,
     createdAt,
   }
+  try {
+    writeSupplierNetworkDecision(record)
+    upsertOtdEvidenceChainRecord({
+      id: `supplier-network-${record.materialCode}`,
+      stage: '供应网络',
+      title: `${record.materialCode} 供应商绩效与 SLA 选优已确认`,
+      summary: `${record.selectedSupplierName} 凭绩效 ${record.selectedPerformanceScore}、准交 ${record.selectedOnTimeRate}% 和 ${preferredSupplier.slaLeadTimeHours}h SLA 被选为恢复供应商；原供应商延期进入 SLA 违约复盘。`,
+      object: record.affectedOrders,
+      source: '采购协同 / 供应网络治理',
+      traceId: record.traceId,
+      status: 'closed',
+      statusLabel: record.statusLabel,
+      createdAt,
+    })
+  } catch (error: unknown) {
+    notification.value = `供应网络选优失败，SLA 决策仍未生效：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   supplierNetworkDecision.value = record
-  writeSupplierNetworkDecision(record)
-  upsertOtdEvidenceChainRecord({
-    id: `supplier-network-${record.materialCode}`,
-    stage: '供应网络',
-    title: `${record.materialCode} 供应商绩效与 SLA 选优已确认`,
-    summary: `${record.selectedSupplierName} 凭绩效 ${record.selectedPerformanceScore}、准交 ${record.selectedOnTimeRate}% 和 ${preferredSupplier.slaLeadTimeHours}h SLA 被选为恢复供应商；原供应商延期进入 SLA 违约复盘。`,
-    object: record.affectedOrders,
-    source: '采购协同 / 供应网络治理',
-    traceId: record.traceId,
-    status: 'closed',
-    statusLabel: record.statusLabel,
-    createdAt,
-  })
 }
 
 function handleConfirmOutsourcingArrival() {
   if (!outsourcingCommitment.value) return
-  const updated = confirmOutsourcingCommitmentArrival(outsourcingCommitment.value.sourceKpiId, '采购 王工')
-  if (updated) outsourcingCommitment.value = updated
+  try {
+    const updated = confirmOutsourcingCommitmentArrival(outsourcingCommitment.value.sourceKpiId, '采购 王工')
+    if (!updated) {
+      notification.value = '外协到货确认失败，外协承诺仍待到货：未找到可写入的外协承诺记录'
+      return
+    }
+    outsourcingCommitment.value = updated
+  } catch (error: unknown) {
+    notification.value = `外协到货确认失败，外协承诺仍待到货：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function handleMaterialSupplierCorrection() {
   if (!materialDispatch.value) return
   const dispatch = materialDispatch.value
   const createdAt = new Date().toISOString()
-  supplyRiskDecision.value = 'alternate_committed'
-  supplyRiskTrace.value = {
-    title: '来料异常整改承诺已锁定',
-    detail: `${dispatch.traceId} 已要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，${dispatch.affectedOrders} 转入采购与排产联合复核。`,
-    traceId: dispatch.traceId,
-  }
-  writeSupplyRiskEscalation({
+  const record: SupplyRiskEscalation = {
     purchaseOrderNumber: 'PO-MAT-BATCH-20260521',
     materialCode: 'LH-202605',
     materialName: '原料批次 LH-202605',
@@ -871,23 +981,35 @@ function handleMaterialSupplierCorrection() {
     traceId: dispatch.traceId,
     message: `${dispatch.title} 已锁定供应商整改与备用批次复检承诺，${dispatch.affectedOrders} 转入排产复核。`,
     createdAt,
-  })
-  upsertOtdEvidenceChainRecord({
-    id: `purchase-material-correction-${dispatch.anomalyId}`,
-    stage: '采购整改',
-    title: `${dispatch.title}供应商整改承诺已锁定`,
-    summary: `${dispatch.traceId} 要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，采购协同与库存齐套共同回写风险状态。`,
-    object: dispatch.affectedOrders,
-    source: `采购协同 / ${dispatch.owner}`,
+  }
+  try {
+    writeSupplyRiskEscalation(record)
+    upsertOtdEvidenceChainRecord({
+      id: `purchase-material-correction-${dispatch.anomalyId}`,
+      stage: '采购整改',
+      title: `${dispatch.title}供应商整改承诺已锁定`,
+      summary: `${dispatch.traceId} 要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，采购协同与库存齐套共同回写风险状态。`,
+      object: dispatch.affectedOrders,
+      source: `采购协同 / ${dispatch.owner}`,
+      traceId: dispatch.traceId,
+      status: 'active',
+      statusLabel: '整改已锁定',
+      createdAt,
+    })
+  } catch (error: unknown) {
+    notification.value = `供应商整改承诺锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  supplyRiskDecision.value = 'alternate_committed'
+  supplyRiskTrace.value = {
+    title: '来料异常整改承诺已锁定',
+    detail: `${dispatch.traceId} 已要求供应商提交 8D，备用批次 LH-202604B 今日 16:00 前复检入库，${dispatch.affectedOrders} 转入采购与排产联合复核。`,
     traceId: dispatch.traceId,
-    status: 'active',
-    statusLabel: '整改已锁定',
-    createdAt,
-  })
+  }
 }
 
-function applyStoredSupplyRiskEscalation() {
-  const record = readSupplyRiskEscalation()
+async function applyStoredSupplyRiskEscalation() {
+  const record = await readSupplyRiskEscalationBackendFirst()
   if (!record) return
 
   supplyRiskDecision.value = record.decision
@@ -905,13 +1027,16 @@ function applyStoredSupplyRiskEscalation() {
 async function handleReceiveExpedite() {
   if (!selected.value || !expediteOrderId.value) return
   const materialCode = shortageAction.value.materialCode
+  const shortageQuantity = shortageAction.value.shortageQuantity
+  const nextAvailableQuantity = shortageAction.value.availableQuantity + shortageQuantity
+  let receivedDetail: PurchaseOrderDetail
   try {
-    selected.value = await receivePurchaseOrder(expediteOrderId.value, {
+    receivedDetail = await receivePurchaseOrder(expediteOrderId.value, {
       materialCode,
-      quantity: shortageAction.value.shortageQuantity,
+      quantity: shortageQuantity,
     })
   } catch {
-    selected.value = {
+    receivedDetail = {
       ...selected.value,
       status: 'Completed',
       completedDate: new Date().toISOString(),
@@ -922,22 +1047,63 @@ async function handleReceiveExpedite() {
       ),
     }
   }
+  try {
+    writeShortageRiskResolution({
+      materialCode,
+      materialName: shortageAction.value.materialName,
+      affectedOrders: shortageAction.value.affectedOrders,
+      sourceOrderNumber: receivedDetail.orderNumber,
+      receivedQuantity: nextAvailableQuantity,
+      unit: shortageAction.value.unit,
+      availableQuantity: nextAvailableQuantity,
+      resolvedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+      message: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
+    })
+    closeOtdEvidenceChainRecords(
+      record =>
+        record.stage === '库存齐套'
+        && record.status !== 'closed'
+        && record.traceId.includes(materialCode)
+        && record.object.includes('WO-RUSH-9001'),
+      {
+        statusLabel: '采购收货已齐套',
+        sourceTraceId: receivedDetail.orderNumber,
+        summary: record => `${record.summary} 采购协同 ${receivedDetail.orderNumber} 已完成 ${materialCode} 加急收货，缺口清零，排产复核可释放冻结工序。`,
+      }
+    )
+    upsertOtdEvidenceChainRecord({
+      id: `purchase-receipt-${receivedDetail.orderNumber}`,
+      stage: '采购回写',
+      title: `${materialCode} 加急采购收货已释放缺料风险`,
+      summary: `${receivedDetail.orderNumber} 收货完成，${shortageAction.value.affectedOrders} 的齐套缺口清零，排产复核可恢复执行。`,
+      object: shortageAction.value.affectedOrders,
+      source: `采购协同 / ${receivedDetail.supplierName}`,
+      traceId: receivedDetail.orderNumber,
+      status: 'closed',
+      statusLabel: '已收货',
+      createdAt: new Date().toISOString(),
+    })
+  } catch (error: unknown) {
+    notification.value = `采购加急收货回写失败，缺料风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    return
+  }
+  selected.value = receivedDetail
   shortageAction.value.status = 'mitigated'
-  shortageAction.value.availableQuantity += shortageAction.value.shortageQuantity
+  shortageAction.value.availableQuantity = nextAvailableQuantity
   shortageAction.value.shortageQuantity = 0
   orders.value = orders.value.map(order =>
-    order.id === selected.value?.id
-      ? { ...order, status: selected.value.status }
+    order.id === receivedDetail.id
+      ? { ...order, status: receivedDetail.status }
       : order
   )
   shortageTrace.value = {
     title: '采购收货已回写风险',
     detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
   }
-  const assistantRecoveryPackage = readAssistantRecoveryPackages()
+  const assistantRecoveryPackage = (await readAssistantRecoveryPackagesBackendFirst())
     .find(record => record.workOrders.includes('WO-RUSH-9001') && record.purchaseActionStatus !== 'closed')
   const assistantPurchaseClosure = assistantRecoveryPackage
-    ? closeAssistantRecoveryPurchaseAction(assistantRecoveryPackage.id, '采购 王工', selected.value.orderNumber)
+    ? closeAssistantRecoveryPurchaseAction(assistantRecoveryPackage.id, '采购 王工', receivedDetail.orderNumber)
     : null
   if (assistantPurchaseClosure?.purchaseActionSummary) {
     shortageTrace.value = {
@@ -945,41 +1111,6 @@ async function handleReceiveExpedite() {
       detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。${assistantPurchaseClosure.purchaseActionSummary}`,
     }
   }
-  writeShortageRiskResolution({
-    materialCode,
-    materialName: shortageAction.value.materialName,
-    affectedOrders: shortageAction.value.affectedOrders,
-    sourceOrderNumber: selected.value.orderNumber,
-    receivedQuantity: shortageAction.value.availableQuantity,
-    unit: shortageAction.value.unit,
-    availableQuantity: shortageAction.value.availableQuantity,
-    resolvedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
-    message: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
-  })
-  closeOtdEvidenceChainRecords(
-    record =>
-      record.stage === '库存齐套'
-      && record.status !== 'closed'
-      && record.traceId.includes(materialCode)
-      && record.object.includes('WO-RUSH-9001'),
-    {
-      statusLabel: '采购收货已齐套',
-      sourceTraceId: selected.value.orderNumber,
-      summary: record => `${record.summary} 采购协同 ${selected.value?.orderNumber} 已完成 ${materialCode} 加急收货，缺口清零，排产复核可释放冻结工序。`,
-    }
-  )
-  upsertOtdEvidenceChainRecord({
-    id: `purchase-receipt-${selected.value.orderNumber}`,
-    stage: '采购回写',
-    title: `${materialCode} 加急采购收货已释放缺料风险`,
-    summary: `${selected.value.orderNumber} 收货完成，${shortageAction.value.affectedOrders} 的齐套缺口清零，排产复核可恢复执行。`,
-    object: shortageAction.value.affectedOrders,
-    source: `采购协同 / ${selected.value.supplierName}`,
-    traceId: selected.value.orderNumber,
-    status: 'closed',
-    statusLabel: '已收货',
-    createdAt: new Date().toISOString(),
-  })
 }
 
 async function refreshList() {
@@ -987,26 +1118,112 @@ async function refreshList() {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
     orders.value = result.items
     totalCount.value = result.totalCount
-  } catch { /* keep demo */ }
+  } catch (error: unknown) {
+    notification.value = `采购订单列表刷新失败，当前保留本地列表状态：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function fmtAmt(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }
 
+async function applyAuditFocus() {
+  const focus = auditFocus.value
+  if (!focus) return
+  const matched = orders.value.find(order => order.id === focus.objectId || order.orderNumber === focus.label || order.orderNumber === focus.objectId)
+  if (matched) {
+    await selectOrder(matched)
+    return
+  }
+
+  const orderNumber = focus.label || focus.objectId
+  const detail: PurchaseOrderDetail = {
+    id: focus.objectId,
+    orderNumber,
+    supplierName: '审计回放来源',
+    supplierContact: null,
+    status: 'Completed',
+    orderDate: new Date().toISOString(),
+    expectedDeliveryDate: null,
+    completedDate: new Date().toISOString(),
+    totalAmount: 0,
+    remark: `由审计回放 ${focus.traceId} 定位的业务对象，当前列表未返回该采购单明细。`,
+    createdBy: 'agent-audit',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    items: [],
+  }
+  selected.value = detail
+  orders.value = [
+    {
+      id: detail.id,
+      orderNumber: detail.orderNumber,
+      supplierName: detail.supplierName,
+      status: detail.status,
+      orderDate: detail.orderDate,
+      expectedDeliveryDate: detail.expectedDeliveryDate,
+      totalAmount: detail.totalAmount,
+      itemCount: detail.items.length,
+      createdBy: detail.createdBy,
+      createdAt: detail.createdAt,
+    },
+    ...orders.value,
+  ]
+}
+
 onMounted(async () => {
-  applyStoredSupplyRiskEscalation()
-  outsourcingCommitment.value = readLatestOutsourcingCommitmentPackage()
+  await applyAuditFocus()
+  try {
+    await applyStoredSupplyRiskEscalation()
+  } catch (error: unknown) {
+    notification.value = `供应风险状态同步失败：${errorMessage(error, '请稍后重试')}`
+  }
+  try {
+    supplierNetworkDecision.value = await readSupplierNetworkDecisionBackendFirst()
+  } catch (error: unknown) {
+    notification.value = `供应网络决策同步失败：${errorMessage(error, '请稍后重试')}`
+  }
+  try {
+    outsourcingCommitment.value = await readLatestOutsourcingCommitmentPackageBackendFirst()
+  } catch (error: unknown) {
+    notification.value = `外协承诺同步失败：${errorMessage(error, '请稍后重试')}`
+  }
+  try {
+    materialDispatch.value = await readAnomalyDispatchRecordByTypeBackendFirst('material')
+  } catch (error: unknown) {
+    notification.value = `异常分流供应整改同步失败：${errorMessage(error, '请稍后重试')}`
+  }
   try {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
     orders.value = result.items
     totalCount.value = result.totalCount
-  } catch { orders.value = demoOrders; totalCount.value = demoOrders.length }
+  } catch (error: unknown) {
+    orders.value = demoOrders
+    totalCount.value = demoOrders.length
+    notification.value = `采购订单列表加载失败，已显示本地演示采购单：${errorMessage(error, '请稍后重试')}`
+  } finally {
+    await applyAuditFocus()
+  }
 })
 </script>
 
 <style scoped>
-.po-board { height: 100%; display: flex; flex-direction: column; padding: 16px; }
+.po-board { min-height: 100%; display: flex; flex-direction: column; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
-.board-body { flex: 1; display: flex; gap: 16px; overflow: hidden; }
+.audit-focus-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+}
+.audit-focus-banner span { display: block; color: #4338ca; font-size: 12px; font-weight: 700; }
+.audit-focus-banner strong { display: block; color: #111827; font-size: 14px; }
+.audit-focus-banner p { margin: 2px 0 0; color: #4b5563; font-size: 12px; }
+.audit-focus-banner code { color: #3730a3; font-size: 12px; }
+.board-body { flex: 0 0 auto; display: flex; gap: 16px; min-height: 520px; overflow: hidden; }
 .list-panel { width: 380px; flex-shrink: 0; background: #fff; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
 .panel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .badge-count { background: #1890ff; color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; }

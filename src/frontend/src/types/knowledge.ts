@@ -47,13 +47,14 @@ export interface ChatMessage {
   sources?: KnowledgeSourceDto[]
   actions?: ChatAction[]
   actionPackages?: ChatActionPackage[]
+  liveRole?: 'alert' | 'status'
   timestamp: Date
 }
 
 export interface ChatAction {
   id: string
   label: string
-  type: 'navigate' | 'schedule_suggestion' | 'export_report' | 'create_anomaly_card' | 'delivery_recovery_package' | 'engineering_constraint_package' | 'customer_commitment_package' | 'bom_kitting_package'
+  type: 'navigate' | 'schedule_suggestion' | 'export_report' | 'create_anomaly_card' | 'delivery_recovery_package' | 'engineering_constraint_package' | 'customer_commitment_package' | 'bom_kitting_package' | 'equipment_downtime_package'
   targetRoute?: string
   resultMessage: string
   auditCode?: string

@@ -1,11 +1,24 @@
 <template>
   <div ref="ganttContainer" class="gantt-container">
-    <div class="gantt-e2e-markers" :class="{ visible: useLightweightGantt }">
+    <div v-if="ganttError" class="gantt-error" role="alert" aria-live="assertive">
+      {{ ganttError }}
+    </div>
+    <div
+      class="gantt-e2e-markers"
+      :class="{ visible: useLightweightGantt }"
+      role="list"
+      aria-label="轻量甘特图任务"
+    >
       <span v-if="useLightweightGantt" class="gantt_task" />
       <span
         v-for="task in renderableTasks"
         :key="task.id"
         class="gantt_task_line"
+        role="listitem"
+        tabindex="0"
+        :aria-label="`甘特任务：${task.text}`"
+        @click="emitLightweightTaskClick(task.id)"
+        @keydown.enter.prevent="emitLightweightTaskClick(task.id)"
       >
         {{ task.text }}
       </span>
@@ -25,6 +38,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import gantt from 'dhtmlx-gantt'
 import type { GanttData, GanttTask } from '../../types/scheduling'
+import { isOfflineDemoMode } from '../../utils/offline-demo-mode'
 import '../../assets/styles/gantt-overrides.css'
 
 // dhtmlx-gantt 需要 CSS
@@ -45,10 +59,12 @@ const emit = defineEmits<{
 }>()
 
 const ganttContainer = ref<HTMLDivElement>()
+const ganttError = ref('')
 let isInitialized = false
-const useLightweightGantt = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+const useLightweightGantt = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true' || isOfflineDemoMode()
 
 const now = ref(Date.now())
+const ganttEventIds: string[] = []
 
 // 锁定期区间（基于当前时间）
 const lockStart = computed(() => new Date(now.value))
@@ -58,6 +74,11 @@ const lockEnd = computed(() => {
 })
 const showLockOverlay = computed(() => !!props.lockPeriodHours && props.lockPeriodHours > 0)
 const renderableTasks = computed(() => props.data.tasks.filter(task => task.parent !== '0'))
+type GanttTaskWithCss = GanttTask & { $css?: string }
+
+function emitLightweightTaskClick(taskId: GanttTask['id']) {
+  emit('taskClick', String(taskId))
+}
 
 // 更新当前时间，每 60 秒刷新一次锁定期边界
 let timeRefreshTimer: ReturnType<typeof setInterval> | undefined
@@ -155,23 +176,23 @@ function initGantt() {
   }
 
   // 事件绑定
-  gantt.attachEvent('onTaskClick', (id: string) => {
+  ganttEventIds.push(gantt.attachEvent('onTaskClick', (id: string) => {
     const task = gantt.getTask(id)
     if (task.parent !== '0') {
       emit('taskClick', id)
     }
     return true
-  })
+  }))
 
-  gantt.attachEvent('onTaskDblClick', (id: string) => {
+  ganttEventIds.push(gantt.attachEvent('onTaskDblClick', (id: string) => {
     const task = gantt.getTask(id)
     if (task.parent !== '0') {
       emit('taskDblClick', id)
     }
     return false // 阻止默认行为
-  })
+  }))
 
-  gantt.attachEvent('onBeforeTaskDrag', (id: string) => {
+  ganttEventIds.push(gantt.attachEvent('onBeforeTaskDrag', (id: string) => {
     const task = gantt.getTask(id)
     if (task.parent === '0') return false // 设备分组不可拖拽
 
@@ -179,7 +200,9 @@ function initGantt() {
     if (props.lockPeriodHours && props.lockPeriodHours > 0) {
       const lockEndTime = lockEnd.value!
       const taskStart = gantt.date.parseDate(task.start_date, gantt.config.date_format)
-      if (taskStart <= lockEndTime && taskStart > lockStart.value) {
+      const taskEnd = new Date(taskStart.getTime() + task.duration * 24 * 60 * 60 * 1000)
+      const overlapsLockedPeriod = taskStart < lockEndTime && taskEnd > lockStart.value
+      if (overlapsLockedPeriod) {
         gantt.message({
           type: 'warning',
           text: `该工单在锁定周期（${props.lockPeriodHours}小时）内，不可拖拽`,
@@ -190,15 +213,15 @@ function initGantt() {
 
     // 清除之前拖拽冲突标记
     gantt.getTaskByTime().forEach((t: GanttTask) => {
-      delete (t as any).$css
+      delete (t as GanttTaskWithCss).$css
     })
 
     emit('taskDragStart', id)
     return true
-  })
+  }))
 
   // 拖拽中实时冲突检测
-  gantt.attachEvent('onTaskDrag', (id: string, _mode: any, task: GanttTask, _original: GanttTask) => {
+  ganttEventIds.push(gantt.attachEvent('onTaskDrag', (id: string, _mode: unknown, task: GanttTask, _original: GanttTask) => {
     if (task.parent === '0') return true
 
     const draggedStart = new Date(task.start_date)
@@ -221,15 +244,15 @@ function initGantt() {
 
     // 拖拽中的任务标记冲突样式
     if (hasConflict) {
-      (task as any).$css = 'gantt-task-drag-conflict'
+      ;(task as GanttTaskWithCss).$css = 'gantt-task-drag-conflict'
     } else {
-      delete (task as any).$css
+      delete (task as GanttTaskWithCss).$css
     }
 
     return true // 继续拖拽
-  })
+  }))
 
-  gantt.attachEvent('onAfterTaskDrag', (id: string, _mode: any, task: GanttTask) => {
+  ganttEventIds.push(gantt.attachEvent('onAfterTaskDrag', (id: string, _mode: unknown, task: GanttTask) => {
     if (!task || task.parent === '0') return
 
     const newStart = task.start_date
@@ -263,19 +286,30 @@ function initGantt() {
 
     // 清除拖拽临时标记
     gantt.getTaskByTime().forEach((t: GanttTask) => {
-      delete (t as any).$css
+      delete (t as GanttTaskWithCss).$css
     })
-    gantt.render()
-  })
+    try {
+      gantt.render()
+      ganttError.value = ''
+    } catch (err: unknown) {
+      ganttError.value = `甘特图拖拽刷新失败：${err instanceof Error ? err.message : '请稍后重试'}。拖拽结果已记录，请保留当前排产结果后重试。`
+    }
+  }))
 
   gantt.init(ganttContainer.value)
   isInitialized = true
+  if (props.scale) setScale(props.scale)
 
   // 启动时间刷新，使锁定期边界跟随当前时间
   timeRefreshTimer = setInterval(() => {
     now.value = Date.now()
     if (isInitialized) {
-      gantt.render()
+      try {
+        gantt.render()
+        ganttError.value = ''
+      } catch (err: unknown) {
+        ganttError.value = `甘特图锁定期定时刷新失败：${err instanceof Error ? err.message : '请稍后重试'}。锁定期遮罩暂不可用，请保留当前排产结果后重试。`
+      }
     }
   }, 60000)
 }
@@ -284,10 +318,15 @@ function initGantt() {
 function loadData() {
   if (useLightweightGantt) return
   if (!isInitialized || !props.data) return
-  gantt.clearAll()
-  gantt.parse(props.data)
-  // 渲染锁定期遮罩
-  gantt.render()
+  try {
+    gantt.clearAll()
+    gantt.parse(props.data)
+    ganttError.value = ''
+    // 渲染锁定期遮罩
+    gantt.render()
+  } catch (err: unknown) {
+    ganttError.value = `甘特图加载失败：${err instanceof Error ? err.message : '请稍后重试'}。排产任务图暂不可用，请保留当前筛选条件后重试。`
+  }
 }
 
 // 设置时间刻度
@@ -316,7 +355,12 @@ function setScale(scale: 'day' | 'week' | 'month') {
       ]
       break
   }
-  gantt.render()
+  try {
+    gantt.render()
+    ganttError.value = ''
+  } catch (err: unknown) {
+    ganttError.value = `甘特图时间刻度切换失败：${err instanceof Error ? err.message : '请稍后重试'}。当前排产时间轴暂不可用，请保留筛选条件后重试。`
+  }
 }
 
 // 监听属性变化
@@ -336,7 +380,13 @@ watch(
 watch(
   () => props.lockPeriodHours,
   () => {
-    if (isInitialized) gantt.render()
+    if (!isInitialized) return
+    try {
+      gantt.render()
+      ganttError.value = ''
+    } catch (err: unknown) {
+      ganttError.value = `甘特图锁定期刷新失败：${err instanceof Error ? err.message : '请稍后重试'}。锁定期遮罩暂不可用，请保留当前排产结果后重试。`
+    }
   }
 )
 
@@ -347,6 +397,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (timeRefreshTimer) clearInterval(timeRefreshTimer)
+  while (ganttEventIds.length > 0) {
+    const eventId = ganttEventIds.pop()
+    if (eventId) gantt.detachEvent(eventId)
+  }
   if (isInitialized) {
     gantt.clearAll()
     isInitialized = false
@@ -386,6 +440,21 @@ defineExpose({ setScale })
 
 .gantt-e2e-markers.visible {
   opacity: 1;
+}
+
+.gantt-error {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 4;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .gantt-e2e-markers span {

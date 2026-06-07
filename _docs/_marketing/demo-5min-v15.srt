@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:45,000
+AIMes V1.5 starts with delivery performance: on the DEMO-OTD-30-202605 30-order benchmark with seed 20260523, the best rule baseline OTD is 26.67% and the Agent scenario reaches 30.00%. The +3.33-point lift is computed by the real .NET AbComparisonHarness, not PowerShell-hardcoded numbers, and the report honestly labels p=0.7745 as not significant at 95%.
+
+2
+00:00:45,000 --> 00:01:35,000
+Rush orders, material shortages and equipment faults stop being free-text alerts. Each becomes an owned action card with priority, deadline, owner role, and an audit trace pointing back to the originating event.
+
+3
+00:01:35,000 --> 00:02:45,000
+The Scheduling Agent generates four rule baselines and one Agent hybrid scenario from the same ScheduleRequest. Each scenario records prompt and context hashes. Adoption requires Admin or Planner role; cross-domain Quality, Purchase, and Maintenance actions follow the same five-role permission matrix and write 403 plus AgentPolicyRejected audits when denied.
+
+4
+00:02:45,000 --> 00:03:45,000
+Production reporting and purchase recovery write evidence back into the unified OTD chain. Every adopt, reject, and execute call appears in agent_action_results and audit_logs with actor, role, business key, trace ID, and prompt hash.
+
+5
+00:03:45,000 --> 00:05:00,000
+The report center reads latest-ab-report.json from the runner. Same seed reproduces the single-run numbers while Monte Carlo summary refreshes: 100 perturbations currently show a +7.67-point mean delta. Customers asking "is this real or hardcoded" can rerun scripts/run-ab-comparison.ps1 in 30 seconds and watch the JSON regenerate. The improvement is honest, the not-significant label is honest, and the pipeline is honest.

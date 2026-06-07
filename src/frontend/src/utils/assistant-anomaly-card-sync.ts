@@ -43,13 +43,39 @@ function canUseStorage() {
   return typeof window !== 'undefined' && !!window.localStorage
 }
 
+function isAssistantAnomalyDispatchStep(
+  item: Partial<AssistantAnomalyDispatchStep> | null | undefined,
+): item is AssistantAnomalyDispatchStep {
+  return !!item
+    && typeof item.module === 'string'
+    && typeof item.owner === 'string'
+    && typeof item.action === 'string'
+    && typeof item.evidence === 'string'
+}
+
 function isAssistantAnomalyPackage(item: Partial<AssistantAnomalyDispositionPackage> | null | undefined): item is AssistantAnomalyDispositionPackage {
   return !!item
     && typeof item.id === 'string'
     && typeof item.title === 'string'
     && typeof item.auditCode === 'string'
     && typeof item.traceId === 'string'
+    && typeof item.actor === 'string'
+    && typeof item.role === 'string'
+    && typeof item.workOrders === 'string'
+    && ['critical', 'warning'].includes(String(item.priority))
+    && typeof item.owner === 'string'
+    && typeof item.dueAt === 'string'
+    && typeof item.anomalyTitle === 'string'
+    && typeof item.operationCode === 'string'
+    && typeof item.equipmentId === 'string'
+    && typeof item.deliveryImpact === 'string'
+    && typeof item.scheduleWindow === 'string'
+    && typeof item.statusLabel === 'string'
+    && typeof item.summary === 'string'
     && Array.isArray(item.dispatchSteps)
+    && item.dispatchSteps.length > 0
+    && item.dispatchSteps.every(isAssistantAnomalyDispatchStep)
+    && typeof item.createdAt === 'string'
 }
 
 function readRawAssistantAnomalyPackages(): AssistantAnomalyDispositionPackage[] {
@@ -58,7 +84,19 @@ function readRawAssistantAnomalyPackages(): AssistantAnomalyDispositionPackage[]
     const raw = window.localStorage.getItem(ASSISTANT_ANOMALY_PACKAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isAssistantAnomalyPackage) : []
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(ASSISTANT_ANOMALY_PACKAGE_KEY)
+      return []
+    }
+    const records = parsed.filter(isAssistantAnomalyPackage)
+    if (records.length !== parsed.length) {
+      if (records.length) {
+        window.localStorage.setItem(ASSISTANT_ANOMALY_PACKAGE_KEY, JSON.stringify(records))
+      } else {
+        window.localStorage.removeItem(ASSISTANT_ANOMALY_PACKAGE_KEY)
+      }
+    }
+    return records
   } catch {
     window.localStorage.removeItem(ASSISTANT_ANOMALY_PACKAGE_KEY)
     return []
@@ -67,6 +105,16 @@ function readRawAssistantAnomalyPackages(): AssistantAnomalyDispositionPackage[]
 
 export function readAssistantAnomalyDispositionPackages(): AssistantAnomalyDispositionPackage[] {
   return readRawAssistantAnomalyPackages()
+}
+
+export async function readAssistantAnomalyDispositionPackagesBackendFirst(): Promise<AssistantAnomalyDispositionPackage[]> {
+  try {
+    const { queryAssistantAnomalyPackages } = await import('../api/assistantEvidence')
+    const records = await queryAssistantAnomalyPackages(MAX_PACKAGES)
+    return records.length > 0 ? records : readAssistantAnomalyDispositionPackages()
+  } catch {
+    return readAssistantAnomalyDispositionPackages()
+  }
 }
 
 export function writeAssistantAnomalyDispositionPackage(input: WriteAssistantAnomalyPackageInput): AssistantAnomalyDispositionPackage {
@@ -122,6 +170,9 @@ export function writeAssistantAnomalyDispositionPackage(input: WriteAssistantAno
     const next = [record, ...readRawAssistantAnomalyPackages().filter(item => item.id !== record.id)].slice(0, MAX_PACKAGES)
     window.localStorage.setItem(ASSISTANT_ANOMALY_PACKAGE_KEY, JSON.stringify(next))
   }
+  void import('../api/assistantEvidence')
+    .then(({ upsertAssistantAnomalyPackage }) => upsertAssistantAnomalyPackage(record))
+    .catch(() => undefined)
 
   writeProductionAnomalyEvent({
     id: 'prod-anomaly-chat-cnc001-temp',

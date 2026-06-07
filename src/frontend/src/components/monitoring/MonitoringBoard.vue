@@ -134,9 +134,14 @@
       <!-- 设备详情抽屉 -->
       <Teleport to="body">
         <div v-if="selectedEq" class="drawer-overlay" @click.self="selectedEq = null">
-          <div class="drawer-panel">
+          <div
+            class="drawer-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="equipment-detail-title"
+          >
             <div class="drawer-header">
-              <span>{{ selectedEq.name }} <small>{{ selectedEq.code }}</small></span>
+              <span id="equipment-detail-title">{{ selectedEq.name }} <small>{{ selectedEq.code }}</small></span>
               <button class="drawer-close" @click="selectedEq = null">✕</button>
             </div>
             <div class="drawer-body">
@@ -161,7 +166,12 @@
                 :key="eq.id"
                 class="equip-card"
                 :class="'status-' + eq.status"
+                role="button"
+                tabindex="0"
+                :aria-label="`查看设备详情：${eq.code} ${eq.name}`"
                 @click="selectedEq = eq"
+                @keydown.enter="selectedEq = eq"
+                @keydown.space.prevent="selectedEq = eq"
               >
                 <div class="eq-header">
                   <span class="eq-code">{{ eq.code }}</span>
@@ -230,11 +240,14 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 import {
-  readMonitoringSituationEscalations,
+  readMonitoringSituationEscalationsBackendFirst,
   writeMonitoringSituationEscalation,
   type MonitoringSituationEscalation,
 } from '../../utils/monitoring-situation-escalation-sync'
-import { readPocHypercareAcceptanceRecord, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { getLocalAccessToken } from '../../utils/auth-token'
+import { isOfflineDemoMode } from '../../utils/offline-demo-mode'
+import { errorMessage } from '../../utils/error-message'
 
 interface EquipmentMetric {
   id: string
@@ -289,7 +302,7 @@ const selectedEq = ref<EquipmentMetric | null>(null)
 const eventFilter = ref('all')
 let connection: signalR.HubConnection | null = null
 let demoInterval: ReturnType<typeof setInterval> | null = null
-const useDemoMonitoring = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+const useDemoMonitoring = isOfflineDemoMode()
 const situationSyncTitle = ref('等待同步')
 const situationSyncMessage = ref('同步后，现场事件会进入 OTD 复盘证据链，并可在审计回放中核对来源、对象和追踪编号。')
 const activeSituationEscalation = ref<MonitoringSituationEscalation | null>(null)
@@ -333,19 +346,25 @@ const situationEvents: SituationEvent[] = [
 
 function syncSituationEvidence() {
   const createdAt = new Date().toISOString()
-  for (const event of situationEvents) {
-    upsertOtdEvidenceChainRecord({
-      id: `monitoring-${event.id}`,
-      stage: '现场态势',
-      title: event.title,
-      summary: `${event.impact} 责任人：${event.owner}；响应动作：${event.action}。`,
-      object: event.workOrder,
-      source: `实时监控 / ${event.source}`,
-      traceId: `TRACE-SF-${event.id.toUpperCase()}`,
-      status: event.level === 'info' ? 'ready' : 'active',
-      statusLabel: event.level === 'info' ? '已纳入复盘' : '待处置',
-      createdAt,
-    })
+  try {
+    for (const event of situationEvents) {
+      upsertOtdEvidenceChainRecord({
+        id: `monitoring-${event.id}`,
+        stage: '现场态势',
+        title: event.title,
+        summary: `${event.impact} 责任人：${event.owner}；响应动作：${event.action}。`,
+        object: event.workOrder,
+        source: `实时监控 / ${event.source}`,
+        traceId: `TRACE-SF-${event.id.toUpperCase()}`,
+        status: event.level === 'info' ? 'ready' : 'active',
+        statusLabel: event.level === 'info' ? '已纳入复盘' : '待处置',
+        createdAt,
+      })
+    }
+  } catch (error) {
+    situationSyncTitle.value = '现场态势证据同步失败'
+    situationSyncMessage.value = `现场事件未完整写入 OTD 证据链：${errorMessage(error, '请稍后重试')}`
+    return
   }
   situationSyncTitle.value = '现场态势证据已同步 OTD 复盘'
   situationSyncMessage.value = `${situationEvents.length} 条现场事件已写入统一证据链，可在报表中心与审计日志核对。`
@@ -353,21 +372,28 @@ function syncSituationEvidence() {
 
 function escalateSituationResponse() {
   const sourceEvent = situationEvents[0]
-  const record = writeMonitoringSituationEscalation({
-    sourceEventId: sourceEvent.id,
-    source: sourceEvent.source,
-    eventTitle: sourceEvent.title,
-    eventImpact: sourceEvent.impact,
-    workOrders: 'WO-RUSH-9001 / WO-DEMO-1002',
-    owner: sourceEvent.owner,
-    action: sourceEvent.action,
-    relatedEvents: situationEvents.map(event => ({
-      source: event.source,
-      title: event.title,
-      impact: event.impact,
-      owner: event.owner,
-    })),
-  })
+  let record: MonitoringSituationEscalation
+  try {
+    record = writeMonitoringSituationEscalation({
+      sourceEventId: sourceEvent.id,
+      source: sourceEvent.source,
+      eventTitle: sourceEvent.title,
+      eventImpact: sourceEvent.impact,
+      workOrders: 'WO-RUSH-9001 / WO-DEMO-1002',
+      owner: sourceEvent.owner,
+      action: sourceEvent.action,
+      relatedEvents: situationEvents.map(event => ({
+        source: event.source,
+        title: event.title,
+        impact: event.impact,
+        owner: event.owner,
+      })),
+    })
+  } catch (error) {
+    situationSyncTitle.value = '现场态势升级失败'
+    situationSyncMessage.value = `跨模块处置包未写入风险队列和排产事件队列：${errorMessage(error, '请稍后重试')}`
+    return
+  }
   activeSituationEscalation.value = record
   situationSyncTitle.value = '现场态势已升级为跨模块处置包'
   situationSyncMessage.value = `${record.auditId} 已写入风险队列、AI 排产事件队列和统一 OTD 证据链。`
@@ -426,7 +452,7 @@ function connectSignalR() {
 
   connection = new signalR.HubConnectionBuilder()
     .withUrl('/hubs/monitoring', {
-      accessTokenFactory: () => localStorage.getItem('aimes_token') ?? '',
+      accessTokenFactory: () => getLocalAccessToken() ?? '',
     })
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .configureLogging(signalR.LogLevel.Warning)
@@ -442,9 +468,10 @@ function connectSignalR() {
     lastUpdate.value = new Date().toLocaleTimeString('zh-CN')
   })
 
-  connection.onreconnecting(() => {
+  connection.onreconnecting(error => {
     connected.value = false
-    addEvent('warning', '实时连接断开，正在重连...')
+    const reason = error ? `：${errorMessage(error, '请检查实时网关')}` : ''
+    addEvent('warning', `实时连接断开，正在重连...${reason}`)
   })
 
   connection.onreconnected(() => {
@@ -452,9 +479,10 @@ function connectSignalR() {
     addEvent('info', '实时连接已恢复')
   })
 
-  connection.onclose(() => {
+  connection.onclose(error => {
     connected.value = false
-    addEvent('error', '实时连接已关闭')
+    const reason = error ? `：${errorMessage(error, '请检查实时网关')}` : ''
+    addEvent('error', `实时连接已关闭${reason}`)
   })
 
   connection.start()
@@ -462,8 +490,8 @@ function connectSignalR() {
       connected.value = true
       addEvent('info', '实时监控已连接')
     })
-    .catch(() => {
-      addEvent('error', '实时连接失败，使用演示数据')
+    .catch(error => {
+      addEvent('error', `实时连接失败，使用演示数据：${errorMessage(error, '请检查实时网关')}`)
       loadDemoData()
     })
 }
@@ -509,17 +537,22 @@ function loadDemoData() {
   }, 5000)
 }
 
-onMounted(() => {
-  pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
-  const latestEscalation = readMonitoringSituationEscalations()[0]
-  if (latestEscalation) {
-    activeSituationEscalation.value = latestEscalation
-    situationSyncTitle.value = latestEscalation.status === 'closed'
-      ? '现场态势处置包已闭环'
-      : '现场态势处置包待跨模块处置'
-    situationSyncMessage.value = latestEscalation.status === 'closed'
-      ? `${latestEscalation.traceId} 已由风险队列关闭，现场态势保留已闭环留痕。`
-      : `${latestEscalation.auditId} 已写入风险队列、AI 排产和统一 OTD 证据链。`
+onMounted(async () => {
+  try {
+    pocHypercareAcceptance.value = await readPocHypercareAcceptanceRecordBackendFirst({ failLoud: true })
+    const latestEscalation = (await readMonitoringSituationEscalationsBackendFirst({ failLoud: true }))[0]
+    if (latestEscalation) {
+      activeSituationEscalation.value = latestEscalation
+      situationSyncTitle.value = latestEscalation.status === 'closed'
+        ? '现场态势处置包已闭环'
+        : '现场态势处置包待跨模块处置'
+      situationSyncMessage.value = latestEscalation.status === 'closed'
+        ? `${latestEscalation.traceId} 已由风险队列关闭，现场态势保留已闭环留痕。`
+        : `${latestEscalation.auditId} 已写入风险队列、AI 排产和统一 OTD 证据链。`
+    }
+  } catch (error) {
+    situationSyncTitle.value = '现场态势初始化读取失败'
+    situationSyncMessage.value = `Hypercare 与现场处置包记录暂未加载：${errorMessage(error, '请稍后重试')}`
   }
   connectSignalR()
 })

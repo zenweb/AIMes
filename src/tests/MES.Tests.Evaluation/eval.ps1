@@ -39,16 +39,32 @@ foreach ($agent in $thresholds.Keys) {
     Write-Host "  Evaluating $agent..."
 
     if (-not (Test-Path $goldenFile)) {
-        Write-Host "    [SKIP] No golden dataset: $goldenFile"
-        $agentResults[$agent] = @{ precision = 0.0; recall = 0.0; adoptability = 0.0; pass = $true; skipped = $true }
+        Write-Host "    [FAIL] Missing golden dataset: $goldenFile"
+        $agentResults[$agent] = @{ precision = 0.0; recall = 0.0; adoptability = 0.0; pass = $false; error = "Missing golden dataset" }
+        $allPass = $false
         continue
     }
 
-    $golden = Get-Content $goldenFile -Raw | ConvertFrom-Json
+    try {
+        $golden = Get-Content $goldenFile -Raw | ConvertFrom-Json
+    } catch {
+        Write-Host "    [FAIL] Could not parse golden dataset: $goldenFile"
+        $agentResults[$agent] = @{ precision = 0.0; recall = 0.0; adoptability = 0.0; pass = $false; error = "Could not parse golden dataset" }
+        $allPass = $false
+        continue
+    }
+
+    if ($null -eq $golden.testCases -or $golden.testCases.Count -eq 0) {
+        Write-Host "    [FAIL] Golden dataset contains no testCases: $goldenFile"
+        $agentResults[$agent] = @{ precision = 0.0; recall = 0.0; adoptability = 0.0; pass = $false; error = "Golden dataset contains no testCases" }
+        $allPass = $false
+        continue
+    }
+
     $total = $golden.testCases.Count
     $passCount = $total
 
-    $precision = if ($total -gt 0) { [math]::Round($passCount / $total, 2) } else { 1.0 }
+    $precision = [math]::Round($passCount / $total, 2)
     $recall = $precision
     $adoptability = $precision
 
@@ -62,13 +78,7 @@ foreach ($agent in $thresholds.Keys) {
 }
 
 # Aggregate results
-$nonSkipped = $agentResults.Values | Where-Object { -not $_.skipped }
-$allSkipped = ($nonSkipped.Count -eq 0)
-if ($allSkipped) {
-    $allPass = $false
-} else {
-    $allPass = ($nonSkipped | Where-Object { -not $_.pass }).Count -eq 0
-}
+$allPass = ($agentResults.Values | Where-Object { -not $_.pass }).Count -eq 0
 
 $result = @{
     gate_pass = $allPass

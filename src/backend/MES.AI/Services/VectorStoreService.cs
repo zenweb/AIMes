@@ -86,7 +86,8 @@ public class VectorStoreService : IVectorStoreService
         string id,
         string text,
         float[] embedding,
-        Dictionary<string, string> metadata)
+        Dictionary<string, string> metadata,
+        CancellationToken ct = default)
     {
         var chunk = new DocumentChunk
         {
@@ -98,7 +99,7 @@ public class VectorStoreService : IVectorStoreService
             CreatedAt = DateTime.UtcNow
         };
 
-        return UpsertAsync(collectionName, new[] { chunk });
+        return UpsertAsync(collectionName, new[] { chunk }, ct);
     }
 
     public Task DeleteCollectionAsync(string collectionName, CancellationToken ct = default)

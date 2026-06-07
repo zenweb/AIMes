@@ -67,36 +67,120 @@ test.describe('Login 登录页', () => {
   })
 
   test('登录成功后跳转到仪表盘', async ({ page }) => {
-    // 拦截登录 API 返回成功
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
     await page.route('**/api/v1/auth/login', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           token: 'e2e-test-token',
-          username: 'admin',
-          displayName: '管理员',
+          refreshToken: 'e2e-refresh-token',
+          username: 'backenduser',
+          displayName: '后端用户',
           role: 'Admin',
+          expiresAt: '2026-06-05T12:00:00Z',
+          mustChangePassword: false,
         }),
       })
     })
 
     await page.goto('login')
-    await page.locator('#username').fill('admin')
-    await page.locator('#password').fill('admin123')
+    await page.locator('#username').fill('backenduser')
+    await page.locator('#password').fill('correct-password')
     await page.locator('.login-btn').click()
 
-    // 应跳转到仪表盘
     await page.waitForURL('**/dashboard', { timeout: 5000 })
-    // token 应写入 localStorage
     const token = await page.evaluate(() => localStorage.getItem('aimes_token'))
     expect(token).toBe('e2e-test-token')
+  })
+
+  test('首登账号登录成功后进入改密页', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/auth/login', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          token: 'first-login-token',
+          refreshToken: 'first-login-refresh-token',
+          username: 'firstuser',
+          displayName: '首登用户',
+          role: 'Admin',
+          expiresAt: '2026-06-05T12:00:00Z',
+          mustChangePassword: true,
+        }),
+      })
+    })
+
+    await page.goto('login')
+    await page.locator('#username').fill('firstuser')
+    await page.locator('#password').fill('initial-pass-123')
+    await page.locator('.login-btn').click()
+
+    await page.waitForURL('**/change-password', { timeout: 5000 })
+    await expect(page.getByRole('heading', { name: '修改初始密码' })).toBeVisible()
+  })
+
+  test('首登账号访问登录页会被路由守卫送去改密页', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'backend-access-token')
+      localStorage.setItem('aimes_user', JSON.stringify({
+        username: 'firstuser',
+        displayName: '首登用户',
+        role: 'Admin',
+        mustChangePassword: true,
+      }))
+    })
+
+    await page.goto('login')
+    await page.waitForURL('**/change-password', { timeout: 5000 })
+    await expect(page.getByRole('heading', { name: '修改初始密码' })).toBeVisible()
+  })
+
+  test('改密成功后返回登录页并显示提示', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.setItem('aimes_token', 'backend-access-token')
+      localStorage.setItem('aimes_user', JSON.stringify({
+        username: 'firstuser',
+        displayName: '首登用户',
+        role: 'Admin',
+        mustChangePassword: true,
+      }))
+    })
+
+    await page.route('**/api/v1/auth/change-password', (route) => {
+      route.fulfill({
+        status: 204,
+        contentType: 'application/json',
+        body: '',
+      })
+    })
+
+    await page.goto('change-password')
+    await page.waitForSelector('.change-password-card', { timeout: 5000 })
+    await expect(page.getByRole('heading', { name: '修改初始密码' })).toBeVisible()
+
+    await page.locator('#currentPassword').fill('initial-pass-123')
+    await page.locator('#newPassword').fill('new-password-123')
+    await page.locator('#confirmPassword').fill('new-password-123')
+    await page.locator('.change-password-btn').click()
+
+    await page.waitForURL('**/login?passwordChanged=1', { timeout: 5000 })
+    await expect(page.getByText('密码已更新，请使用新密码重新登录')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '智能制造执行系统' })).toBeVisible()
+    await expect(page.locator('#username')).toBeVisible()
+    await expect(page.locator('#password')).toBeVisible()
   })
 
   test('已登录用户访问登录页自动跳转', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('login')
 

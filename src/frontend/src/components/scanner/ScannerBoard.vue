@@ -11,7 +11,16 @@
       <!-- 摄像头扫描区 -->
       <div class="scanner-section" :class="{ active: scannerActive }">
         <div v-if="scannerActive" id="qr-reader" class="qr-reader"></div>
-        <div v-else class="scanner-placeholder" @click="scannerActive = true">
+        <div
+          v-else
+          class="scanner-placeholder"
+          role="button"
+          tabindex="0"
+          aria-label="开启摄像头扫描"
+          @click="scannerActive = true"
+          @keydown.enter="scannerActive = true"
+          @keydown.space.prevent="scannerActive = true"
+        >
           <span class="placeholder-icon">📷</span>
           <span>点击开启摄像头扫描</span>
         </div>
@@ -23,7 +32,7 @@
           <input v-model="manualCode" class="code-input" placeholder="输入条码/物料编码/工单号..." @keyup.enter="lookup" />
           <button class="btn-lookup" :disabled="!manualCode" @click="lookup">查询</button>
         </div>
-        <p v-if="scanError" class="scan-error">{{ scanError }}</p>
+        <p v-if="scanError" class="scan-error" role="alert" aria-live="assertive">{{ scanError }}</p>
       </div>
 
       <!-- 扫描结果 -->
@@ -69,7 +78,17 @@
     <div class="scan-history" v-if="history.length">
       <h3>扫描历史</h3>
       <div class="history-list">
-        <div v-for="(item, idx) in history" :key="idx" class="history-item" @click="handleScan(item.code)">
+        <div
+          v-for="(item, idx) in history"
+          :key="idx"
+          class="history-item"
+          role="button"
+          tabindex="0"
+          :aria-label="historyItemLabel(item)"
+          @click="handleScan(item.code)"
+          @keydown.enter.prevent="handleScan(item.code)"
+          @keydown.space.prevent="handleScan(item.code)"
+        >
           <span class="hist-time">{{ item.time }}</span>
           <span class="hist-type">{{ item.type }}</span>
           <span class="hist-code">{{ item.code }}</span>
@@ -81,16 +100,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onBeforeUnmount, watch, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
 import http from '../../api/http'
 import {
   createBarcodeScanEvidenceRecord,
   readBarcodeScanEvidenceRecords,
+  readBarcodeScanEvidenceRecordsBackendFirst,
   writeBarcodeScanEvidenceRecord,
   type BarcodeScanEvidenceRecord,
 } from '../../utils/barcode-scan-evidence-sync'
+import { errorMessage } from '../../utils/error-message'
+import { getLocalUserDisplayName } from '../../utils/local-user'
 
 interface ScanResult {
   type: string
@@ -230,7 +252,9 @@ function startScanner() {
 
 function stopScanner() {
   if (scanner?.isScanning) {
-    scanner.stop().catch(() => {})
+    scanner.stop().catch((error: unknown) => {
+      scanError.value = `摄像头关闭失败：${errorMessage(error, '请稍后重试')}`
+    })
   }
 }
 
@@ -244,6 +268,7 @@ async function handleScan(code: string) {
   } catch {
     const demo = buildDemoScanResult(code)
     if (!demo) {
+      result.value = null
       scanError.value = `未找到 "${code}" 对应的物料、设备或工单`
       return
     }
@@ -267,28 +292,37 @@ function pushHistory(code: string, data: ScanResult) {
   if (history.value.length > 20) history.value.length = 20
 }
 
-function currentActor() {
-  if (typeof window === 'undefined') return '现场操作员'
-  try {
-    const raw = window.localStorage.getItem('aimes_user')
-    if (!raw) return '现场操作员'
-    const user = JSON.parse(raw) as { displayName?: string; username?: string }
-    return user.displayName || user.username || '现场操作员'
-  } catch {
-    return '现场操作员'
-  }
+function historyItemLabel(item: HistoryItem) {
+  return `重新扫描${item.type} ${item.code} ${item.name}`
 }
 
-function confirmScanEvidence() {
+function currentActor() {
+  return getLocalUserDisplayName('现场操作员')
+}
+
+async function confirmScanEvidence() {
   if (!result.value) return
-  const record = createBarcodeScanEvidenceRecord({
-    code: result.value.code,
-    type: result.value.type,
-    name: result.value.name,
-    actor: currentActor(),
-  })
-  writeBarcodeScanEvidenceRecord(record)
-  scanEvidenceRecords.value = readBarcodeScanEvidenceRecords()
+  try {
+    const record = createBarcodeScanEvidenceRecord({
+      code: result.value.code,
+      type: result.value.type,
+      name: result.value.name,
+      actor: currentActor(),
+    })
+    writeBarcodeScanEvidenceRecord(record)
+    scanError.value = ''
+    scanEvidenceRecords.value = [
+      record,
+      ...scanEvidenceRecords.value.filter(item => item.id !== record.id),
+    ]
+    try {
+      scanEvidenceRecords.value = await readBarcodeScanEvidenceRecordsBackendFirst()
+    } catch (error: unknown) {
+      scanError.value = `扫码证据刷新失败：${errorMessage(error, '请稍后重试')}`
+    }
+  } catch (error: unknown) {
+    scanError.value = `扫码证据写入失败：${errorMessage(error, '请稍后重试')}`
+  }
 }
 
 function goContext(action: { route: string; query?: Record<string, string> }) {
@@ -314,6 +348,10 @@ onBeforeUnmount(() => {
 })
 
 scanEvidenceRecords.value = readBarcodeScanEvidenceRecords()
+
+onMounted(async () => {
+  scanEvidenceRecords.value = await readBarcodeScanEvidenceRecordsBackendFirst()
+})
 </script>
 
 <style scoped>

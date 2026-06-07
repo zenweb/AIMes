@@ -31,8 +31,8 @@ public class AnomalyAppService : IAnomalyAppService
 
     public async Task<PagedResult<ProductionAnomalyDto>> GetOpenAnomaliesAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        var total = await _anomalyRepo.CountAsync(ct);
-        var anomalies = await _anomalyRepo.GetPagedAsync(page, pageSize, ct);
+        var total = await _anomalyRepo.CountOpenAsync(ct);
+        var anomalies = await _anomalyRepo.GetOpenPagedAsync(page, pageSize, ct);
 
         return new PagedResult<ProductionAnomalyDto>
         {
@@ -63,11 +63,11 @@ public class AnomalyAppService : IAnomalyAppService
 
     public async Task<ProductionAnomalyDto> CreateAnomalyAsync(CreateAnomalyRequest request, CancellationToken ct = default)
     {
-        var severity = request.Severity switch
+        var severity = request.Severity?.Trim() switch
         {
-            "Low" => AnomalySeverity.Low,
-            "High" => AnomalySeverity.High,
-            "Critical" => AnomalySeverity.Critical,
+            var value when string.Equals(value, "Low", StringComparison.OrdinalIgnoreCase) => AnomalySeverity.Low,
+            var value when string.Equals(value, "High", StringComparison.OrdinalIgnoreCase) => AnomalySeverity.High,
+            var value when string.Equals(value, "Critical", StringComparison.OrdinalIgnoreCase) => AnomalySeverity.Critical,
             _ => AnomalySeverity.Medium
         };
 

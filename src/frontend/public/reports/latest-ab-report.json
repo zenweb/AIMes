@@ -1,0 +1,83 @@
+{
+  "datasetId": "DEMO-OTD-30-202605",
+  "seed": 20260523,
+  "generatedAt": "2026-05-25T08:36:12.9886671Z",
+  "source": "src/tools/MES.Tools.AbBenchmark",
+  "sampleSize": 30,
+  "baseline": {
+    "name": "WeightedComposite",
+    "onTime": 8,
+    "delayed": 22,
+    "otd": 0.2667,
+    "averageLatenessHours": 91.22,
+    "changeoverMinutes": 2040,
+    "utilization": 25
+  },
+  "agent": {
+    "name": "Agent",
+    "onTime": 9,
+    "delayed": 21,
+    "otd": 0.3,
+    "averageLatenessHours": 59.76,
+    "changeoverMinutes": 2040,
+    "utilization": 25
+  },
+  "delta": {
+    "otd": 0.0333,
+    "otdPoints": 3.33,
+    "improvementPercent": 12.49,
+    "delayedOrdersReduced": 1,
+    "changeoverMinutesReduced": 0
+  },
+  "confidence": {
+    "lower95": -0.1946,
+    "upper95": 0.2612,
+    "pValue": 0.7745,
+    "significantAt95": false,
+    "method": "Real .NET A/B harness + two-proportion z-test"
+  },
+  "monteCarlo": {
+    "runs": 100,
+    "meanDelta": 7.6662,
+    "stdDev": 3.805,
+    "confidence95Lower": 6.9204,
+    "confidence95Upper": 8.412,
+    "method": "MonteCarlo perturbation (100 runs, seed + 1)"
+  },
+  "acceptance": {
+    "reproducible": true,
+    "seedLocked": true,
+    "exactThirtyOrders": true,
+    "sameScheduleRequest": true
+  },
+  "allBaselines": [
+    {
+      "name": "FCFS",
+      "otd": 0.1333,
+      "averageLatenessHours": 96.32,
+      "changeoverMinutes": 4020,
+      "utilization": 25
+    },
+    {
+      "name": "EDD",
+      "otd": 0.0667,
+      "averageLatenessHours": 89.5,
+      "changeoverMinutes": 3780,
+      "utilization": 25
+    },
+    {
+      "name": "WeightedComposite",
+      "otd": 0.2667,
+      "averageLatenessHours": 91.22,
+      "changeoverMinutes": 2040,
+      "utilization": 25
+    },
+    {
+      "name": "LeastLoaded",
+      "otd": 0.0667,
+      "averageLatenessHours": 89.5,
+      "changeoverMinutes": 3780,
+      "utilization": 25
+    }
+  ]
+}

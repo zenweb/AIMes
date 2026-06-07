@@ -1,21 +1,23 @@
+using MES.Domain.Exceptions;
+
 namespace MES.Domain.Entities.Production;
 
 public class Material
 {
     internal Material() { }
 
-    public string Id { get; internal set; } = Guid.NewGuid().ToString();
-    public string MaterialCode { get; internal set; } = string.Empty;
-    public string MaterialName { get; internal set; } = string.Empty;
-    public string MaterialType { get; internal set; } = string.Empty;
-    public string Unit { get; internal set; } = string.Empty;
-    public int AvailableQuantity { get; internal set; }
-    public int ReservedQuantity { get; internal set; }
-    public int SafetyStock { get; internal set; }
-    public string StorageLocation { get; internal set; } = string.Empty;
-    public DateTime? ExpiryDate { get; internal set; }
-    public DateTime CreatedAt { get; internal set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; internal set; }
+    public string Id { get; private set; } = Guid.NewGuid().ToString();
+    public string MaterialCode { get; private set; } = string.Empty;
+    public string MaterialName { get; private set; } = string.Empty;
+    public string MaterialType { get; private set; } = string.Empty;
+    public string Unit { get; private set; } = string.Empty;
+    public int AvailableQuantity { get; private set; }
+    public int ReservedQuantity { get; private set; }
+    public int SafetyStock { get; private set; }
+    public string StorageLocation { get; private set; } = string.Empty;
+    public DateTime? ExpiryDate { get; private set; }
+    public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; private set; }
 
     public static Material Create(string code, string name, string unit,
         int safetyStock = 0, string? storageLocation = null,
@@ -49,7 +51,7 @@ public class Material
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(nameof(quantity), "预留数量必须为正数");
         if (quantity > NetAvailable)
-            throw new InvalidOperationException($"可用库存不足：需要 {quantity}，可用 {NetAvailable}");
+            throw new DomainRuleViolationException($"可用库存不足：需要 {quantity}，可用 {NetAvailable}");
 
         ReservedQuantity += quantity;
         UpdatedAt = DateTime.UtcNow;
@@ -60,7 +62,7 @@ public class Material
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(nameof(quantity), "释放数量必须为正数");
         if (quantity > ReservedQuantity)
-            throw new InvalidOperationException($"预留不足：需要释放 {quantity}，已预留 {ReservedQuantity}");
+            throw new DomainRuleViolationException($"预留不足：需要释放 {quantity}，已预留 {ReservedQuantity}");
 
         ReservedQuantity -= quantity;
         UpdatedAt = DateTime.UtcNow;
@@ -71,7 +73,7 @@ public class Material
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(nameof(quantity), "消耗数量必须为正数");
         if (quantity > AvailableQuantity)
-            throw new InvalidOperationException($"库存不足：需要消耗 {quantity}，可用 {AvailableQuantity}");
+            throw new DomainRuleViolationException($"库存不足：需要消耗 {quantity}，可用 {AvailableQuantity}");
 
         AvailableQuantity -= quantity;
         ReservedQuantity = Math.Max(0, ReservedQuantity - quantity);

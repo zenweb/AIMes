@@ -11,7 +11,7 @@ public class RiskAppService : IRiskAppService
 {
     public Task<RiskDashboardDto> GetRiskDashboardAsync(CancellationToken ct = default)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var dashboard = new RiskDashboardDto
         {
             GeneratedAt = now,

@@ -50,7 +50,7 @@
       </template>
     </div>
 
-    <p v-if="syncNote" class="sync-note">{{ syncNote }}</p>
+    <p v-if="syncNote" class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p>
   </section>
 </template>
 

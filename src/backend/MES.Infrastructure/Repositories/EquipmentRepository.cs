@@ -17,17 +17,41 @@ public class EquipmentRepository : IEquipmentRepository
 
     public async Task<List<Equipment>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _context.Equipment
-            .AsNoTracking()
+        return await BuildListQuery(null, null)
             .OrderBy(e => e.WorkshopId)
             .ThenBy(e => e.EquipmentCode)
+            .ThenBy(e => e.Id)
             .ToListAsync(ct);
+    }
+
+    public async Task<List<Equipment>> GetPagedAsync(string? workshopId, EquipmentStatus? status, int page, int pageSize, CancellationToken ct = default)
+    {
+        return await BuildListQuery(workshopId, status)
+            .OrderBy(e => e.WorkshopId)
+            .ThenBy(e => e.EquipmentCode)
+            .ThenBy(e => e.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> CountAsync(string? workshopId, EquipmentStatus? status, CancellationToken ct = default)
+    {
+        return await BuildListQuery(workshopId, status).CountAsync(ct);
     }
 
     public async Task<Equipment?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         return await _context.Equipment
+            .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    public async Task<Equipment?> GetByCodeAsync(string equipmentCode, CancellationToken ct = default)
+    {
+        return await _context.Equipment
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.EquipmentCode == equipmentCode, ct);
     }
 
     public async Task<Equipment> CreateAsync(Equipment equipment, CancellationToken ct = default)
@@ -56,20 +80,18 @@ public class EquipmentRepository : IEquipmentRepository
 
     public async Task<List<Equipment>> GetByWorkshopAsync(string workshopId, CancellationToken ct = default)
     {
-        return await _context.Equipment
-            .AsNoTracking()
-            .Where(e => e.WorkshopId == workshopId)
+        return await BuildListQuery(workshopId, null)
             .OrderBy(e => e.EquipmentCode)
+            .ThenBy(e => e.Id)
             .ToListAsync(ct);
     }
 
     public async Task<List<Equipment>> GetByStatusAsync(EquipmentStatus status, CancellationToken ct = default)
     {
-        return await _context.Equipment
-            .AsNoTracking()
-            .Where(e => e.Status == status)
+        return await BuildListQuery(null, status)
             .OrderBy(e => e.WorkshopId)
             .ThenBy(e => e.EquipmentCode)
+            .ThenBy(e => e.Id)
             .ToListAsync(ct);
     }
 
@@ -88,5 +110,22 @@ public class EquipmentRepository : IEquipmentRepository
             .Where(m => m.EquipmentId == equipmentId)
             .OrderByDescending(m => m.StartTime)
             .ToListAsync(ct);
+    }
+
+    private IQueryable<Equipment> BuildListQuery(string? workshopId, EquipmentStatus? status)
+    {
+        var query = _context.Equipment.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(workshopId))
+        {
+            query = query.Where(e => e.WorkshopId == workshopId);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(e => e.Status == status.Value);
+        }
+
+        return query;
     }
 }

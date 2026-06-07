@@ -28,12 +28,12 @@ public class BomAppService : IBomAppService
 
     public async Task<PagedResult<BomSummaryDto>> GetAllBomsAsync(int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        var all = await _bomRepo.GetAllAsync(ct);
-        var skip = Math.Max(0, page - 1) * pageSize;
+        var total = await _bomRepo.CountAsync(ct);
+        var boms = await _bomRepo.GetPagedAsync(page, pageSize, ct);
         return new PagedResult<BomSummaryDto>
         {
-            Items = all.Skip(skip).Take(pageSize).Select(MapToSummary).ToList(),
-            TotalCount = all.Count,
+            Items = boms.Select(MapToSummary).ToList(),
+            TotalCount = total,
             Page = page,
             PageSize = pageSize,
         };
@@ -158,7 +158,8 @@ public class BomAppService : IBomAppService
         var result = new List<BomExplosionItemDto>();
         foreach (var item in items)
         {
-            var total = item.Quantity * multiplier;
+            var quantityWithLoss = ApplyLossRate(item.Quantity, item.LossRate);
+            var total = quantityWithLoss * multiplier;
             var dto = new BomExplosionItemDto
             {
                 MaterialCode = item.MaterialCode.Value,
@@ -178,6 +179,11 @@ public class BomAppService : IBomAppService
             result.Add(dto);
         }
         return result;
+    }
+
+    private static decimal ApplyLossRate(decimal quantity, decimal? lossRate)
+    {
+        return lossRate is > 0 ? quantity * (1 + lossRate.Value) : quantity;
     }
 
     private BomSummaryDto MapToSummary(BillOfMaterial bom) => new()

@@ -1,0 +1,137 @@
+# 20260525 AI MES 后端可追溯深化
+
+## 变更
+
+- 继续 `$ultragoal` 目标模式，将系统主线推进为“后端可追溯、动作真落库、证据链可回放”。
+- `execute-maintenance-action` 支持真实设备状态写入：当 payload 带 `equipmentId` 和 `targetStatus` 时，后端会调用设备领域模型更新状态。
+- Agent 动作审计 payload 增加 `businessWrite` 结果，记录业务资源、设备 ID、设备编码和目标状态。
+- 保持兼容：没有 `equipmentId` 的维护动作仍只记录 AgentActionResult + AuditLog，不强制写业务表。
+- `execute-purchase-action` 支持真实采购收货写入：当 payload 带 `purchaseOrderId`、`materialCode`、`quantity` 时，后端加载采购单并调用 `PurchaseOrder.Receive(...)`，完成后把采购单状态和收货数量写入 `businessWrite`。
+- `execute-quality-disposition` 支持真实质量处置写入：当 payload 带 `inspectionId`、缺陷类型、数量、严重度和纠正措施时，后端调用 `QualityInspection.RecordDefect(...)` 并更新质检记录。
+- `aimes_otd_evidence_chain` 后端化：新增 `GET/POST /api/v1/scheduling/otd-evidence`，以 `AgentEvidenceLink` 保存 OTD 证据链条目，并写入 `OtdEvidenceUpsert` 审计日志。
+- 报表中心读取 OTD 证据链改为后端优先；后端不可用或为空时保留 localStorage fallback，demo 链路不断。
+- 审计回放页新增后端 Agent execute 业务落库卡片：从 `/api/v1/audit-logs` 拉取 `AgentExecutePurchaseAction`、`AgentExecuteQualityDisposition`、`AgentExecuteMaintenanceAction` 详情，解析 `newValues.businessWrite`，展示采购/质量/设备真实落库动作，并提供跳转到业务页面的入口。
+- `aimes_equipment_downtime_event` 与 `aimes_customer_equipment_fault_evidence` 后端优先化：新增 `GET/POST /api/v1/scheduling/equipment-downtime`、`GET/POST /api/v1/scheduling/customer-equipment-fault`，以 `AgentEvidenceLink` 保存设备停机和客户设备故障样例，并写入对应审计日志；前端写入保持 localStorage fallback，同时 best-effort 双写后端。
+- `aimes_shortage_kitting_event` 后端优先化：新增 `GET/POST /api/v1/scheduling/shortage-kitting`，以 `AgentEvidenceLink(EvidenceType=ShortageKittingEvent)` 保存缺料齐套事件，写入 `ShortageKittingUpsert` 审计日志；排产事件队列优先读取后端最新缺料齐套事件，失败时回退 localStorage。
+- `aimes_shortage_risk_resolution` 后端优先化：新增 `GET/POST /api/v1/scheduling/shortage-risk-resolution`，保存采购收货后缺料风险下降证据，写入 `ShortageRiskResolutionUpsert` 审计日志；生产概览与排产事件队列优先读取后端闭环证据。
+- `aimes_bom_kitting_package` 后端优先化：新增 `GET/POST /api/v1/scheduling/bom-kitting-package`，保存 BOM 展开齐套包、物料缺口和动作建议，写入 `BomKittingPackageUpsert` 审计日志；BOM 页、齐套闭环页和排产事件队列优先读取后端证据，失败时回退 localStorage。
+- `aimes_supply_risk_escalation` 与 `aimes_supplier_network_decision` 后端优先化：新增 `GET/POST /api/v1/scheduling/supply-risk-escalation`、`GET/POST /api/v1/scheduling/supplier-network-decision`，保存供应延期升级、替代到货和供应商 SLA 选优证据，分别写入 `SupplyRiskEscalationUpsert`、`SupplierNetworkDecisionUpsert` 审计日志；采购页与排产事件队列优先读取后端证据，失败时回退 localStorage。
+- `aimes_outsourcing_commitment_packages` 后端优先化：新增 `GET /api/v1/scheduling/outsourcing-commitments`、`GET /latest`、`POST /api/v1/scheduling/outsourcing-commitments`，保存外协承诺、到货确认、排产释放整包证据，写入 `OutsourcingCommitmentUpsert` 审计日志；报表、采购、排产主线读取改为后端优先，失败时回退 localStorage。
+- `aimes_quality_rework_impact` 与 `aimes_quality_mrb_disposition` 后端优先化：新增 `GET/POST /api/v1/scheduling/quality-rework-impact`、`GET/POST /api/v1/scheduling/quality-mrb-disposition`，保存质量返工排产影响、MRB 报废补料/闭环证据，分别写入 `QualityReworkImpactUpsert`、`QualityMrbDispositionUpsert` 审计日志；质量页、排产事件队列和报表中心优先读取后端证据，失败时回退 localStorage。
+- `aimes_alternate_material_approval`、`aimes_engineering_change_impact_analysis`、`aimes_route_capability_validation` 后端优先化：新增 `GET/POST /api/v1/scheduling/alternate-material-approval`、`engineering-change-impact`、`route-capability-validation`，保存替代料放行、ECN 影响/审批、工艺路线能力验证证据，分别写入 `AlternateMaterialApprovalUpsert`、`EngineeringChangeImpactUpsert`、`RouteCapabilityValidationUpsert` 审计日志；BOM、工艺路线、排产主线读取改为后端优先，失败时回退 localStorage。
+- G4 异常/风险事件后端化：新增 `production-anomaly-event`、`anomaly-dispatch-records`、`monitoring-situation-escalations`、`risk-sla-review`、`risk-action-traces` 五类 scheduling evidence API，均以 `AgentEvidenceLink` 持久化并写入对应 `*Upsert` 审计日志。
+- 前端异常/风险链路改为后端优先：生产异常、异常分流、实时监控态势、风险 SLA 复核、风险处置留痕均保留 localStorage fallback，同时写入后端；风险队列、异常管理、实时监控、排产、报表、系统治理、AI 助手、采购/设备/库存相关面板优先读取后端证据。
+- G4 助手动作/执行包后端化：新增 `assistant-action-audits`、`assistant-recovery-packages`、`assistant-anomaly-packages`、`assistant-engineering-constraint-packages` 四类 scheduling evidence API，均以 `AgentEvidenceLink` 持久化并写入对应 `*Upsert` 审计日志。
+- 前端助手执行链路改为后端优先：助手动作审计、交期恢复执行包、异常处置包、工程约束执行包保留 localStorage fallback，同时 best-effort 写入后端；系统治理、审计回放、排产、风险、采购、质量相关面板优先读取后端证据。
+- G4 POC 上线证据链后端化：新增 `customer-order-import`、`poc-review-signoff`、`poc-rollout-package`、`poc-pilot-run`、`poc-hypercare-acceptance` 五类 scheduling evidence API，客户工单导入、POC 复盘签署、上线行动包、真实工单试点运行和 Hypercare 验收均以 `AgentEvidenceLink` 持久化并写入对应 `*Upsert` 审计日志。
+- 前端 POC 主线改为后端优先：报表中心、系统治理、审计回放、生产概览、实时监控、生产报工、AI 排产和知识上传入口优先读取后端 POC 证据，写入仍保留 localStorage fallback 并 best-effort 同步后端。
+- G4 知识治理复核后端化：新增 `knowledge-governance-reviews` scheduling evidence API，RAG 文档复核、版本升级、有效期、引用范围和重建索引动作以 `AgentEvidenceLink` 持久化并写入 `KnowledgeGovernanceReviewUpsert` 审计日志。
+- 系统治理与审计回放的知识治理记录改为后端优先读取，文档上传页写入复核记录时 best-effort 同步后端，失败时保留 localStorage fallback。
+- G4 现场执行证据后端化：新增 `labor-reassignments`、`labor-qualification-blocks`、`barcode-scan-evidence`、`quality-capa-closure` 四类 scheduling evidence API，人员替班、资质阻断/复核放行、扫码到站/点检/批次复核、质量 CAPA 验证闭环均以 `AgentEvidenceLink` 持久化并写入对应 `*Upsert` 审计日志。
+- 前端现场执行链路改为后端优先：系统治理读取人员替班/阻断后端证据，扫码页读取/刷新扫码后端证据，报表中心与审计回放读取后端质量 CAPA 闭环证据；写入仍保持 localStorage fallback 并 best-effort 同步后端。
+- G4 系统配置审批后端化：新增 `agent-config-approvals` scheduling evidence API，Agent 配置变更、审批状态、决策人、策略指标和控制摘要以 `AgentEvidenceLink` 持久化并写入 `AgentConfigApprovalUpsert` 审计日志。
+- 系统治理与审计回放的配置审批记录改为后端优先读取；审批通过/驳回时本地即时更新并 best-effort 同步后端。
+- G4 OTD KPI 承诺包后端化：新增 `otd-kpi-commitments` list/latest/upsert scheduling evidence API，客户/产品/工厂维度的交付恢复承诺包、OTD 提升、延期减少、责任动作以 `AgentEvidenceLink` 持久化并写入 `OtdKpiCommitmentPackageUpsert` 审计日志。
+- 报表中心与 AI 排产事件队列读取 OTD KPI 承诺包改为后端优先；报表/助手写入仍保留 localStorage fallback 并 best-effort 同步后端。
+- G4 质量知识闭环后端化：新增 `quality-knowledge-evidence` 通用 envelope API，覆盖质量知识样本、复用草案、复用闭环、低分复核队列、再训练版本、推荐反馈和灰度发布决策七类证据；统一以 `AgentEvidenceLink(EvidenceType=QualityKnowledgeEvidence)` 持久化，并写入 `QualityKnowledgeEvidenceUpsert` 审计日志。
+- 前端质量知识链路改为后端优先：质量知识 sync 工具新增七类 backend-first reader 与 best-effort 后端写入；系统治理、审计回放、报表中心、质量 CAPA 面板和知识上传入口优先读取后端质量知识证据，失败时保留 localStorage fallback。
+- G4 扫尾：排产采纳反馈 `aimes_schedule_feedback_snapshot` 已有真实 `schedule_adoption_feedbacks` 后端表与 latest API；本轮补齐 `ScheduleAdoptionFeedback` evidence 归档与 `ScheduleAdoptionFeedbackUpsert` 审计日志，使 Agent 推荐采纳动作也能进入统一证据链回放。
+- G5 Demo 资产刷新：重跑真实 .NET A/B runner 后，当前主口径同步为 `26.67% -> 30.00%`、`+3.33pt`、`p=0.7745`，Monte Carlo 100 次扰动均值 `+7.67pt`，30 单样本下明确标记未达到 95% 显著性。
+- README、报表中心、AI 助手、知识引用、demo 脚本、字幕、截图说明和能力文档已同步当前 runner 口径；Dashboard 运行手册、审计回放静态证据和 POC checklist 中残留的旧 `83.3% -> 96.7% / +13.3pt` 口径已清零。
+- `demo-asset-capture.spec.ts` 增强为读取 `latest-ab-report.json` 并断言 Dashboard/Report 页面展示的 OTD 基线、Agent OTD、提升点数和 p-value，截图刷新时同时校验数字同源。
+- 5 张 demo 截图已刷新到 `_docs/_marketing/demo-screenshots/`：`01-dashboard-hero.png`、`02-risk-queue.png`、`03-scheduling-agent.png`、`04-production-execution.png`、`05-report-center.png`。
+- G5 审计回放深链补强：`audit.spec.ts` 的“后端 Agent execute 业务落库证据”用例扩展为采购收货、质量处置、设备状态三类 `businessWrite` mock，逐一验证回放卡、落库详情、`AgentActionResult + AuditLog` 归档文案和采购/质量/设备模块跳转入口。
+- G5 审计回放深链第二刀：采购/质量/设备落库卡片的跳转路由携带审计对象 query，采购页、质量页、设备页新增“来自审计回放”定位横幅，并自动选中或注入对应业务对象详情；e2e 覆盖从审计回放打开 `PO-AGENT-001`、`insp-agent-1`、`CNC-AGENT-01` 的具体对象定位。
+- G5 5 分钟 Demo smoke：新增 `demo-smoke.spec.ts`，单条串联 Dashboard -> Scheduling -> Audit -> Report，验证首页与报表读取 `latest-ab-report.json` 同源数字、调度员 Agent 后端建议/采纳、审计回放和 OTD 复盘路径。
+- G5 最终质量门补漏：Dashboard/Report e2e 的 A/B 断言改为读取 `latest-ab-report.json`，Scheduling 后端 Agent mock projection 同步当前 runner 口径，清除旧 `83.3/96.7`、`40.0/56.7`、`+16.7`、`5 单` 等测试硬编码。
+- G5 前端 e2e 稳定化：Audit 回放先滚动并等待目标详情标题，Chat 回放卡片改为按标题精确定位并断言 trace，Report CSV 导出改为浏览器内捕获 Blob 文本并等待报表数据就绪，避免下载事件和旧文案断言抖动。
+- G5 skipped 清零补漏：Equipment 详情面板用例不再在设备卡未立即计数到时 `test.skip()`，改为显式等待第一张设备卡并执行真实断言；定向 `equipment.spec.ts` 已验证 `19/19 passed`。
+
+## 验证
+
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~AgentExecuteMaintenanceAction_WithEquipmentPayload" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~SchedulingControllerTests&FullyQualifiedName~Agent" -p:UseSharedCompilation=false`：通过，`30/30`。
+- `dotnet test src/backend/AIMes.slnx --no-build -p:UseSharedCompilation=false`：Unit `308/308` 通过，Integration `119/119` 通过；Evaluation project 无测试。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~AgentExecutePurchaseAction_WithReceiptPayload|FullyQualifiedName~AgentExecuteQualityDisposition_WithInspectionPayload|FullyQualifiedName~OtdEvidenceApi_ShouldUpsertAndQueryBackendEvidence" -p:UseSharedCompilation=false`：通过，`3/3`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~SchedulingControllerTests&FullyQualifiedName~Agent" -p:UseSharedCompilation=false`：通过，`32/32`。
+- `dotnet test src/backend/AIMes.slnx --no-build -p:UseSharedCompilation=false`：Unit `308/308` 通过，Integration `122/122` 通过；Evaluation project 无测试。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e -- report.spec.ts`（`src/frontend`）：通过，`17/17`。
+- `npm run test:e2e -- audit.spec.ts -g "后端 Agent execute"`（`src/frontend`）：通过，`1/1`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-build --filter "FullyQualifiedName~EquipmentEvidenceApi_ShouldUpsertQueryAndAuditDowntimeAndCustomerFault" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~ShortageKittingApi_ShouldUpsertQueryAndAuditBackendEvidence" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~ShortageRiskResolutionApi_ShouldUpsertQueryAndAuditBackendEvidence" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~BomKittingPackageApi_ShouldUpsertQueryAndAuditBackendEvidence" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~SupplyRiskApi_ShouldUpsertQueryAndAuditEscalationAndSupplierDecision" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~OutsourcingCommitmentApi_ShouldUpsertQueryLatestListAndAuditBackendEvidence" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~QualityEvidenceApi_ShouldUpsertQueryAndAuditReworkAndMrbDisposition" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~EngineeringEvidenceApi_ShouldUpsertQueryAndAuditEngineeringConstraints" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~RiskEvidenceApi_ShouldUpsertQueryAndAuditAbnormalRiskEvents" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~AssistantEvidenceApi_ShouldUpsertQueryAndAuditAssistantActionsAndPackages" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~PocEvidenceApi_ShouldUpsertQueryAndAuditCustomerPilotAndHypercareEvidence" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~KnowledgeGovernanceEvidenceApi_ShouldUpsertQueryAndAuditReviews" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~ExecutionEvidenceApi_ShouldUpsertQueryAndAuditLaborBarcodeAndCapa" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~GovernanceEvidenceApi_ShouldUpsertQueryAndAuditAgentConfigApprovals" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~OtdKpiCommitmentApi_ShouldUpsertQueryLatestAndAuditCommitmentPackages" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~QualityKnowledgeEvidenceApi_ShouldUpsertQueryAndAuditEvidenceEnvelope" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "FullyQualifiedName~AgentAdopt_AsAdmin_ShouldMarkDecisionAdopted" -p:UseSharedCompilation=false`：通过，`1/1`。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "FullyQualifiedName~SchedulingAppServiceTests" -p:UseSharedCompilation=false`：通过，`8/8`。
+- `dotnet build src/backend/AIMes.slnx --no-restore -p:UseSharedCompilation=false`：串行重跑通过，`0 warning / 0 error`。
+- `npm run build`（`src/frontend`）：通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `powershell -ExecutionPolicy Bypass -NoProfile -File scripts\run-ab-comparison.ps1`：通过，刷新 `latest-ab-report.json`，当前真实结果为 `26.67% -> 30.00%`、`+3.33pt`、`p=0.7745`、Monte Carlo mean `+7.67pt`。
+- `npm run test:e2e -- demo-asset-capture.spec.ts`（`src/frontend`）：通过，`5/5`，同时断言 Dashboard/Report 数字来自 `latest-ab-report.json`。
+- `rg "40\.00|56\.67|16\.67|0\.1965|46\.67|0\.4383|83\.33|96\.67|83\.3|96\.7|13\.34|13\.3pt|0\.031" src/frontend/src _docs/_marketing _docs/_capability README.md -n`：无命中。
+- `npm run build`（`src/frontend`）：G5 文案与 e2e 增强后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e -- audit.spec.ts -g "后端 Agent execute"`（`src/frontend`）：通过，`1/1`，覆盖采购、质量、设备三类业务落库回放与跳转入口。
+- `npm run build`（`src/frontend`）：G5 审计回放深链增强后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e -- audit.spec.ts -g "后端 Agent execute"`（`src/frontend`）：G5 审计对象定位增强后重跑通过，`1/1`，覆盖审计回放到采购、质量、设备具体对象的深链。
+- `npm run build`（`src/frontend`）：G5 审计对象定位增强后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e -- demo-smoke.spec.ts`（`src/frontend`）：通过，`1/1`，覆盖 Dashboard -> Scheduling -> Audit -> Report 主演示链路。
+- `npm run build`（`src/frontend`）：G5 demo smoke 新增后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e -- dashboard.spec.ts -g "AI MES 指挥中心"`（`src/frontend`）：通过，`1/1`。
+- `npm run test:e2e -- scheduling.spec.ts -g "通过后端 API 生成并采纳"`（`src/frontend`）：通过，`1/1`。
+- `npm run test:e2e -- report.spec.ts -g "展示 OTD 改善复盘报告"`（`src/frontend`）：首次并行运行因 `127.0.0.1:4173` 端口占用失败；顺序重跑通过，`1/1`。
+- `rg "83\\.3|96\\.7|40\\.0|56\\.7|16\\.7|5 单|\\+16\\.7|p=0\\.1965|0\\.4383|13\\.3" src/frontend/tests/e2e -n`：无命中。
+- `npm run build`（`src/frontend`）：测试口径补漏后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `npm run test:e2e`（`src/frontend`）：前端全量质量门重跑通过，`259 passed / 1 skipped / 0 failed / 0 flaky`，耗时约 `16.1m`；唯一 skipped 来自 Equipment 旧条件跳过保护。
+- `npm run test:e2e -- equipment.spec.ts`（`src/frontend`）：Equipment skipped 清零补漏后通过，`19/19`，无 skipped。
+- `npm run test:e2e`（`src/frontend`）：Equipment skipped 清零后最终全量重跑通过，`260 passed`，0 skipped / 0 failed / 0 flaky，耗时约 `16.7m`。
+- `npm run build`（`src/frontend`）：最终收口后重跑通过，仅有 Node `DEP0180 fs.Stats constructor is deprecated` 警告。
+- `dotnet test src\backend\AIMes.slnx --no-build -p:UseSharedCompilation=false`：最终后端全量重跑通过，测试摘要总计 `446`，失败 `0`，成功 `446`，跳过 `0`，耗时约 `70.4s`。
+- `git diff --check`：通过；仅出现 `LF will be replaced by CRLF` 行尾提示，无 whitespace error。
+- 新增 `_docs/_review/20260526-ultragoal-final-quality-gate-review.md` 与 `.omx/ultragoal/final-quality-gate-20260526.json`，记录 final quality gate：ai-slop-cleaner 等价检查 passed、verification passed、code review `APPROVE` / `CLEAR`。
+- 本轮代码审查：检查 Equipment 条件跳过移除、e2e 稳定化口径、旧数字 grep 命中上下文、后端全量测试、diff check 和 OMX 状态；未发现阻断问题。`omx ultragoal status` 仍提示缺 Codex goal snapshot，因此仅记录 repo-native ledger，不强行完成 OMX 状态。
+
+## 后续
+
+- G4 主演示链路中的异常/风险事件、AI 助手动作/执行包、POC 上线证据链、知识治理复核、现场执行证据、系统配置审批、OTD KPI 承诺包、质量知识闭环和排产采纳反馈证据链已完成后端化；剩余 `aimes_token`、`aimes_refresh_token`、`aimes_user`、`aimes_dark` 属于 Auth/UI 本地状态，不纳入 Agent 后端化。
+- G5 Demo 资产第一刀已完成：脚本、字幕、截图、能力文档和前端主展示数字与当前 runner 同源。
+- G5 审计回放深链已完成到具体对象定位：采购/质量/设备三类后端 Agent execute 业务落库动作均可在审计回放页展示详情，并一跳定位到对应业务对象。
+- 5 分钟 demo smoke 已补齐：Dashboard -> Scheduling -> Audit -> Report 可自动验证；旧 A/B 测试硬编码已清零，前端全量 e2e 最新为 `260 passed`，后端全量测试最新为 `446/446 passed`；最终质量门 review 为 `APPROVE` / `CLEAR`，repo-native 账本已收口。

@@ -43,17 +43,18 @@
           <li v-for="item in event.evidence" :key="item">{{ item }}</li>
         </ul>
       </div>
-      <button type="button" @click="$emit('create', event)">生成返工排产事件</button>
+      <button type="button" :aria-label="createActionLabel" @click="$emit('create', event)">生成返工排产事件</button>
     </div>
 
-    <div v-if="syncMessage" class="sync-message">{{ syncMessage }}</div>
+    <div v-if="syncMessage" class="sync-message" role="status" aria-live="polite">{{ syncMessage }}</div>
   </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { QualityReworkImpact } from '../../utils/quality-rework-sync'
 
-defineProps<{
+const props = defineProps<{
   event: QualityReworkImpact
   syncMessage: string
 }>()
@@ -61,6 +62,8 @@ defineProps<{
 defineEmits<{
   create: [event: QualityReworkImpact]
 }>()
+
+const createActionLabel = computed(() => `生成 ${props.event.workOrderId} ${props.event.inspectionId} 返工排产事件`)
 </script>
 
 <style scoped>

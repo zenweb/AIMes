@@ -13,8 +13,138 @@ test.describe('Engineering data 工程数据约束', () => {
         sessionStorage.setItem('aimes_e2e_storage_reset', '1')
       }
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
+  })
+
+  test('BOM 列表加载失败时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/bom**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium bom list API unavailable' }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 列表加载失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('Request failed with status code 503')
+    const listbox = page.getByRole('listbox', { name: 'BOM 列表' })
+    await expect(listbox.getByRole('option', { name: /产品A 物料清单/ })).toBeVisible()
+    await expect(listbox.getByRole('option', { name: /BOM-A100/ })).toBeVisible()
+  })
+
+  test('BOM 详情加载失败时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/bom?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'bom-1',
+          bomCode: 'BOM-A100',
+          bomName: '产品A 物料清单',
+          productCode: 'PROD-A1',
+          productName: '精密轴承组件 A',
+          bomType: 'Manufacturing',
+          version: 'V1.0',
+          status: 'Released',
+          effectiveDate: '2026-01-01',
+          expireDate: null,
+          itemCount: 5,
+          createdAt: '2026-01-01',
+        }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 10,
+      }),
+    }))
+    await page.route('**/api/v1/bom/bom-1', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium bom detail API unavailable' }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('option', { name: /产品A 物料清单/ }).click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 详情加载失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('Request failed with status code 503')
+    await expect(page.locator('.detail-header h3')).toHaveText('产品A 物料清单')
+    await expect(page.getByText('BOM 排产约束源')).toBeVisible()
+    await expect(page.getByText('M-AL-6061 缺料会冻结 CNC 后段')).toBeVisible()
+  })
+
+  test('BOM 展开失败时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/bom?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'bom-1',
+          bomCode: 'BOM-A100',
+          bomName: '产品A 物料清单',
+          productCode: 'PROD-A1',
+          productName: '精密轴承组件 A',
+          bomType: 'Manufacturing',
+          version: 'V1.0',
+          status: 'Released',
+          effectiveDate: '2026-01-01',
+          expireDate: null,
+          itemCount: 5,
+          createdAt: '2026-01-01',
+        }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 10,
+      }),
+    }))
+    await page.route('**/api/v1/bom/bom-1', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'bom-1',
+        bomCode: 'BOM-A100',
+        bomName: '产品A 物料清单',
+        productCode: 'PROD-A1',
+        productName: '精密轴承组件 A',
+        bomType: 'Manufacturing',
+        version: 'V1.0',
+        status: 'Released',
+        effectiveDate: '2026-01-01',
+        expireDate: null,
+        items: [],
+        changeHistory: [{ changeDescription: '初始创建', changedBy: 'admin', changedAt: '2026-01-01' }],
+        createdAt: '2026-01-01',
+        updatedAt: null,
+      }),
+    }))
+    await page.route('**/api/v1/bom/bom-1/explode**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium bom explosion API unavailable' }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('option', { name: /产品A 物料清单/ }).click()
+    await page.getByRole('button', { name: '爆炸展开' }).click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 展开失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('Request failed with status code 503')
+    const explosion = page.locator('.explosion-section')
+    await expect(explosion.getByText('物料展开')).toBeVisible()
+    await expect(explosion.getByText('MAT-A01')).toBeVisible()
+    await expect(explosion.getByText('轴承钢圈')).toBeVisible()
   })
 
   test('BOM 页面展示替代料、缺料和发布版本如何约束排产', async ({ page }) => {

@@ -1,3 +1,5 @@
+using MES.Domain.Exceptions;
+
 namespace MES.Domain.Entities.Employee;
 
 public class Employee
@@ -73,7 +75,7 @@ public class Employee
     public void Deactivate()
     {
         if (!IsActive)
-            throw new InvalidOperationException("员工已处于离职状态");
+            throw new DomainRuleViolationException("员工已处于离职状态");
         IsActive = false;
         UpdatedAt = DateTime.UtcNow;
     }

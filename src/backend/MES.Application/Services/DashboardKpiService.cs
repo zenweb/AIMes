@@ -41,10 +41,8 @@ public class DashboardKpiService : IDashboardKpiService
         var criticalAnomalies = await _anomalyRepo.GetCriticalOpenAsync(ct);
         var materials = await _materialRepo.GetAllAsync(ct);
 
-        var completedWo = workOrders.Count(w => w.Status == WorkOrderStatus.Completed);
         var activeWo = workOrders.Count(w => w.Status is WorkOrderStatus.Created or WorkOrderStatus.Scheduled or WorkOrderStatus.InProgress);
-        var onTimeDeliveries = workOrders.Count(w => w.Status == WorkOrderStatus.Completed && w.ActualEndDate.HasValue && w.ActualEndDate.Value <= w.PlannedEndDate);
-        var scheduleAdherence = completedWo > 0 ? (double)onTimeDeliveries / completedWo * 100 : 0;
+        var scheduleAdherence = ProductionKpiCalculator.CalculateOnTimeRate(workOrders, DateTime.UtcNow) * 100;
 
         var runningCount = equipment.Count(e => e.Status == EquipmentStatus.Running);
         var utilizationRate = equipment.Count > 0 ? (double)runningCount / equipment.Count * 100 : 0;

@@ -1,77 +1,85 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using MES.Api.Configuration;
 using MES.Api.Endpoints;
 using MES.Api.Extensions;
 using MES.Api.Middleware;
 using MES.Api.Services;
+using MES.Application.Services;
 using MES.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using RabbitMQ.Client;
 using Serilog;
-using Serilog.Events;
-using Microsoft.EntityFrameworkCore;
-using System.Threading.RateLimiting;
 
 // 全局结构化日志
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .Enrich.WithMachineName()
-    .WriteTo.Console(
-        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {UserId} {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Console()
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Serilog 接管 ASP.NET 日志
-builder.Host.UseSerilog();
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .Enrich.WithMachineName());
 
 var isDevelopment = builder.Environment.IsDevelopment();
-var jwtSection = builder.Configuration.GetSection("Jwt");
-// JWT 签名密钥：必须由环境变量或 user-secrets 提供（避免任何 demo key 进入 Production 流程）。
-// 开发环境如未配置则生成临时随机 key 并打印警告；生产环境直接抛错。
-var configuredSigningKey = jwtSection["SigningKey"];
-string signingKey;
-if (!string.IsNullOrWhiteSpace(configuredSigningKey))
-{
-    signingKey = configuredSigningKey;
-}
-else if (isDevelopment)
-{
-    var randomBytes = new byte[32];
-    System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
-    signingKey = Convert.ToBase64String(randomBytes);
-    Log.Warning("Jwt:SigningKey 未配置，已生成临时开发密钥（重启失效）。生产部署必须通过 Jwt__SigningKey 环境变量提供。");
-}
-else
-{
-    throw new InvalidOperationException("Jwt:SigningKey is required in production. Set the Jwt__SigningKey environment variable.");
-}
+var aimesHostOptions = new AimesHostOptions();
+AimesHostOptions.BindFromConfiguration(aimesHostOptions, builder.Configuration);
+builder.Services.AddOptions<AimesHostOptions>()
+    .Bind(builder.Configuration.GetSection(AimesHostOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(JwtOptions.HasValidSigningKey, "Jwt:SigningKey must be at least 32 bytes.")
+    .ValidateOnStart();
 
 // 密钥轮转 + Token 黑名单
-var keyStore = new SigningKeyStore(signingKey);
-builder.Services.AddSingleton(keyStore);
+builder.Services.AddSingleton<SigningKeyStore>(sp =>
+    new SigningKeyStore(
+        sp.GetRequiredService<IOptions<JwtOptions>>().Value.SigningKey,
+        sp.GetRequiredService<IDistributedCache>()));
 builder.Services.AddSingleton<TokenBlacklistService>();
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
-// 速率限制 — 登录接口按 IP 分区，避免全局共享配额
+// 速率限制 — 登录接口按 IP + username 分区，避免单个账号被同 IP 下其他账号挤占配额
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("Auth", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+    options.AddPolicy<string>("Auth", context =>
+    {
+        var username = context.Items.TryGetValue(AuthRateLimitUsernameMiddleware.UsernameItemKey, out var value)
+            ? value as string
+            : null;
+        var partitionKey = AuthRateLimitPartitionKey.Create(
+            context.Connection.RemoteIpAddress?.ToString(),
+            username);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: partitionKey,
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
-            }));
+            });
+    });
 });
 
 // 添加控制器（已迁移到 Minimal API 端点）
@@ -84,8 +92,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+    .AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<SigningKeyStore, IOptions<JwtOptions>>((options, keyStore, jwtOptionsAccessor) =>
     {
+        var jwtOptions = jwtOptionsAccessor.Value;
         options.RequireHttpsMetadata = !isDevelopment;
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
@@ -102,8 +113,8 @@ builder.Services
             },
             ValidateIssuer = !isDevelopment,
             ValidateAudience = !isDevelopment,
-            ValidIssuer = jwtSection["Issuer"],
-            ValidAudience = jwtSection["Audience"],
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2)
         };
@@ -148,7 +159,7 @@ builder.Services.AddAuthorization(options =>
 // 让 RateLimiter 的 IP partitioning 不会把整个工厂折叠成网关 IP。
 // 默认关闭：直接暴露给客户端时若信任所有代理，攻击者可伪造 X-Forwarded-For 绕过 IP 限速。
 // 生产部署在受信任反代后请显式开启 Aimes:TrustForwardedHeaders=true。
-var trustForwarded = builder.Configuration.GetValue<bool>("Aimes:TrustForwardedHeaders");
+var trustForwarded = aimesHostOptions.TrustForwardedHeaders;
 if (trustForwarded)
 {
     builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
@@ -187,7 +198,18 @@ builder.Services.AddMessagingServices(builder.Configuration);
 // SignalR 实时通知
 builder.Services.AddSignalR();
 builder.Services.AddScoped<MES.Api.Hubs.INotificationService, MES.Api.Hubs.NotificationService>();
+builder.Services.AddSingleton<MES.Api.Services.IMonitoringSubscriberTracker, MES.Api.Services.MonitoringSubscriberTracker>();
 builder.Services.AddHostedService<MES.Api.Services.MetricsBackgroundService>();
+builder.Services.AddOptions<SchedulerAgentOptions>()
+    .Bind(builder.Configuration.GetSection(SchedulerAgentOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddHostedService<MES.Application.Services.SchedulerAgentEventHandler>();
+builder.Services.AddOptions<QdrantHealthOptions>()
+    .Bind(builder.Configuration.GetSection(QdrantHealthOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(QdrantHealthOptions.HasValidEndpoint, "Qdrant Host and Port must be valid when Qdrant provider is enabled.")
+    .ValidateOnStart();
 
 // 添加跨域服务
 builder.Services.AddCorsServices(builder.Configuration);
@@ -195,29 +217,41 @@ builder.Services.AddCorsServices(builder.Configuration);
 // Swagger 按 API 版本分组
 builder.Services.AddSwaggerServices();
 
-// 健康检查（含各组件探针，开发环境使用基础检查）
-if (!isDevelopment)
+var databaseOptions = new DatabaseOptions();
+DatabaseOptions.BindFromConfiguration(databaseOptions, builder.Configuration);
+var healthDbConn = databaseOptions.DefaultConnection;
+var healthDbProvider = databaseOptions.GetResolvedProvider();
+var healthChecks = builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<StartupHealthCheck>("startup", tags: ["startup"]);
+
+if (!isDevelopment && string.IsNullOrWhiteSpace(healthDbConn))
 {
-    var healthDbConn = builder.Configuration.GetConnectionString("DefaultConnection");
-    if (string.IsNullOrWhiteSpace(healthDbConn))
-    {
-        throw new InvalidOperationException(
-            "Production health checks require ConnectionStrings:DefaultConnection. " +
-            "Set ConnectionStrings__DefaultConnection environment variable.");
-    }
-    var healthDbProvider = DatabaseProvider.Resolve(builder.Configuration["Database:Provider"]);
-    builder.Services.AddHealthChecks()
-        .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379", name: "redis", tags: new[] { "cache" });
-    if (DatabaseProvider.IsPostgreSql(healthDbProvider))
-    {
-        builder.Services.AddHealthChecks()
-            .AddNpgSql(healthDbConn, name: "postgresql", tags: new[] { "db", "sql" });
-    }
+    throw new InvalidOperationException(
+        "Production health checks require ConnectionStrings:DefaultConnection. " +
+        "Set ConnectionStrings__DefaultConnection environment variable.");
 }
-else
+
+if (DatabaseProvider.IsPostgreSql(healthDbProvider) && !string.IsNullOrWhiteSpace(healthDbConn))
 {
-    builder.Services.AddHealthChecks();
+    healthChecks.AddNpgSql(healthDbConn, name: "postgresql", tags: ["ready"]);
 }
+
+var cacheOptions = new CacheOptions();
+CacheOptions.BindFromConfiguration(cacheOptions, builder.Configuration);
+if (cacheOptions.HasRedisConnection)
+{
+    healthChecks.AddRedis(cacheOptions.RedisConnection, name: "redis", tags: ["ready"]);
+}
+
+var messagingOptions = new MessagingOptions();
+MessagingOptions.BindFromConfiguration(messagingOptions, builder.Configuration);
+if (messagingOptions.IsRabbitMq && !string.IsNullOrWhiteSpace(messagingOptions.RabbitMqConnection))
+{
+    healthChecks.AddRabbitMQ(messagingOptions.RabbitMqConnection, name: "rabbitmq", tags: ["ready"]);
+}
+
+healthChecks.AddCheck<QdrantHealthCheck>("qdrant", tags: ["ready"]);
 // OpenTelemetry — 指标 + 链路追踪
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics =>
@@ -233,6 +267,8 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.AddAspNetCoreInstrumentation()
                .AddHttpClientInstrumentation()
+               .AddEntityFrameworkCoreInstrumentation()
+               .AddNpgsql()
                .AddSource("MES.Scheduling")
                .AddConsoleExporter();
         if (!isDevelopment) tracing.AddOtlpExporter();
@@ -241,7 +277,7 @@ var app = builder.Build();
 
 // 开发环境配置
 var enableSwagger = app.Environment.IsDevelopment()
-    || builder.Configuration.GetValue<bool>("Aimes:EnableSwagger");
+    || aimesHostOptions.EnableSwagger;
 if (enableSwagger)
 {
     app.UseSwagger();
@@ -261,7 +297,6 @@ else
 // 中间件链路
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
-app.UseMiddleware<RequestLoggingMiddleware>();
 
 // ForwardedHeaders 必须放在 RateLimiter / Auth 之前，让 Connection.RemoteIpAddress 反映真实客户端 IP
 // （仅当 Aimes:TrustForwardedHeaders=true 时才注册并启用）
@@ -272,14 +307,16 @@ if (trustForwarded)
 
 // HTTPS 重定向：开源/演示环境可通过 Aimes:DisableHttpsRedirect 关闭，
 // 否则 docker compose 的 http://localhost:5000 会 307 跳到 https 翻车
-var disableHttpsRedirect = builder.Configuration.GetValue<bool>("Aimes:DisableHttpsRedirect");
+var disableHttpsRedirect = aimesHostOptions.DisableHttpsRedirect;
 if (!app.Environment.IsDevelopment() && !disableHttpsRedirect)
 {
     app.UseHttpsRedirection();
 }
 app.UseCors(isDevelopment ? "AllowAll" : "Production");
+app.UseMiddleware<AuthRateLimitUsernameMiddleware>();
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<TraceValidationMiddleware>();
 // 提供静态文件（仪表盘原型等）
@@ -394,43 +431,40 @@ app.MapGroup("/api/v1/routing")
 app.MapHub<MES.Api.Hubs.NotificationHub>("/hubs/notifications");
 app.MapHub<MES.Api.Hubs.MonitoringHub>("/hubs/monitoring");
 
-// 健康检查端点
-app.MapHealthChecks("/health");
-app.MapHealthChecks("/healthz/secured", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+// 健康检查端点：live 不检查外部依赖；startup 校验启动门；ready 检查生产依赖。
+app.MapHealthChecks("/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live")
+}).AllowAnonymous();
+app.MapHealthChecks("/startup", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("startup")
+}).AllowAnonymous();
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+}).AllowAnonymous();
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = _ => true
+}).AllowAnonymous();
+app.MapHealthChecks("/healthz/secured", new HealthCheckOptions
 {
     Predicate = _ => true
 }).RequireAuthorization();
 
-// 自动执行数据库迁移
+// 生产环境只校验 schema，迁移由部署流程显式执行。
 try
 {
     using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<MES.Infrastructure.Data.MesDbContext>();
-    var databaseProvider = DatabaseProvider.Resolve(builder.Configuration["Database:Provider"]);
-    if (DatabaseProvider.IsSqlServer(databaseProvider) && app.Environment.IsDevelopment())
-    {
-        await dbContext.Database.EnsureCreatedAsync();
-        await DemoDataSeeder.SeedAsync(dbContext);
-    }
-    else
-    {
-        await dbContext.Database.MigrateAsync();
-        if (app.Environment.IsDevelopment())
-        {
-            await DemoDataSeeder.SeedAsync(dbContext);
-        }
-    }
+    var databaseStartupValidator = scope.ServiceProvider.GetRequiredService<IDatabaseStartupValidator>();
+    await databaseStartupValidator.ValidateAsync(app.Lifetime.ApplicationStopping);
 }
 catch (Exception ex)
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    if (app.Environment.IsDevelopment())
+    if (DatabaseStartupFailureHandler.Handle(ex, app.Environment, logger))
     {
-        logger.LogWarning(ex, "数据库不可用，API 将以无持久化模式运行");
-    }
-    else
-    {
-        logger.LogCritical(ex, "数据库不可用，无法启动");
         throw;
     }
 }
@@ -442,22 +476,62 @@ app.Lifetime.ApplicationStarted.Register(() =>
         ? string.Join(", ", app.Urls)
         : "http://localhost:5000";
     var primary = app.Urls.FirstOrDefault() ?? "http://localhost:5000";
-    Console.WriteLine();
-    Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
-    Console.WriteLine("║  AIMes V1 — 智能 MES 系统（开源版）                       ║");
-    Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
-    Console.WriteLine($"║  ✓ 后端就绪：  {primary,-42}║");
-    Console.WriteLine($"║  ✓ 看板入口：  {primary + "/scheduling/",-42}║");
-    Console.WriteLine($"║  ✓ API 文档：  {primary + "/swagger",-42}║");
-    Console.WriteLine($"║  ✓ 健康检查：  {primary + "/health",-42}║");
-    Console.WriteLine("║                                                          ║");
-    Console.WriteLine("║  默认账号：    admin / admin123                           ║");
-    Console.WriteLine("║  ⚠️  仅演示用。生产环境请立即修改密码 + 配置 Jwt:SigningKey ║");
-    Console.WriteLine("║                                                          ║");
-    Console.WriteLine("║  💡 商业版（LLM 多目标 Pareto / 自学习 / 私有部署）       ║");
-    Console.WriteLine("║      详见 _docs/commercial-vs-opensource.md              ║");
-    Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
-    Console.WriteLine();
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation(
+        "AIMes V1 started. Addresses={Addresses}; Dashboard={DashboardUrl}; Swagger={SwaggerUrl}; Health={HealthUrl}; DefaultAccount={DefaultAccount}; CommercialInfo={CommercialInfo}",
+        addresses,
+        $"{primary}/scheduling/",
+        $"{primary}/swagger",
+        $"{primary}/health",
+        "admin / admin123",
+        "_docs/commercial-vs-opensource.md");
 });
 
 app.Run();
+
+public sealed class StartupHealthCheck : IHealthCheck
+{
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(HealthCheckResult.Healthy("Application startup completed."));
+    }
+}
+
+public sealed class QdrantHealthCheck(
+    IOptions<QdrantHealthOptions> options,
+    IHttpClientFactory httpClientFactory) : IHealthCheck
+{
+    private readonly QdrantHealthOptions _options = options.Value;
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.IsQdrantEnabled)
+        {
+            return HealthCheckResult.Healthy("Qdrant disabled by vector store provider.");
+        }
+
+        var host = _options.Host;
+        var port = _options.Port;
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return HealthCheckResult.Unhealthy("Qdrant host is required when Qdrant provider is enabled.");
+        }
+
+        var client = httpClientFactory.CreateClient("qdrant-health");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{host}:{port}/healthz");
+        var apiKey = _options.ApiKey;
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Add("api-key", apiKey);
+        }
+
+        var response = await client.SendAsync(request, cancellationToken);
+        return response.IsSuccessStatusCode
+            ? HealthCheckResult.Healthy("Qdrant health endpoint is reachable.")
+            : HealthCheckResult.Unhealthy($"Qdrant health endpoint returned {(int)response.StatusCode}.");
+    }
+}

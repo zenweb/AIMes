@@ -54,9 +54,9 @@ public static class KnowledgeEndpoints
 
     private static async Task<IResult> GetChatHistoryAsync(
         string sessionId,
-        int maxMessages = 20,
-        IKnowledgeAppService knowledgeService = default!,
-        CancellationToken ct = default)
+        IKnowledgeAppService knowledgeService,
+        CancellationToken ct,
+        int maxMessages = 20)
     {
         var history = await knowledgeService.GetChatHistoryAsync(sessionId, maxMessages, ct);
         return TypedResults.Ok(history);

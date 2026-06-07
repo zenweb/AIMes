@@ -3,6 +3,7 @@ using MES.Domain.Entities.Employee;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Inventory;
 using MES.Domain.Entities.Production;
+using MES.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace MES.Infrastructure.Data;
@@ -13,15 +14,61 @@ public static class DataSeeder
     {
         // 种子设备
         modelBuilder.Entity<Equipment>().HasData(
-            Equipment.Create("CNC-001", "CNC加工中心1号", "CNC", "ws-001", "精密加工车间", 100),
-            Equipment.Create("CNC-002", "CNC加工中心2号", "CNC", "ws-001", "精密加工车间", 100));
+            new
+            {
+                Id = "eq-001",
+                EquipmentCode = "CNC-001",
+                EquipmentName = "CNC加工中心1号",
+                EquipmentType = "CNC",
+                WorkshopId = "ws-001",
+                WorkshopName = "精密加工车间",
+                Status = EquipmentStatus.Available,
+                Capacity = 100.0,
+                UtilizationRate = 0.0,
+                LastMaintenanceDate = (DateTime?)null,
+                NextMaintenanceDate = (DateTime?)null,
+                CurrentWorkOrderId = string.Empty,
+                CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = (DateTime?)null,
+                version = 0u
+            },
+            new
+            {
+                Id = "eq-002",
+                EquipmentCode = "CNC-002",
+                EquipmentName = "CNC加工中心2号",
+                EquipmentType = "CNC",
+                WorkshopId = "ws-001",
+                WorkshopName = "精密加工车间",
+                Status = EquipmentStatus.Available,
+                Capacity = 100.0,
+                UtilizationRate = 0.0,
+                LastMaintenanceDate = (DateTime?)null,
+                NextMaintenanceDate = (DateTime?)null,
+                CurrentWorkOrderId = string.Empty,
+                CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = (DateTime?)null,
+                version = 0u
+            });
 
         // 种子物料
         modelBuilder.Entity<Material>().HasData(
-            Material.Create("AL-6061", "铝合金6061", "KG",
-                safetyStock: 100, storageLocation: "A-01-01",
-                materialType: "原材料", availableQuantity: 1000,
-                id: "mat-001", createdAt: new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+            new
+            {
+                Id = "mat-001",
+                MaterialCode = "AL-6061",
+                MaterialName = "铝合金6061",
+                Unit = "KG",
+                MaterialType = "原材料",
+                AvailableQuantity = 1000,
+                ReservedQuantity = 0,
+                SafetyStock = 100,
+                StorageLocation = "A-01-01",
+                ExpiryDate = (DateTime?)null,
+                CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = (DateTime?)null,
+                version = 0u
+            }
         );
 
         // 种子员工
@@ -30,12 +77,6 @@ public static class DataSeeder
             Employee.Create("EMP-001", "张三", "Operator", team: "班组A", shift: "Day", phone: null, id: "emp-001", createdAt: seedDate),
             Employee.Create("EMP-002", "李四", "Engineer", team: "班组A", shift: "Day", id: "emp-002", createdAt: seedDate),
             Employee.Create("EMP-003", "王五", "Lead", team: "班组A", shift: "Day", id: "emp-003", createdAt: seedDate)
-        );
-
-        // 种子系统用户（密码均为 admin123，PBKDF2 SHA256 100000 迭代）
-        modelBuilder.Entity<SystemUser>().HasData(
-            SystemUser.Create("admin", "管理员", "AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=", "Admin", id: "su-001", createdAt: seedDate),
-            SystemUser.Create("operator1", "操作员1", "AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=", "Operator", id: "su-002", createdAt: seedDate)
         );
 
         // 种子系统配置

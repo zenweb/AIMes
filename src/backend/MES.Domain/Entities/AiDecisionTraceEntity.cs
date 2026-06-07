@@ -25,5 +25,8 @@ public class AiDecisionTraceEntity
     public HumanAdoptionStatus HumanAdoptionStatus { get; set; } = HumanAdoptionStatus.Pending;
     public string? SourceReferences { get; set; }
     public string? RelatedBusinessKeys { get; set; }
+    public string? BusinessKeyType { get; set; }
+    public string? BusinessKeyValue { get; set; }
+    public string? LinkedAgentDecisionId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

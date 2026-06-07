@@ -8,6 +8,7 @@ using Xunit;
 
 namespace MES.Tests.Integration.Controllers;
 
+[Collection("IntegrationSerial")]
 public class InventoryControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
@@ -47,18 +48,14 @@ public class InventoryControllerTests : IClassFixture<TestWebApplicationFactory>
         {
             if (!db.Materials.Any(m => m.MaterialCode == "IT-BYZ-CODE"))
             {
-                db.Materials.Add(new Material
-                {
-                    MaterialCode = "IT-BYZ-CODE",
-                    MaterialName = "专用测试物料",
-                    MaterialType = "原材料",
-                    Unit = "KG",
-                    AvailableQuantity = 100,
-                    ReservedQuantity = 0,
-                    SafetyStock = 10,
-                    StorageLocation = "A-01",
-                    CreatedAt = DateTime.UtcNow
-                });
+                db.Materials.Add(Material.Create(
+                    "IT-BYZ-CODE",
+                    "专用测试物料",
+                    "KG",
+                    safetyStock: 10,
+                    storageLocation: "A-01",
+                    materialType: "原材料",
+                    availableQuantity: 100));
             }
         });
 
@@ -96,18 +93,14 @@ public class InventoryControllerTests : IClassFixture<TestWebApplicationFactory>
         {
             if (!db.Materials.Any(m => m.MaterialCode == "IT-STOCKIN"))
             {
-                db.Materials.Add(new Material
-                {
-                    MaterialCode = "IT-STOCKIN",
-                    MaterialName = "入库测试物料",
-                    MaterialType = "原材料",
-                    Unit = "PCS",
-                    AvailableQuantity = 50,
-                    ReservedQuantity = 0,
-                    SafetyStock = 5,
-                    StorageLocation = "A-02",
-                    CreatedAt = DateTime.UtcNow
-                });
+                db.Materials.Add(Material.Create(
+                    "IT-STOCKIN",
+                    "入库测试物料",
+                    "PCS",
+                    safetyStock: 5,
+                    storageLocation: "A-02",
+                    materialType: "原材料",
+                    availableQuantity: 50));
             }
         });
 

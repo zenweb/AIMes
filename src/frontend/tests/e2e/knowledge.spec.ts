@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import type { QualityKnowledgeRetrainingVersionRecord } from '../../src/utils/quality-knowledge-sample-sync'
 
 async function seedR3GrayReleaseDemo(page: Page) {
   await page.evaluate(() => {
@@ -94,11 +95,129 @@ async function seedR3GrayReleaseDemo(page: Page) {
   })
 }
 
+async function seedR7ShadowValidationDemo(page: Page) {
+  await page.evaluate(() => {
+    const feedbackRecords = [
+      {
+        id: 'quality-recommendation-feedback-r5-rejected',
+        rankingId: 'reuse-rank-published-torque-r5',
+        trainingSetVersion: 'QK-TRAIN-20260521-R5',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        decision: 'rejected',
+        decisionLabel: '现场拒绝推荐',
+        owner: '质量工程师 周工 / 装配班长 王工',
+        reason: 'R5 引入跨线样本后出现同名缺陷误召回，需回滚复核。',
+        decidedAt: '2026-05-21T17:10:00.000Z',
+        auditId: 'AUD-KG-QA-RECOMMENDATION-FEEDBACK-R5-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-RECOMMENDATION-REJECTED',
+        effectScoreBefore: 96,
+        effectScoreAfter: 91,
+        effectTrendLabel: '96 -> 91 分',
+        nextTrainingSetVersion: 'QK-TRAIN-20260521-R6',
+        nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R6',
+        feedbackActions: ['记录跨线负样本误召回。'],
+        feedbackMetrics: [
+          { label: '推荐采纳耗时', value: '待复核' },
+          { label: '复验通过率', value: '82%' },
+          { label: '负样本误召回', value: '2 次' },
+        ],
+      },
+    ]
+    const versions = [
+      {
+        id: 'quality-retraining-version-qk-train-20260521-r6',
+        sourceReviewQueueId: 'experiment-candidate-quality-experiment-candidate-qk-train-20260521-r6-negative-coverage',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        candidateTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R6-NEGATIVE-COVERAGE',
+        trainingSetVersion: 'QK-TRAIN-20260521-R6',
+        trainingSetName: 'R5 回滚负样本补齐实验集',
+        status: 'merged',
+        statusLabel: '补样已合并',
+        approvedBy: '知识库管理员 / 质量主管 刘工',
+        approvedAt: '2026-05-21T18:00:00.000Z',
+        approvalAuditId: 'AUD-KG-QA-RETRAINING-R6-NEGATIVE-COVERAGE-MERGE-20260521-001',
+        approvalTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R6-NEGATIVE-COVERAGE-MERGED',
+        positiveSampleCount: 38,
+        negativeSampleCount: 8,
+        featurePolicy: 'R6 仅补齐 R5 回滚后的跨线负样本覆盖，不进入主动推荐扩大。',
+        changeSummary: ['R5 回滚后的跨线负样本已补齐到 8 条。'],
+        validationGates: ['R7 影子验证前不得提交扩大灰度审批。'],
+      },
+      {
+        id: 'quality-retraining-version-qk-train-20260521-r5',
+        sourceReviewQueueId: 'recommendation-feedback-quality-recommendation-feedback-r5-rejected',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        candidateTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R5',
+        trainingSetVersion: 'QK-TRAIN-20260521-R5',
+        trainingSetName: '跨线扭矩偏移探索实验样本集',
+        status: 'gray_published',
+        statusLabel: '已灰度发布',
+        approvedBy: '知识库管理员 / 质量主管 刘工',
+        approvedAt: '2026-05-21T16:30:00.000Z',
+        approvalAuditId: 'AUD-KG-QA-RETRAINING-R5-APPROVAL-20260521-001',
+        approvalTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-APPROVED',
+        positiveSampleCount: 38,
+        negativeSampleCount: 6,
+        featurePolicy: 'R5 探索跨线扭矩偏移样本，但需严格监控误召回。',
+        changeSummary: ['R5 引入跨产线同名缺陷样本。'],
+        validationGates: ['R5 灰度前需复核跨线负样本误召回。'],
+        validationStatus: 'passed',
+        validatedAt: '2026-05-21T16:50:00.000Z',
+        validationAuditId: 'AUD-KG-QA-RETRAINING-R5-VALIDATION-PASS-20260521-001',
+        validationTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-VALIDATION-PASSED',
+        validationSummary: 'R5 灰度前校验通过，但标记跨线误召回观察项。',
+        validationFindings: ['跨线负样本误召回 2 次。'],
+        publishedAt: '2026-05-21T17:00:00.000Z',
+        publishAuditId: 'AUD-KG-QA-RETRAINING-R5-GRAY-PUBLISH-20260521-001',
+        publishTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-GRAY-PUBLISHED',
+        publishSummary: 'R5 已灰度发布到跨线扭矩偏移推荐实验。',
+        recommendationScope: ['跨线 OP-20 扭矩偏移', '质量知识复用排序灰度'],
+      },
+    ]
+    const decisions = [
+      {
+        id: 'quality-gray-release-decision-qk-train-20260521-r5-initial-rolled-back',
+        monitorId: 'quality-gray-release-monitor-quality-retraining-version-qk-train-20260521-r5',
+        trainingSetVersion: 'QK-TRAIN-20260521-R5',
+        targetWorkOrderId: 'WO-DEMO-1018',
+        operationCode: 'OP-20',
+        releaseCycleLabel: '首次灰度发布',
+        releaseAuditId: 'AUD-KG-QA-RETRAINING-R5-GRAY-PUBLISH-20260521-001',
+        releaseTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-GRAY-PUBLISHED',
+        releaseScopeLabel: 'OP-20 装配扭矩推荐链路',
+        decision: 'rolled_back',
+        decisionLabel: '回滚到 R2 正式版',
+        statusClass: 'guarded',
+        decidedBy: '质量主管 刘工 / 知识库管理员',
+        decidedAt: '2026-05-21T17:30:00.000Z',
+        auditId: 'AUD-KG-QA-RETRAINING-R5-GRAY-ROLLBACK-20260521-001',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-R5-GRAY-ROLLED-BACK',
+        reason: 'R5 跨线样本误召回超过阈值，先回滚到 R2 正式版。',
+        approvalStatus: 'not_required',
+        approvalLabel: '回滚无需扩大审批',
+        rollbackTargetVersion: 'QK-TRAIN-20260521-R2',
+        metricSnapshot: [
+          { label: '推荐采纳率', value: '0%' },
+          { label: '复验通过率', value: '82%' },
+          { label: '负样本误召回', value: '2 次' },
+        ],
+        actions: ['R5 跨线推荐实验回滚。'],
+      },
+    ]
+    localStorage.setItem('aimes_quality_knowledge_recommendation_feedback', JSON.stringify(feedbackRecords))
+    localStorage.setItem('aimes_quality_knowledge_retraining_versions', JSON.stringify(versions))
+    localStorage.setItem('aimes_quality_knowledge_gray_release_decisions', JSON.stringify(decisions))
+  })
+}
+
 test.describe('Knowledge 文档治理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
-      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin' }))
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('knowledge/documents')
     await page.waitForSelector('.upload-page', { timeout: 20000 })
@@ -374,11 +493,262 @@ test.describe('Knowledge 文档治理', () => {
     await expect(grayPublishEvidence.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-PUBLISHED')).toBeVisible()
   })
 
+  test('下一轮训练集合并写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_quality_knowledge_recommendation_feedback', JSON.stringify([
+        {
+          id: 'quality-recommendation-feedback-wo-demo-1018-op-20',
+          rankingId: 'reuse-rank-published-torque-retraining',
+          trainingSetVersion: 'QK-TRAIN-20260521-R2',
+          targetWorkOrderId: 'WO-DEMO-1018',
+          operationCode: 'OP-20',
+          decision: 'accepted',
+          decisionLabel: '现场已采纳推荐',
+          owner: '质量工程师 周工 / 装配班长 王工',
+          reason: '复验发现 OP-20 扭矩工具校准、设备族和缺陷模式均命中独立 CAPA 样本。',
+          decidedAt: '2026-05-21T13:00:00.000Z',
+          auditId: 'AUD-KG-QA-RECOMMENDATION-FEEDBACK-20260521-001',
+          traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED',
+          effectScoreBefore: 89,
+          effectScoreAfter: 93,
+          effectTrendLabel: '89 -> 93 分',
+          nextTrainingSetVersion: 'QK-TRAIN-20260521-R3',
+          nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3',
+          feedbackActions: ['质量工程师把现场采纳结果回写为正样本。'],
+          feedbackMetrics: [
+            { label: '推荐采纳耗时', value: '18 分钟' },
+            { label: '复验通过率', value: '100%' },
+          ],
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithNextTrainingMergeFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_retraining_versions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-MERGE-20260521-001')
+        ) {
+          throw new Error('next training merge storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const assetPanel = page.locator('.quality-asset-panel')
+    const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
+    await nextTrainingCard.getByRole('button', { name: '合并现场反馈' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识下一训练集合并失败')
+    await expect(alert).toContainText('next training merge storage denied from chromium')
+    await expect(nextTrainingCard.locator('.asset-topline span').getByText('下一轮训练集', { exact: true })).toBeVisible()
+    await expect(nextTrainingCard.getByRole('button', { name: '合并现场反馈' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('QK-TRAIN-20260521-R3_现场反馈合并')
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R3-MERGE-20260521-001')
+  })
+
+  test('下一轮训练集审批写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_quality_knowledge_recommendation_feedback', JSON.stringify([
+        {
+          id: 'quality-recommendation-feedback-wo-demo-1018-op-20',
+          rankingId: 'reuse-rank-published-torque-retraining',
+          trainingSetVersion: 'QK-TRAIN-20260521-R2',
+          targetWorkOrderId: 'WO-DEMO-1018',
+          operationCode: 'OP-20',
+          decision: 'accepted',
+          decisionLabel: '现场已采纳推荐',
+          owner: '质量工程师 周工 / 装配班长 王工',
+          reason: '复验发现 OP-20 扭矩工具校准、设备族和缺陷模式均命中独立 CAPA 样本。',
+          decidedAt: '2026-05-21T13:00:00.000Z',
+          auditId: 'AUD-KG-QA-RECOMMENDATION-FEEDBACK-20260521-001',
+          traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED',
+          effectScoreBefore: 89,
+          effectScoreAfter: 93,
+          effectTrendLabel: '89 -> 93 分',
+          nextTrainingSetVersion: 'QK-TRAIN-20260521-R3',
+          nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3',
+          feedbackActions: ['质量工程师把现场采纳结果回写为正样本。'],
+          feedbackMetrics: [
+            { label: '推荐采纳耗时', value: '18 分钟' },
+            { label: '复验通过率', value: '100%' },
+          ],
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+
+    const assetPanel = page.locator('.quality-asset-panel')
+    const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
+    await nextTrainingCard.getByRole('button', { name: '合并现场反馈' }).click()
+    await expect(nextTrainingCard.getByText('现场反馈已合并')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithNextTrainingApprovalFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_retraining_versions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-APPROVAL-20260521-001')
+        ) {
+          throw new Error('next training approval storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await nextTrainingCard.getByRole('button', { name: '批准 R3 训练集' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识下一训练集审批失败')
+    await expect(alert).toContainText('next training approval storage denied from chromium')
+    await expect(nextTrainingCard.getByText('现场反馈已合并')).toBeVisible()
+    await expect(nextTrainingCard.getByRole('button', { name: '批准 R3 训练集' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('QK-TRAIN-20260521-R3_R3训练集审批')
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R3-APPROVAL-20260521-001')
+  })
+
+  test('下一轮训练集灰度前校验写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_quality_knowledge_recommendation_feedback', JSON.stringify([
+        {
+          id: 'quality-recommendation-feedback-wo-demo-1018-op-20',
+          rankingId: 'reuse-rank-published-torque-retraining',
+          trainingSetVersion: 'QK-TRAIN-20260521-R2',
+          targetWorkOrderId: 'WO-DEMO-1018',
+          operationCode: 'OP-20',
+          decision: 'accepted',
+          decisionLabel: '现场已采纳推荐',
+          owner: '质量工程师 周工 / 装配班长 王工',
+          reason: '复验发现 OP-20 扭矩工具校准、设备族和缺陷模式均命中独立 CAPA 样本。',
+          decidedAt: '2026-05-21T13:00:00.000Z',
+          auditId: 'AUD-KG-QA-RECOMMENDATION-FEEDBACK-20260521-001',
+          traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED',
+          effectScoreBefore: 89,
+          effectScoreAfter: 93,
+          effectTrendLabel: '89 -> 93 分',
+          nextTrainingSetVersion: 'QK-TRAIN-20260521-R3',
+          nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3',
+          feedbackActions: ['质量工程师把现场采纳结果回写为正样本。'],
+          feedbackMetrics: [
+            { label: '推荐采纳耗时', value: '18 分钟' },
+            { label: '复验通过率', value: '100%' },
+          ],
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+
+    const assetPanel = page.locator('.quality-asset-panel')
+    const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
+    await nextTrainingCard.getByRole('button', { name: '合并现场反馈' }).click()
+    await expect(nextTrainingCard.getByText('现场反馈已合并')).toBeVisible()
+    await nextTrainingCard.getByRole('button', { name: '批准 R3 训练集' }).click()
+    await expect(nextTrainingCard.getByText('训练集已批准')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithNextTrainingValidationFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_retraining_versions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-VALIDATION-PASS-20260521-001')
+        ) {
+          throw new Error('next training validation storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await nextTrainingCard.getByRole('button', { name: '运行灰度前校验' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识下一训练集灰度前校验失败')
+    await expect(alert).toContainText('next training validation storage denied from chromium')
+    await expect(nextTrainingCard.getByText('训练集已批准')).toBeVisible()
+    await expect(nextTrainingCard.getByRole('button', { name: '运行灰度前校验' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('QK-TRAIN-20260521-R3_灰度前校验已通过')
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R3-VALIDATION-PASS-20260521-001')
+  })
+
+  test('下一轮训练集灰度发布写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_quality_knowledge_recommendation_feedback', JSON.stringify([
+        {
+          id: 'quality-recommendation-feedback-wo-demo-1018-op-20',
+          rankingId: 'reuse-rank-published-torque-retraining',
+          trainingSetVersion: 'QK-TRAIN-20260521-R2',
+          targetWorkOrderId: 'WO-DEMO-1018',
+          operationCode: 'OP-20',
+          decision: 'accepted',
+          decisionLabel: '现场已采纳推荐',
+          owner: '质量工程师 周工 / 装配班长 王工',
+          reason: '复验发现 OP-20 扭矩工具校准、设备族和缺陷模式均命中独立 CAPA 样本。',
+          decidedAt: '2026-05-21T13:00:00.000Z',
+          auditId: 'AUD-KG-QA-RECOMMENDATION-FEEDBACK-20260521-001',
+          traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RECOMMENDATION-ADOPTED',
+          effectScoreBefore: 89,
+          effectScoreAfter: 93,
+          effectTrendLabel: '89 -> 93 分',
+          nextTrainingSetVersion: 'QK-TRAIN-20260521-R3',
+          nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3',
+          feedbackActions: ['质量工程师把现场采纳结果回写为正样本。'],
+          feedbackMetrics: [
+            { label: '推荐采纳耗时', value: '18 分钟' },
+            { label: '复验通过率', value: '100%' },
+          ],
+        },
+      ]))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+
+    const assetPanel = page.locator('.quality-asset-panel')
+    const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
+    await nextTrainingCard.getByRole('button', { name: '合并现场反馈' }).click()
+    await expect(nextTrainingCard.getByText('现场反馈已合并')).toBeVisible()
+    await nextTrainingCard.getByRole('button', { name: '批准 R3 训练集' }).click()
+    await expect(nextTrainingCard.getByText('训练集已批准')).toBeVisible()
+    await nextTrainingCard.getByRole('button', { name: '运行灰度前校验' }).click()
+    await expect(nextTrainingCard.getByText('灰度前校验已通过')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithNextTrainingGrayPublishFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_retraining_versions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-GRAY-PUBLISH-20260521-001')
+        ) {
+          throw new Error('next training gray publish storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await nextTrainingCard.getByRole('button', { name: '灰度发布 R3' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识灰度发布失败')
+    await expect(alert).toContainText('next training gray publish storage denied from chromium')
+    await expect(nextTrainingCard.getByText('灰度前校验已通过')).toBeVisible()
+    await expect(nextTrainingCard.getByRole('button', { name: '灰度发布 R3' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('QK-TRAIN-20260521-R3_灰度发布到质量推荐链路')
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R3-GRAY-PUBLISH-20260521-001')
+  })
+
   test('R3 调整范围重开校验后可重新灰度发布并恢复推荐决策', async ({ page }) => {
     await seedR3GrayReleaseDemo(page)
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
     const adminPanel = page.locator('.agent-governance-panel')
     const monitorCard = adminPanel.locator('.quality-gray-monitor-card')
@@ -418,11 +788,58 @@ test.describe('Knowledge 文档治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const republishedMonitorCard = page.locator('.agent-governance-panel .quality-gray-monitor-card')
     await expect(republishedMonitorCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-REPUBLISHED')).toBeVisible()
     await expect(republishedMonitorCard.getByRole('button', { name: '扩大灰度' })).toBeVisible()
     await expect(republishedMonitorCard.getByRole('button', { name: '回滚到 R2' })).toBeVisible()
+  })
+
+  test('R3 重新灰度发布写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await seedR3GrayReleaseDemo(page)
+    await page.goto('admin', { waitUntil: 'commit' })
+    await page.waitForSelector('.admin-board', { timeout: 30000 })
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
+
+    const adminPanel = page.locator('.agent-governance-panel')
+    const monitorCard = adminPanel.locator('.quality-gray-monitor-card')
+    await monitorCard.getByRole('button', { name: '回滚到 R2' }).click()
+    await monitorCard.getByRole('button', { name: '调整范围重开校验' }).click()
+    await expect(monitorCard.getByText('已重开灰度前校验')).toBeVisible()
+
+    await page.goto('knowledge/documents', { waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+    const assetPanel = page.locator('.quality-asset-panel')
+    const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
+
+    await expect(nextTrainingCard.getByText('已重开灰度前校验')).toBeVisible()
+    await nextTrainingCard.getByRole('button', { name: '重新运行灰度前校验' }).click()
+    await expect(nextTrainingCard.getByText('灰度前校验已通过')).toBeVisible()
+    await expect(nextTrainingCard.getByText('AUD-KG-QA-RETRAINING-R3-SCOPE-REVALIDATION-PASS-20260521-001')).toBeVisible()
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithNextTrainingGrayRepublishFailure(key: string, value: string) {
+        if (
+          key === 'aimes_quality_knowledge_retraining_versions'
+          && value.includes('AUD-KG-QA-RETRAINING-R3-GRAY-REPUBLISH-20260521-001')
+        ) {
+          throw new Error('next training gray republish storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await nextTrainingCard.getByRole('button', { name: '重新灰度发布 R3' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量知识灰度发布失败')
+    await expect(alert).toContainText('next training gray republish storage denied from chromium')
+    await expect(nextTrainingCard.getByText('灰度前校验已通过')).toBeVisible()
+    await expect(nextTrainingCard.getByRole('button', { name: '重新灰度发布 R3' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R3-GRAY-REPUBLISH-20260521-001')
+    await expect(page.locator('.history-table')).not.toContainText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-REPUBLISHED')
   })
 
   test('批准再训练候选生成训练集版本并支持回滚', async ({ page }) => {
@@ -517,7 +934,7 @@ test.describe('Knowledge 文档治理', () => {
 
     await page.evaluate(() => {
       const records = JSON.parse(localStorage.getItem('aimes_quality_knowledge_retraining_versions') ?? '[]')
-      localStorage.setItem('aimes_quality_knowledge_retraining_versions', JSON.stringify(records.map((record: any) => ({
+      localStorage.setItem('aimes_quality_knowledge_retraining_versions', JSON.stringify(records.map((record: QualityKnowledgeRetrainingVersionRecord) => ({
         ...record,
         status: 'validation_failed',
         statusLabel: '发布前校验未通过',
@@ -567,6 +984,8 @@ test.describe('Knowledge 文档治理', () => {
   })
 
   test('上传文档进入待索引治理队列', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
     await page.route('**/api/v1/knowledge/documents', async (route) => {
       await route.fulfill({
         status: 200,
@@ -598,6 +1017,60 @@ test.describe('Knowledge 文档治理', () => {
     await expect(page.locator('.history-table').getByText('现场换线SOP.md')).toBeVisible()
   })
 
+  test('上传接口返回坏载荷时真实浏览器展示行级 fail-loud', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    await page.route('**/api/v1/knowledge/documents', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><body>SPA fallback</body></html>',
+      })
+    })
+
+    const fileInput = page.locator('input[type="file"]')
+    await fileInput.setInputFiles({
+      name: '现场换线SOP.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 现场换线SOP\n\n换线前确认设备、人员和首件。'),
+    })
+    await page.getByRole('button', { name: '开始上传' }).click()
+
+    const rowError = page.locator('.status-err')
+    await expect(rowError).toBeVisible()
+    await expect(rowError).toContainText('API 返回了 HTML fallback')
+    await expect(rowError).toContainText('/knowledge/documents')
+    await expect(page.locator('.history-table')).toContainText('暂无上传记录')
+  })
+
+  test('知识复核写入失败时真实浏览器展示 fail-loud 且不伪造审计记录', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithKnowledgeReviewFailure(key: string, value: string) {
+        if (key === 'aimes_knowledge_governance_reviews') {
+          throw new Error('localStorage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const panel = page.locator('.knowledge-governance-panel')
+    const maintenanceCard = panel.locator('.governance-card').filter({ hasText: 'CNC-01 主轴维护手册' })
+    await expect(maintenanceCard.getByText('索引：待索引')).toBeVisible()
+    await expect(maintenanceCard.getByText(/已过期/)).toBeVisible()
+
+    await maintenanceCard.getByRole('button', { name: '复核并重建索引' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('知识文档索引复核失败')
+    await expect(alert).toContainText('localStorage denied from chromium')
+    await expect(maintenanceCard.locator('.doc-topline strong').getByText('V1.1', { exact: true })).toBeVisible()
+    await expect(maintenanceCard.getByText('索引：待索引')).toBeVisible()
+    await expect(maintenanceCard.getByText(/已过期/)).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-REINDEX-20260520-001')
+  })
+
   test('过期待索引文档复核后成为 AI 助手可引用来源', async ({ page }) => {
     const panel = page.locator('.knowledge-governance-panel')
     const maintenanceCard = panel.locator('.governance-card').filter({ hasText: 'CNC-01 主轴维护手册' })
@@ -610,7 +1083,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(maintenanceCard.getByText('索引：已索引')).toBeVisible()
     await expect(maintenanceCard.getByText('有效期：2026-12-31')).toBeVisible()
     await expect(maintenanceCard.getByText(/已由设备主管复核/)).toBeVisible()
-    await expect(page.locator('.history-table').getByText('AUD-KG-REINDEX-20260520-001')).toBeVisible()
+    await expect(page.locator('.history-table code').getByText('AUD-KG-REINDEX-20260520-001', { exact: true })).toBeVisible()
 
     const tracePanel = page.locator('.assistant-trace-panel')
     const faultTrace = tracePanel.locator('.trace-card').filter({ hasText: '如果 CNC-001 故障 4 小时会怎样？' })
@@ -822,7 +1295,7 @@ test.describe('Knowledge 文档治理', () => {
 
     await page.goto('admin', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
-    await page.getByRole('button', { name: 'Agent 治理' }).click()
+    await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const adminPanel = page.locator('.agent-governance-panel')
     const adminCandidateLane = adminPanel.locator('.quality-experiment-candidate-governance')
     await expect(adminCandidateLane.getByText('补样已合并')).toBeVisible()
@@ -872,5 +1345,36 @@ test.describe('Knowledge 文档治理', () => {
     expect(csv).toContain('影子灰度已发布 / 负样本覆盖 8 / 8 条 / 覆盖率 100% / 影子灰度已发布')
     expect(csv).toContain('QK-TRAIN-20260521-R7 灰度监控 / 跨线 OP-20 扭矩偏移影子灰度')
     expect(csv).toContain('QK-TRAIN-20260521-R7 灰度审计')
+  })
+
+  test('R7 影子验证写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
+    await seedR7ShadowValidationDemo(page)
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.upload-page', { timeout: 20000 })
+
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithShadowValidationFailure(key: string, value: string) {
+        if (key === 'aimes_quality_knowledge_retraining_versions' && value.includes('quality-retraining-version-qk-train-20260521-r7')) {
+          throw new Error('shadow validation storage denied from chromium')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    const assetPanel = page.locator('.quality-asset-panel')
+    const r7Candidate = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R7 影子验证候选' })
+    await expect(r7Candidate.locator('.asset-topline em').getByText('影子验证待执行', { exact: true })).toBeVisible()
+
+    await r7Candidate.getByRole('button', { name: '运行 R7 影子验证' }).click()
+
+    const alert = page.locator('.upload-container .error-msg')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('质量实验影子验证失败')
+    await expect(alert).toContainText('shadow validation storage denied from chromium')
+    await expect(r7Candidate.locator('.asset-topline em').getByText('影子验证待执行', { exact: true })).toBeVisible()
+    await expect(r7Candidate.getByRole('button', { name: '运行 R7 影子验证' })).toBeVisible()
+    await expect(page.locator('.history-table')).not.toContainText('QK-TRAIN-20260521-R7_R7影子验证已通过')
+    await expect(page.locator('.history-table')).not.toContainText('AUD-KG-QA-RETRAINING-R7-SHADOW-VALIDATION-PASS-20260521-001')
   })
 })

@@ -1,5 +1,5 @@
-import { readCustomerOrderImportEvidence, type CustomerOrderImportEvidence } from './customer-order-import-sync'
-import { readCustomerEquipmentFaultEvidence, type CustomerEquipmentFaultEvidence } from './equipment-risk-sync'
+import { readCustomerOrderImportEvidence, readCustomerOrderImportEvidenceBackendFirst, type CustomerOrderImportEvidence } from './customer-order-import-sync'
+import { readCustomerEquipmentFaultEvidence, readCustomerEquipmentFaultEvidenceBackendFirst, type CustomerEquipmentFaultEvidence } from './equipment-risk-sync'
 
 export interface PocEvidenceGovernanceRecord {
   id: string
@@ -26,6 +26,17 @@ export function readPocEvidenceGovernanceRecords(): PocEvidenceGovernanceRecord[
   const records: PocEvidenceGovernanceRecord[] = []
   const orderImport = readCustomerOrderImportEvidence()
   const equipmentFault = readCustomerEquipmentFaultEvidence()
+
+  if (orderImport) records.push(mapCustomerOrderImport(orderImport))
+  if (equipmentFault) records.push(mapCustomerEquipmentFault(equipmentFault))
+
+  return records
+}
+
+export async function readPocEvidenceGovernanceRecordsBackendFirst(): Promise<PocEvidenceGovernanceRecord[]> {
+  const records: PocEvidenceGovernanceRecord[] = []
+  const orderImport = await readCustomerOrderImportEvidenceBackendFirst()
+  const equipmentFault = await readCustomerEquipmentFaultEvidenceBackendFirst()
 
   if (orderImport) records.push(mapCustomerOrderImport(orderImport))
   if (equipmentFault) records.push(mapCustomerEquipmentFault(equipmentFault))

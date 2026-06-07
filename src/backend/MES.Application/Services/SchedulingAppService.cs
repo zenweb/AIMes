@@ -1,4 +1,7 @@
+using System.Text.Json;
 using MES.Application.DTOs;
+using MES.Domain.Entities;
+using MES.Domain.Entities.Agent;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Knowledge;
 using MES.Domain.Entities.Production;
@@ -25,6 +28,7 @@ public interface ISchedulingAppService
     Task<WorkOrderDto> UpdateWorkOrderStatusAsync(string id, string status, CancellationToken ct = default);
     Task DeleteWorkOrderAsync(string id, CancellationToken ct = default);
     Task RecordAdoptionFeedbackAsync(AdoptionFeedbackRequest request, string operatorUser, CancellationToken ct = default);
+    Task<AdoptionFeedbackSnapshotDto?> GetLatestAdoptionFeedbackAsync(CancellationToken ct = default);
     Task<BatchOptimizeResultDto> BatchOptimizeAsync(BatchOptimizeRequest request, CancellationToken ct = default);
 }
 
@@ -40,6 +44,9 @@ public class SchedulingAppService : ISchedulingAppService
     private readonly IScheduleOptimizationService _optimizationService;
     private readonly IAdoptionFeedbackService _feedbackService;
     private readonly IBomRepository _bomRepo;
+    private readonly ISchedulingContextProvider _schedulingContextProvider;
+    private readonly IAgentDecisionRepository _agentDecisionRepository;
+    private readonly IAuditLogRepository _auditLogRepository;
 
     public SchedulingAppService(
         IWorkOrderRepository workOrderRepo,
@@ -48,7 +55,10 @@ public class SchedulingAppService : ISchedulingAppService
         IScheduleRepository scheduleRepo,
         IScheduleOptimizationService optimizationService,
         IAdoptionFeedbackService feedbackService,
-        IBomRepository bomRepo)
+        IBomRepository bomRepo,
+        ISchedulingContextProvider schedulingContextProvider,
+        IAgentDecisionRepository agentDecisionRepository,
+        IAuditLogRepository auditLogRepository)
     {
         _workOrderRepo = workOrderRepo;
         _equipmentRepo = equipmentRepo;
@@ -57,6 +67,9 @@ public class SchedulingAppService : ISchedulingAppService
         _optimizationService = optimizationService;
         _feedbackService = feedbackService;
         _bomRepo = bomRepo;
+        _schedulingContextProvider = schedulingContextProvider;
+        _agentDecisionRepository = agentDecisionRepository;
+        _auditLogRepository = auditLogRepository;
     }
 
     public async Task<SchedulingResultDto> OptimizeScheduleAsync(OptimizeScheduleRequest request, CancellationToken ct = default)
@@ -65,11 +78,11 @@ public class SchedulingAppService : ISchedulingAppService
         var workOrders = await GetWorkOrdersForScheduling(request, ct);
 
         // 2. 获取设备产能
-        var equipment = await _equipmentRepo.GetByWorkshopAsync(request.WorkshopId);
+        var equipment = await _equipmentRepo.GetByWorkshopAsync(request.WorkshopId, ct);
 
         // 3. 获取物料齐套情况
         var productCodes = workOrders.Select(w => w.ProductCode).Distinct().ToList();
-        var materialCodeTasks = productCodes.Select(async pc => await GetMaterialCodesForProductAsync(pc));
+        var materialCodeTasks = productCodes.Select(async pc => await GetMaterialCodesForProductAsync(pc, ct));
         var materialCodeSets = await Task.WhenAll(materialCodeTasks);
         var materialCodes = materialCodeSets.SelectMany(mc => mc).Distinct().ToList();
         var materials = await GetMaterialAvailability(materialCodes, ct);
@@ -90,7 +103,7 @@ public class SchedulingAppService : ISchedulingAppService
 
         // 6. 保存排产计划
         var plan = MapToSchedulePlan(result, request);
-        await _scheduleRepo.CreateAsync(plan);
+        await _scheduleRepo.CreateAsync(plan, ct);
 
         // 7. 返回结果
         var planDto = MapToSchedulePlanDto(plan);
@@ -119,19 +132,19 @@ public class SchedulingAppService : ISchedulingAppService
 
     public async Task<SchedulePlanDto?> GetCurrentPlanAsync(CancellationToken ct = default)
     {
-        var plan = await _scheduleRepo.GetCurrentPlanAsync();
+        var plan = await _scheduleRepo.GetCurrentPlanAsync(ct);
         return plan != null ? MapToSchedulePlanDto(plan) : null;
     }
 
     public async Task<SchedulePlanDto?> GetPlanByIdAsync(string id, CancellationToken ct = default)
     {
-        var plan = await _scheduleRepo.GetByIdAsync(id);
+        var plan = await _scheduleRepo.GetByIdAsync(id, ct);
         return plan != null ? MapToSchedulePlanDto(plan) : null;
     }
 
     public async Task<List<SchedulePlanDto>> GetAllPlansAsync(CancellationToken ct = default)
     {
-        var plans = await _scheduleRepo.GetAllAsync();
+        var plans = await _scheduleRepo.GetAllAsync(ct: ct);
         return plans.Select(MapToSchedulePlanDto).ToList();
     }
 
@@ -148,13 +161,13 @@ public class SchedulingAppService : ISchedulingAppService
             request.Priority,
             request.RouteCode ?? string.Empty);
 
-        var created = await _workOrderRepo.CreateAsync(workOrder);
+        var created = await _workOrderRepo.CreateAsync(workOrder, ct);
         return MapToWorkOrderDto(created);
     }
 
     public async Task<WorkOrderDto?> GetWorkOrderByIdAsync(string id, CancellationToken ct = default)
     {
-        var workOrder = await _workOrderRepo.GetByIdAsync(id);
+        var workOrder = await _workOrderRepo.GetByIdAsync(id, ct);
         return workOrder != null ? MapToWorkOrderDto(workOrder) : null;
     }
 
@@ -166,30 +179,23 @@ public class SchedulingAppService : ISchedulingAppService
             status = parsedStatus;
         }
 
-        var workOrders = await _workOrderRepo.GetAllAsync(status);
-
-        // 应用过滤
-        var query = workOrders.AsQueryable();
-
-        if (!string.IsNullOrEmpty(parameters.WorkshopId))
-            query = query.Where(w => w.WorkshopId == parameters.WorkshopId);
-
-        if (!string.IsNullOrEmpty(parameters.ProductCode))
-            query = query.Where(w => w.ProductCode == parameters.ProductCode);
-
-        if (parameters.StartDate.HasValue)
-            query = query.Where(w => w.PlannedStartDate >= parameters.StartDate.Value);
-
-        if (parameters.EndDate.HasValue)
-            query = query.Where(w => w.PlannedEndDate <= parameters.EndDate.Value);
-
-        // 分页
-        var totalCount = query.Count();
-        var items = query
-            .OrderByDescending(w => w.Priority)
-            .ThenBy(w => w.PlannedStartDate)
-            .Skip((parameters.Page - 1) * parameters.PageSize)
-            .Take(parameters.PageSize)
+        var totalCount = await _workOrderRepo.CountAsync(
+            status,
+            parameters.WorkshopId,
+            parameters.ProductCode,
+            parameters.StartDate,
+            parameters.EndDate,
+            ct);
+        var workOrders = await _workOrderRepo.GetPagedAsync(
+            status,
+            parameters.WorkshopId,
+            parameters.ProductCode,
+            parameters.StartDate,
+            parameters.EndDate,
+            parameters.Page,
+            parameters.PageSize,
+            ct);
+        var items = workOrders
             .Select(MapToWorkOrderDto)
             .ToList();
 
@@ -204,18 +210,18 @@ public class SchedulingAppService : ISchedulingAppService
 
     public async Task<WorkOrderDto> UpdateWorkOrderStatusAsync(string id, string status, CancellationToken ct = default)
     {
-        var workOrder = await _workOrderRepo.GetByIdAsync(id);
+        var workOrder = await _workOrderRepo.GetByIdAsync(id, ct);
         if (workOrder == null)
             throw new InvalidOperationException($"工单 {id} 不存在");
 
         workOrder.TransitionTo(Enum.Parse<WorkOrderStatus>(status));
-        var updated = await _workOrderRepo.UpdateAsync(workOrder);
+        var updated = await _workOrderRepo.UpdateAsync(workOrder, ct);
         return MapToWorkOrderDto(updated);
     }
 
     public async Task DeleteWorkOrderAsync(string id, CancellationToken ct = default)
     {
-        await _workOrderRepo.DeleteAsync(id);
+        await _workOrderRepo.DeleteAsync(id, ct);
     }
 
     public async Task<BatchOptimizeResultDto> BatchOptimizeAsync(BatchOptimizeRequest request, CancellationToken ct = default)
@@ -233,9 +239,9 @@ public class SchedulingAppService : ISchedulingAppService
         // 共享数据：一次获取，多目标共用
         var workOrders = await GetWorkOrdersForScheduling(
             new OptimizeScheduleRequest { WorkshopId = request.WorkshopId, WorkOrderIds = request.WorkOrderIds }, ct);
-        var equipment = await _equipmentRepo.GetByWorkshopAsync(request.WorkshopId);
+        var equipment = await _equipmentRepo.GetByWorkshopAsync(request.WorkshopId, ct);
         var productCodes = workOrders.Select(w => w.ProductCode).Distinct().ToList();
-        var materialCodeLookup = await Task.WhenAll(productCodes.Select(async pc => await GetMaterialCodesForProductAsync(pc)));
+        var materialCodeLookup = await Task.WhenAll(productCodes.Select(async pc => await GetMaterialCodesForProductAsync(pc, ct)));
         var materialCodes = materialCodeLookup.SelectMany(mc => mc).Distinct().ToList();
         var materials = await GetMaterialAvailability(materialCodes, ct);
 
@@ -316,10 +322,99 @@ public class SchedulingAppService : ISchedulingAppService
             operatorUser,
             request.AiTraceId);
 
-        await _scheduleRepo.SaveFeedbackAsync(feedback);
+        await _scheduleRepo.SaveFeedbackAsync(feedback, ct);
+        await WriteAdoptionFeedbackEvidenceAsync(feedback, operatorUser, ct);
+    }
+
+    public async Task<AdoptionFeedbackSnapshotDto?> GetLatestAdoptionFeedbackAsync(CancellationToken ct = default)
+    {
+        var feedback = await _scheduleRepo.GetLatestFeedbackAsync(ct);
+        if (feedback is null) return null;
+
+        var accepted = feedback.InitiatedByAgent || !string.IsNullOrWhiteSpace(feedback.AgentDecisionId);
+        return new AdoptionFeedbackSnapshotDto(
+            accepted ? "accepted" : "rejected",
+            accepted ? "已采纳 Agent 排产建议" : "已记录人工排产调整",
+            feedback.ReasonCategory.ToString(),
+            GetReasonCategoryLabel(feedback.ReasonCategory),
+            feedback.ReasonDetail,
+            GetObjectiveLabel(feedback.OptimizationObjective),
+            feedback.CreatedAt,
+            feedback.AiTraceId,
+            "backend",
+            feedback.AgentDecisionId);
     }
 
     #region Private Methods
+
+    private static string GetReasonCategoryLabel(OverrideReasonCategory category) => category switch
+    {
+        OverrideReasonCategory.DueDateAdvanced => "交期提前",
+        OverrideReasonCategory.DueDatePostponed => "交期推迟",
+        OverrideReasonCategory.UrgentInsertion => "紧急插单",
+        OverrideReasonCategory.MaterialShortage => "物料未齐套",
+        OverrideReasonCategory.EquipmentFailure => "设备故障",
+        OverrideReasonCategory.CapacityInsufficient => "产能不足",
+        OverrideReasonCategory.StaffShortage => "人员缺勤",
+        OverrideReasonCategory.Rework => "质量返工",
+        _ => "其他",
+    };
+
+    private static string GetObjectiveLabel(string? objective) => objective switch
+    {
+        "due_date" => "交期优先",
+        "utilization" => "设备利用率优先",
+        "changeover" => "换线最小",
+        "balanced" => "综合平衡",
+        _ => "综合平衡",
+    };
+
+    private async Task WriteAdoptionFeedbackEvidenceAsync(
+        ScheduleAdoptionFeedback feedback,
+        string operatorUser,
+        CancellationToken ct)
+    {
+        var accepted = feedback.InitiatedByAgent || !string.IsNullOrWhiteSpace(feedback.AgentDecisionId);
+        var summaryJson = JsonSerializer.Serialize(new
+        {
+            feedback.Id,
+            feedback.SchedulePlanId,
+            feedback.WorkshopId,
+            feedback.OptimizationObjective,
+            Decision = accepted ? "accepted" : "rejected",
+            DecisionLabel = accepted ? "已采纳 Agent 排产建议" : "已记录人工排产调整",
+            ReasonCategory = feedback.ReasonCategory.ToString(),
+            CategoryLabel = GetReasonCategoryLabel(feedback.ReasonCategory),
+            feedback.ReasonDetail,
+            ObjectiveLabel = GetObjectiveLabel(feedback.OptimizationObjective),
+            feedback.MovedOrderIdsJson,
+            feedback.OperatorUser,
+            feedback.AiTraceId,
+            feedback.AgentDecisionId,
+            feedback.AgentVersion,
+            feedback.CreatedAt,
+        });
+        await _agentDecisionRepository.UpsertEvidenceLinkAsync(new AgentEvidenceLink
+        {
+            AgentDecisionId = feedback.AgentDecisionId ?? $"schedule-feedback-{feedback.SchedulePlanId}",
+            EvidenceType = "ScheduleAdoptionFeedback",
+            EvidenceKey = feedback.Id,
+            EvidenceSummary = summaryJson,
+            CreatedAt = feedback.CreatedAt,
+        }, ct);
+
+        await _auditLogRepository.AddAsync(new AuditLog
+        {
+            UserId = operatorUser,
+            Action = "ScheduleAdoptionFeedbackUpsert",
+            Resource = "schedule-adoption-feedback",
+            ResourceId = feedback.Id,
+            BusinessKey = $"SchedulePlan:{feedback.SchedulePlanId}",
+            TraceId = feedback.AiTraceId,
+            NewValues = summaryJson,
+            CreatedAt = feedback.CreatedAt,
+        }, ct);
+    }
 
     private async Task<List<WorkOrder>> GetWorkOrdersForScheduling(OptimizeScheduleRequest request, CancellationToken ct)
     {
@@ -328,14 +423,14 @@ public class SchedulingAppService : ISchedulingAppService
             var workOrders = new List<WorkOrder>();
             foreach (var id in request.WorkOrderIds)
             {
-                var wo = await _workOrderRepo.GetByIdAsync(id);
+                var wo = await _workOrderRepo.GetByIdAsync(id, ct);
                 if (wo != null) workOrders.Add(wo);
             }
             return workOrders;
         }
 
-        var pendingOrders = await _workOrderRepo.GetAllAsync(WorkOrderStatus.Created);
-        pendingOrders.AddRange(await _workOrderRepo.GetAllAsync(WorkOrderStatus.Scheduled));
+        var pendingOrders = await _workOrderRepo.GetAllAsync(WorkOrderStatus.Created, ct);
+        pendingOrders.AddRange(await _workOrderRepo.GetAllAsync(WorkOrderStatus.Scheduled, ct));
         return pendingOrders;
     }
 
@@ -344,7 +439,7 @@ public class SchedulingAppService : ISchedulingAppService
         var result = new Dictionary<string, int>();
         foreach (var code in materialCodes)
         {
-            var material = await _materialRepo.GetByCodeAsync(code);
+            var material = await _materialRepo.GetByCodeAsync(code, ct);
             if (material != null)
             {
                 result[code] = material.AvailableQuantity - material.ReservedQuantity;
@@ -353,15 +448,27 @@ public class SchedulingAppService : ISchedulingAppService
         return result;
     }
 
-    private Task<string?> GetHistoricalData(string workshopId, CancellationToken ct)
+    private async Task<string?> GetHistoricalData(string workshopId, CancellationToken ct)
     {
-        // TODO: 实现历史数据获取逻辑
-        return Task.FromResult<string?>(null);
+        var snapshot = await _schedulingContextProvider.GetContextAsync(workshopId, ct);
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            snapshot.WorkOrders,
+            snapshot.WipItems,
+            snapshot.CurrentExecutions,
+            snapshot.ChangeoverMatrix,
+            snapshot.CompletenessScore
+        });
     }
 
-    private async Task<List<string>> GetMaterialCodesForProductAsync(string productCode)
+    private async Task<List<string>> GetMaterialCodesForProductAsync(string productCode, CancellationToken ct)
     {
-        var boms = await _bomRepo.GetByProductCodeAsync(new MES.Domain.ValueObjects.ProductCode(productCode));
+        var boms = await _bomRepo.GetByProductCodeAsync(new MES.Domain.ValueObjects.ProductCode(productCode), ct);
         return boms.SelectMany(b => b.Items.Select(i => i.MaterialCode.Value)).Distinct().ToList();
     }
 
@@ -442,4 +549,3 @@ public class SchedulingAppService : ISchedulingAppService
 
     #endregion
 }
-

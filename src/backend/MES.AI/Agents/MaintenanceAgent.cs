@@ -29,9 +29,22 @@ public class MaintenanceAgent
     {
         var sw = Stopwatch.StartNew();
         var trendSummary = BuildTelemetrySummary(telemetry);
-        var historicalPatterns = await SearchAsync("equipment-failures", $"equipment={equipmentId};telemetry={trendSummary}", ct);
+        var modelName = "MaintenanceReasoning";
+        string retrievalError = string.Empty;
+        List<DocumentChunk> historicalPatterns;
+        try
+        {
+            historicalPatterns = await SearchAsync("equipment-failures", $"equipment={equipmentId};telemetry={trendSummary}", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            modelName = "MaintenanceReasoningFallback";
+            retrievalError = $"检索失败（{ex.GetType().Name}），返回空预测。";
+            historicalPatterns = [];
+        }
+
         var context = JsonSerializer.Serialize(historicalPatterns.Select(ToContext));
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             你是设备预测性维护专家。请基于遥测趋势和历史故障模式预测潜在失效。
 
             设备：{equipmentId}
@@ -41,10 +54,29 @@ public class MaintenanceAgent
             {context}
 
             请输出JSON，字段包括：EquipmentId、PredictedFailures、Confidence、Reasoning。
-            """;
+            """);
 
-        var result = await _llmGateway.GenerateJsonAsync<FailurePredictionResult>(prompt, ct)
-            ?? new FailurePredictionResult();
+        FailurePredictionResult result;
+        if (!string.IsNullOrEmpty(retrievalError))
+        {
+            result = new FailurePredictionResult { Reasoning = retrievalError };
+        }
+        else
+        {
+            try
+            {
+                result = await _llmGateway.GenerateJsonAsync<FailurePredictionResult>(prompt, ct)
+                    ?? new FailurePredictionResult();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                modelName = "MaintenanceReasoningFallback";
+                result = new FailurePredictionResult
+                {
+                    Reasoning = $"LLM 调用失败（{ex.GetType().Name}），返回空预测并保留历史案例上下文。"
+                };
+            }
+        }
 
         result.EquipmentId = equipmentId;
         result.AiDecisionTrace = BuildTrace(
@@ -55,7 +87,8 @@ public class MaintenanceAgent
             result.Confidence <= 0 ? 0.72m : (decimal)Math.Clamp(result.Confidence, 0.1, 1.0),
             sw.ElapsedMilliseconds,
             "equipment-failures",
-            $"equipment={equipmentId}");
+            $"equipment={equipmentId}",
+            modelName);
 
         return result;
     }
@@ -78,14 +111,14 @@ public class MaintenanceAgent
             pastMaintenance = pastMaintenance.Select(m => new { m.MaintenanceType, m.Description, m.StartTime, m.Result }),
             predictedFailure.PredictedFailures
         });
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请基于运行小时、历史维护记录和预测故障给出维护建议。
 
             设备维护上下文：
             {context}
 
             请输出JSON，字段包括：EquipmentId、RecommendedDate、Tasks、Reasoning。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<MaintenanceRecommendationResult>(prompt, ct)
             ?? new MaintenanceRecommendationResult();
@@ -120,7 +153,7 @@ public class MaintenanceAgent
             Deviation = baseline.TryGetValue(kv.Key, out var expectedValue) && expectedValue != 0 ? (kv.Value - expectedValue) / expectedValue : 0
         }).ToList();
         var context = JsonSerializer.Serialize(anomalyStats);
-        var prompt = $"""
+        var prompt = AiPromptBudget.Bound($"""
             请比较当前遥测与历史基线，识别异常参数并分类严重度。
 
             设备：{equipmentId}
@@ -128,7 +161,7 @@ public class MaintenanceAgent
             {context}
 
             请输出JSON，字段包括：EquipmentId、Anomalies、Severity、RecommendedAction。
-            """;
+            """);
 
         var result = await _llmGateway.GenerateJsonAsync<TelemetryAnomalyAnalysis>(prompt, ct)
             ?? new TelemetryAnomalyAnalysis();
@@ -150,7 +183,7 @@ public class MaintenanceAgent
     private async Task<List<DocumentChunk>> SearchAsync(string collectionName, string query, CancellationToken ct)
     {
         var embedding = await _llmGateway.GenerateEmbeddingAsync(query, ct);
-        return await _vectorStore.SearchAsync(collectionName, embedding, 5);
+        return await _vectorStore.SearchAsync(collectionName, embedding, 5, ct);
     }
 
     private static string BuildTelemetrySummary(List<EquipmentTelemetry> telemetry)
@@ -184,13 +217,14 @@ public class MaintenanceAgent
         decimal confidence,
         long latencyMs,
         string sourceReferences,
-        string relatedBusinessKeys)
+        string relatedBusinessKeys,
+        string modelName = "MaintenanceReasoning")
     {
         return AiTraceFactory.Create(
             AgentName,
             AgentVersion,
             "ConfiguredLlmGateway",
-            "MaintenanceReasoning",
+            modelName,
             "unknown",
             prompt,
             context,
