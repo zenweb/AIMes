@@ -10,8 +10,9 @@ Status: UNSIGNED
 
 ## Automated Self-Assessment
 
-- Latest automated self-assessment: `_docs/_reports/security-self-assessment-20260607-local.md`.
-- Attack Chain automated support evidence: `_docs/_reports/attack-chain-automated-evidence-20260607.md`.
+- Latest automated self-assessment: `_docs/_reports/security-self-assessment-20260607-current.md`.
+- Attack Chain automated support evidence: `_docs/_reports/attack-chain-automated-evidence-20260607-current.md`.
+- Attack Chain manual verification packet: `_docs/_reports/attack-chain-manual-verification-packet-20260607.md`.
 - Current result: `PASS`.
 
 ## Manual Attack Chain Verification Gate
@@ -23,8 +24,8 @@ Status: UNSIGNED
 
 ## B-Track Release Gate Cross-Check
 
-- Hosted CI: PASS; GitHub Actions CI run `27086705027` and Agent Evaluation run `27086705023` completed with `conclusion=success`.
-- PostgreSQL/staging: FAIL; Docker dependency image pull / local Docker engine availability still blocks real rehearsal evidence.
+- Hosted CI: PASS; latest GitHub Actions CI run `27089128913` and Agent Evaluation run `27089128915` completed with `conclusion=success` at remote main `eb90dfc813783ebf7162b1d7ccff7d03adc5b048`.
+- PostgreSQL/staging: FAIL; Docker Desktop Linux engine is unavailable, so real PostgreSQL rehearsal cannot run yet.
 - Attack Chain A/B/C: FAIL; manual verification pending.
 - Gray observation: FAIL; first gray release and 14-day P0/P1=0 evidence still missing.
 
