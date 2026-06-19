@@ -109,8 +109,7 @@ function readOfflineDemoQueryIntent(): boolean | null {
 
 function shouldPreferDemoLogin(): boolean {
   const queryIntent = readOfflineDemoQueryIntent()
-  if (queryIntent !== null) return queryIntent
-  return import.meta.env.VITE_OFFLINE_DEMO === 'true'
+  return queryIntent === true
 }
 
 function saveDemoUser(user: AuthUser): AuthUser {

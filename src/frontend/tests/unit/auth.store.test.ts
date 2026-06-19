@@ -267,6 +267,29 @@ describe('useAuth', () => {
     expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
   })
 
+  it('keeps plain login live even when the preview bundle was built with offline demo enabled', async () => {
+    vi.stubEnv('VITE_OFFLINE_DEMO', 'true')
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: 'admin',
+      displayName: 'Backend Admin',
+      role: 'Admin',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    const user = await useAuth().login('admin', 'admin123')
+
+    expect(backendLogin).toHaveBeenCalledWith<LoginRequest[]>({
+      username: 'admin',
+      password: 'admin123',
+    })
+    expect(user.token).toBe('backend-access-token')
+    expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
+  })
+
   it('normalizes demo login username before storing auth evidence', async () => {
     window.history.replaceState({}, '', '/login?offlineDemo=1')
     const { useAuth } = await loadAuthStore()

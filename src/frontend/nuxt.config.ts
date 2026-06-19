@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-const apiTarget = process.env.VITE_API_TARGET ?? process.env.NUXT_API_TARGET ?? 'http://localhost:5147'
+const apiTarget = process.env.VITE_API_TARGET ?? process.env.NUXT_API_TARGET ?? 'http://localhost:5003'
 const buildDir = process.env.NUXT_BUILD_DIR ?? '.nuxt'
 const nitroOutputDir = process.env.NITRO_OUTPUT_DIR
 const vueSharedPath = fileURLToPath(new URL('./node_modules/@vue/shared/dist/shared.esm-bundler.js', import.meta.url))
@@ -9,6 +9,10 @@ export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
   buildDir,
+  routeRules: {
+    '/api/**': { proxy: `${apiTarget}/api/**` },
+    '/hubs/**': { proxy: `${apiTarget}/hubs/**` },
+  },
   app: {
     baseURL: '/scheduling/',
     head: {
