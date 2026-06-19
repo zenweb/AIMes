@@ -100,7 +100,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
+            var material = await _materialRepo.GetByCodeForUpdateAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var before = material.AvailableQuantity;
@@ -121,7 +121,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
+            var material = await _materialRepo.GetByCodeForUpdateAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var realQty = material.NetAvailable;
@@ -146,7 +146,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
+            var material = await _materialRepo.GetByCodeForUpdateAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var realQty = material.NetAvailable;
@@ -172,7 +172,7 @@ public class InventoryAppService : IInventoryAppService
     {
         return _unitOfWork.ExecuteAsync(async innerCt =>
         {
-            var material = await _materialRepo.GetByCodeAsync(request.MaterialCode, innerCt)
+            var material = await _materialRepo.GetByCodeForUpdateAsync(request.MaterialCode, innerCt)
                 ?? throw new InvalidOperationException($"物料 {request.MaterialCode} 不存在");
 
             var before = material.AvailableQuantity;

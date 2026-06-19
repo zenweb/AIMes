@@ -95,7 +95,7 @@ public class InventoryAppServiceTests
     public async Task StockInAsync_ShouldIncreaseQuantityAndCreateTransaction()
     {
         var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("AL-6061", It.IsAny<CancellationToken>())).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
         var request = new StockInRequest { MaterialCode = "AL-6061", Quantity = 50, Warehouse = "WH-01", Operator = "test-op" };
@@ -126,7 +126,7 @@ public class InventoryAppServiceTests
     public async Task StockOutAsync_ShouldDecreaseQuantityAndCreateTransaction()
     {
         var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("AL-6061", It.IsAny<CancellationToken>())).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
         var result = await _sut.StockOutAsync(new StockOutRequest { MaterialCode = "AL-6061", Quantity = 30, Operator = "test-op" });
@@ -143,7 +143,7 @@ public class InventoryAppServiceTests
     public async Task StockOutAsync_WhenInsufficientStock_ShouldThrow()
     {
         var material = CreateReservedMaterial("AL-6061", "铝合金", 20, 10, 0, "m1");
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("AL-6061", It.IsAny<CancellationToken>())).ReturnsAsync(material);
 
         var act = () => _sut.StockOutAsync(new StockOutRequest { MaterialCode = "AL-6061", Quantity = 30 });
 
@@ -155,7 +155,7 @@ public class InventoryAppServiceTests
     public async Task TransferAsync_ShouldMoveStockAndUpdateLocation()
     {
         var material = Material.Create("AL-6061", "铝合金", "KG", storageLocation: "WH-A", availableQuantity: 100, id: "m1");
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("AL-6061", It.IsAny<CancellationToken>())).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
         var result = await _sut.TransferAsync(new TransferRequest
@@ -178,7 +178,7 @@ public class InventoryAppServiceTests
     public async Task AdjustAsync_ShouldSetExactQuantity()
     {
         var material = Material.Create("AL-6061", "铝合金", "KG", availableQuantity: 100, id: "m1");
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("AL-6061")).ReturnsAsync(material);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("AL-6061", It.IsAny<CancellationToken>())).ReturnsAsync(material);
         _materialRepoMock.Setup(r => r.UpdateAsync(It.IsAny<Material>())).ReturnsAsync(material);
 
         var result = await _sut.AdjustAsync(new AdjustmentRequest { MaterialCode = "AL-6061", NewQuantity = 200, Operator = "test-op" });
@@ -191,7 +191,7 @@ public class InventoryAppServiceTests
     [Fact]
     public async Task StockInAsync_WhenMaterialNotFound_ShouldThrow()
     {
-        _materialRepoMock.Setup(r => r.GetByCodeAsync("NONEXIST")).ReturnsAsync((Material?)null);
+        _materialRepoMock.Setup(r => r.GetByCodeForUpdateAsync("NONEXIST", It.IsAny<CancellationToken>())).ReturnsAsync((Material?)null);
 
         var act = () => _sut.StockInAsync(new StockInRequest { MaterialCode = "NONEXIST", Quantity = 10 });
 

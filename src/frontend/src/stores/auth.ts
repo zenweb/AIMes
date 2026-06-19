@@ -46,6 +46,22 @@ function normalizeToken(value: string): string {
   return value.trim()
 }
 
+function normalizeIdentityField(value: string): string {
+  return value.trim()
+}
+
+function assertValidAuthUser(user: AuthUser) {
+  if (!user.token || !user.username || !user.displayName || !user.role) {
+    throw new Error('invalid auth response')
+  }
+}
+
+function assertValidRefreshToken(refreshToken: string) {
+  if (!normalizeToken(refreshToken)) {
+    throw new Error('invalid auth response')
+  }
+}
+
 function saveUser(user: AuthUser, refreshToken: string) {
   localStorage.setItem(TOKEN_KEY, normalizeToken(user.token))
   localStorage.setItem(REFRESH_TOKEN_KEY, normalizeToken(refreshToken))
@@ -69,19 +85,20 @@ function isBackendUnavailable(error: unknown): boolean {
 }
 
 function tryDemoLogin(username: string, password: string): AuthUser | null {
-  const account = demoUsers[username.trim().toLowerCase()]
+  const normalizedUsername = username.trim().toLowerCase()
+  const account = demoUsers[normalizedUsername]
   if (!account || account.password !== password) return null
   return {
     token: `demo-token-${account.role.toLowerCase()}`,
-    username,
+    username: normalizedUsername,
     displayName: account.displayName,
     role: account.role,
-    mustChangePassword: true,
+    mustChangePassword: false,
   }
 }
 
 function shouldPreferDemoLogin(): boolean {
-  return isOfflineDemoMode() || import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+  return isOfflineDemoMode()
 }
 
 function saveDemoUser(user: AuthUser): AuthUser {
@@ -105,11 +122,13 @@ export function useAuth() {
         const res = await apiLogin({ username, password })
         const user: AuthUser = {
           token: normalizeToken(res.token),
-          username: res.username,
-          displayName: res.displayName,
-          role: res.role,
+          username: normalizeIdentityField(res.username),
+          displayName: normalizeIdentityField(res.displayName),
+          role: normalizeIdentityField(res.role),
           mustChangePassword: res.mustChangePassword,
         }
+        assertValidAuthUser(user)
+        assertValidRefreshToken(res.refreshToken)
         state.user = user
         saveUser(user, res.refreshToken)
         return user

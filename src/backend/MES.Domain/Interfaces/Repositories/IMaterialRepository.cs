@@ -14,6 +14,7 @@ public interface IMaterialRepository
     Task<List<Material>> GetAllAsync(CancellationToken ct = default);
     Task<Material?> GetByIdAsync(string id, CancellationToken ct = default);
     Task<Material?> GetByCodeAsync(string materialCode, CancellationToken ct = default);
+    Task<Material?> GetByCodeForUpdateAsync(string materialCode, CancellationToken ct = default);
     Task<Material> CreateAsync(Material material, CancellationToken ct = default);
     Task<Material> UpdateAsync(Material material, CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);

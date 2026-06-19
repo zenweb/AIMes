@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -114,20 +113,22 @@ public class AnomalyTransactionTests : IClassFixture<AnomalyTransactionWebApplic
 
 public sealed class AnomalyTransactionWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private readonly string _databaseName = $"aimes_anomaly_tx_{Guid.NewGuid():N}";
+    private string ConnectionString => PostgreSqlIntegrationTestScope.CreateConnectionString(_databaseName);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", DatabaseProvider.SqlServer);
+        PostgreSqlIntegrationTestScope.RecreateDatabaseAsync(_databaseName).GetAwaiter().GetResult();
+
+        Environment.SetEnvironmentVariable("AIMES_DATABASE_PROVIDER", DatabaseProvider.PostgreSql);
         Environment.SetEnvironmentVariable("Jwt__SigningKey", "integration-test-signing-key-32-bytes-minimum");
-        _connection.Open();
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Database:Provider"] = DatabaseProvider.SqlServer,
-                ["ConnectionStrings:DefaultConnection"] = "Server=(local);Database=unused;",
+                ["Database:Provider"] = DatabaseProvider.PostgreSql,
+                ["ConnectionStrings:DefaultConnection"] = ConnectionString,
                 ["Messaging:Transport"] = "Disabled"
             });
         });
@@ -147,8 +148,8 @@ public sealed class AnomalyTransactionWebApplicationFactory : WebApplicationFact
                 services.Remove(descriptor);
             }
 
-            services.AddEntityFrameworkSqlite();
-            services.AddDbContext<MesDbContext>(options => options.UseSqlite(_connection));
+            services.AddEntityFrameworkNpgsql();
+            services.AddDbContext<MesDbContext>(options => options.UseNpgsql(ConnectionString));
 
             var hostedServices = services
                 .Where(d => d.ImplementationType?.Name == "MetricsBackgroundService"
@@ -174,11 +175,7 @@ public sealed class AnomalyTransactionWebApplicationFactory : WebApplicationFact
         builder.UseEnvironment("Development");
     }
 
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-        _connection.Dispose();
-    }
+    protected override void Dispose(bool disposing) => base.Dispose(disposing);
 }
 
 public sealed class RelationalSchemaStartupFilter : IStartupFilter

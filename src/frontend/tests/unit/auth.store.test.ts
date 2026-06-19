@@ -90,6 +90,75 @@ describe('useAuth', () => {
     expect(localStorage.getItem('aimes_refresh_token')).toBe('backend-refresh-token')
   })
 
+  it('normalizes backend login identity fields before persisting auth evidence', async () => {
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: '  alice  ',
+      displayName: '  Alice Zhang  ',
+      role: '  Engineer  ',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    const user = await useAuth().login('alice', 'correct-password')
+
+    expect(user).toMatchObject({
+      token: 'backend-access-token',
+      username: 'alice',
+      displayName: 'Alice Zhang',
+      role: 'Engineer',
+      mustChangePassword: false,
+    })
+    expect(JSON.parse(localStorage.getItem('aimes_user') ?? '{}')).toMatchObject({
+      username: 'alice',
+      displayName: 'Alice Zhang',
+      role: 'Engineer',
+      mustChangePassword: false,
+    })
+  })
+
+  it('rejects backend login responses with blank identity fields without persisting auth evidence', async () => {
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: '   ',
+      displayName: 'Alice Zhang',
+      role: 'Engineer',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    await expect(useAuth().login('alice', 'correct-password')).rejects.toThrow('用户名或密码错误')
+
+    expect(localStorage.getItem('aimes_token')).toBeNull()
+    expect(localStorage.getItem('aimes_refresh_token')).toBeNull()
+    expect(localStorage.getItem('aimes_user')).toBeNull()
+    expect(useAuth().user.value).toBeNull()
+  })
+
+  it('rejects backend login responses with blank refresh token without persisting partial auth evidence', async () => {
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: '   ',
+      username: 'alice',
+      displayName: 'Alice Zhang',
+      role: 'Engineer',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    await expect(useAuth().login('alice', 'correct-password')).rejects.toThrow('用户名或密码错误')
+
+    expect(localStorage.getItem('aimes_token')).toBeNull()
+    expect(localStorage.getItem('aimes_refresh_token')).toBeNull()
+    expect(localStorage.getItem('aimes_user')).toBeNull()
+    expect(useAuth().user.value).toBeNull()
+  })
+
   it('clears malformed cached users because auth boot must not reuse corrupt identity evidence', async () => {
     localStorage.setItem('aimes_token', 'stale-token')
     localStorage.setItem('aimes_user', '{bad json')
@@ -147,13 +216,63 @@ describe('useAuth', () => {
       username: 'operator',
       displayName: '操作员',
       role: 'Operator',
-      mustChangePassword: true,
+      mustChangePassword: false,
     })
     expect(localStorage.getItem('aimes_offline_demo')).toBe('true')
     expect(localStorage.getItem('aimes_token')).toBe('demo-token-operator')
   })
 
+  it('keeps ordinary preview login backend-first so employee reads do not get trapped in offline demo mode', async () => {
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: 'admin',
+      displayName: 'Backend Admin',
+      role: 'Admin',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    const user = await useAuth().login('admin', 'admin123')
+
+    expect(backendLogin).toHaveBeenCalledWith<LoginRequest[]>({
+      username: 'admin',
+      password: 'admin123',
+    })
+    expect(user).toMatchObject({
+      token: 'backend-access-token',
+      displayName: 'Backend Admin',
+    })
+    expect(localStorage.getItem('aimes_offline_demo')).not.toBe('true')
+  })
+
+  it('normalizes demo login username before storing auth evidence', async () => {
+    window.history.replaceState({}, '', '/login?offlineDemo=1')
+    const { useAuth } = await loadAuthStore()
+
+    const user = await useAuth().login('  Operator  ', 'operator-demo-2026')
+
+    expect(backendLogin).not.toHaveBeenCalled()
+    expect(user.username).toBe('operator')
+    expect(JSON.parse(localStorage.getItem('aimes_user') ?? '{}')).toMatchObject({
+      username: 'operator',
+      displayName: '操作员',
+      role: 'Operator',
+      mustChangePassword: false,
+    })
+  })
+
   it('exposes reactive login state to Vue components and clears storage on logout', async () => {
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: 'admin',
+      displayName: 'Backend Admin',
+      role: 'Admin',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
     const { useAuth } = await loadAuthStore()
     const Probe = defineComponent({
       setup() {

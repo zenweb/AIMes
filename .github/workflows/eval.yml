@@ -23,13 +23,13 @@ jobs:
         run: dotnet restore src/backend/AIMes.slnx
 
       - name: Build
-        run: dotnet build src/backend/AIMes.slnx --no-restore --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
+        run: dotnet build src/backend/AIMes.slnx --no-restore /p:SkipFrontendBuildCopy=true --nologo --verbosity quiet --property:WarningLevel=0 --consoleloggerparameters:ErrorsOnly
 
       - name: Unit Tests
-        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-build --verbosity quiet
+        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-build /p:SkipFrontendBuildCopy=true --verbosity quiet
 
       - name: Evaluation Tests
-        run: dotnet test src/tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj --no-build --verbosity quiet
+        run: dotnet test src/tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj --no-build /p:SkipFrontendBuildCopy=true --verbosity quiet
 
       - name: Agent Evaluation
         shell: pwsh

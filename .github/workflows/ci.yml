@@ -9,6 +9,22 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AIMES_TEST_POSTGRES_CONNECTION: Host=localhost;Database=aimes_ci_tests;Username=postgres;Password=postgres
 
     steps:
       - uses: actions/checkout@v4
@@ -37,13 +53,13 @@ jobs:
         run: dotnet format src/backend/AIMes.slnx --verify-no-changes --no-restore
 
       - name: Architecture Tests
-        run: dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --configuration Release --logger "trx" --results-directory TestResults/Architecture
+        run: dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --logger "trx" --results-directory TestResults/Architecture
 
       - name: Unit Tests
-        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --configuration Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/Unit
+        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/Unit
 
       - name: Integration Tests
-        run: dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --configuration Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/Integration
+        run: dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/Integration
 
       - name: Coverage Threshold
         shell: pwsh

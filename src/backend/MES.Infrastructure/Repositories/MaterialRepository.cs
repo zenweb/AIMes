@@ -36,6 +36,12 @@ public class MaterialRepository : IMaterialRepository
             .FirstOrDefaultAsync(m => m.MaterialCode == materialCode, ct);
     }
 
+    public async Task<Material?> GetByCodeForUpdateAsync(string materialCode, CancellationToken ct = default)
+    {
+        return await _context.Materials
+            .FirstOrDefaultAsync(m => m.MaterialCode == materialCode, ct);
+    }
+
     public async Task<Material> CreateAsync(Material material, CancellationToken ct = default)
     {
         _context.Materials.Add(material);
