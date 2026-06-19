@@ -248,7 +248,21 @@ var messagingOptions = new MessagingOptions();
 MessagingOptions.BindFromConfiguration(messagingOptions, builder.Configuration);
 if (messagingOptions.IsRabbitMq && !string.IsNullOrWhiteSpace(messagingOptions.RabbitMqConnection))
 {
-    healthChecks.AddRabbitMQ(messagingOptions.RabbitMqConnection, name: "rabbitmq", tags: ["ready"]);
+    var rabbitMqHealthConnection = new Lazy<Task<IConnection>>(() =>
+    {
+        var uriBuilder = new UriBuilder(messagingOptions.RabbitMqConnection);
+        if (string.Equals(uriBuilder.Scheme, "rabbitmq", StringComparison.OrdinalIgnoreCase))
+        {
+            uriBuilder.Scheme = "amqp";
+        }
+
+        var factory = new ConnectionFactory
+        {
+            Uri = uriBuilder.Uri
+        };
+        return factory.CreateConnectionAsync();
+    });
+    healthChecks.AddRabbitMQ(_ => rabbitMqHealthConnection.Value, name: "rabbitmq", tags: ["ready"]);
 }
 
 healthChecks.AddCheck<QdrantHealthCheck>("qdrant", tags: ["ready"]);
@@ -306,7 +320,7 @@ if (trustForwarded)
 }
 
 // HTTPS 重定向：开源/演示环境可通过 Aimes:DisableHttpsRedirect 关闭，
-// 否则 docker compose 的 http://localhost:5000 会 307 跳到 https 翻车
+// 否则 docker compose 的 http://localhost:5003 会 307 跳到 https 翻车
 var disableHttpsRedirect = aimesHostOptions.DisableHttpsRedirect;
 if (!app.Environment.IsDevelopment() && !disableHttpsRedirect)
 {
@@ -474,16 +488,16 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     var addresses = app.Urls.Count > 0
         ? string.Join(", ", app.Urls)
-        : "http://localhost:5000";
-    var primary = app.Urls.FirstOrDefault() ?? "http://localhost:5000";
+        : "http://localhost:5003";
+    var primary = app.Urls.FirstOrDefault() ?? "http://localhost:5003";
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation(
-        "AIMes V1 started. Addresses={Addresses}; Dashboard={DashboardUrl}; Swagger={SwaggerUrl}; Health={HealthUrl}; DefaultAccount={DefaultAccount}; CommercialInfo={CommercialInfo}",
+        "AIMes V1 started. Addresses={Addresses}; Dashboard={DashboardUrl}; Swagger={SwaggerUrl}; Health={HealthUrl}; DemoCredentials={DemoCredentials}; CommercialInfo={CommercialInfo}",
         addresses,
         $"{primary}/scheduling/",
         $"{primary}/swagger",
         $"{primary}/health",
-        "admin / admin123",
+        "development-only; see demo runbook",
         "_docs/commercial-vs-opensource.md");
 });
 

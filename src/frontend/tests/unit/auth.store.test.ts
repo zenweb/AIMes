@@ -244,7 +244,27 @@ describe('useAuth', () => {
       token: 'backend-access-token',
       displayName: 'Backend Admin',
     })
-    expect(localStorage.getItem('aimes_offline_demo')).not.toBe('true')
+    expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
+  })
+
+  it('clears persisted offline demo mode after a successful backend login so live employee reads are not skipped', async () => {
+    localStorage.setItem('aimes_offline_demo', 'true')
+    backendLogin.mockResolvedValueOnce({
+      token: 'backend-access-token',
+      refreshToken: 'backend-refresh-token',
+      username: 'admin',
+      displayName: 'Backend Admin',
+      role: 'Admin',
+      expiresAt: '2026-06-01T00:00:00Z',
+      mustChangePassword: false,
+    })
+    const { useAuth } = await loadAuthStore()
+
+    const user = await useAuth().login('admin', 'admin123')
+
+    expect(backendLogin).toHaveBeenCalled()
+    expect(user.token).toBe('backend-access-token')
+    expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
   })
 
   it('normalizes demo login username before storing auth evidence', async () => {

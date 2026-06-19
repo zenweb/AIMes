@@ -2,7 +2,7 @@ import { reactive, computed } from 'vue'
 import { AxiosError } from 'axios'
 import { login as apiLogin } from '../api/auth'
 import { getLocalAccessToken } from '../utils/auth-token'
-import { isOfflineDemoMode, setOfflineDemoMode } from '../utils/offline-demo-mode'
+import { setOfflineDemoMode } from '../utils/offline-demo-mode'
 import { getLocalUser } from '../utils/local-user'
 
 const TOKEN_KEY = 'aimes_token'
@@ -97,8 +97,20 @@ function tryDemoLogin(username: string, password: string): AuthUser | null {
   }
 }
 
+function readOfflineDemoQueryIntent(): boolean | null {
+  if (typeof window === 'undefined') return null
+
+  const params = new URLSearchParams(window.location.search)
+  const queryValue = params.get('offlineDemo') ?? params.get('demoMode')
+  if (queryValue === '1' || queryValue === 'true' || queryValue === 'offline') return true
+  if (queryValue === '0' || queryValue === 'false') return false
+  return null
+}
+
 function shouldPreferDemoLogin(): boolean {
-  return isOfflineDemoMode()
+  const queryIntent = readOfflineDemoQueryIntent()
+  if (queryIntent !== null) return queryIntent
+  return import.meta.env.VITE_OFFLINE_DEMO === 'true'
 }
 
 function saveDemoUser(user: AuthUser): AuthUser {
@@ -114,11 +126,15 @@ export function useAuth() {
     isLoggedIn: computed(() => !!state.user?.token),
 
     async login(username: string, password: string) {
-      const preferredDemoUser = shouldPreferDemoLogin() ? tryDemoLogin(username, password) : null
+      const preferDemoLogin = shouldPreferDemoLogin()
+      const preferredDemoUser = preferDemoLogin ? tryDemoLogin(username, password) : null
       if (preferredDemoUser) return saveDemoUser(preferredDemoUser)
 
       // 先尝试后端登录
       try {
+        if (!preferDemoLogin) {
+          setOfflineDemoMode(false)
+        }
         const res = await apiLogin({ username, password })
         const user: AuthUser = {
           token: normalizeToken(res.token),
@@ -129,6 +145,7 @@ export function useAuth() {
         }
         assertValidAuthUser(user)
         assertValidRefreshToken(res.refreshToken)
+        setOfflineDemoMode(false)
         state.user = user
         saveUser(user, res.refreshToken)
         return user
