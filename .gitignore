@@ -13,7 +13,9 @@ src/frontend/node_modules/
 src/frontend/dist/
 src/frontend/coverage/
 src/frontend/.nuxt/
+src/frontend/.nuxt-*/
 src/frontend/.output/
+src/frontend/.output-*/
 src/frontend/.nuxt-e2e*/
 src/frontend/.output-e2e*/
 
@@ -45,6 +47,8 @@ BenchmarkDotNet.Artifacts/
 test-results/
 TestResults/
 src/frontend/test-results/
+/output/
+/_todo/
 
 # Build
 packages/
