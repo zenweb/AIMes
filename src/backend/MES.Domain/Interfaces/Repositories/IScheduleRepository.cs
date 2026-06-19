@@ -13,6 +13,7 @@ public interface IScheduleRepository
 {
     Task<List<SchedulePlan>> GetAllAsync(int page = 1, int pageSize = 20, CancellationToken ct = default);
     Task<SchedulePlan?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<SchedulePlan?> GetByIdForUpdateAsync(string id, CancellationToken ct = default);
     Task<SchedulePlan> CreateAsync(SchedulePlan plan, CancellationToken ct = default);
     Task<SchedulePlan> UpdateAsync(SchedulePlan plan, CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);

@@ -35,6 +35,13 @@ public class ScheduleRepository : IScheduleRepository
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
+    public async Task<SchedulePlan?> GetByIdForUpdateAsync(string id, CancellationToken ct = default)
+    {
+        return await _context.SchedulePlans
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+    }
+
     public async Task<SchedulePlan> CreateAsync(SchedulePlan plan, CancellationToken ct = default)
     {
         _context.SchedulePlans.Add(plan);
@@ -80,6 +87,7 @@ public class ScheduleRepository : IScheduleRepository
     {
         return await _context.ScheduleAdoptionFeedbacks
             .AsNoTracking()
+            .Where(f => f.ReasonDetail != null && f.ReasonDetail.Trim() != string.Empty)
             .OrderByDescending(f => f.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }
