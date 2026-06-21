@@ -247,9 +247,29 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
   return readRawLaborReassignments()
 }
 
-export async function readLaborReassignmentsBackendFirst(): Promise<LaborReassignmentRecord[]> {
-  const records = await queryLaborReassignments()
-  return records.length > 0 ? records : readLaborReassignments()
+function mergeLaborReassignments(
+  remoteRecords: LaborReassignmentRecord[],
+  localRecords: LaborReassignmentRecord[],
+): LaborReassignmentRecord[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<LaborReassignmentRecord[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 12)
+}
+
+export async function readLaborReassignmentsBackendFirst(options?: { failLoud?: boolean }): Promise<LaborReassignmentRecord[]> {
+  try {
+    const records = await queryLaborReassignments(12, options)
+    if (!Array.isArray(records)) throw new Error('后端返回非数组人员替班审计载荷')
+    return mergeLaborReassignments(records.filter(isLaborReassignmentRecord), readLaborReassignments())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
+    return readLaborReassignments()
+  }
 }
 
 export function readLaborReassignment(): LaborReassignmentRecord | null {
@@ -260,9 +280,29 @@ export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[] 
   return readRawLaborQualificationBlocks()
 }
 
-export async function readLaborQualificationBlocksBackendFirst(): Promise<LaborQualificationBlockRecord[]> {
-  const records = await queryLaborQualificationBlocks()
-  return records.length > 0 ? records : readLaborQualificationBlocks()
+function mergeLaborQualificationBlocks(
+  remoteRecords: LaborQualificationBlockRecord[],
+  localRecords: LaborQualificationBlockRecord[],
+): LaborQualificationBlockRecord[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<LaborQualificationBlockRecord[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 12)
+}
+
+export async function readLaborQualificationBlocksBackendFirst(options?: { failLoud?: boolean }): Promise<LaborQualificationBlockRecord[]> {
+  try {
+    const records = await queryLaborQualificationBlocks(12, options)
+    if (!Array.isArray(records)) throw new Error('后端返回非数组人员资质阻断审计载荷')
+    return mergeLaborQualificationBlocks(records.filter(isLaborQualificationBlockRecord), readLaborQualificationBlocks())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
+    return readLaborQualificationBlocks()
+  }
 }
 
 export function readLaborQualificationBlock(): LaborQualificationBlockRecord | null {

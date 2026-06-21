@@ -106,6 +106,15 @@
         <div v-if="displayWarnings.length > 0" class="warnings-bar" role="status" aria-live="polite" aria-label="排产预警">
           <span class="warnings-icon">⚠</span>
           <span v-for="(w, i) in displayWarnings" :key="i" class="warning-item">{{ w }}</span>
+          <button
+            v-if="laborEvidenceStartupFailed"
+            type="button"
+            class="warning-action"
+            :disabled="laborEvidenceRetrying"
+            @click="retryStartupLaborEvidence"
+          >
+            {{ laborEvidenceRetrying ? '正在重试人员证据...' : '重试人员证据 / Retry labor evidence' }}
+          </button>
         </div>
 
         <div v-if="useDemoTaskShortcuts" class="task-explain-shortcuts" aria-label="演示排产任务">
@@ -254,7 +263,9 @@ import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-syn
 import { readRiskSlaReviewRecord, readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
 import {
   readLaborQualificationBlock,
+  readLaborQualificationBlocksBackendFirst,
   readLaborReassignment,
+  readLaborReassignmentsBackendFirst,
   type LaborQualificationBlockRecord,
   type LaborReassignmentRecord,
 } from '../../utils/labor-assignment-sync'
@@ -305,6 +316,8 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
 const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
 const laborReassignment = ref<LaborReassignmentRecord | null>(null)
 const laborQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
+const laborEvidenceBackendLoaded = ref(false)
+const laborEvidenceRetrying = ref(false)
 const barcodeScheduleReleaseRecord = ref<OtdEvidenceChainItem | null>(null)
 const otdKpiCommitmentRecord = ref<OtdKpiCommitmentPackage | null>(null)
 const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
@@ -442,10 +455,16 @@ const rushOrderImpact = reactive<RushOrderImpact>({
 })
 const warnings = ref<string[]>([])
 const abReportWarning = ref('')
+const laborEvidenceStartupWarnings = ref<string[]>([])
 const displayWarnings = computed(() => [
+  ...laborEvidenceStartupWarnings.value,
   ...warnings.value,
   ...(abReportWarning.value ? [abReportWarning.value] : []),
 ])
+const laborEvidenceWarningPrefix = '人员约束启动证据加载失败'
+const laborEvidenceStartupFailed = computed(() =>
+  laborEvidenceStartupWarnings.value.some(warning => warning.startsWith(laborEvidenceWarningPrefix))
+)
 
 type ScenarioTemplate = Omit<ScheduleAgentScenario, 'id' | 'selected'>
 
@@ -1679,8 +1698,62 @@ async function applyRouteCapabilityValidation() {
   }
 }
 
+async function loadStartupLaborEvidence() {
+  try {
+    const [backendBlocks, backendReassignments] = await Promise.all([
+      readLaborQualificationBlocksBackendFirst({ failLoud: true }),
+      readLaborReassignmentsBackendFirst({ failLoud: true }),
+    ])
+    laborEvidenceBackendLoaded.value = true
+    laborQualificationBlock.value = backendBlocks.find(record => record.status !== 'released') ?? null
+    laborReassignment.value = backendReassignments[0] ?? null
+  } catch (e: unknown) {
+    laborEvidenceBackendLoaded.value = false
+    laborQualificationBlock.value = readLaborQualificationBlock()
+    laborReassignment.value = readLaborReassignment()
+    if (!isOfflineDemoError(e)) {
+      const warning = laborEvidenceWarningPrefix + '，已继续加载排产主数据：' + errorMessage(e, '未知错误')
+      if (!laborEvidenceStartupWarnings.value.includes(warning)) {
+        laborEvidenceStartupWarnings.value = [
+          ...laborEvidenceStartupWarnings.value,
+          warning,
+        ]
+      }
+    }
+  }
+}
+
+async function retryStartupLaborEvidence() {
+  laborEvidenceRetrying.value = true
+  laborEvidenceStartupWarnings.value = laborEvidenceStartupWarnings.value.filter(
+    warning => !warning.startsWith(laborEvidenceWarningPrefix),
+  )
+  try {
+    await loadStartupLaborEvidence()
+    if (laborEvidenceBackendLoaded.value) {
+      applyLaborReassignmentClosure()
+      applyLaborQualificationBlockClosure()
+      await loadRiskTriggeredEvents()
+    }
+  } finally {
+    laborEvidenceRetrying.value = false
+  }
+}
+
+function currentLaborReassignment() {
+  return laborEvidenceBackendLoaded.value
+    ? laborReassignment.value
+    : (laborReassignment.value ?? readLaborReassignment())
+}
+
+function currentActiveLaborQualificationBlock() {
+  return laborEvidenceBackendLoaded.value
+    ? laborQualificationBlock.value
+    : (laborQualificationBlock.value ?? readLaborQualificationBlock())
+}
+
 function applyLaborReassignmentClosure() {
-  const reassignment = readLaborReassignment()
+  const reassignment = currentLaborReassignment()
   laborReassignment.value = reassignment
   if (!reassignment) return
 
@@ -1702,7 +1775,7 @@ function applyLaborReassignmentClosure() {
 }
 
 function applyLaborQualificationBlockClosure() {
-  const block = readLaborQualificationBlock()
+  const block = currentActiveLaborQualificationBlock()
   laborQualificationBlock.value = block
   if (!block) return
   const isReviewing = block.status === 'reviewing'
@@ -1729,7 +1802,7 @@ function applyLaborQualificationBlockClosure() {
 }
 
 function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
-  const reassignment = laborReassignment.value ?? readLaborReassignment()
+  const reassignment = currentLaborReassignment()
   if (!reassignment) return events
   if (events.some(event => event.id === `evt-labor-${reassignment.id}`)) return events
 
@@ -1753,7 +1826,7 @@ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEv
 }
 
 function applyLaborQualificationBlockToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
-  const block = laborQualificationBlock.value ?? readLaborQualificationBlock()
+  const block = currentActiveLaborQualificationBlock()
   if (!block) return events
   const isReviewing = block.status === 'reviewing'
   const filteredEvents = events.filter(event =>
@@ -2402,7 +2475,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     }
     return
   }
-  const activeLaborBlock = laborQualificationBlock.value ?? readLaborQualificationBlock()
+  const activeLaborBlock = currentActiveLaborQualificationBlock()
   if (activeLaborBlock && event.type === 'labor' && event.id === `evt-labor-block-${activeLaborBlock.id}`) {
     const isReviewing = activeLaborBlock.status === 'reviewing'
     activeAgentSuggestion.value = {
@@ -2417,7 +2490,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
     }
     return
   }
-  const approvedLaborReassignment = laborReassignment.value ?? readLaborReassignment()
+  const approvedLaborReassignment = currentLaborReassignment()
   if (approvedLaborReassignment && event.type === 'labor') {
     activeAgentSuggestion.value = {
       eventId: event.id,
@@ -2656,6 +2729,7 @@ function onApplyObjective(objective: string) {
 onMounted(async () => {
   await applyEngineeringChangeApprovals()
   await applyRouteCapabilityValidation()
+  await loadStartupLaborEvidence()
   applyLaborReassignmentClosure()
   applyLaborQualificationBlockClosure()
   assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
@@ -2756,6 +2830,22 @@ onMounted(async () => {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.warning-action {
+  border: 1px solid #f59e0b;
+  background: #fff7ed;
+  color: #92400e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.warning-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .task-explain-shortcuts {
