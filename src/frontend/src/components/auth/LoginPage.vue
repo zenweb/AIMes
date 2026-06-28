@@ -58,11 +58,18 @@
       </form>
 
       <div v-if="showDemoHints" class="login-hints">
-        <p class="hint-title">演示账号 <span class="hint-badge">仅评估环境显示</span></p>
+        <p class="hint-title">演示账号 / Demo accounts <span class="hint-badge">仅评估环境显示</span></p>
+        <p class="hint-note">
+          离线演示入口不连接后端认证。Offline demo login skips live backend authentication.
+          <a class="login-help-link" href="#login-demo-help">帮助 / Help</a>
+        </p>
         <div class="hint-row"><span>admin</span><span>admin123</span><span>管理员</span></div>
         <div class="hint-row"><span>operator</span><span>operator-demo-2026</span><span>操作员</span></div>
         <div class="hint-row"><span>engineer</span><span>engineer-demo-2026</span><span>工程师</span></div>
         <div class="hint-row"><span>lead</span><span>lead-demo-2026</span><span>组长</span></div>
+        <div id="login-demo-help" class="hint-help">
+          真实后端登录需要 API 与数据库种子在线；Live backend login requires the API and seeded database.
+        </div>
       </div>
     </div>
   </div>
@@ -79,11 +86,15 @@ const { login } = useAuth()
 
 // 演示账号 hint：只在 dev 模式或显式启用 VITE_SHOW_DEMO_HINTS 时显示。
 // 生产部署不应直接告诉所有访客默认账号——但开源 docker compose 演示场景需要。
-const showDemoHints = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_HINTS === 'true'
+const explicitDemoMode = computed(() => {
+  const value = route.query.offlineDemo ?? route.query.demoMode
+  return value === '1' || value === 'true' || value === 'offline'
+})
+const showDemoHints = computed(() => explicitDemoMode.value || import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_HINTS === 'true')
 
 // placeholder 同样区分演示/生产。生产环境不在 input placeholder 里泄漏凭证示例。
-const usernamePlaceholder = showDemoHints ? 'admin / operator / engineer / lead' : '请输入用户名'
-const passwordPlaceholder = showDemoHints ? '见下方演示账号' : '请输入密码'
+const usernamePlaceholder = computed(() => showDemoHints.value ? 'admin / operator / engineer / lead' : '请输入用户名')
+const passwordPlaceholder = computed(() => showDemoHints.value ? '见下方演示账号' : '请输入密码')
 
 const username = ref('')
 const password = ref('')
@@ -95,6 +106,12 @@ const usernameFieldInvalid = ref(false)
 const passwordFieldInvalid = ref(false)
 const canSubmit = computed(() => Boolean(username.value.trim() && password.value.trim()))
 const passwordChangedNotice = computed(() => route.query.passwordChanged === '1')
+const redirectAfterLogin = computed(() => {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    ? redirect
+    : '/dashboard'
+})
 
 function clearError() {
   if (error.value) {
@@ -126,7 +143,7 @@ async function handleLogin() {
   loading.value = true
   try {
     const user = await login(trimmedUsername, trimmedPassword)
-    await router.push(user?.mustChangePassword ? { path: '/change-password' } : '/dashboard')
+    await router.push(user?.mustChangePassword ? { path: '/change-password' } : redirectAfterLogin.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '登录失败'
     password.value = ''
@@ -271,6 +288,19 @@ async function handleLogin() {
   font-size: 12px;
   color: #bbb;
   text-align: center;
+}
+
+.hint-note,
+.hint-help {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #666;
+}
+
+.login-help-link {
+  color: #1890ff;
+  font-weight: 600;
 }
 
 .hint-row {

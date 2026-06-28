@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-06-22",
+  "branch": "V1",
+  "candidate": "schedule-labor-retry-plus-agent-e2e",
+  "hostedCiCovered": false,
+  "headCoveredByHostedCi": "47d65547557a8a6cf035327ae94455a1a1285daf",
+  "firstSlice": {
+    "name": "labor-agent-e2e-routing-combo",
+    "files": [
+      "src/frontend/scripts/e2e.mjs",
+      "src/frontend/tests/e2e/scheduling.spec.ts"
+    ],
+    "grepTokens": [
+      "LABOR_EVIDENCE_RETRY_TITLE",
+      "LEGACY_PERSONNEL_EVIDENCE_TITLES",
+      "AGENT_BACKEND_EVIDENCE_TITLES",
+      "targetsAgentBackendMock",
+      "usesLiveBackendMock",
+      "mockSchedulingPlanApis",
+      "mockLaborEvidenceRetryApis",
+      "人员证据启动读取失败后可重试",
+      "人员替班证据释放排产人员约束",
+      "人员无有效替班候选时排产保持停工复核事件",
+      "调度员 Agent 工作台通过后端 API",
+      "调度员 Agent 工作台后端 403",
+      "调度员 Agent 工作台 API 不可用"
+    ],
+    "localEvidence": [
+      "clean worktree tmp/combo-labor-agent-20260622",
+      "npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/execution-evidence-api.test.ts => 2 files / 27 tests passed",
+      "npm run test:e2e -- tests/e2e/scheduling.spec.ts -g \"人员证据启动读取失败后可重试|人员替班证据释放排产人员约束|人员无有效替班候选时排产保持停工复核事件|调度员 Agent 工作台通过后端 API|调度员 Agent 工作台后端 403|调度员 Agent 工作台 API 不可用\" => 6/6 passed"
+    ]
+  },
+  "excludedThemes": [
+    {
+      "name": "real-dhtmlx-rush-drag-writeback",
+      "grepTokens": ["RUSH_WRITEBACK_EVIDENCE_DIR", "真实 dhtmlx", "dragRushTask", "createDhtmlxSchedulePlan", "withRushWindow"]
+    },
+    {
+      "name": "multi-objective-feedback-readback",
+      "grepTokens": ["多目标对比", "restoreLatestFeedbackSnapshot", "missingFeedbackSnapshotFields", "adoption-feedback/latest"]
+    },
+    {
+      "name": "assistant-engineering-fail-loud",
+      "grepTokens": ["Assistant 恢复交接", "loadStartupEngineeringConstraints", "readAssistantEngineeringConstraintPackagesSafely"]
+    },
+    {
+      "name": "schedule-guidance-links",
+      "grepTokens": ["schedule-workbench-guidance", "schedule-workbench-help"]
+    }
+  ],
+  "stopConditions": [
+    "Do not apply combo patch blindly to the dirty main worktree.",
+    "Resolve the staged schedule-labor-evidence-retry candidate before integrating Agent E2E.",
+    "Do not push if staged diff includes excluded theme tokens.",
+    "Do not claim full scheduling.spec.ts green from the focused combo run."
+  ]
+}

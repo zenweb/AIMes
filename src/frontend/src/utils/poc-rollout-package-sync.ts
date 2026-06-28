@@ -81,8 +81,13 @@ export function readPocRolloutPackageRecord(): PocRolloutPackageRecord | null {
 }
 
 export async function readPocRolloutPackageRecordBackendFirst(): Promise<PocRolloutPackageRecord | null> {
+  const localRecord = readPocRolloutPackageRecord()
   const record = await getLatestPocRolloutPackage()
-  return record ?? readPocRolloutPackageRecord()
+  if (!isPocRolloutPackageRecord(record)) return localRecord
+  if (!localRecord) return record
+  return new Date(localRecord.createdAt).getTime() >= new Date(record.createdAt).getTime()
+    ? localRecord
+    : record
 }
 
 export function writePocRolloutPackageRecord(signoff: PocReviewSignoffRecord) {

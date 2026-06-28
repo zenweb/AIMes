@@ -16,6 +16,18 @@ describe('useExport', () => {
     document.body.innerHTML = ''
   })
 
+  it('generates timestamped csv filenames so exported evidence files are traceable', () => {
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 5, 15, 9, 7, 0))
+      const { csvFilename } = useExport()
+
+      expect(csvFilename('排产计划')).toBe('排产计划-20260615-0907.csv')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('escapes csv headers so schedule and report exports keep stable columns', async () => {
     let capturedBlob: Blob | null = null
     Object.defineProperty(URL, 'createObjectURL', {
@@ -57,5 +69,47 @@ describe('useExport', () => {
     scheduledRevoke?.()
 
     expect(revokeSpy).toHaveBeenCalledWith('blob:use-export')
-  }, 2000)
+  }, 15000)
+
+  it('escapes every csv data cell and removes the temporary download link after clicking', async () => {
+    let capturedBlob: Blob | null = null
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      capturedBlob = blob
+      return 'blob:use-export-rows'
+    })
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    vi.spyOn(window, 'setTimeout').mockImplementation(() => 1)
+    const { downloadCsv } = useExport()
+
+    downloadCsv(
+      '报表.csv',
+      ['指标', '说明'],
+      [
+        ['OTD,改善', '客户说 "可复盘"'],
+        ['换行字段', '第一行\n第二行'],
+      ],
+    )
+
+    if (!capturedBlob) {
+      throw new Error('downloadCsv did not create a CSV blob')
+    }
+    const csv = await readBlobText(capturedBlob)
+
+    expect(csv).toBe([
+      '"指标","说明"',
+      '"OTD,改善","客户说 ""可复盘"""',
+      '"换行字段","第一行\n第二行"',
+    ].join('\r\n'))
+    expect(clickSpy).toHaveBeenCalledOnce()
+    expect(document.body.querySelector('a[download="报表.csv"]')).toBeNull()
+  }, 15000)
 })

@@ -11,6 +11,7 @@ export interface OtdEvidenceChainItem {
   source: string
   traceId: string
   sourceTraceId?: string
+  evidenceRef?: string
   status: OtdEvidenceStatus
   statusLabel: string
   createdAt: string
@@ -30,6 +31,7 @@ function isEvidenceItem(item: Partial<OtdEvidenceChainItem> | null | undefined):
     && typeof item.source === 'string'
     && typeof item.traceId === 'string'
     && (typeof item.sourceTraceId === 'string' || typeof item.sourceTraceId === 'undefined')
+    && (typeof item.evidenceRef === 'string' || typeof item.evidenceRef === 'undefined')
     && ['ready', 'active', 'closed'].includes(String(item.status))
     && typeof item.statusLabel === 'string'
     && typeof item.createdAt === 'string'

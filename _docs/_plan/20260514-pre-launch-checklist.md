@@ -29,25 +29,25 @@ Funnel KPI: 1/10 转商业版（不是 stars，不是 PR）
 
 ### 0a. Swagger 在 Production 模式下被禁用（funnel 杀手 #1）
 
-- **What**：`Program.cs:182` 只在 `IsDevelopment()` 时调用 `UseSwagger()`，但 `docker-compose.yml:84` 把 `ASPNETCORE_ENVIRONMENT` 设为 `Production` → 评估人打开 `localhost:5000/swagger` 直接 404
+- **What**：`Program.cs:182` 只在 `IsDevelopment()` 时调用 `UseSwagger()`，但 `docker-compose.yml:84` 把 `ASPNETCORE_ENVIRONMENT` 设为 `Production` → 评估人打开 `localhost:5002/swagger` 直接 404
 - **Why**：评估人最常做的探索动作就是看 API 文档，404 直接判定"没做完"，关 tab
 - **Effort**：CC ~5 min（任选一个修复方案）
 - **修复方案**：
   - (a) `docker-compose.yml` 把 `ASPNETCORE_ENVIRONMENT` 改为 `Development` —— 最简单但生产部署有风险
   - (b) **推荐**：`Program.cs` 改为 `if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("EnableSwagger"))`，compose 加 `EnableSwagger: "true"`
   - (c) 加专门的 `Demo` 环境枚举，compose 用 `Demo`，开启 Swagger 但保留 Production 安全设置
-- **Acceptance**：`docker compose up -d` 后访问 `localhost:5000/swagger` 看到完整 API 列表
+- **Acceptance**：`docker compose up -d` 后访问 `localhost:5002/swagger` 看到完整 API 列表
 
 ### 0b. UseHttpsRedirection 在 compose 里强制重定向到 https（funnel 杀手 #2）
 
-- **What**：`Program.cs:199` 无条件 `app.UseHttpsRedirection()`，docker-compose 只暴露 5000 (http)，浏览器访问 `http://localhost:5000` → 307 重定向到 `https://localhost:5000` → 连接失败 / 证书错误
+- **What**：`Program.cs:199` 无条件 `app.UseHttpsRedirection()`，docker-compose 通过宿主机 5002 暴露容器 5000 (http)，浏览器访问 `http://localhost:5002` → 307 重定向到 `https://localhost:5002` → 连接失败 / 证书错误
 - **Why**：评估人浏览器一打开就翻车，连看到登录页的机会都没有
 - **Effort**：CC ~5 min
 - **修复方案**：
   - (a) **推荐**：改为 `if (!app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("DisableHttpsRedirect")) app.UseHttpsRedirection();`，compose 加 `DisableHttpsRedirect: "true"`
   - (b) compose 同时暴露 `8443:443` + 自签证书（复杂）
   - (c) compose 前面加 nginx/traefik 反代（重）
-- **Acceptance**：`curl -v http://localhost:5000` 返回 200 而非 307
+- **Acceptance**：`curl -v http://localhost:5002` 返回 200 而非 307
 
 ---
 
@@ -91,9 +91,9 @@ Funnel KPI: 1/10 转商业版（不是 stars，不是 PR）
   ╔══════════════════════════════════════════════╗
   ║  AIMes V1 — 智能 MES 系统                    ║
   ╠══════════════════════════════════════════════╣
-  ║  ✓ 后端就绪：http://localhost:5000           ║
-  ║  ✓ 看板入口：http://localhost:5000/scheduling║
-  ║  ✓ API 文档：http://localhost:5000/swagger   ║
+  ║  ✓ 后端就绪：http://localhost:5002           ║
+  ║  ✓ 看板入口：http://localhost:5002/scheduling║
+  ║  ✓ API 文档：http://localhost:5002/swagger   ║
   ║  ✓ 默认账号：admin / admin@123                ║
   ║  ✓ 文档：https://github.com/.../blob/main/README.md ║
   ║                                              ║
@@ -103,7 +103,7 @@ Funnel KPI: 1/10 转商业版（不是 stars，不是 PR）
 
 ### 4. 根 `/` 路由跳转 `/scheduling`
 
-- **What**：访问 `localhost:5000` 时自动 302 到看板首页（或显示带"立即体验"按钮的着陆页）
+- **What**：访问 `localhost:5002` 时自动 302 到看板首页（或显示带"立即体验"按钮的着陆页）
 - **Why**：消除"猜路径"摩擦点（0B narrative T+2:00）
 - **Effort**：CC ~10 min
 - **Acceptance**：未登录访问 `/` → 跳登录页；登录后 → 跳排程甘特图
@@ -296,7 +296,7 @@ Funnel KPI: 1/10 转商业版（不是 stars，不是 PR）
 
 - [ ] 12 项阻塞清单全部完成
 - [ ] `docker compose up -d` 在干净环境一次成功
-- [ ] 浏览器访问 `localhost:5000` → 跳转登录页 → admin/admin@123 登录 → 看到带数据的甘特图，全程 ≤ 5 min（实测）
+- [ ] 浏览器访问 `localhost:5002` → 跳转登录页 → admin/admin@123 登录 → 看到带数据的甘特图，全程 ≤ 5 min（实测）
 - [ ] README 在 GitHub 渲染正常（截图加载、链接有效）
 - [ ] 商业版 CTA 链接可点击，UTM 参数生效
 - [ ] LICENSE 在 GitHub 上正确识别为 Apache-2.0

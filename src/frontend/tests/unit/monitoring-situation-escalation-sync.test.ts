@@ -114,6 +114,24 @@ describe('monitoring situation escalation sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/monitoring-situation-escalations', { params: { take: 8 } })
   })
 
+  it('ignores incomplete backend escalation packages so owner action and OTD impact stay auditable', async () => {
+    const localRecord = writeMonitoringSituationEscalation(escalationInput())
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'monitoring-situation-sf-001',
+          sourceEventId: 'sf-001',
+          title: '实时监控 现场态势升级处置包',
+          traceId: 'TRACE-SF-ESC-SF-001',
+          workOrders: 'WO-2026-0042',
+          createdAt: '2026-06-01T08:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(readMonitoringSituationEscalationsBackendFirst()).resolves.toEqual([localRecord])
+  })
+
   it('throws monitoring escalation backend failures when fail-loud evidence is required', async () => {
     const localRecord = writeMonitoringSituationEscalation(escalationInput())
     httpGet.mockRejectedValueOnce(new Error('monitoring escalation backend unavailable'))

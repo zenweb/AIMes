@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EmployeeBoard from '../../src/components/employee/EmployeeBoard.vue'
 import type { Employee } from '../../src/types/employee'
 
@@ -7,6 +7,7 @@ const getEmployeeList = vi.hoisted(() => vi.fn())
 const createEmployee = vi.hoisted(() => vi.fn())
 const updateEmployee = vi.hoisted(() => vi.fn())
 const deactivateEmployee = vi.hoisted(() => vi.fn())
+const exportToCsv = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/api/employee', () => ({
   createEmployee,
@@ -16,7 +17,7 @@ vi.mock('../../src/api/employee', () => ({
 }))
 
 vi.mock('../../src/utils/export', () => ({
-  exportToCsv: vi.fn(),
+  exportToCsv,
 }))
 
 const employees: Employee[] = [
@@ -59,10 +60,16 @@ function mountEmployeeBoard(options: { attachTo?: HTMLElement } = {}) {
 
 describe('EmployeeBoard', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
+    vi.stubEnv('BASE_URL', '/scheduling/')
     getEmployeeList.mockResolvedValue({ items: employees, totalCount: employees.length })
     createEmployee.mockResolvedValue({})
     updateEmployee.mockResolvedValue({})
     deactivateEmployee.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('lets keyboard users open employee details from employee cards', async () => {
@@ -104,6 +111,39 @@ describe('EmployeeBoard', () => {
     expect(createDialog?.attributes('aria-modal')).toBe('true')
     expect(wrapper.get('#employee-create-dialog-title').text()).toBe('新增员工')
     expect(createDialog?.get('.btn-cancel').attributes('aria-label')).toBe('取消新增员工')
+  })
+
+  it('shows bilingual guidance and contextual links before employee create and edit operations', async () => {
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    await wrapper.get('.emp-card').trigger('click')
+    await flushPromises()
+
+    const editGuidance = wrapper.get('[data-employee-edit-guidance]')
+    expect(editGuidance.text()).toContain('保存员工变更前请确认班组、班次、资质影响和审计留痕')
+    expect(editGuidance.text()).toContain('Before saving employee changes, confirm team, shift, certification impact, and audit trail')
+    expect(editGuidance.findAll('a').map(link => [link.text(), link.attributes('href')])).toEqual([
+      ['生产开工 / Production', '/scheduling/production'],
+      ['AI 排产 / Scheduling', '/scheduling/scheduling'],
+      ['审计回放 / Audit trail', '/scheduling/audit-logs'],
+      ['帮助 / Help', '#employee-edit-help'],
+    ])
+    expect(wrapper.get('[data-employee-edit-dialog] #employee-edit-help').exists()).toBe(true)
+
+    await wrapper.get('.btn-add').trigger('click')
+    await flushPromises()
+
+    const createGuidance = wrapper.get('[data-employee-create-guidance]')
+    expect(createGuidance.text()).toContain('创建员工前请确认工号唯一、角色范围、班组班次和审计留痕')
+    expect(createGuidance.text()).toContain('Before creating an employee, confirm employee number uniqueness, role scope, team shift, and audit trail')
+    expect(createGuidance.findAll('a').map(link => [link.text(), link.attributes('href')])).toEqual([
+      ['生产开工 / Production', '/scheduling/production'],
+      ['AI 排产 / Scheduling', '/scheduling/scheduling'],
+      ['审计回放 / Audit trail', '/scheduling/audit-logs'],
+      ['帮助 / Help', '#employee-create-help'],
+    ])
+    expect(wrapper.get('[data-employee-create-dialog] #employee-create-help').exists()).toBe(true)
   })
 
   it('returns focus to the employee card after closing edit dialog with Escape', async () => {
@@ -158,6 +198,61 @@ describe('EmployeeBoard', () => {
     expect(alert.text()).toContain('员工列表加载失败')
     expect(alert.text()).toContain('当前展示本地示例数据')
     expect(alert.text()).toContain('employee list API unavailable')
+  })
+
+  it('uses local demo employees without surfacing backend skip errors in offline demo mode', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/employee')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    getEmployeeList.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('EMP-001')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
+  })
+
+  it('offers a live backend recovery action when offline demo mode serves local employees', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/employee')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    getEmployeeList.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    const recovery = wrapper.get('[data-employee-live-recovery]')
+    expect(recovery.text()).toContain('当前展示本地示例数据')
+    expect(recovery.text()).toContain('Current view is using local demo data')
+
+    const link = recovery.get('a')
+    expect(link.text()).toBe('切换在线后端')
+    expect(link.attributes('href')).toBe('/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0')
+  })
+
+  it('builds the live backend recovery action from the configured app base path', async () => {
+    vi.stubEnv('BASE_URL', '/factory/scheduling/')
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/employee')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    getEmployeeList.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    const link = wrapper.get('[data-employee-live-recovery] a')
+    expect(link.attributes('href')).toBe('/factory/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0')
+  })
+
+  it('keeps local demo employees quiet when the HTTP layer wraps offline demo skip errors', async () => {
+    getEmployeeList.mockRejectedValueOnce(new Error('Request failed: Offline demo mode skipped backend request: /api/v1/employee'))
+
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('EMP-001')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('员工列表加载失败')
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
   })
 
   it('keeps create dialog open and does not add a local employee when create api fails', async () => {
@@ -267,6 +362,7 @@ describe('EmployeeBoard', () => {
 
     await wrapper.get('.emp-card').trigger('click')
     await wrapper.get('.modal-content .btn-deact').trigger('click')
+    await wrapper.get('[data-employee-deactivate-confirm]').trigger('click')
     await flushPromises()
 
     expect(deactivateEmployee).toHaveBeenCalledWith('emp-001')
@@ -278,7 +374,7 @@ describe('EmployeeBoard', () => {
     expect(alert.text()).toContain('employee deactivate API unavailable')
   })
 
-  it('removes the employee from the default active list after deactivate succeeds', async () => {
+  it('requires explicit bilingual confirmation before deactivating an employee', async () => {
     const wrapper = mountEmployeeBoard()
     await flushPromises()
 
@@ -286,10 +382,202 @@ describe('EmployeeBoard', () => {
     await wrapper.get('.modal-content .btn-deact').trigger('click')
     await flushPromises()
 
+    expect(deactivateEmployee).not.toHaveBeenCalled()
+    const confirmation = wrapper.get('[data-employee-deactivate-confirmation]')
+    expect(confirmation.text()).toContain('离职前请确认未完工派工、替班证据和审计留痕')
+    expect(confirmation.text()).toContain('Before deactivating this employee, confirm open work assignments, reassignment evidence, and audit trail')
+    expect(confirmation.findAll('a').map(link => [link.text(), link.attributes('href')])).toEqual([
+      ['生产开工 / Production', '/scheduling/production'],
+      ['AI 排产 / Scheduling', '/scheduling/scheduling'],
+      ['审计回放 / Audit trail', '/scheduling/audit-logs'],
+      ['帮助 / Help', '#employee-deactivate-help'],
+    ])
+
+    await wrapper.get('[data-employee-deactivate-cancel]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-employee-deactivate-confirmation]').exists()).toBe(false)
+    expect(deactivateEmployee).not.toHaveBeenCalled()
+  })
+
+  it('removes the employee from the default active list after deactivate succeeds', async () => {
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    await wrapper.get('.emp-card').trigger('click')
+    await wrapper.get('.modal-content .btn-deact').trigger('click')
+    await wrapper.get('[data-employee-deactivate-confirm]').trigger('click')
+    await flushPromises()
+
     expect(deactivateEmployee).toHaveBeenCalledWith('emp-001')
     expect(wrapper.find('.modal-content').exists()).toBe(false)
     expect(wrapper.findAll('.emp-card')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('张三')
     expect(wrapper.text()).toContain('李四')
+  })
+
+  it('exports the complete employee roster with active status evidence', async () => {
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    await wrapper.get('.btn-export').trigger('click')
+
+    expect(exportToCsv).toHaveBeenCalledWith(
+      '员工列表',
+      ['工号', '姓名', '角色', '班组', '班次', '电话', '邮箱', '在职'],
+      [
+        ['EMP-001', '张三', 'Operator', '甲班', 'Day', '13800138001', '', '是'],
+        ['EMP-002', '李四', 'Engineer', '技术组', 'Day', '', '', '是'],
+      ],
+    )
+  })
+
+  it('opens employee details with Space for keyboard-only operators', async () => {
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    await wrapper.get('.emp-card').trigger('keydown.space')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').attributes('aria-labelledby')).toBe('employee-edit-dialog-title')
+    expect(wrapper.get('.modal-content h3').text()).toBe('编辑员工')
+  })
+
+  it('filters by role, team, search text, and explicit inactive visibility', async () => {
+    getEmployeeList.mockResolvedValueOnce({
+      items: [
+        ...employees,
+        {
+          id: 'emp-003',
+          employeeNumber: 'EMP-003',
+          name: '王五',
+          role: 'Operator',
+          team: '乙班',
+          shift: 'Night',
+          phone: null,
+          email: null,
+          isActive: false,
+          createdAt: '2026-01-01T00:00:00',
+        } satisfies Employee,
+      ],
+      totalCount: 3,
+    })
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    const filters = wrapper.findAll<HTMLSelectElement>('.filter-select')
+    await filters[0].setValue('Operator')
+    expect(wrapper.text()).toContain('张三')
+    expect(wrapper.text()).not.toContain('李四')
+    expect(wrapper.text()).not.toContain('王五')
+
+    await filters[1].setValue('乙班')
+    expect(wrapper.findAll('.emp-card')).toHaveLength(0)
+
+    await wrapper.get<HTMLInputElement>('.chk input').setValue(true)
+    expect(wrapper.get('.emp-card').attributes('aria-label')).toBe('查看离职员工详情：EMP-003 王五')
+    expect(wrapper.text()).toContain('离职')
+
+    await wrapper.get<HTMLInputElement>('.search-input').setValue('emp-003')
+    expect(wrapper.text()).toContain('王五')
+    expect(wrapper.text()).not.toContain('张三')
+  })
+
+  it('returns to the first page when search narrows a paginated roster', async () => {
+    const manyEmployees: Employee[] = Array.from({ length: 25 }, (_, index) => ({
+      id: `emp-${String(index + 1).padStart(3, '0')}`,
+      employeeNumber: `EMP-${String(index + 1).padStart(3, '0')}`,
+      name: `员工${String(index + 1).padStart(2, '0')}`,
+      role: index === 24 ? 'Engineer' : 'Operator',
+      team: index === 24 ? '技术组' : '甲班',
+      shift: 'Day',
+      phone: null,
+      email: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00',
+    }))
+    getEmployeeList.mockResolvedValueOnce({ items: manyEmployees, totalCount: manyEmployees.length })
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('EMP-001')
+    await wrapper.findAll('.page-btn').at(-1)?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('EMP-001')
+    expect(wrapper.text()).toContain('EMP-013')
+
+    await wrapper.get<HTMLInputElement>('.search-input').setValue('EMP-001')
+    await flushPromises()
+
+    expect(wrapper.findAll('.emp-card')).toHaveLength(1)
+    expect(wrapper.text()).toContain('EMP-001')
+    expect(wrapper.find('.pagination-bar').exists()).toBe(false)
+  })
+
+  it('shows inactive employee details as read-only without save or deactivate actions', async () => {
+    getEmployeeList.mockResolvedValueOnce({
+      items: [
+        {
+          ...employees[0],
+          id: 'emp-003',
+          employeeNumber: 'EMP-003',
+          name: '王五',
+          isActive: false,
+        },
+      ],
+      totalCount: 1,
+    })
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    await wrapper.get<HTMLInputElement>('.chk input').setValue(true)
+    await wrapper.get('.emp-card').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.attributes('aria-labelledby')).toBe('employee-detail-dialog-title')
+    expect(wrapper.get('#employee-detail-dialog-title').text()).toBe('员工详情')
+    expect(wrapper.find('.btn-save').exists()).toBe(false)
+    expect(wrapper.find('.btn-deact').exists()).toBe(false)
+    expect(wrapper.findAll<HTMLInputElement>('.modal-content input').every(input => input.element.disabled)).toBe(true)
+  })
+
+  it('keeps long pagination stable with ellipsis, previous, and next controls', async () => {
+    const manyEmployees: Employee[] = Array.from({ length: 100 }, (_, index) => ({
+      id: `emp-${String(index + 1).padStart(3, '0')}`,
+      employeeNumber: `EMP-${String(index + 1).padStart(3, '0')}`,
+      name: `员工${String(index + 1).padStart(2, '0')}`,
+      role: 'Operator',
+      team: '甲班',
+      shift: 'Day',
+      phone: null,
+      email: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00',
+    }))
+    getEmployeeList.mockResolvedValueOnce({ items: manyEmployees, totalCount: manyEmployees.length })
+    const wrapper = mountEmployeeBoard()
+    await flushPromises()
+
+    expect(wrapper.find('.page-ellipsis').exists()).toBe(true)
+    for (let i = 0; i < 3; i += 1) {
+      await wrapper.findAll('.page-btn').find(button => button.text() === '下一页')?.trigger('click')
+      await flushPromises()
+    }
+
+    expect(wrapper.text()).toContain('EMP-037')
+    expect(wrapper.text()).not.toContain('EMP-001')
+    expect(wrapper.findAll('.page-ellipsis')).toHaveLength(2)
+
+    await wrapper.findAll('.page-btn').find(button => button.text() === '上一页')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('EMP-025')
+
+    await wrapper.findAll('.page-btn').find(button => button.text() === '下一页')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('EMP-037')
   })
 })

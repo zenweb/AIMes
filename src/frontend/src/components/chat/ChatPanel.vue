@@ -52,6 +52,7 @@
                   :key="action.id"
                   type="button"
                   class="action-btn"
+                  :disabled="completedActionIds.has(action.id)"
                   @click="executeAction(action)"
                 >
                   {{ action.label }}
@@ -95,7 +96,14 @@
           <div v-if="!messages.length && !loading" class="empty-chat">
             <div class="empty-icon">💬</div>
             <p>有什么生产相关的问题？</p>
+            <p class="empty-subtitle">Ask about production status, evidence, or next actions.</p>
             <p class="empty-hints">例如：当前产能如何？设备利用率是多少？</p>
+            <p class="empty-hints">Example: Which work order needs action first?</p>
+            <nav class="empty-links" aria-label="AI 助手关联入口">
+              <a href="/report">报表证据中心</a>
+              <a href="/audit-logs">审计回放</a>
+              <a href="#assistant-help" class="empty-help-link">帮助：AI 助手使用支持</a>
+            </nav>
           </div>
         </div>
 
@@ -117,6 +125,17 @@
           </div>
           <div v-if="error" class="chat-error">{{ error }}</div>
         </div>
+
+        <section id="assistant-help" class="assistant-help" aria-labelledby="assistant-help-title">
+          <span class="assistant-help-eyebrow">帮助：AI 助手使用支持</span>
+          <h4 id="assistant-help-title">复杂操作前先确认来源、责任人和落点页面</h4>
+          <ul>
+            <li>先问证据，再执行动作，避免直接跳转后丢失上下文。</li>
+            <li>Ask for evidence first, then trigger actions so the operator keeps decision context.</li>
+            <li>涉及跨模块动作时，优先打开报表或审计回放确认来源编号。</li>
+            <li>Use the help link when a suggested action spans scheduling, quality, purchasing, or audit review.</li>
+          </ul>
+        </section>
       </div>
     </div>
   </Transition>
@@ -179,6 +198,8 @@ const modelFullLabel = ref('')
 const cachedAnomalyDispatchRecords = ref<AnomalyDispatchRecord[]>([])
 const cachedMonitoringSituationEscalations = ref<MonitoringSituationEscalation[]>([])
 const cachedRiskSlaReview = ref<RiskSlaReviewRecord | null>(null)
+const completedActionIds = ref(new Set<string>())
+const startupContextSyncFailures: string[] = []
 
 watch(() => props.visible, async (show) => {
   if (show) {
@@ -261,6 +282,16 @@ function isKnowledgeQueryPayload(value: unknown): value is { answer: string; sou
   return typeof candidate.answer === 'string' && Array.isArray(candidate.sources)
 }
 
+function normalizeKnowledgeSource(source: KnowledgeSourceDto): KnowledgeSourceDto {
+  const score = Number.isFinite(source.relevanceScore)
+    ? Math.min(Math.max(source.relevanceScore, 0), 1)
+    : 0
+  return {
+    ...source,
+    relevanceScore: score,
+  }
+}
+
 async function loadHistory() {
   try {
     const history = await getChatHistory(sessionId.value, 50)
@@ -306,7 +337,7 @@ async function sendMessage() {
     if (!isKnowledgeQueryPayload(res)) {
       throw new Error('后端返回非知识问答载荷')
     }
-    addMessage('assistant', res.answer, res.sources, getExecutableActions(text))
+    addMessage('assistant', res.answer, res.sources.map(normalizeKnowledgeSource), getExecutableActions(text))
   } catch (err) {
     // 后端不可用 — 演示回复
     addMessage(
@@ -342,6 +373,7 @@ function canExecuteAction(action: ChatAction) {
 }
 
 async function executeAction(action: ChatAction) {
+  if (completedActionIds.value.has(action.id)) return
   if (!canExecuteAction(action)) {
     try {
       recordAssistantActionAudit({
@@ -350,6 +382,9 @@ async function executeAction(action: ChatAction) {
         role: currentUserRole(),
         permitted: false,
       })
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       addMessage('assistant', `动作已拒绝：当前用户缺少 ${action.requiredRole} 权限，未执行 ${action.label}。`, undefined, undefined, undefined, 'alert')
     } catch (err: unknown) {
       addMessage('assistant', `动作已拒绝：当前用户缺少 ${action.requiredRole} 权限，未执行 ${action.label}。拒绝审计写入失败：${errorMessage(err, '请稍后重试')}`, undefined, undefined, undefined, 'alert')
@@ -362,15 +397,37 @@ async function executeAction(action: ChatAction) {
       if (action.targetRoute) {
         try {
           await router.push(action.targetRoute)
+          const lockedActionIds = new Set(completedActionIds.value)
+          lockedActionIds.add(action.id)
+          completedActionIds.value = lockedActionIds
         } catch (err: unknown) {
+          const navigationError = errorMessage(err, '请稍后重试')
           addMessage(
             'assistant',
-            `打开${action.label.replace(/^打开/, '')}页面跳转失败：${errorMessage(err, '请稍后重试')}`,
+            `打开${action.label.replace(/^打开/, '')}页面跳转失败：${navigationError}`,
             undefined,
             undefined,
             undefined,
             'alert'
           )
+          try {
+            recordAssistantActionAudit({
+              action,
+              actor: currentUsername(),
+              role: currentUserRole(),
+              permitted: false,
+            })
+          } catch (auditErr: unknown) {
+            addMessage(
+              'assistant',
+              `页面跳转失败，失败审计写入失败：${errorMessage(auditErr, '请稍后重试')}`,
+              undefined,
+              undefined,
+              undefined,
+              'alert'
+            )
+          }
+          return
         }
       }
     }
@@ -393,6 +450,9 @@ async function executeAction(action: ChatAction) {
         actor: currentUsername(),
         role: currentUserRole(),
       })
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let navigationError = ''
       if (action.targetRoute) {
         try {
@@ -429,6 +489,9 @@ async function executeAction(action: ChatAction) {
         actor: currentUsername(),
         role: currentUserRole(),
       })
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let navigationError = ''
       if (action.targetRoute) {
         try {
@@ -465,6 +528,9 @@ async function executeAction(action: ChatAction) {
         actor: currentUsername(),
         role: currentUserRole(),
       })
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let navigationError = ''
       if (action.targetRoute) {
         try {
@@ -516,6 +582,9 @@ async function executeAction(action: ChatAction) {
         sourceTraceId: 'TRACE-KPI-CUSTOMER-HUADONG-OTD-20260521',
         actor: currentUsername(),
       })
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let navigationError = ''
       if (action.targetRoute) {
         try {
@@ -550,6 +619,9 @@ async function executeAction(action: ChatAction) {
       }
     } else if (action.type === 'bom_kitting_package') {
       const bomKittingPackage = writeAssistantBomKittingPackage()
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let bomKittingEvidenceError = ''
       try {
         writeAssistantBomKittingEvidence(bomKittingPackage)
@@ -600,6 +672,9 @@ async function executeAction(action: ChatAction) {
       }
     } else if (action.type === 'equipment_downtime_package') {
       const equipmentPackage = writeAssistantEquipmentDowntimePackage()
+      const lockedActionIds = new Set(completedActionIds.value)
+      lockedActionIds.add(action.id)
+      completedActionIds.value = lockedActionIds
       let equipmentDowntimeEvidenceError = ''
       try {
         writeAssistantEquipmentDowntimeEvidence(equipmentPackage)
@@ -1158,6 +1233,11 @@ function isLaborCapabilityIntent(q: string) {
   return subject && predicate
 }
 
+function isQualityKnowledgeReuseIntent(q: string) {
+  return (q.includes('扫码') || q.includes('返工') || q.includes('capa') || q.includes('质量'))
+    && (q.includes('复用') || q.includes('同类') || q.includes('知识') || q.includes('根因') || q.includes('推荐'))
+}
+
 function latestLaborEvidence(): OtdEvidenceChainItem | null {
   return readOtdEvidenceChainRecords()
     .filter(record => ['人员能力', '人员替班', '人员阻断', '人员复核', '人员放行', '生产开工'].includes(record.stage))
@@ -1575,6 +1655,7 @@ function getBusinessAnalysisReply(question: string): string {
 
   if (
     !isRouteCapabilityIntent(q)
+    && !isQualityKnowledgeReuseIntent(q)
     && (q.includes('返工') || q.includes('热处理') || q.includes('ins-003') || q.includes('wo-003'))
     && (q.includes('质量') || q.includes('影响') || q.includes('重排') || q.includes('排产') || q.includes('otd'))
   ) {
@@ -1795,10 +1876,7 @@ function getBusinessAnalysisReply(question: string): string {
     ].join('\n') + citationLine
   }
 
-  if (
-    (q.includes('扫码') || q.includes('返工') || q.includes('capa') || q.includes('质量'))
-    && (q.includes('复用') || q.includes('同类') || q.includes('知识') || q.includes('根因') || q.includes('推荐'))
-  ) {
+  if (isQualityKnowledgeReuseIntent(q)) {
     const sample = readLatestQualityKnowledgeSample()
     if (!sample) {
       return [
@@ -2665,22 +2743,29 @@ async function readStartupContextSource<T>(loader: () => Promise<T>, fallback: T
   try {
     return await loader()
   } catch (err: unknown) {
-    addMessage(
-      'assistant',
-      `助手上下文同步失败：${errorMessage(err, '请稍后重试')}。已保留聊天入口，可继续使用离线/本地上下文回答。`,
-      undefined,
-      undefined,
-      undefined,
-      'alert'
-    )
+    startupContextSyncFailures.push(errorMessage(err, '请稍后重试'))
     return fallback
   }
+}
+
+function flushStartupContextSyncFailures() {
+  if (!startupContextSyncFailures.length) return
+  addMessage(
+    'assistant',
+    `助手上下文同步失败：${startupContextSyncFailures.join('；')}。已保留聊天入口，可继续使用离线/本地上下文回答。`,
+    undefined,
+    undefined,
+    undefined,
+    'alert'
+  )
+  startupContextSyncFailures.splice(0)
 }
 
 onMounted(async () => {
   cachedAnomalyDispatchRecords.value = await readStartupContextSource(readAnomalyDispatchRecordsBackendFirst, [])
   cachedMonitoringSituationEscalations.value = await readStartupContextSource(readMonitoringSituationEscalationsBackendFirst, [])
   cachedRiskSlaReview.value = await readStartupContextSource(readRiskSlaReviewRecordBackendFirst, null)
+  flushStartupContextSyncFailures()
   try {
     const status = await getLlmStatus()
     if (status.provider === 'Ollama') {
@@ -3057,9 +3142,60 @@ function getDemoSources(question = ''): KnowledgeSourceDto[] {
   color: #999;
 }
 
+.empty-subtitle {
+  color: #777 !important;
+}
+
 .empty-hints {
   font-size: 13px !important;
   color: #bbb !important;
+}
+
+.empty-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.empty-links a {
+  color: #1890ff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.empty-links a:hover {
+  text-decoration: underline;
+}
+
+.assistant-help {
+  padding: 14px 18px 18px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.assistant-help-eyebrow {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #1890ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.assistant-help h4 {
+  margin: 0 0 8px;
+  color: #333;
+  font-size: 14px;
+}
+
+.assistant-help ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 /* 输入区 */

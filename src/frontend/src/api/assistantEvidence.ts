@@ -19,11 +19,12 @@ export async function upsertAssistantActionAudit(item: AssistantActionAuditRecor
   return data
 }
 
-export async function queryAssistantRecoveryPackages(take = 8): Promise<AssistantRecoveryPackage[]> {
+export async function queryAssistantRecoveryPackages(take = 8, options?: { failLoud?: boolean }): Promise<AssistantRecoveryPackage[]> {
   try {
     const { data } = await http.get<AssistantRecoveryPackage[]>('/scheduling/assistant-recovery-packages', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
@@ -33,11 +34,12 @@ export async function upsertAssistantRecoveryPackage(item: AssistantRecoveryPack
   return data
 }
 
-export async function queryAssistantAnomalyPackages(take = 8): Promise<AssistantAnomalyDispositionPackage[]> {
+export async function queryAssistantAnomalyPackages(take = 8, options?: { failLoud?: boolean }): Promise<AssistantAnomalyDispositionPackage[]> {
   try {
     const { data } = await http.get<AssistantAnomalyDispositionPackage[]>('/scheduling/assistant-anomaly-packages', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
@@ -47,11 +49,12 @@ export async function upsertAssistantAnomalyPackage(item: AssistantAnomalyDispos
   return data
 }
 
-export async function queryAssistantEngineeringConstraintPackages(take = 8): Promise<AssistantEngineeringConstraintPackage[]> {
+export async function queryAssistantEngineeringConstraintPackages(take = 8, options?: { failLoud?: boolean }): Promise<AssistantEngineeringConstraintPackage[]> {
   try {
     const { data } = await http.get<AssistantEngineeringConstraintPackage[]>('/scheduling/assistant-engineering-constraint-packages', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }

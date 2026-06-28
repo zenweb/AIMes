@@ -6,6 +6,7 @@ public class ReportDashboardDto
     public QualitySummaryDto Quality { get; set; } = new();
     public EquipmentSummaryDto Equipment { get; set; } = new();
     public AnomalySummaryDto Anomaly { get; set; } = new();
+    public AdoptionFeedbackSnapshotDto? ScheduleFeedback { get; set; }
 }
 
 public class ProductionSummaryDto

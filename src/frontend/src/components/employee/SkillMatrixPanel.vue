@@ -51,6 +51,18 @@
           生成替班建议
         </button>
       </div>
+      <div id="labor-reassignment-help" class="labor-reassignment-guidance">
+        <div>
+          <strong>替班/停工复核前，请核对资质有效期、排班窗口、工程复核人与生产开工影响。</strong>
+          <span>Before reassignment or stop-work review, verify certification validity, shift window, engineering reviewer, and production start impact.</span>
+        </div>
+        <nav aria-label="人员替班关联入口">
+          <a href="/scheduling/production">生产开工 / Production</a>
+          <a href="/scheduling/scheduling">AI 排产 / Scheduling</a>
+          <a href="/scheduling/audit-logs">审计回放 / Audit trail</a>
+          <a href="#labor-reassignment-help">帮助 / Help</a>
+        </nav>
+      </div>
       <div class="reassignment-grid">
         <div>
           <span>当前风险</span>
@@ -90,6 +102,7 @@
         class="qualification-review"
         role="alert"
         aria-labelledby="qualification-review-title"
+        aria-describedby="labor-reassignment-help"
       >
         <div>
           <span>停工复核处置</span>
@@ -465,11 +478,12 @@ function generateReassignmentSuggestion() {
   reassignmentMessage.value = `${record.auditId} 已生成：${record.blockedEmployeeNumber} ${record.blockedEmployeeName} 的临期资质风险由 ${record.replacementEmployeeNumber} ${record.replacementEmployeeName} 接管，推荐依据为技能、班组/班次、证书有效期和排班可用性评分，${record.traceId} 可在报表和审计中追溯。`
 }
 
-function ensureQualificationBlock() {
+function ensureQualificationBlock(options: { persist?: boolean } = { persist: true }) {
   if (activeQualificationBlock.value && activeQualificationBlock.value.status !== 'released') {
     return activeQualificationBlock.value
   }
-  const block = writeLaborQualificationBlock(buildLaborQualificationBlockRecord())
+  const candidate = buildLaborQualificationBlockRecord()
+  const block = options.persist === false ? candidate : writeLaborQualificationBlock(candidate)
   activeQualificationBlock.value = block
   reassignmentTitle.value = '停工复核已同步生产开工与 OTD 复盘'
   reassignmentMessage.value = `${block.auditId} 已生成：${block.blockedEmployeeNumber} ${block.blockedEmployeeName} 的临期资质没有有效替班候选，${block.workOrderNumber} ${block.operationName} 必须停工复核，${block.traceId} 可在报表和审计中追溯。`
@@ -477,13 +491,13 @@ function ensureQualificationBlock() {
 }
 
 function confirmQualificationReview() {
-  const reviewed = writeLaborQualificationBlockReview(ensureQualificationBlock())
+  const reviewed = writeLaborQualificationBlockReview(ensureQualificationBlock({ persist: false }))
   activeQualificationBlock.value = reviewed
   reviewMessage.value = `${reviewed.reviewerName} 已确认停工复核：补证/改派前 ${reviewed.workOrderNumber} ${reviewed.operationName} 保持冻结，${reviewed.traceId}-REVIEW 已进入 OTD 证据链。`
 }
 
 function releaseQualificationBlock() {
-  const block = ensureQualificationBlock()
+  const block = ensureQualificationBlock({ persist: false })
   const releaseReason = `${block.reviewerName} 确认 ${block.requiredSkill} 补证有效，并改派 EMP-006 孙八在排班计划 SCH-LABOR-20260520-A 的加班窗口承担热处理开工复核。`
   const reassignment = createDefaultLaborReassignment(new Date().toISOString(), {
     id: 'labor-reassignment-release-WO-013-heat-treatment',
@@ -757,6 +771,51 @@ p {
   font-size: 13px;
 }
 
+.labor-reassignment-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #f0f9ff;
+}
+
+.labor-reassignment-guidance strong {
+  display: block;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.labor-reassignment-guidance span {
+  display: block;
+  margin-top: 3px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.labor-reassignment-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.labor-reassignment-guidance a {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .candidate-ranking {
   display: grid;
   grid-template-columns: auto minmax(220px, 0.35fr) minmax(0, 1fr);
@@ -858,6 +917,7 @@ p {
 @media (max-width: 1100px) {
   .skill-grid,
   .reassignment-grid,
+  .labor-reassignment-guidance,
   .candidate-ranking,
   .reassignment-note,
   .qualification-review,

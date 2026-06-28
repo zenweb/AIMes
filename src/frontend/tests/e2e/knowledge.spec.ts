@@ -2,6 +2,19 @@ import { test, expect, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import type { QualityKnowledgeRetrainingVersionRecord } from '../../src/utils/quality-knowledge-sample-sync'
 
+function offlineDemoPath(path: string) {
+  return `${path}?offlineDemo=1`
+}
+
+async function enableLiveUploadRequest(page: Page) {
+  await page.evaluate(() => {
+    window.history.replaceState(null, '', '/scheduling/knowledge/documents?offlineDemo=0')
+    localStorage.setItem('aimes_offline_demo', 'false')
+    localStorage.setItem('aimes_token', 'backend-token-admin-e2e')
+    localStorage.setItem('aimes_refresh_token', 'backend-refresh-token-admin-e2e')
+  })
+}
+
 async function seedR3GrayReleaseDemo(page: Page) {
   await page.evaluate(() => {
     const feedback = {
@@ -216,10 +229,13 @@ async function seedR7ShadowValidationDemo(page: Page) {
 test.describe('Knowledge 文档治理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      if (localStorage.getItem('aimes_e2e_live_backend') === 'true') return
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('knowledge/documents')
+    await page.goto(offlineDemoPath('knowledge/documents'), { waitUntil: 'commit' })
     await page.waitForSelector('.upload-page', { timeout: 20000 })
   })
 
@@ -456,28 +472,28 @@ test.describe('Knowledge 文档治理', () => {
     await expect(nextTrainingCard.getByText(/等待质量主管审批后进入灰度前校验/)).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R3_现场反馈合并')).toBeVisible()
 
-    await nextTrainingCard.getByRole('button', { name: '批准 R3 训练集' }).click()
+    await nextTrainingCard.getByRole('button', { name: '批准 R3 训练集：QK-TRAIN-20260521-R3 下一轮训练集候选' }).click()
 
     await expect(nextTrainingCard.getByText('训练集已批准')).toBeVisible()
     await expect(nextTrainingCard.getByText('AUD-KG-QA-RETRAINING-R3-APPROVAL-20260521-001')).toBeVisible()
     await expect(nextTrainingCard.locator('.asset-reference-list').getByText('推荐采纳反馈字段完整率 100%。')).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R3_R3训练集审批')).toBeVisible()
 
-    await nextTrainingCard.getByRole('button', { name: '运行灰度前校验' }).click()
+    await nextTrainingCard.getByRole('button', { name: '运行灰度前校验：QK-TRAIN-20260521-R3 下一轮训练集候选' }).click()
 
     await expect(nextTrainingCard.getByText('灰度前校验已通过')).toBeVisible()
     await expect(nextTrainingCard.getByText('AUD-KG-QA-RETRAINING-R3-VALIDATION-PASS-20260521-001')).toBeVisible()
     await expect(nextTrainingCard.locator('.asset-reference-list').getByText('Top-3 召回命中独立扭矩 CAPA 样本。')).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R3_灰度前校验已通过')).toBeVisible()
 
-    await nextTrainingCard.getByRole('button', { name: '灰度发布 R3' }).click()
+    await nextTrainingCard.getByRole('button', { name: '灰度发布 R3：QK-TRAIN-20260521-R3 下一轮训练集候选' }).click()
 
     await expect(nextTrainingCard.locator('.asset-topline').getByText('已灰度发布', { exact: true })).toBeVisible()
     await expect(nextTrainingCard.getByText('AUD-KG-QA-RETRAINING-R3-GRAY-PUBLISH-20260521-001')).toBeVisible()
     await expect(nextTrainingCard.getByText(/OP-20 装配扭矩推荐链路/)).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R3_灰度发布到质量推荐链路')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const mergeEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'QK-TRAIN-20260521-R3 现场反馈已合并' })
     await expect(mergeEvidence.getByText('知识再训练合并')).toBeVisible()
@@ -746,7 +762,7 @@ test.describe('Knowledge 文档治理', () => {
 
   test('R3 调整范围重开校验后可重新灰度发布并恢复推荐决策', async ({ page }) => {
     await seedR3GrayReleaseDemo(page)
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -756,7 +772,7 @@ test.describe('Knowledge 文档治理', () => {
     await monitorCard.getByRole('button', { name: '调整范围重开校验' }).click()
     await expect(monitorCard.getByText('已重开灰度前校验')).toBeVisible()
 
-    await page.goto('knowledge/documents', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('knowledge/documents'), { waitUntil: 'commit' })
     await page.waitForSelector('.upload-page', { timeout: 20000 })
     const assetPanel = page.locator('.quality-asset-panel')
     const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
@@ -779,14 +795,14 @@ test.describe('Knowledge 文档治理', () => {
     await expect(nextTrainingCard.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-REPUBLISHED')).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R3_灰度发布到质量推荐链路')).toBeVisible()
 
-    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto(offlineDemoPath('quality'), { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.quality-board', { timeout: 60000 })
     const rankingCard = page.locator('.quality-capa-panel .ranking-card').filter({ hasText: 'WO-DEMO-1018 OP-20 装配扭矩偏移独立 CAPA 推荐' })
     await expect(rankingCard.locator('.ranking-topline span').getByText('已灰度发布', { exact: true })).toBeVisible()
     await expect(rankingCard.locator('.ranking-training-release').getByText('QK-TRAIN-20260521-R3', { exact: true })).toBeVisible()
     await expect(rankingCard.getByText('AUD-KG-QA-RETRAINING-R3-GRAY-REPUBLISH-20260521-001')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const republishedMonitorCard = page.locator('.agent-governance-panel .quality-gray-monitor-card')
@@ -797,7 +813,7 @@ test.describe('Knowledge 文档治理', () => {
 
   test('R3 重新灰度发布写入失败时真实浏览器展示 fail-loud 且不伪造历史', async ({ page }) => {
     await seedR3GrayReleaseDemo(page)
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -807,7 +823,7 @@ test.describe('Knowledge 文档治理', () => {
     await monitorCard.getByRole('button', { name: '调整范围重开校验' }).click()
     await expect(monitorCard.getByText('已重开灰度前校验')).toBeVisible()
 
-    await page.goto('knowledge/documents', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('knowledge/documents'), { waitUntil: 'commit' })
     await page.waitForSelector('.upload-page', { timeout: 20000 })
     const assetPanel = page.locator('.quality-asset-panel')
     const nextTrainingCard = assetPanel.locator('.asset-card').filter({ hasText: 'QK-TRAIN-20260521-R3 下一轮训练集候选' })
@@ -955,7 +971,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(rollbackCard.getByText(/回滚目标 QK-TRAIN-20260521-R1/)).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R2_回滚到_QK-TRAIN-20260521-R1')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const approvalEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'QK-TRAIN-20260521-R2 训练集版本已批准' })
     await expect(approvalEvidence.getByText('知识再训练审批')).toBeVisible()
@@ -973,7 +989,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(rollbackEvidence.getByText('知识再训练回滚')).toBeVisible()
     await expect(rollbackEvidence.getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-ROLLBACK')).toBeVisible()
 
-    await page.goto('/scheduling/audit-logs', { waitUntil: 'commit' })
+    await page.goto('/scheduling/audit-logs?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditCards = page.locator('.audit-replay-panel .decision-card')
     await expect(auditCards.filter({ hasText: '知识再训练审批：QK-TRAIN-20260521-R2 训练集版本已批准' })).toBeVisible()
@@ -984,8 +1000,6 @@ test.describe('Knowledge 文档治理', () => {
   })
 
   test('上传文档进入待索引治理队列', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-
     await page.route('**/api/v1/knowledge/documents', async (route) => {
       await route.fulfill({
         status: 200,
@@ -1007,6 +1021,7 @@ test.describe('Knowledge 文档治理', () => {
       mimeType: 'text/markdown',
       buffer: Buffer.from('# 现场换线SOP\n\n换线前确认设备、人员和首件。'),
     })
+    await enableLiveUploadRequest(page)
     await page.getByRole('button', { name: '开始上传' }).click()
 
     const panel = page.locator('.knowledge-governance-panel')
@@ -1018,8 +1033,6 @@ test.describe('Knowledge 文档治理', () => {
   })
 
   test('上传接口返回坏载荷时真实浏览器展示行级 fail-loud', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-
     await page.route('**/api/v1/knowledge/documents', async (route) => {
       await route.fulfill({
         status: 200,
@@ -1034,6 +1047,7 @@ test.describe('Knowledge 文档治理', () => {
       mimeType: 'text/markdown',
       buffer: Buffer.from('# 现场换线SOP\n\n换线前确认设备、人员和首件。'),
     })
+    await enableLiveUploadRequest(page)
     await page.getByRole('button', { name: '开始上传' }).click()
 
     const rowError = page.locator('.status-err')
@@ -1097,7 +1111,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(chat.getByText(/CNC-01 主轴维护手册 V1.2/)).toBeVisible()
     await expect(chat.getByText(/AUD-KG-REINDEX-20260520-001 已完成知识治理复核/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'CNC-01 主轴维护手册 已复核并重建索引' })
     await expect(evidence.getByText('知识治理')).toBeVisible()
@@ -1293,7 +1307,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R7_R7影子验证已通过')).toBeVisible()
     await expect(page.locator('.history-table').getByText('QK-TRAIN-20260521-R7_R7影子灰度已发布')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const adminPanel = page.locator('.agent-governance-panel')
@@ -1311,7 +1325,7 @@ test.describe('Knowledge 文档治理', () => {
     const executionPolicy = adminPanel.locator('.policy-block').filter({ hasText: '执行策略' })
     await expect(executionPolicy.getByText('2 个候选 / QK-TRAIN-20260521-R6 100%')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     const r7Replay = auditPanel.locator('.decision-card').filter({ hasText: 'QK-TRAIN-20260521-R7 影子灰度已发布回放' })
@@ -1320,7 +1334,7 @@ test.describe('Knowledge 文档治理', () => {
     await expect(auditPanel.locator('.replay-detail').getByText('TRACE-KG-QA-WO-DEMO-1018-OP-20-R7-SHADOW-GRAY-PUBLISHED', { exact: true })).toBeVisible()
     await expect(auditPanel.locator('.replay-detail').getByText(/跨线 OP-20 扭矩偏移影子灰度/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const reportCandidatePanel = page.locator('.quality-experiment-candidate-report')
     const reportR6Candidate = reportCandidatePanel.locator('.candidate-card').filter({ hasText: 'QK-TRAIN-20260521-R6 · R5 回滚触发' })

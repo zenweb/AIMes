@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMemoryLocalStorage } from './test-storage'
 import {
   readCustomerEquipmentFaultEvidence,
+  readCustomerEquipmentFaultEvidenceBackendFirst,
   readEquipmentDowntimeEvent,
   readEquipmentDowntimeEventBackendFirst,
   type EquipmentDowntimeEvent,
@@ -59,6 +60,28 @@ describe('equipment risk sync', () => {
     await expect(readEquipmentDowntimeEventBackendFirst()).resolves.toEqual(localEvent)
   })
 
+  it('falls back to local downtime when backend returns a partial downtime payload', async () => {
+    const localEvent = downtime()
+    writeEquipmentDowntimeEvent(localEvent)
+    httpGet.mockResolvedValueOnce({ data: { equipmentCode: 'CNC-001', downtimeHours: 4 } })
+
+    await expect(readEquipmentDowntimeEventBackendFirst()).resolves.toEqual(localEvent)
+  })
+
+  it('fails loud for equipment downtime refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('equipment downtime backend unavailable'))
+
+    await expect(readEquipmentDowntimeEventBackendFirst({ failLoud: true }))
+      .rejects.toThrow('equipment downtime backend unavailable')
+  })
+
+  it('fails loud when equipment downtime backend returns an incomplete latest record', async () => {
+    httpGet.mockResolvedValueOnce({ data: { equipmentCode: 'CNC-001', downtimeHours: 4 } })
+
+    await expect(readEquipmentDowntimeEventBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回残缺设备停机审计载荷')
+  })
+
   it('removes corrupt downtime JSON so scheduling does not reuse stale equipment risk', () => {
     localStorage.setItem('aimes_equipment_downtime_event', '{bad json')
 
@@ -114,6 +137,46 @@ describe('equipment risk sync', () => {
 
     expect(readCustomerEquipmentFaultEvidence()).toBeNull()
     expect(localStorage.getItem('aimes_customer_equipment_fault_evidence')).toBeNull()
+  })
+
+  it('falls back to local customer fault evidence when backend returns a partial telemetry payload', async () => {
+    const localEvidence = writeCustomerEquipmentFaultEvidence({
+      batchId: 'IMP-POC-EQ-FAULT-20260520-LOCAL',
+      equipmentCode: 'CNC-009',
+      affectedOrders: 'WO-009',
+      downtimeHours: 6,
+      capturedSignals: ['主轴振动', '维修工单'],
+      preparedAt: '2026-05-31T09:00:00.000Z',
+    })
+    httpGet.mockResolvedValueOnce({
+      data: {
+        batchId: 'IMP-POC-EQ-FAULT-20260520-PARTIAL',
+        equipmentCode: 'CNC-009',
+        capturedSignals: [],
+      },
+    })
+
+    await expect(readCustomerEquipmentFaultEvidenceBackendFirst()).resolves.toEqual(localEvidence)
+  })
+
+  it('fails loud for customer equipment fault refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('customer equipment fault backend unavailable'))
+
+    await expect(readCustomerEquipmentFaultEvidenceBackendFirst({ failLoud: true }))
+      .rejects.toThrow('customer equipment fault backend unavailable')
+  })
+
+  it('fails loud when customer equipment fault backend returns incomplete telemetry evidence', async () => {
+    httpGet.mockResolvedValueOnce({
+      data: {
+        batchId: 'IMP-POC-EQ-FAULT-20260520-PARTIAL',
+        equipmentCode: 'CNC-009',
+        capturedSignals: [],
+      },
+    })
+
+    await expect(readCustomerEquipmentFaultEvidenceBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回残缺客户设备故障审计载荷')
   })
 
   it('removes customer fault evidence without captured signals because POC governance cannot audit telemetry lineage', () => {

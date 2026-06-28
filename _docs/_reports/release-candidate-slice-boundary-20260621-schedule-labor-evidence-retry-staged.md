@@ -1,0 +1,251 @@
+﻿# Release Candidate Slice Boundary
+
+- GeneratedAt: 2026-06-21T22:34:30.7370901+08:00
+- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
+- Candidate: schedule-labor-evidence-retry
+- FirstSlice: labor-evidence-retry-offline-fallback
+- DiffMode: staged
+- Result: FAIL
+
+## Inspected Files
+
+- src/frontend/scripts/e2e.mjs
+- src/frontend/src/api/executionEvidence.ts
+- src/frontend/src/components/schedule/ScheduleBoard.vue
+- src/frontend/src/utils/labor-assignment-sync.ts
+- src/frontend/tests/e2e/scheduling.spec.ts
+
+## Diff Files Missing From Manifest
+
+- none
+
+## Included Slice Token Hits
+
+- LABOR_EVIDENCE_RETRY_TITLE
+- LEGACY_PERSONNEL_EVIDENCE_TITLES
+- mockLaborEvidenceRetryApis
+- 人员证据启动读取失败后可重试
+- 人员替班证据释放排产人员约束
+- 人员无有效替班候选时排产保持停工复核事件
+- loadStartupLaborEvidence
+- retryStartupLaborEvidence
+- currentLaborReassignment
+- currentActiveLaborQualificationBlock
+- queryLaborReassignments
+- queryLaborQualificationBlocks
+- readLaborReassignmentsBackendFirst
+- readLaborQualificationBlocksBackendFirst
+
+## Excluded Theme Token Hits
+
+- real-dhtmlx-rush-drag-writeback: RUSH_WRITEBACK_EVIDENCE_DIR
+- real-dhtmlx-rush-drag-writeback: 真实 dhtmlx
+- real-dhtmlx-rush-drag-writeback: dragRushTask
+- real-dhtmlx-rush-drag-writeback: createDhtmlxSchedulePlan
+- real-dhtmlx-rush-drag-writeback: withRushWindow
+- multi-objective-feedback-readback: 多目标对比
+- multi-objective-feedback-readback: adoption-feedback/latest
+- assistant-engineering-fail-loud: Assistant 恢复交接
+
+## Included Slice Token Locations
+
+- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
+- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
+- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
+- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
+- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
+- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
+- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
+- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
+- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
+- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
+- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
+- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
+- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
+- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
+- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
+- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
+- src/frontend/tests/e2e/scheduling.spec.ts:26: LEGACY_PERSONNEL_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:27: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:38: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:45: mockLaborEvidenceRetryApis
+- src/frontend/tests/e2e/scheduling.spec.ts:2905: 人员替班证据释放排产人员约束
+- src/frontend/tests/e2e/scheduling.spec.ts:2931: 人员证据启动读取失败后可重试
+- src/frontend/tests/e2e/scheduling.spec.ts:2959: 人员无有效替班候选时排产保持停工复核事件
+- src/frontend/tests/e2e/scheduling.spec.ts:3842: mockLaborEvidenceRetryApis
+
+## Excluded Theme Token Locations
+
+- src/frontend/scripts/e2e.mjs:9: 真实 dhtmlx
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2984: Assistant 恢复交接
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2992: Assistant 恢复交接
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2995: Assistant 恢复交接
+- src/frontend/src/components/schedule/ScheduleBoard.vue:2996: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:6: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:22: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:27: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:34: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:362: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:428: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:432: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:440: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:485: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:748: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:804: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:829: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:830: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:860: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:876: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:884: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:896: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:907: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:920: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:930: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:944: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:961: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:988: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1000: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1024: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1042: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1054: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1087: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1125: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1149: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1161: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1186: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1204: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1216: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1250: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1283: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1302: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1314: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1340: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1373: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1392: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1404: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1429: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1447: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1459: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1479: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1491: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1523: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1535: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1560: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1578: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1590: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1615: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1633: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1645: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1670: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1688: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1700: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1725: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1743: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1755: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1780: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1798: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1810: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1835: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1853: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1865: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1890: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1908: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1920: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1945: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1963: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1975: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2000: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2017: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2029: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2054: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2072: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2084: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2108: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2126: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2138: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2162: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2180: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2192: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2217: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2235: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2247: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2272: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2290: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2302: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2328: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2340: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2359: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2371: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2396: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2414: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2426: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2452: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2464: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2483: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2495: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2521: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2533: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2552: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2564: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2590: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2602: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2621: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2714: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:3123: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3143: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3280: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3286: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3295: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3314: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3327: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3340: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3343: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3345: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3347: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3348: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3356: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3359: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:3382: withRushWindow
+- src/frontend/tests/e2e/scheduling.spec.ts:3394: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3409: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3412: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3414: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3416: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3417: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3425: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3442: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3458: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3461: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3463: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3465: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3466: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3474: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3476: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:3498: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3630: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3736: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:3997: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:4000: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:4037: withRushWindow
+- src/frontend/tests/e2e/scheduling.spec.ts:4038: createDhtmlxSchedulePlan
+
+## Gate
+
+- Boundary check failed: staged diff contains excluded-theme tokens. Split the candidate before staging or pushing.

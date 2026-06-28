@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-06-21",
+  "branch": "V1",
+  "candidate": "schedule-labor-evidence-retry",
+  "hostedCiCovered": false,
+  "headCoveredByHostedCi": "47d65547557a8a6cf035327ae94455a1a1285daf",
+  "firstSlice": {
+    "name": "labor-evidence-retry-offline-fallback",
+    "files": [
+      "src/frontend/scripts/e2e.mjs",
+      "src/frontend/src/api/executionEvidence.ts",
+      "src/frontend/src/components/schedule/ScheduleBoard.vue",
+      "src/frontend/src/utils/labor-assignment-sync.ts",
+      "src/frontend/tests/e2e/scheduling.spec.ts",
+      "_docs/_changelog/20260621-schedule-labor-evidence-retry.md",
+      "_docs/_review/20260621-schedule-labor-evidence-retry.md",
+      "_docs/_todo/20260621-schedule-labor-evidence-retry-next-actions.md",
+      "_docs/_issue/20260621-schedule-labor-evidence-retry.md",
+      "_docs/_plan/20260621-schedule-labor-evidence-retry.md"
+    ],
+    "grepTokens": [
+      "LABOR_EVIDENCE_RETRY_TITLE",
+      "LEGACY_PERSONNEL_EVIDENCE_TITLES",
+      "mockLaborEvidenceRetryApis",
+      "人员证据启动读取失败后可重试",
+      "人员替班证据释放排产人员约束",
+      "人员无有效替班候选时排产保持停工复核事件",
+      "loadStartupLaborEvidence",
+      "retryStartupLaborEvidence",
+      "currentLaborReassignment",
+      "currentActiveLaborQualificationBlock",
+      "queryLaborReassignments",
+      "queryLaborQualificationBlocks",
+      "readLaborReassignmentsBackendFirst",
+      "readLaborQualificationBlocksBackendFirst",
+      "人员资质证据刷新失败"
+    ],
+    "localEvidence": [
+      "npm run test:e2e -- tests/e2e/scheduling.spec.ts -g \"人员证据启动读取失败后可重试\" => 1/1 passed",
+      "npm run test:e2e -- tests/e2e/scheduling.spec.ts -g \"人员替班证据释放排产人员约束|人员无有效替班候选时排产保持停工复核事件\" => 2/2 passed",
+      "npm run test:e2e -- tests/e2e/employee.spec.ts -g \"离线演示|backend skip\" => 2/2 passed"
+    ]
+  },
+  "excludedThemes": [
+    {
+      "name": "real-dhtmlx-rush-drag-writeback",
+      "grepTokens": ["RUSH_WRITEBACK_EVIDENCE_DIR", "真实 dhtmlx", "dragRushTask", "createDhtmlxSchedulePlan", "withRushWindow"]
+    },
+    {
+      "name": "multi-objective-feedback-readback",
+      "grepTokens": ["多目标对比", "restoreLatestFeedbackSnapshot", "missingFeedbackSnapshotFields", "adoption-feedback/latest"]
+    },
+    {
+      "name": "assistant-engineering-fail-loud",
+      "grepTokens": ["Assistant 恢复交接", "loadStartupEngineeringConstraints", "readAssistantEngineeringConstraintPackagesSafely"]
+    },
+    {
+      "name": "schedule-guidance-links",
+      "grepTokens": ["schedule-workbench-guidance", "schedule-workbench-help"]
+    }
+  ],
+  "stopConditions": [
+    "Do not stage unrelated dirty files.",
+    "Do not push if staged diff includes excluded theme tokens.",
+    "Do not claim strict v1.0.0 PASS while gray observation is deferred.",
+    "Regenerate hosted CI evidence only after the selected SHA is pushed."
+  ]
+}

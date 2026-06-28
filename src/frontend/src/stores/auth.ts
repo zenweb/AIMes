@@ -32,6 +32,9 @@ function loadUser(): AuthUser | null {
   const token = getLocalAccessToken()
   const cachedUser = getLocalUser()
   if (!token || !isCachedAuthUser(cachedUser)) return null
+  if (!token.startsWith('demo-token-')) {
+    setOfflineDemoMode(false)
+  }
   return { token, ...cachedUser }
 }
 
@@ -77,6 +80,11 @@ function clearUser() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+}
+
+export function clearAuthSession() {
+  state.user = null
+  clearUser()
 }
 
 function isBackendUnavailable(error: unknown): boolean {
@@ -158,8 +166,7 @@ export function useAuth() {
     },
 
     logout() {
-      state.user = null
-      clearUser()
+      clearAuthSession()
     },
   }
 }

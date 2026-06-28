@@ -11,6 +11,19 @@
       <p v-for="message in replaySyncErrors" :key="message">{{ message }}</p>
     </div>
 
+    <div id="audit-replay-help" class="audit-replay-guidance">
+      <div>
+        <strong>回放前请核对决策对象、执行人、证据编号、风险口径和留痕状态。</strong>
+        <span>Before replay, verify decision object, actor, evidence id, risk wording, and audit state.</span>
+      </div>
+      <nav aria-label="审计回放关联入口">
+        <a href="/production">生产报工 / Production</a>
+        <a href="/report">报表中心 / Reports</a>
+        <a href="#audit-config-approvals">配置审批 / Approvals</a>
+        <a href="#audit-replay-help">帮助 / Help</a>
+      </nav>
+    </div>
+
     <div class="replay-metrics">
       <div v-for="metric in metrics" :key="metric.label" class="metric-chip">
         <strong>{{ metric.value }}</strong>
@@ -49,6 +62,7 @@
       role="region"
       aria-live="polite"
       aria-labelledby="audit-replay-detail-title"
+      aria-describedby="audit-replay-help"
     >
       <div class="detail-title">
         <h4 id="audit-replay-detail-title">{{ selectedItem.title }} 回放链</h4>
@@ -71,7 +85,7 @@
       </div>
     </div>
 
-    <div class="approval-lane" role="list" aria-label="关键配置变更审批">
+    <div id="audit-config-approvals" class="approval-lane" role="list" aria-label="关键配置变更审批">
       <h4>关键配置变更审批</h4>
       <div
         v-for="approval in approvals"
@@ -95,10 +109,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { getAuditLogDetail, getAuditLogs } from '../../api/auditLog'
 import type { AuditLogDetail } from '../../types/auditLog'
-import { readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
+import { readAssistantActionAudits, readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
 import { readQualityCapaClosureBackendFirst, type QualityCapaClosure } from '../../utils/quality-capa-sync'
 import { readPocEvidenceGovernanceRecordsBackendFirst, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
-import { approvalStatusLabel, isApprovalOpen, readAgentConfigApprovalsBackendFirst, type AgentConfigApprovalRecord } from '../../utils/agent-config-approval-sync'
+import { approvalStatusLabel, isApprovalOpen, readAgentConfigApprovals, readAgentConfigApprovalsBackendFirst, type AgentConfigApprovalRecord } from '../../utils/agent-config-approval-sync'
 import { readPocReviewSignoffRecordBackendFirst, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readKnowledgeGovernanceReviewsBackendFirst, type KnowledgeGovernanceReviewRecord } from '../../utils/knowledge-governance-sync'
@@ -116,6 +130,7 @@ import {
   type QualityKnowledgeRetrainingVersionRecord,
 } from '../../utils/quality-knowledge-sample-sync'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 
 interface ReplayItem {
   id: string
@@ -154,6 +169,7 @@ const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationF
 const qualityGrayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
 const backendAgentActionAudits = ref<AuditLogDetail[]>([])
+const scheduleAdoptionFeedbackAudits = ref<AuditLogDetail[]>([])
 const replaySyncErrors = ref<string[]>([])
 const OTD_EVIDENCE_CHAIN_STORAGE_KEY = 'aimes_otd_evidence_chain'
 
@@ -223,10 +239,13 @@ const replayItems = computed<ReplayItem[]>(() => {
   const backendBusinessWriteItems = backendAgentActionAudits.value
     .map(mapAgentBusinessWriteAuditToReplay)
     .filter((item): item is ReplayItem => item !== null)
+  const scheduleAdoptionFeedbackItems = scheduleAdoptionFeedbackAudits.value
+    .map(mapScheduleAdoptionFeedbackAuditToReplay)
+    .filter((item): item is ReplayItem => item !== null)
   const otdEvidenceItems = otdEvidenceRecords.value.map(mapOtdEvidenceToReplay)
   const configApprovalItems = configApprovals.value.map(mapConfigApprovalToReplay)
   const signoffItems = pocReviewSignoff.value ? [mapPocReviewSignoffToReplay(pocReviewSignoff.value)] : []
-  const baseItems = [...backendBusinessWriteItems, ...qualityExperimentCandidateItems, ...qualityGrayReleaseMonitorItems, ...qualityGrayReleaseDecisionItems, ...qualityRecommendationFeedbackItems, ...knowledgeItems, ...otdEvidenceItems, ...signoffItems, ...pocEvidenceItems, ...assistantItems, ...configApprovalItems, ...baseReplayItems]
+  const baseItems = [...scheduleAdoptionFeedbackItems, ...backendBusinessWriteItems, ...qualityExperimentCandidateItems, ...qualityGrayReleaseMonitorItems, ...qualityGrayReleaseDecisionItems, ...qualityRecommendationFeedbackItems, ...knowledgeItems, ...otdEvidenceItems, ...signoffItems, ...pocEvidenceItems, ...assistantItems, ...configApprovalItems, ...baseReplayItems]
   if (!closure) return baseItems
 
   return [
@@ -333,6 +352,7 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
               `AI 生产助手识别可执行意图：${record.label}。`,
               `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
               `${statusText}，${routeText}。`,
+              `执行反馈：${record.resultMessage}`,
               '客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购/工程/质量责任确认三类动作。',
               `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
             ]
@@ -385,11 +405,62 @@ interface AgentBusinessWrite {
   targetStatus?: string
 }
 
+interface ScheduleAdoptionFeedbackAuditPayload {
+  Id?: string
+  SchedulePlanId?: string
+  WorkshopId?: string
+  OptimizationObjective?: string
+  Decision?: string
+  DecisionLabel?: string
+  ReasonCategory?: string
+  CategoryLabel?: string
+  ReasonDetail?: string
+  ObjectiveLabel?: string
+  OperatorUser?: string
+  AiTraceId?: string
+  AgentDecisionId?: string
+  CreatedAt?: string
+}
+
 const agentExecuteAuditActions = [
   'AgentExecutePurchaseAction',
   'AgentExecuteQualityDisposition',
   'AgentExecuteMaintenanceAction',
 ]
+
+async function readScheduleAdoptionFeedbackAudits(onError?: (label: string, error: unknown) => void): Promise<AuditLogDetail[]> {
+  try {
+    const page = await getAuditLogs('ScheduleAdoptionFeedbackUpsert', 1, 8)
+    if (!Array.isArray(page.items)) {
+      throw new Error('后端返回非数组审计载荷')
+    }
+    const details = await Promise.all(page.items.map(async item => {
+      try {
+        const detail = await getAuditLogDetail(item.id)
+        if (!isAuditLogDetailRecord(detail)) {
+          throw new Error(`${item.id} 后端返回非对象审计载荷`)
+        }
+        return detail
+      } catch (error: unknown) {
+        onError?.('排产采纳反馈审计详情', error)
+        return null
+      }
+    }))
+    return details.filter((item): item is AuditLogDetail => {
+      if (item === null) return false
+      const payload = parseScheduleAdoptionFeedbackAuditPayload(item, error => onError?.('排产采纳反馈审计详情', error))
+      if (!payload) return false
+      if (!payload.ReasonDetail?.trim()) {
+        onError?.('排产采纳反馈审计详情', new Error(`${item.id} 缺少原因说明`))
+        return false
+      }
+      return true
+    })
+  } catch (error: unknown) {
+    onError?.('排产采纳反馈审计', error)
+    return []
+  }
+}
 
 async function readBackendAgentActionAudits(onError?: (label: string, error: unknown) => void): Promise<AuditLogDetail[]> {
   const batches = await Promise.all(agentExecuteAuditActions.map(async action => {
@@ -448,7 +519,25 @@ function parseAgentActionAuditPayload(record: AuditLogDetail, onError?: (error: 
   }
   try {
     const parsed = JSON.parse(record.newValues) as AgentActionAuditPayload
-    return typeof parsed === 'object' && parsed !== null ? parsed : null
+    if (typeof parsed === 'object' && parsed !== null) return parsed
+    onError?.(new Error(`${record.id} 审计载荷不是对象`))
+    return null
+  } catch (error: unknown) {
+    onError?.(new Error(`${record.id} 审计载荷解析失败：${errorMessage(error, 'JSON 解析失败')}`))
+    return null
+  }
+}
+
+function parseScheduleAdoptionFeedbackAuditPayload(record: AuditLogDetail, onError?: (error: unknown) => void): ScheduleAdoptionFeedbackAuditPayload | null {
+  if (!record.newValues) {
+    onError?.(new Error(`${record.id} 审计载荷缺失`))
+    return null
+  }
+  try {
+    const parsed = JSON.parse(record.newValues) as ScheduleAdoptionFeedbackAuditPayload
+    if (typeof parsed === 'object' && parsed !== null) return parsed
+    onError?.(new Error(`${record.id} 审计载荷不是对象`))
+    return null
   } catch (error: unknown) {
     onError?.(new Error(`${record.id} 审计载荷解析失败：${errorMessage(error, 'JSON 解析失败')}`))
     return null
@@ -457,6 +546,52 @@ function parseAgentActionAuditPayload(record: AuditLogDetail, onError?: (error: 
 
 function isSupportedAgentBusinessWriteResource(resource?: string): boolean {
   return resource === 'purchase-order' || resource === 'quality-inspection' || resource === 'equipment'
+}
+
+function mapScheduleAdoptionFeedbackAuditToReplay(record: AuditLogDetail): ReplayItem | null {
+  const payload = parseScheduleAdoptionFeedbackAuditPayload(record)
+  const reasonDetail = payload?.ReasonDetail?.trim()
+  if (!payload || !reasonDetail) return null
+
+  const schedulePlanId = payload.SchedulePlanId ?? record.businessKey ?? '排产计划'
+  const workshopId = payload.WorkshopId ?? '车间'
+  const categoryLabel = payload.CategoryLabel ?? payload.ReasonCategory ?? '未分类原因'
+  const objectiveLabel = payload.ObjectiveLabel ?? payload.OptimizationObjective ?? '未指定目标'
+  const decisionLabel = payload.DecisionLabel ?? (payload.Decision === 'rejected' ? '已记录人工排产调整' : '已采纳 Agent 排产建议')
+  const traceId = payload.AiTraceId ?? record.traceId ?? record.id
+  const feedbackId = payload.Id ?? record.resourceId ?? record.id
+  const agentDecisionId = payload.AgentDecisionId ?? record.resourceId ?? '-'
+
+  return {
+    id: `schedule-adoption-feedback-${record.id}`,
+    type: '排产采纳反馈',
+    title: `排产采纳反馈：${decisionLabel}`,
+    summary: `${categoryLabel}：${reasonDetail}`,
+    object: `${schedulePlanId} / ${workshopId}`,
+    actor: payload.OperatorUser ?? record.userId,
+    evidence: agentDecisionId,
+    time: new Date(payload.CreatedAt ?? record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    status: payload.Decision === 'accepted' ? 'accepted' : 'executed',
+    traceId,
+    route: {
+      path: '/scheduling',
+      query: {
+        auditObjectType: 'schedule-adoption-feedback',
+        auditObjectId: feedbackId,
+        auditObjectLabel: schedulePlanId,
+        auditTraceId: traceId,
+      },
+    },
+    routeLabel: 'AI 排产',
+    risk: `采纳目标 ${objectiveLabel}，原因分类 ${categoryLabel}。`,
+    auditState: '排产采纳反馈、原因说明、优化目标和审计日志已归档',
+    steps: [
+      `排产计划 ${schedulePlanId} 在 ${workshopId} 记录 ${decisionLabel}。`,
+      `原因分类 ${categoryLabel}，优化目标 ${objectiveLabel}。`,
+      `调度员填写原因说明：${reasonDetail}`,
+      `反馈 ${feedbackId} 与 Agent 决策 ${agentDecisionId}、追踪号 ${traceId} 已串联归档。`,
+    ],
+  }
 }
 
 function mapAgentBusinessWriteAuditToReplay(record: AuditLogDetail): ReplayItem | null {
@@ -595,6 +730,16 @@ function mapKnowledgeGovernanceReviewToReplay(record: KnowledgeGovernanceReviewR
     traceId: record.traceId,
     risk: `有效期延至 ${record.validUntil}，可引用范围：${record.references.join(' / ')}。`,
     auditState: '知识复核、版本升级、索引重建和引用范围已归档',
+    route: {
+      path: '/knowledge',
+      query: {
+        auditObjectType: 'knowledge-governance',
+        auditObjectId: record.documentId,
+        auditObjectLabel: record.documentTitle,
+        auditTraceId: record.traceId,
+      },
+    },
+    routeLabel: '文档治理',
     steps: [
       `${record.documentTitle} ${record.version} 被识别为过期或待索引知识来源。`,
       `${record.reviewer} 执行“${record.action}”，生成审计编号 ${record.auditId}。`,
@@ -1441,6 +1586,7 @@ const metrics = computed(() => [
   { label: '供应网络回放', value: replayItems.value.filter(item => item.type === '供应网络证据').length },
   { label: '采购整改回放', value: replayItems.value.filter(item => item.type === '采购整改证据').length },
   { label: '业务落库回放', value: replayItems.value.filter(item => item.type === '业务落库动作').length },
+  { label: '排产反馈回放', value: replayItems.value.filter(item => item.type === '排产采纳反馈').length },
   { label: '人员能力回放', value: replayItems.value.filter(item => item.type === '人员能力证据').length },
   { label: '人员替班回放', value: replayItems.value.filter(item => item.type === '人员替班证据').length },
   { label: '人员阻断回放', value: replayItems.value.filter(item => item.type === '人员阻断证据').length },
@@ -1452,6 +1598,7 @@ const metrics = computed(() => [
 ])
 
 function recordReplaySyncError(label: string, error: unknown) {
+  if (isOfflineDemoError(error)) return
   replaySyncErrors.value.push(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
 }
 
@@ -1513,8 +1660,12 @@ onMounted(async () => {
   }
   try {
     assistantActionAudits.value = ensureReplayArray<AssistantActionAuditRecord>('助手动作审计', await readAssistantActionAuditsBackendFirst({ failLoud: true }))
+    if (assistantActionAudits.value.length === 0 && replaySyncErrors.value.some(error => error.includes('助手动作审计加载失败'))) {
+      assistantActionAudits.value = readAssistantActionAudits()
+    }
   } catch (error: unknown) {
     recordReplaySyncError('助手动作审计', error)
+    assistantActionAudits.value = readAssistantActionAudits()
   }
   try {
     pocEvidenceRecords.value = ensureReplayArray<PocEvidenceGovernanceRecord>('POC 证据治理', await readPocEvidenceGovernanceRecordsBackendFirst())
@@ -1523,11 +1674,15 @@ onMounted(async () => {
   }
   try {
     configApprovals.value = ensureReplayArray<AgentConfigApprovalRecord>('配置审批', await readAgentConfigApprovalsBackendFirst({ failLoud: true }))
+    if (configApprovals.value.length === 0 && replaySyncErrors.value.some(error => error.includes('配置审批加载失败'))) {
+      configApprovals.value = readAgentConfigApprovals()
+    }
   } catch (error: unknown) {
     recordReplaySyncError('配置审批', error)
+    configApprovals.value = readAgentConfigApprovals()
   }
   try {
-    const signoffRecord = await readPocReviewSignoffRecordBackendFirst()
+    const signoffRecord = await readPocReviewSignoffRecordBackendFirst({ failLoud: true })
     if (signoffRecord && !hasPocReviewSignoffReplayPayload(signoffRecord)) {
       recordReplaySyncError('POC 复盘签署', new Error(`${signoffRecord.id || signoffRecord.meetingId || 'POC 复盘签署'} 复盘签署审计载荷缺失`))
     } else {
@@ -1567,7 +1722,13 @@ onMounted(async () => {
   } catch (error: unknown) {
     recordReplaySyncError('业务落库审计', error)
   }
-  if (backendAgentActionAudits.value[0]) selectedId.value = `agent-business-write-${backendAgentActionAudits.value[0].id}`
+  try {
+    scheduleAdoptionFeedbackAudits.value = ensureReplayArray<AuditLogDetail>('排产采纳反馈审计', await readScheduleAdoptionFeedbackAudits(recordReplaySyncError))
+  } catch (error: unknown) {
+    recordReplaySyncError('排产采纳反馈审计', error)
+  }
+  if (scheduleAdoptionFeedbackAudits.value[0]) selectedId.value = `schedule-adoption-feedback-${scheduleAdoptionFeedbackAudits.value[0].id}`
+  else if (backendAgentActionAudits.value[0]) selectedId.value = `agent-business-write-${backendAgentActionAudits.value[0].id}`
   else if (qualityCapaClosure.value) selectedId.value = 'quality-capa-closure'
   else if (qualityExperimentCandidateRecords.value[0]) selectedId.value = `quality-experiment-candidate-${qualityExperimentCandidateRecords.value[0].id}`
   else if (qualityGrayReleaseMonitorRecords.value[0]) selectedId.value = `quality-gray-release-monitor-${qualityGrayReleaseMonitorRecords.value[0].id}`
@@ -1796,6 +1957,51 @@ h3 {
   background: #fff;
 }
 
+.audit-replay-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.audit-replay-guidance strong {
+  display: block;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.audit-replay-guidance span {
+  display: block;
+  margin-top: 3px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.audit-replay-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.audit-replay-guidance a {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .replay-detail ol {
   display: grid;
   gap: 6px;
@@ -1842,8 +2048,13 @@ h3 {
 }
 
 @media (max-width: 1180px) {
+  .audit-replay-guidance,
   .replay-grid {
     grid-template-columns: 1fr;
+  }
+
+  .audit-replay-guidance nav {
+    justify-content: flex-start;
   }
 }
 </style>

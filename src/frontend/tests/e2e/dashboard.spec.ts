@@ -16,10 +16,81 @@ function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`
 }
 
+const defaultDashboardData = {
+  kpi: {
+    scheduleAdherence: 92.5,
+    qualityPassRate: 98.1,
+    equipmentUtilization: 87.3,
+    activeOrders: 12,
+  },
+  equipment: [
+    { id: 'EQ-DASH-1', name: 'CNC-001', type: 'CNC', status: 'running', statusText: '运行中' },
+    { id: 'EQ-DASH-2', name: 'ASM-001', type: 'ASM', status: 'idle', statusText: '空闲' },
+  ],
+  todaySchedule: [],
+  materialAlerts: [],
+  qualityStats: {
+    totalInspections: 36,
+    passed: 35,
+    defects: 1,
+    pendingAnomalies: 0,
+    passRate: 98.1,
+  },
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('aimes_token', 'mock-e2e-token')
+    localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+  })
+  await page.route('**/api/v1/**', async route => {
+    const url = route.request().url()
+    if (url.includes('/api/v1/auth/refresh')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          token: 'mock-e2e-token',
+          refreshToken: 'mock-e2e-refresh',
+          expiresAt: '2026-12-31T23:59:59Z',
+        }),
+      })
+      return
+    }
+    if (url.includes('/api/v1/dashboard')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(defaultDashboardData),
+      })
+      return
+    }
+    if (url.includes('/api/v1/scheduling/otd-evidence')) {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'dashboard e2e uses local OTD evidence chain' }),
+      })
+      return
+    }
+    if (url.includes('/latest')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 }),
+    })
+  })
+})
+
 test.describe('Dashboard 生产概览', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.goto('dashboard')
@@ -71,12 +142,24 @@ test.describe('Dashboard 生产概览', () => {
     await runbook.getByRole('button', { name: '确认彩排并写入证据链' }).click()
     await expect(runbook.getByText('5 分钟 Demo 彩排已确认')).toBeVisible()
     await expect(runbook.getByText('TRACE-DEMO-RUNBOOK-20260521-REHEARSAL')).toBeVisible()
+    const rehearsalRecords = await page.evaluate(() => {
+      const records = JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]') as Array<{ id?: string }>
+      return records.filter(record => record.id === 'demo-rehearsal-20260521')
+    })
+    expect(rehearsalRecords).toHaveLength(1)
+    await page.route('**/api/v1/scheduling/otd-evidence', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(rehearsalRecords),
+      })
+    })
 
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '5 分钟 Demo 彩排已确认' })
-    await expect(evidence.locator('.evidence-topline span').getByText('演示彩排', { exact: true })).toBeVisible()
-    await expect(evidence.locator('code').getByText('TRACE-DEMO-RUNBOOK-20260521-REHEARSAL', { exact: true })).toBeVisible()
+    await expect(evidence.locator('.evidence-topline span').getByText('演示彩排', { exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(evidence.locator('code').getByText('TRACE-DEMO-RUNBOOK-20260521-REHEARSAL', { exact: true })).toBeVisible({ timeout: 15000 })
 
     await page.goto('audit-logs', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
@@ -134,9 +217,57 @@ test.describe('Dashboard 生产概览', () => {
 })
 
 test.describe('Dashboard 生产概览失败态', () => {
+  test('真实浏览器按后端生产概览响应原样展示 KPI，不回退随机指标', async ({ page }) => {
+    const dashboardRequests: string[] = []
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.route('**/api/v1/dashboard', async route => {
+      dashboardRequests.push(route.request().url())
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          kpi: {
+            scheduleAdherence: 91.7,
+            qualityPassRate: 88.4,
+            equipmentUtilization: 63.2,
+            activeOrders: 17,
+          },
+          equipment: [
+            { id: 'EQ-KPI-1', name: 'KPI-CNC-001', type: 'CNC', status: 'running', statusText: '运行中' },
+            { id: 'EQ-KPI-2', name: 'KPI-ASM-001', type: 'ASM', status: 'idle', statusText: '空闲' },
+          ],
+          todaySchedule: [],
+          materialAlerts: [],
+          qualityStats: {
+            totalInspections: 43,
+            passed: 38,
+            defects: 5,
+            pendingAnomalies: 2,
+            passRate: 88.4,
+          },
+        }),
+      })
+    })
+
+    await page.goto('dashboard?offlineDemo=0')
+
+    const kpiCards = page.locator('.kpi-card')
+    await expect(kpiCards.filter({ hasText: '排产达成率' }).locator('.kpi-value')).toHaveText('91.7%')
+    await expect(kpiCards.filter({ hasText: '质检合格率' }).locator('.kpi-value')).toHaveText('88.4%')
+    await expect(kpiCards.filter({ hasText: '设备利用率' }).locator('.kpi-value')).toHaveText('63.2%')
+    await expect(kpiCards.filter({ hasText: '进行中工单' }).locator('.kpi-value')).toHaveText('17')
+    expect(dashboardRequests.some(url => url.includes('/api/v1/dashboard'))).toBe(true)
+  })
+
   test('A/B 报告读取失败时显示默认 OTD 值来源提示', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
     await page.route('**/reports/latest-ab-report.json', async route => {
@@ -160,6 +291,7 @@ test.describe('Dashboard 生产概览失败态', () => {
   test('后端生产概览数据读取失败时显示 fail-loud 提示', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
       localStorage.setItem('aimes_offline_demo', 'false')
     })

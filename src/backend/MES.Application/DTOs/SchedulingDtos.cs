@@ -170,6 +170,25 @@ public class ObjectiveCompareItemDto
     public int GroupCount { get; set; }
     public double EstimatedCompletionRate { get; set; }
     public int TotalWorkOrders { get; set; }
+    public double RecommendationScore { get; set; }
+    public RecommendationScoreBreakdownDto RecommendationScoreBreakdown { get; set; } = new();
+}
+
+public class RecommendationScoreBreakdownDto
+{
+    public double UtilizationContribution { get; set; }
+    public double OnTimeDeliveryContribution { get; set; }
+    public double ChangeoverContribution { get; set; }
+}
+
+public class RecommendationScoreFormulaDto
+{
+    public string Version { get; set; } = string.Empty;
+    public double UtilizationWeight { get; set; }
+    public double OnTimeDeliveryWeight { get; set; }
+    public double ChangeoverWeight { get; set; }
+    public double ChangeoverNormalizationMinutes { get; set; }
+    public string Description { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -180,6 +199,7 @@ public class BatchOptimizeResultDto
     public List<ObjectiveCompareItemDto> Items { get; set; } = new();
     /// <summary>最优方案的目标名称</summary>
     public string? BestOverallObjective { get; set; }
+    public RecommendationScoreFormulaDto RecommendationScoreFormula { get; set; } = new();
 }
 
 /// <summary>
@@ -198,7 +218,8 @@ public class AdoptionFeedbackRequest
     [Required(ErrorMessage = "修改原因分类不能为空")]
     public string ReasonCategory { get; set; } = string.Empty;
 
-    public string? ReasonDetail { get; set; }
+    [Required(ErrorMessage = "修改原因说明不能为空")]
+    public string ReasonDetail { get; set; } = string.Empty;
     public List<string>? MovedOrderIds { get; set; }
     public string? AiTraceId { get; set; }
 }
@@ -208,7 +229,7 @@ public record AdoptionFeedbackSnapshotDto(
     string DecisionLabel,
     string ReasonCategory,
     string CategoryLabel,
-    string? ReasonDetail,
+    string ReasonDetail,
     string ObjectiveLabel,
     DateTime CreatedAt,
     string? TraceId,

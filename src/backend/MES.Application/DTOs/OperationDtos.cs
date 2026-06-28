@@ -24,6 +24,7 @@ public class OperationInfoDto
     public int PlannedQuantity { get; set; }
     public int CompletedQuantity { get; set; }
     public string Status { get; set; } = string.Empty;
+    public OperationInfoDto? NextOperation { get; set; }
 }
 
 public class StartOperationRequest

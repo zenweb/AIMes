@@ -1,0 +1,63 @@
+# 2026-06-22 Changelog: Current execution status refresh
+
+- Updated `_docs/_reports/current-execution-status-20260622.md` to reflect the current staged index accurately.
+- Replaced the outdated statement that `schedule-labor-evidence-retry` is the sole staged package.
+- Recorded the latest staged-index focused validation: 6 frontend unit files / 109 tests passed, plus `git diff --cached --check` passed.
+- Clarified that the current staged index is a multi-slice bundle requiring review or splitting before more source work is added.
+- Added live employee entry evidence for `offlineDemo=0`: auth 200, employee API 200, `aimes_offline_demo=false`, JWT present.
+- Corrected the prior stale test-count statement and recorded the staged-index `formatScheduleSaveDate(...)` helper fix.
+- Fixed staged schedule guidance links so contextual evidence navigation stays under `/scheduling` (`/scheduling/audit-logs`, `/scheduling/report`) instead of root paths.
+- Hardened staged Assistant recovery handoff closure so a secondary Assistant engineering package refresh failure no longer hides the closed recovery suggestion.
+- Hardened staged outsourcing schedule release feedback so successful release archives an explicit trace note and keeps the release confirmation visible after risk refresh.
+- Hardened staged batch objective feedback so it appends progress/success/failure notes instead of overwriting existing business sync evidence.
+- Hardened staged base schedule feedback sync so progress/success/failure notes append instead of overwriting existing startup/business sync evidence.
+- Hardened staged outsourcing schedule release failure handling so release failures append instead of overwriting existing adoption/business sync evidence.
+- Added 2026-06-22 employee live recheck evidence: direct backend `5003` login/API probe returned 3 employees, and real browser `4173` entry with `offlineDemo=0` showed `EMP-001` / `张三` without offline-demo skip or employee load failure.
+- Added employee recovery-link closure evidence: bilingual fallback prompt, `/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0` target, real browser closure, and staged-index E2E pass.
+- Clarified that staged `tests/e2e/employee.spec.ts` contains only the minimal recovery-link E2E hunk while the worktree still has broader unstaged personnel E2E candidates.
+- Re-audited the Schedule staged/worktree boundary and fixed two current-worktree regressions: guidance links are bound back to `/scheduling/audit-logs` and `/scheduling/report`, and drag writeback success restored `formatScheduleSaveDate(...)` so the formal save status renders instead of throwing.
+- Re-ran Schedule focused evidence: 2 unit files / 38 tests passed, and 4 scheduling E2E scenarios passed for Agent backend success/403/API fallback plus rush adoption formal writeback.
+- Hardened current-worktree Schedule post-closure paths: batch objective feedback now appends without hiding prior sync evidence, outsourcing release keeps its archive trace visible when risk refresh falls back, and Assistant recovery closure survives secondary engineering/risk refresh failures.
+- Re-ran Schedule focused unit evidence after post-closure hardening: 2 files passed, 41 tests passed.
+- Completed remaining Schedule feedback-note classification: initialization restore may replace its startup note, while all post-decision business feedback paths now append so startup audit warnings remain visible after successful or failed feedback sync.
+- Re-ran Schedule focused unit evidence after feedback-note classification: 2 files passed, 42 tests passed.
+- Re-ran repository diff hygiene checks: `git diff --cached --check` passed for the staged bundle and `git diff --check` passed for the full current worktree; only LF-to-CRLF normalization warnings were emitted.
+- Re-ran staged frontend package lint for the ESLint-covered files: the targeted `npx eslint ... --max-warnings 0` command passed. `middleware/auth.global.ts` is outside the current ESLint match and remains covered by the Nuxt auth middleware unit tests.
+- Re-ran staged frontend focused unit coverage: 8 files passed, 150 tests passed.
+- Re-ran staged frontend focused E2E coverage: scheduling Agent/writeback scenarios passed 4 Chromium tests, and employee recovery-link E2E passed 1 Chromium test.
+- Re-ran frontend full unit baseline: `npm run test:unit` passed 118 files and 1253 tests.
+- Re-ran backend current-worktree baselines: unit tests passed 452, architecture tests passed 129, and integration tests passed 216.
+- Re-ran remaining backend baseline checks: evaluation tests passed 3, and `dotnet build src/backend/AIMes.slnx --no-restore --configuration Debug` succeeded with 0 warnings and 0 errors.
+- Closed the Admin real-browser regression where demo-token sessions were cleared after protected navigation unless the entry URL/query explicitly preserved `offlineDemo=1`.
+- Updated Admin E2E entries and protected-route assertions so offline-demo scenarios enter via `admin?offlineDemo=1` and tolerate preserved query strings.
+- Hardened Admin related-route navigation through `openRelatedRoute(...)` so offline-demo query state survives jumps from Admin governance cards to audit, employee, production, schedule, report, and other protected boards.
+- Added a live-mock Admin fail-loud path for startup config/notification load failures with `offlineDemo=0`, backend token state, and API 503 responses.
+- Fixed Admin guidance hyperlinks so static contextual links use the `/scheduling` app entry (`/scheduling/audit-logs`, `/scheduling/knowledge/documents`) instead of root-relative paths.
+- Re-ran Admin focused validation: `npm run test:unit -- tests/unit/admin-board.test.ts` passed 32 tests, and `npm run test:e2e -- tests/e2e/admin.spec.ts` passed 33 Chromium tests after the route-link hardening.
+- Attempted full frontend E2E with `npm run test:e2e`; the run exceeded the 10-minute guard and was stopped after confirming and clearing the test runner / preview / Playwright worker / temporary Playwright Chrome process chain.
+- Closed the first full-E2E red cluster in `tests/e2e/audit.spec.ts`: mock-auth audit tests were reaching protected routes with backend APIs returning unauthenticated responses, causing login/dashboard navigation churn before `.audit-board` rendered.
+- Added an audit E2E default API/auth-refresh mock so tests keep a stable authenticated browser session while individual fail-loud scenarios can still override their specific backend routes.
+- Narrowed ambiguous audit E2E `Production` assertions to the audit table cell so contextual navigation links do not cause Playwright strict-mode failures.
+- Added `failLoud` support to `readPocReviewSignoffRecordBackendFirst(...)` and enabled it in Audit replay so malformed backend POC signoff payloads are surfaced instead of silently falling back to local evidence.
+- Re-ran focused audit validation: `npm run test:unit -- tests/unit/poc-review-signoff-sync.test.ts tests/unit/audit-decision-replay-panel.test.ts` passed 66 tests, and `npm run test:e2e -- tests/e2e/audit.spec.ts` passed 36 Chromium tests.
+- Closed the Anomaly focused real-browser cluster by reusing the current Playwright page for the live-mock startup/list failure scenario instead of creating a second page that raced against the offline-demo init script.
+- Re-ran focused Anomaly validation: `npm run test:e2e -- tests/e2e/anomaly.spec.ts` passed 9 Chromium tests.
+- Closed the Barcode focused real-browser cluster where demo-token sessions were cleared after clicking from Barcode to Scanner without an explicit `offlineDemo=1` query.
+- Updated Barcode E2E to seed an explicit offline-demo session and enter through `barcode?offlineDemo=1`.
+- Hardened `BarcodePrintBoard` so the Scanner contextual link preserves `offlineDemo=1` when the current page or stored session is in offline-demo mode.
+- Added Barcode unit coverage for the Scanner link preserving offline-demo context and re-ran focused validation: `npm run test:unit -- tests/unit/barcode-print-board.test.ts` passed 10 tests, and `npm run test:e2e -- tests/e2e/barcode.spec.ts` passed 2 Chromium tests.
+- Closed the Chat focused real-browser cluster where the empty-state scenario was masked by the default `/api/v1/**` 503 response for `/llm/status`, causing `ChatPanel` to render an LLM status alert instead of `.empty-chat`.
+- Updated the Chat empty-state E2E mock to return a successful `/api/v1/llm/status` payload and a full empty chat-history response shape.
+- Re-ran Chat focused validation: `npm run test:e2e -- tests/e2e/chat.spec.ts --grep "空状态显示|生产完工后解释"` passed 2 Chromium tests, and `npm run test:e2e -- tests/e2e/chat.spec.ts` passed 37 Chromium tests.
+- Closed the Dashboard focused real-browser cluster by adding a stable default auth/API mock surface, preserving OTD local fallback behavior, and making the demo rehearsal Report readback use the exact recorded local evidence.
+- Re-ran Dashboard focused validation: `npm run test:e2e -- tests/e2e/dashboard.spec.ts --grep "后端生产概览数据读取失败"` passed 1 Chromium test, `npm run test:e2e -- tests/e2e/dashboard.spec.ts --grep "5 分钟 Demo 彩排确认"` passed 1 Chromium test, and `npm run test:e2e -- tests/e2e/dashboard.spec.ts` passed 13 Chromium tests.
+- Closed the Demo asset capture focused real-browser cluster by seeding explicit offline-demo auth state, entering protected routes with `?offlineDemo=1`, replacing `networkidle` waits with page landmarks, and raising the spec timeout to 60 seconds.
+- Re-ran Demo asset capture validation: `npm run test:e2e -- tests/e2e/demo-asset-capture.spec.ts` passed 5 Chromium tests and refreshed the five screenshot assets.
+- Closed the Engineering data focused real-browser cluster by stabilizing auth refresh/default API mocks, preserving scheduling fallback/readback behavior, and letting Report use its demo fallback when `/api/v1/report/dashboard` is unavailable.
+- Updated the Engineering data fail-loud assertion so the surfaced API 503 error is treated as the expected visible backend failure instead of expecting an unrelated storage cleanup message.
+- Re-ran Engineering data focused validation: `npm run test:e2e -- tests/e2e/engineering-data.spec.ts --grep "BOM 替代料工程确认释放排产约束并进入 OTD 审计|AI 排产同步工程约束到 OTD 证据链与审计回放"` passed 2 Chromium tests, and full `tests/e2e/engineering-data.spec.ts` passed 16 Chromium tests.
+
+Boundary:
+- Status refresh plus staged-index audit fix for schedule contextual links.
+- No unstaged worktree candidates were broad-staged.
+- This is not a v1.0.0 completion claim.

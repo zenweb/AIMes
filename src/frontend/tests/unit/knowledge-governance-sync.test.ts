@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMemoryLocalStorage } from './test-storage'
 import {
   createDefaultKnowledgeGovernanceReview,
+  readKnowledgeGovernanceDocuments,
   readKnowledgeGovernanceReview,
+  readKnowledgeGovernancePendingDocuments,
   readKnowledgeGovernanceReviews,
   readKnowledgeGovernanceReviewsBackendFirst,
   writeKnowledgeGovernanceReview,
@@ -58,6 +60,21 @@ describe('knowledge governance sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/knowledge-governance-reviews', { params: { take: 12 } })
   })
 
+  it('ignores incomplete backend governance reviews so reviewer audit trace and references stay auditable', async () => {
+    const localRecord = writeKnowledgeGovernanceReview(review())
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'knowledge-governance-review-kg-equipment-cnc-maint',
+          documentId: 'kg-equipment-cnc-maint',
+          auditId: 'AUD-KG-PARTIAL',
+        },
+      ],
+    })
+
+    await expect(readKnowledgeGovernanceReviewsBackendFirst()).resolves.toEqual([localRecord])
+  })
+
   it('falls back to local governance reviews when backend fails but local audit records exist', async () => {
     const localRecord = writeKnowledgeGovernanceReview(review())
     httpGet.mockRejectedValueOnce(new Error('knowledge governance backend unavailable'))
@@ -96,5 +113,31 @@ describe('knowledge governance sync', () => {
 
     expect(readKnowledgeGovernanceReviews()).toEqual([])
     expect(localStorage.getItem('aimes_knowledge_governance_reviews')).toBeNull()
+  })
+
+  it('applies approved review evidence so expired maintenance documents become indexed audit sources', () => {
+    const record = writeKnowledgeGovernanceReview(review({
+      summary: 'CNC-01 主轴维护手册已完成 V1.2 复核，可解释主轴振动停机影响和维护窗口。',
+      references: ['AI 生产助手', '设备维护', '风险预警', 'AI 排产', '审计回放'],
+    }))
+
+    const reviewedDocument = readKnowledgeGovernanceDocuments()
+      .find(document => document.id === record.documentId)
+    const pendingDocuments = readKnowledgeGovernancePendingDocuments()
+
+    expect(reviewedDocument).toEqual(expect.objectContaining({
+      id: 'kg-equipment-cnc-maint',
+      version: 'V1.2',
+      indexStatus: 'indexed',
+      validUntil: '2026-12-31',
+      freshnessStatus: '有效',
+      owner: '设备主管 / 知识库管理员',
+      auditHint: 'AUD-KG-REINDEX-20260520-001',
+      recommendedAction: '已复核并重建索引，可作为 AI 助手、排产和风险复核的正式引用来源。',
+    }))
+    expect(reviewedDocument?.summary).toContain('主轴振动停机影响')
+    expect(reviewedDocument?.references).toContain('审计回放')
+    expect(pendingDocuments.map(document => document.id)).not.toContain('kg-equipment-cnc-maint')
+    expect(pendingDocuments.map(document => document.id)).toEqual(['kg-quality-torque'])
   })
 })

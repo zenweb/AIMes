@@ -301,11 +301,22 @@ export function readAlternateMaterialApproval(): AlternateMaterialApproval | nul
   }
 }
 
-export async function readAlternateMaterialApprovalBackendFirst(): Promise<AlternateMaterialApproval | null> {
+interface BackendFirstReadOptions {
+  failLoud?: boolean
+}
+
+export async function readAlternateMaterialApprovalBackendFirst(options?: BackendFirstReadOptions): Promise<AlternateMaterialApproval | null> {
   try {
     const { getLatestAlternateMaterialApproval } = await import('../api/engineeringEvidence')
-    return await getLatestAlternateMaterialApproval() ?? readAlternateMaterialApproval()
-  } catch {
+    const record = await getLatestAlternateMaterialApproval(options)
+    if (record && !isAlternateMaterialApproval(record) && options?.failLoud) {
+      throw new Error('后端返回非完整替代料放行证据')
+    }
+    return record && isAlternateMaterialApproval(record)
+      ? record
+      : readAlternateMaterialApproval()
+  } catch (error) {
+    if (options?.failLoud) throw error
     return readAlternateMaterialApproval()
   }
 }
@@ -364,12 +375,18 @@ export function readEngineeringChangeImpactAnalysis(): EngineeringChangeImpactAn
   }
 }
 
-export async function readEngineeringChangeImpactAnalysisBackendFirst(): Promise<EngineeringChangeImpactAnalysis | null> {
+export async function readEngineeringChangeImpactAnalysisBackendFirst(options?: BackendFirstReadOptions): Promise<EngineeringChangeImpactAnalysis | null> {
   try {
     const { getLatestEngineeringChangeImpact } = await import('../api/engineeringEvidence')
-    const record = await getLatestEngineeringChangeImpact()
-    return record ? normalizeEngineeringChangeImpact(record) : readEngineeringChangeImpactAnalysis()
-  } catch {
+    const record = await getLatestEngineeringChangeImpact(options)
+    if (record && !isEngineeringChangeImpactAnalysis(record) && options?.failLoud) {
+      throw new Error('后端返回非完整工程变更影响证据')
+    }
+    return record && isEngineeringChangeImpactAnalysis(record)
+      ? normalizeEngineeringChangeImpact(record)
+      : readEngineeringChangeImpactAnalysis()
+  } catch (error) {
+    if (options?.failLoud) throw error
     return readEngineeringChangeImpactAnalysis()
   }
 }
@@ -481,10 +498,16 @@ export function readRouteCapabilityValidation(): RouteCapabilityValidation | nul
   }
 }
 
-export async function readRouteCapabilityValidationBackendFirst(options?: { failLoud?: boolean }): Promise<RouteCapabilityValidation | null> {
+export async function readRouteCapabilityValidationBackendFirst(options?: BackendFirstReadOptions): Promise<RouteCapabilityValidation | null> {
   try {
     const { getLatestRouteCapabilityValidation } = await import('../api/engineeringEvidence')
-    return await getLatestRouteCapabilityValidation(options) ?? readRouteCapabilityValidation()
+    const record = await getLatestRouteCapabilityValidation(options)
+    if (record && !isRouteCapabilityValidation(record) && options?.failLoud) {
+      throw new Error('后端返回非完整工艺能力放行证据')
+    }
+    return record && isRouteCapabilityValidation(record)
+      ? record
+      : readRouteCapabilityValidation()
   } catch (error) {
     if (options?.failLoud) throw error
     return readRouteCapabilityValidation()

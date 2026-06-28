@@ -8,11 +8,22 @@ const getWorkOrderById = vi.hoisted(() => vi.fn())
 const optimizeSchedule = vi.hoisted(() => vi.fn())
 const rescheduleItem = vi.hoisted(() => vi.fn())
 const submitAdoptionFeedback = vi.hoisted(() => vi.fn())
+const getLatestAdoptionFeedback = vi.hoisted(() => vi.fn())
+const readScheduleFeedbackSnapshot = vi.hoisted(() => vi.fn())
 const getBottleneckEquipmentIds = vi.hoisted(() => vi.fn())
 const getRiskDashboard = vi.hoisted(() => vi.fn())
 const confirmOutsourcingScheduleRelease = vi.hoisted(() => vi.fn())
 const readLatestOutsourcingCommitmentPackage = vi.hoisted(() => vi.fn())
 const readLatestOutsourcingCommitmentPackageBackendFirst = vi.hoisted(() => vi.fn())
+const readAlternateMaterialApprovalBackendFirst = vi.hoisted(() => vi.fn())
+const readEngineeringChangeImpactAnalysisBackendFirst = vi.hoisted(() => vi.fn())
+const readRouteCapabilityValidationBackendFirst = vi.hoisted(() => vi.fn())
+const closeAssistantRecoveryPackage = vi.hoisted(() => vi.fn())
+const readAssistantRecoveryPackagesBackendFirst = vi.hoisted(() => vi.fn(async () => []))
+const readAssistantEngineeringConstraintPackagesBackendFirst = vi.hoisted(() => vi.fn(async () => []))
+const readLaborQualificationBlocksBackendFirst = vi.hoisted(() => vi.fn(async () => []))
+const readLaborReassignmentsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
+const downloadCsv = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/components/gantt/GanttChart.vue', () => ({
   default: {
@@ -28,6 +39,7 @@ vi.mock('../../src/api/scheduling', () => ({
   getWorkOrderById,
   rescheduleItem,
   submitAdoptionFeedback,
+  getLatestAdoptionFeedback,
 }))
 
 vi.mock('../../src/api/equipment', () => ({
@@ -41,7 +53,7 @@ vi.mock('../../src/api/risk', () => ({
 vi.mock('../../src/composables/useExport', () => ({
   useExport: () => ({
     csvFilename: (name: string) => `${name}.csv`,
-    downloadCsv: vi.fn(),
+    downloadCsv,
   }),
 }))
 
@@ -86,16 +98,17 @@ vi.mock('../../src/utils/anomaly-dispatch-sync', () => ({
 }))
 
 vi.mock('../../src/utils/schedule-feedback-sync', () => ({
+  readScheduleFeedbackSnapshot,
   writeScheduleFeedbackSnapshot: vi.fn(),
 }))
 
 vi.mock('../../src/utils/engineering-change-sync', () => ({
   readAlternateMaterialApproval: vi.fn(() => null),
-  readAlternateMaterialApprovalBackendFirst: emptyAsyncRecordMock(),
+  readAlternateMaterialApprovalBackendFirst,
   readEngineeringChangeImpactAnalysis: vi.fn(() => null),
-  readEngineeringChangeImpactAnalysisBackendFirst: emptyAsyncRecordMock(),
+  readEngineeringChangeImpactAnalysisBackendFirst,
   readRouteCapabilityValidation: vi.fn(() => null),
-  readRouteCapabilityValidationBackendFirst: emptyAsyncRecordMock(),
+  readRouteCapabilityValidationBackendFirst,
 }))
 
 vi.mock('../../src/utils/outsourcing-commitment-sync', () => ({
@@ -114,13 +127,13 @@ vi.mock('../../src/utils/otd-evidence-chain-sync', () => ({
 }))
 
 vi.mock('../../src/utils/assistant-action-package-sync', () => ({
-  closeAssistantRecoveryPackage: vi.fn(),
+  closeAssistantRecoveryPackage,
   readAssistantRecoveryPackages: vi.fn(() => []),
-  readAssistantRecoveryPackagesBackendFirst: vi.fn(async () => []),
+  readAssistantRecoveryPackagesBackendFirst,
 }))
 
 vi.mock('../../src/utils/assistant-engineering-constraint-package-sync', () => ({
-  readAssistantEngineeringConstraintPackagesBackendFirst: vi.fn(async () => []),
+  readAssistantEngineeringConstraintPackagesBackendFirst,
 }))
 
 vi.mock('../../src/utils/monitoring-situation-escalation-sync', () => ({
@@ -139,7 +152,9 @@ vi.mock('../../src/utils/risk-sla-review-sync', () => ({
 
 vi.mock('../../src/utils/labor-assignment-sync', () => ({
   readLaborQualificationBlock: vi.fn(() => null),
+  readLaborQualificationBlocksBackendFirst,
   readLaborReassignment: vi.fn(() => null),
+  readLaborReassignmentsBackendFirst,
 }))
 
 const ToolbarStub = {
@@ -271,6 +286,52 @@ function makeReceivedOutsourcingCommitment() {
   }
 }
 
+function makeClosedAssistantRecoveryPackage() {
+  return {
+    id: 'assistant-recovery-1',
+    title: 'Assistant 恢复交接',
+    auditCode: 'AUD-AST-RECOVERY-001',
+    traceId: 'TRACE-AST-RECOVERY-001',
+    actor: '调度员 李工',
+    role: 'Scheduler',
+    workOrders: 'WO-RUSH-9001',
+    priority: 'critical',
+    owner: '生产经理审批',
+    dueAt: '今日 15:30',
+    scheduleWindow: 'CNC-003 夜班窗口',
+    scheduleAction: '插入 WO-RUSH-9001 并保留 OP-20 复核。',
+    riskImpact: '急单恢复窗口依赖替代料和质量复核。',
+    riskSuggestion: '闭环后复核排产窗口。',
+    otdImpact: '+6%',
+    delayImpact: '-1 单',
+    changeoverImpact: '+8min',
+    status: 'closed',
+    statusLabel: '执行交接已闭环',
+    purchaseActionStatus: 'closed',
+    purchaseActionSummary: '采购已确认替代料到货',
+    qualityActionStatus: 'closed',
+    qualityActionSummary: '质量已完成 OP-20 复核',
+    closureAuditCode: 'AUD-AST-RECOVERY-CLOSED-001',
+    closureTraceId: 'TRACE-AST-RECOVERY-CLOSED-001',
+    closureSummary: '执行交接闭环，等待排产复核。',
+    closedAt: '2026-06-22T10:30:00.000Z',
+    closedBy: '调度员 李工',
+    summary: 'Assistant 恢复交接包已闭环，排产需要复核恢复窗口。',
+    dispatchSteps: [
+      {
+        module: 'AI 排产',
+        owner: '调度员 李工',
+        action: '复核恢复窗口',
+        evidence: 'TRACE-AST-RECOVERY-CLOSED-001',
+        status: 'closed',
+        result: '已闭环',
+        closedAt: '2026-06-22T10:30:00.000Z',
+      },
+    ],
+    createdAt: '2026-06-22T09:30:00.000Z',
+  }
+}
+
 describe('ScheduleBoard', () => {
   beforeEach(() => {
     getCurrentPlan.mockResolvedValue(makePlan())
@@ -295,10 +356,31 @@ describe('ScheduleBoard', () => {
     readLatestOutsourcingCommitmentPackage.mockReturnValue(null)
     readLatestOutsourcingCommitmentPackageBackendFirst.mockReset()
     readLatestOutsourcingCommitmentPackageBackendFirst.mockResolvedValue(null)
+    readAlternateMaterialApprovalBackendFirst.mockReset()
+    readAlternateMaterialApprovalBackendFirst.mockResolvedValue(null)
+    readEngineeringChangeImpactAnalysisBackendFirst.mockReset()
+    readEngineeringChangeImpactAnalysisBackendFirst.mockResolvedValue(null)
+    readRouteCapabilityValidationBackendFirst.mockReset()
+    readRouteCapabilityValidationBackendFirst.mockResolvedValue(null)
+    closeAssistantRecoveryPackage.mockReset()
+    closeAssistantRecoveryPackage.mockReturnValue(null)
+    readAssistantRecoveryPackagesBackendFirst.mockReset()
+    readAssistantRecoveryPackagesBackendFirst.mockResolvedValue([])
+    readAssistantEngineeringConstraintPackagesBackendFirst.mockReset()
+    readAssistantEngineeringConstraintPackagesBackendFirst.mockResolvedValue([])
+    readLaborQualificationBlocksBackendFirst.mockReset()
+    readLaborQualificationBlocksBackendFirst.mockResolvedValue([])
+    readLaborReassignmentsBackendFirst.mockReset()
+    readLaborReassignmentsBackendFirst.mockResolvedValue([])
+    downloadCsv.mockReset()
     optimizeSchedule.mockReset()
     rescheduleItem.mockReset()
     getWorkOrderById.mockReset()
     submitAdoptionFeedback.mockReset()
+    getLatestAdoptionFeedback.mockReset()
+    getLatestAdoptionFeedback.mockResolvedValue(null)
+    readScheduleFeedbackSnapshot.mockReset()
+    readScheduleFeedbackSnapshot.mockReturnValue(null)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -307,6 +389,182 @@ describe('ScheduleBoard', () => {
         delta: { otd: 0.0333, delayedOrdersReduced: 1, changeoverMinutesReduced: 0 },
       }),
     }))
+  })
+
+
+  it('keeps the schedule plan usable when startup engineering constraint sync fails', async () => {
+    readEngineeringChangeImpactAnalysisBackendFirst.mockRejectedValueOnce(new Error('engineering startup evidence unavailable'))
+
+    const wrapper = mountScheduleBoard()
+    await flushPromises()
+
+    expect(getCurrentPlan).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('OTD 预测90%')
+    const status = wrapper.get('.warnings-bar')
+    expect(status.attributes('role')).toBe('status')
+    expect(status.attributes('aria-live')).toBe('polite')
+    expect(status.text()).toContain('工程约束启动证据加载失败')
+    expect(status.text()).toContain('engineering startup evidence unavailable')
+    expect(readAlternateMaterialApprovalBackendFirst).toHaveBeenCalledWith({ failLoud: true })
+    expect(readEngineeringChangeImpactAnalysisBackendFirst).toHaveBeenCalledWith({ failLoud: true })
+    expect(readRouteCapabilityValidationBackendFirst).toHaveBeenCalledWith({ failLoud: true })
+  })
+
+  it('restores the local adoption feedback snapshot after reloading the schedule page', async () => {
+    readScheduleFeedbackSnapshot.mockReturnValueOnce({
+      decision: 'accepted',
+      decisionLabel: '已采纳批量对比方案',
+      reasonCategory: 'batch_optimize_apply',
+      categoryLabel: '批量对比采纳',
+      reasonDetail: '从批量对比中选择此方案',
+      objectiveLabel: '综合平衡',
+      createdAt: '2026-06-14T10:30:00.000Z',
+      traceId: 'TRACE-SCH-FEEDBACK-BATCH-balanced',
+      source: 'local',
+    })
+
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: {
+        props: ['latestFeedback', 'syncNote'],
+        template: '<section class="feedback-probe"><p class="feedback-record">{{ latestFeedback?.decisionLabel }} {{ latestFeedback?.categoryLabel }} {{ latestFeedback?.objectiveLabel }} {{ latestFeedback?.reasonDetail }}</p><p class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p></section>',
+      },
+    })
+    await flushPromises()
+
+    const record = wrapper.get('.feedback-record')
+    expect(record.text()).toContain('已采纳批量对比方案')
+    expect(record.text()).toContain('批量对比采纳')
+    expect(record.text()).toContain('综合平衡')
+    expect(record.text()).toContain('从批量对比中选择此方案')
+  })
+
+  it('prefers backend latest feedback over a stale local snapshot when reloading the schedule page', async () => {
+    getLatestAdoptionFeedback.mockResolvedValueOnce({
+      decision: 'accepted',
+      decisionLabel: '后端已采纳 Agent 推荐',
+      reasonCategory: 'backend_adoption',
+      categoryLabel: '后端正式采纳',
+      reasonDetail: '后台同步的最新调度员决策',
+      objectiveLabel: 'OTD 优先',
+      createdAt: '2026-06-14T11:30:00.000Z',
+      traceId: 'TRACE-SCH-FEEDBACK-BACKEND',
+      source: 'backend',
+    })
+    readScheduleFeedbackSnapshot.mockReturnValueOnce({
+      decision: 'accepted',
+      decisionLabel: '已采纳批量对比方案',
+      reasonCategory: 'batch_optimize_apply',
+      categoryLabel: '批量对比采纳',
+      reasonDetail: '从批量对比中选择此方案',
+      objectiveLabel: '综合平衡',
+      createdAt: '2026-06-14T10:30:00.000Z',
+      traceId: 'TRACE-SCH-FEEDBACK-BATCH-balanced',
+      source: 'local',
+    })
+
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: {
+        props: ['latestFeedback', 'syncNote'],
+        template: '<section class="feedback-probe"><p class="feedback-record">{{ latestFeedback?.decisionLabel }} {{ latestFeedback?.categoryLabel }} {{ latestFeedback?.objectiveLabel }} {{ latestFeedback?.reasonDetail }}</p><p class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p></section>',
+      },
+    })
+    await flushPromises()
+
+    const record = wrapper.get('.feedback-record')
+    expect(record.text()).toContain('后端已采纳 Agent 推荐')
+    expect(record.text()).toContain('后端正式采纳')
+    expect(record.text()).toContain('OTD 优先')
+    expect(record.text()).toContain('后台同步的最新调度员决策')
+    expect(record.text()).not.toContain('批量对比采纳')
+  })
+
+  it('falls back to the local snapshot and fails loud when backend latest feedback is not auditable', async () => {
+    getLatestAdoptionFeedback.mockResolvedValueOnce({
+      decision: 'accepted',
+      decisionLabel: '后端已采纳 Agent 推荐',
+      reasonCategory: 'backend_adoption',
+      categoryLabel: '后端正式采纳',
+      reasonDetail: '',
+      objectiveLabel: 'OTD 优先',
+      createdAt: '2026-06-14T11:30:00.000Z',
+      source: 'backend',
+    })
+    readScheduleFeedbackSnapshot.mockReturnValueOnce({
+      decision: 'accepted',
+      decisionLabel: '已采纳批量对比方案',
+      reasonCategory: 'batch_optimize_apply',
+      categoryLabel: '批量对比采纳',
+      reasonDetail: '从批量对比中选择此方案',
+      objectiveLabel: '综合平衡',
+      createdAt: '2026-06-14T10:30:00.000Z',
+      traceId: 'TRACE-SCH-FEEDBACK-BATCH-balanced',
+      source: 'local',
+    })
+
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: {
+        props: ['latestFeedback', 'syncNote'],
+        template: '<section class="feedback-probe"><p class="feedback-record">{{ latestFeedback?.decisionLabel }} {{ latestFeedback?.categoryLabel }} {{ latestFeedback?.objectiveLabel }} {{ latestFeedback?.reasonDetail }}</p><p class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p></section>',
+      },
+    })
+    await flushPromises()
+
+    const record = wrapper.get('.feedback-record')
+    expect(record.text()).toContain('已采纳批量对比方案')
+    expect(record.text()).toContain('批量对比采纳')
+    expect(record.text()).toContain('综合平衡')
+    expect(record.text()).not.toContain('后端正式采纳')
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('后端最新采纳反馈不可审计')
+    expect(note.text()).toContain('缺少原因说明')
+    expect(note.text()).toContain('已回退本地最近反馈')
+  })
+  it('guides scheduler operators with bilingual links before optimization and adoption actions', async () => {
+    const wrapper = mountScheduleBoard()
+    await flushPromises()
+
+    const guidance = wrapper.get('.schedule-workbench-guidance')
+    expect(guidance.text()).toContain('优化或采纳前，请确认目标、锁定期、证据链和回写路径。')
+    expect(guidance.text()).toContain('Before optimizing or adopting a plan, confirm objective, lock window, evidence trail, and writeback path.')
+
+    const links = guidance.findAll('a')
+    expect(links.map(link => link.attributes('href'))).toEqual([
+      '/scheduling/audit-logs',
+      '/scheduling/report',
+      '#schedule-workbench-help',
+    ])
+
+    const help = wrapper.get('#schedule-workbench-help')
+    expect(help.text()).toContain('先复核影响范围，再执行优化、采纳或拖拽回写。')
+    expect(help.text()).toContain('Review impact scope before optimization, adoption, or drag writeback.')
+  })
+
+  it('closes the feedback form after scheduler feedback is submitted', async () => {
+    const wrapper = mountScheduleBoard({
+      GanttToolbar: {
+        emits: ['feedback'],
+        template: '<button type="button" class="feedback-button" @click="$emit(\'feedback\')">feedback</button>',
+      },
+      FeedbackForm: {
+        props: ['visible'],
+        emits: ['submitted'],
+        template: `
+          <section class="feedback-form-probe" :data-visible="String(visible)">
+            <button type="button" class="submit-feedback-form" @click="$emit('submitted')">submit</button>
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.feedback-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.feedback-form-probe').attributes('data-visible')).toBe('true')
+
+    await wrapper.get('.submit-feedback-form').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.feedback-form-probe').attributes('data-visible')).toBe('false')
   })
 
   it('announces optimization failures through an alert banner', async () => {
@@ -609,6 +867,117 @@ describe('ScheduleBoard', () => {
     expect(status.text()).not.toContain('当前显示演示排产数据')
   })
 
+  it('lets operators retry startup labor evidence and clears the warning after recovery', async () => {
+    readLaborQualificationBlocksBackendFirst
+      .mockRejectedValueOnce(new Error('labor evidence API unavailable'))
+      .mockResolvedValue([])
+    readLaborReassignmentsBackendFirst.mockResolvedValue([])
+    getRiskDashboard.mockResolvedValue({
+      materialRisks: [],
+      equipmentRisks: [],
+      orderRisks: [],
+    })
+    const wrapper = mountScheduleBoard()
+    await flushPromises()
+
+    const warning = wrapper.get('.warnings-bar')
+    expect(warning.text()).toContain('人员约束启动证据加载失败')
+    expect(warning.text()).toContain('labor evidence API unavailable')
+
+    await wrapper.get('.warning-action').trigger('click')
+    await flushPromises()
+
+    expect(readLaborQualificationBlocksBackendFirst).toHaveBeenCalledTimes(2)
+    expect(readLaborReassignmentsBackendFirst).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.warning-action').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('人员约束启动证据加载失败')
+  })
+
+  it('exports the current schedule plan rows to CSV from the toolbar', async () => {
+    const wrapper = mountScheduleBoard({
+      GanttToolbar: {
+        emits: ['export-csv'],
+        template: '<button type="button" class="export-schedule" @click="$emit(\'export-csv\')">export</button>',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.export-schedule').trigger('click')
+
+    expect(downloadCsv).toHaveBeenCalledTimes(1)
+    expect(downloadCsv).toHaveBeenCalledWith(
+      '排产计划.csv',
+      ['工单号', '产品', '设备', '开始时间', '结束时间', '状态', '进度'],
+      expect.arrayContaining([
+        expect.arrayContaining(['WO-001', '100%']),
+      ]),
+    )
+  })
+
+  it('generates a stop-work agent suggestion from active labor qualification block evidence', async () => {
+    const activeBlock = {
+      id: 'labor-qualification-block-WO-013-heat-treatment',
+      workOrderNumber: 'WO-013',
+      operationCode: 'OP-10',
+      operationCodes: ['OP-10', 'OP-20'],
+      operationName: '淬火 / 回火',
+      blockedEmployeeNumber: 'EMP-003',
+      blockedEmployeeName: '王五',
+      blockedCertification: '热处理上岗证',
+      blockedExpiresAt: '2026-05-25',
+      requiredSkill: '热处理',
+      requiredTeam: '乙班',
+      requiredShift: '夜班',
+      reviewerEmployeeNumber: 'EMP-004',
+      reviewerName: '赵六',
+      reviewerRole: '工程放行',
+      reason: '热处理资质临期且无有效替班候选。',
+      auditId: 'AUD-LABOR-BLOCK-20260520-001',
+      traceId: 'TRACE-LABOR-BLOCK-WO-013-OP-10',
+      createdAt: '2026-05-20T08:00:00.000Z',
+      status: 'active',
+    }
+    readLaborQualificationBlocksBackendFirst.mockResolvedValueOnce([activeBlock])
+    readLaborReassignmentsBackendFirst.mockResolvedValueOnce([])
+    const wrapper = mountScheduleBoard({
+      ScheduleEventQueuePanel: {
+        props: {
+          events: Array,
+          activeSuggestion: Object,
+        },
+        emits: ['generate'],
+        template: `
+          <section class="event-queue-stub">
+            <button
+              v-for="event in events"
+              :key="event.id"
+              type="button"
+              class="generate-labor-suggestion"
+              :data-event-id="event.id"
+              @click="$emit('generate', event)"
+            >
+              {{ event.title }}
+            </button>
+            <p class="suggestion-title">{{ activeSuggestion?.title ?? '' }}</p>
+            <p class="suggestion-action">{{ activeSuggestion?.action ?? '' }}</p>
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    const laborButton = wrapper.find('[data-event-id="evt-labor-block-labor-qualification-block-WO-013-heat-treatment"]')
+    expect(laborButton.exists()).toBe(true)
+    await laborButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.suggestion-title').text()).toContain('人员资质停工复核建议')
+    const action = wrapper.get('.suggestion-action').text()
+    expect(action).toContain('AUD-LABOR-BLOCK-20260520-001')
+    expect(action).toContain('EMP-003 王五')
+    expect(action).toContain('生产开工不得放行')
+  })
+
   it('clears a stale optimization error after a later optimization succeeds', async () => {
     optimizeSchedule
       .mockRejectedValueOnce(new Error('optimizer unavailable'))
@@ -674,6 +1043,101 @@ describe('ScheduleBoard', () => {
     expect(detail.attributes('data-error')).toContain('work order API unavailable')
   })
 
+  it('shows backend work order details after clicking a scheduled task', async () => {
+    getWorkOrderById.mockResolvedValueOnce({
+      id: 'wo-1',
+      orderNumber: 'WO-001-BACKEND',
+      productCode: 'PRD-BACKEND',
+      productName: '后端精密轴承组件',
+      plannedQuantity: 120,
+      completedQuantity: 48,
+      plannedStartDate: '2026-06-01T08:00:00.000Z',
+      plannedEndDate: '2026-06-01T12:00:00.000Z',
+      status: 'in_progress',
+      workshopId: 'workshop-1',
+      priority: 1,
+      progressPercentage: 40,
+      createdAt: '2026-05-31T08:00:00.000Z',
+      updatedAt: '2026-06-01T09:00:00.000Z',
+    })
+    const wrapper = mountScheduleBoard({
+      GanttChart: {
+        emits: ['task-click'],
+        template: '<button type="button" class="task-bar" @click="$emit(\'task-click\', \'item-1\')">WO-001</button>',
+      },
+      OrderDetailPanel: OrderDetailPanelProbe,
+    })
+    await flushPromises()
+
+    await wrapper.get('.task-bar').trigger('click')
+    await flushPromises()
+
+    expect(getWorkOrderById).toHaveBeenCalledWith('wo-1')
+    const detail = wrapper.get('.order-detail-probe')
+    expect(detail.attributes('data-visible')).toBe('true')
+    expect(detail.attributes('data-loading')).toBe('false')
+    expect(detail.attributes('data-error')).toBe('')
+    expect(detail.attributes('data-order-number')).toBe('WO-001-BACKEND')
+    expect(detail.attributes('data-explanation-work-order')).toBe('WO-001')
+  })
+
+  it('opens backend work order details when operators double-click a scheduled task', async () => {
+    getWorkOrderById.mockResolvedValueOnce({
+      id: 'wo-1',
+      orderNumber: 'WO-001-DBLCLICK',
+      productCode: 'PRD-DBL',
+      productName: '双击后端工单',
+      plannedQuantity: 80,
+      completedQuantity: 20,
+      plannedStartDate: '2026-06-01T08:00:00.000Z',
+      plannedEndDate: '2026-06-01T12:00:00.000Z',
+      status: 'in_progress',
+      workshopId: 'workshop-1',
+      priority: 1,
+      progressPercentage: 25,
+      createdAt: '2026-05-31T08:00:00.000Z',
+      updatedAt: '2026-06-01T09:00:00.000Z',
+    })
+    const wrapper = mountScheduleBoard({
+      GanttChart: {
+        emits: ['task-dbl-click'],
+        template: '<button type="button" class="task-bar" @click="$emit(\'task-dbl-click\', \'item-1\')">WO-001</button>',
+      },
+      OrderDetailPanel: OrderDetailPanelProbe,
+    })
+    await flushPromises()
+
+    await wrapper.get('.task-bar').trigger('click')
+    await flushPromises()
+
+    expect(getWorkOrderById).toHaveBeenCalledWith('wo-1')
+    const detail = wrapper.get('.order-detail-probe')
+    expect(detail.attributes('data-visible')).toBe('true')
+    expect(detail.attributes('data-loading')).toBe('false')
+    expect(detail.attributes('data-error')).toBe('')
+    expect(detail.attributes('data-order-number')).toBe('WO-001-DBLCLICK')
+  })
+
+  it('ignores equipment group clicks without opening a work order detail request', async () => {
+    const wrapper = mountScheduleBoard({
+      GanttChart: {
+        emits: ['task-click'],
+        template: '<button type="button" class="equipment-row" @click="$emit(\'task-click\', \'eq-eq-1\')">CNC-01</button>',
+      },
+      OrderDetailPanel: OrderDetailPanelProbe,
+    })
+    await flushPromises()
+
+    await wrapper.get('.equipment-row').trigger('click')
+    await flushPromises()
+
+    expect(getWorkOrderById).not.toHaveBeenCalled()
+    const detail = wrapper.get('.order-detail-probe')
+    expect(detail.attributes('data-visible')).toBe('false')
+    expect(detail.attributes('data-loading')).toBe('false')
+    expect(detail.attributes('data-error')).toBe('')
+  })
+
   it('announces schedule feedback sync status as a polite update', async () => {
     submitAdoptionFeedback.mockResolvedValueOnce(undefined)
     const wrapper = mountScheduleBoard({
@@ -688,6 +1152,41 @@ describe('ScheduleBoard', () => {
     expect(note.text()).toContain('反馈已同步后台')
     expect(note.attributes('role')).toBe('status')
     expect(note.attributes('aria-live')).toBe('polite')
+  })
+
+  it('preserves startup feedback audit warning when schedule feedback sync succeeds', async () => {
+    getLatestAdoptionFeedback.mockResolvedValueOnce({
+      decision: 'accepted',
+      decisionLabel: '后端已采纳 Agent 推荐',
+      reasonCategory: 'backend_adoption',
+      categoryLabel: '后端正式采纳',
+      reasonDetail: '',
+      objectiveLabel: 'OTD 优先',
+      createdAt: '2026-06-14T11:30:00.000Z',
+    })
+    readScheduleFeedbackSnapshot.mockReturnValueOnce({
+      decision: 'accepted',
+      decisionLabel: '已采纳批量对比方案',
+      reasonCategory: 'batch_optimize_apply',
+      categoryLabel: '批量对比采纳',
+      reasonDetail: '从批量对比中选择此方案',
+      objectiveLabel: '综合平衡',
+      createdAt: '2026-06-14T10:30:00.000Z',
+    })
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.sync-note').text()).toContain('后端最新采纳反馈不可审计')
+
+    await wrapper.get('.btn.accept').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('后端最新采纳反馈不可审计')
+    expect(note.text()).toContain('反馈已同步后台')
   })
 
   it('includes the backend reason when schedule feedback sync fails', async () => {
@@ -705,6 +1204,186 @@ describe('ScheduleBoard', () => {
     expect(note.text()).toContain('feedback API unavailable')
     expect(note.attributes('role')).toBe('status')
     expect(note.attributes('aria-live')).toBe('polite')
+  })
+
+  it('fails loud when rush-order feedback cannot sync without a schedule plan id', async () => {
+    getCurrentPlan.mockResolvedValueOnce({
+      ...makePlan(),
+      id: '',
+    })
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: {
+        props: ['syncNote'],
+        emits: ['decision'],
+        template: `
+          <section>
+            <button
+              type="button"
+              class="accept-rush-feedback"
+              @click="$emit('decision', {
+                decision: 'accepted',
+                reasonCategory: 'rush_event_agent',
+                categoryLabel: '急单插入',
+                reasonDetail: '接受急单 Agent 建议但计划 ID 缺失'
+              })"
+            >
+              accept
+            </button>
+            <p v-if="syncNote" class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p>
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.accept-rush-feedback').trigger('click')
+    await flushPromises()
+
+    expect(submitAdoptionFeedback).not.toHaveBeenCalled()
+    const note = wrapper.get('.sync-note')
+    expect(note.attributes('role')).toBe('status')
+    expect(note.attributes('aria-live')).toBe('polite')
+    expect(note.text()).toContain('反馈已写入本地复盘记录')
+    expect(note.text()).toContain('当前排产计划缺少 ID')
+    expect(note.text()).toContain('暂未同步后台')
+    expect(note.text()).toContain('尚未写入正式排产计划')
+  })
+
+  it('keeps the closed assistant recovery suggestion visible when handoff refresh fails', async () => {
+    const closedPackage = makeClosedAssistantRecoveryPackage()
+    closeAssistantRecoveryPackage.mockReturnValueOnce(closedPackage)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleRecoveryHandoffPanel: {
+        emits: ['close-handoff'],
+        template: '<button type="button" class="close-handoff" @click="$emit(\'close-handoff\', \'assistant-recovery-1\')">close</button>',
+      },
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+    readAssistantRecoveryPackagesBackendFirst.mockRejectedValueOnce(new Error('assistant recovery refresh unavailable'))
+
+    await wrapper.get('.close-handoff').trigger('click')
+    await flushPromises()
+
+    expect(closeAssistantRecoveryPackage).toHaveBeenCalledWith('assistant-recovery-1', '调度员 李工')
+    expect(readAssistantRecoveryPackagesBackendFirst).toHaveBeenCalledWith({ failLoud: true })
+    const note = wrapper.get('.sync-note')
+    expect(note.attributes('role')).toBe('status')
+    expect(note.attributes('aria-live')).toBe('polite')
+    expect(note.text()).toContain('Assistant 恢复交接闭环刷新失败')
+    expect(note.text()).toContain('assistant recovery refresh unavailable')
+    const suggestion = wrapper.get('.agent-suggestion')
+    expect(suggestion.text()).toContain('Assistant 恢复交接闭环复核建议')
+    expect(suggestion.text()).toContain('TRACE-AST-RECOVERY-CLOSED-001')
+  })
+
+  it('keeps the closed assistant recovery package visible when backend refresh omits it', async () => {
+    const closedPackage = makeClosedAssistantRecoveryPackage()
+    closeAssistantRecoveryPackage.mockReturnValueOnce(closedPackage)
+    readAssistantRecoveryPackagesBackendFirst.mockResolvedValueOnce([])
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleRecoveryHandoffPanel: {
+        props: ['packages'],
+        emits: ['close-handoff'],
+        template: `
+          <section class="handoff-probe">
+            <button type="button" class="close-handoff" @click="$emit('close-handoff', 'assistant-recovery-1')">close</button>
+            <span v-for="record in packages" :key="record.id" class="handoff-record">{{ record.id }} {{ record.closureTraceId }}</span>
+          </section>
+        `,
+      },
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+
+    await wrapper.get('.close-handoff').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('Assistant 恢复交接闭环刷新缺少刚闭环的执行包')
+    expect(note.text()).toContain('assistant-recovery-1')
+    expect(wrapper.get('.handoff-record').text()).toContain('assistant-recovery-1')
+    expect(wrapper.get('.handoff-record').text()).toContain('TRACE-AST-RECOVERY-CLOSED-001')
+  })
+
+  it('fails loud when assistant recovery handoff closure cannot be persisted locally', async () => {
+    closeAssistantRecoveryPackage.mockReturnValueOnce(null)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleRecoveryHandoffPanel: {
+        emits: ['close-handoff'],
+        template: '<button type="button" class="close-handoff" @click="$emit(\'close-handoff\', \'missing-recovery-package\')">close</button>',
+      },
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+
+    await wrapper.get('.close-handoff').trigger('click')
+    await flushPromises()
+
+    expect(closeAssistantRecoveryPackage).toHaveBeenCalledWith('missing-recovery-package', '调度员 李工')
+    expect(readAssistantRecoveryPackagesBackendFirst).not.toHaveBeenCalledWith({ failLoud: true })
+    const note = wrapper.get('.sync-note')
+    expect(note.attributes('role')).toBe('status')
+    expect(note.attributes('aria-live')).toBe('polite')
+    expect(note.text()).toContain('Assistant 恢复交接闭环保存失败')
+    expect(note.text()).toContain('missing-recovery-package')
+  })
+
+  it('keeps the closed assistant recovery suggestion visible when engineering package refresh fails', async () => {
+    const closedPackage = makeClosedAssistantRecoveryPackage()
+    closeAssistantRecoveryPackage.mockReturnValueOnce(closedPackage)
+    readAssistantRecoveryPackagesBackendFirst.mockResolvedValueOnce([closedPackage])
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleRecoveryHandoffPanel: {
+        emits: ['close-handoff'],
+        template: '<button type="button" class="close-handoff" @click="$emit(\'close-handoff\', \'assistant-recovery-1\')">close</button>',
+      },
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+    readAssistantEngineeringConstraintPackagesBackendFirst.mockRejectedValueOnce(new Error('assistant engineering package unavailable'))
+
+    await wrapper.get('.close-handoff').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.attributes('role')).toBe('status')
+    expect(note.attributes('aria-live')).toBe('polite')
+    expect(note.text()).toContain('Assistant 工程约束包刷新失败')
+    expect(note.text()).toContain('assistant engineering package unavailable')
+    const suggestion = wrapper.get('.agent-suggestion')
+    expect(suggestion.text()).toContain('Assistant 恢复交接闭环复核建议')
+    expect(suggestion.text()).toContain('TRACE-AST-RECOVERY-CLOSED-001')
+  })
+
+  it('keeps the closed assistant recovery suggestion visible when risk events fail to refresh', async () => {
+    const closedPackage = makeClosedAssistantRecoveryPackage()
+    closeAssistantRecoveryPackage.mockReturnValueOnce(closedPackage)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleRecoveryHandoffPanel: {
+        emits: ['close-handoff'],
+        template: '<button type="button" class="close-handoff" @click="$emit(\'close-handoff\', \'assistant-recovery-1\')">close</button>',
+      },
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+    readAssistantRecoveryPackagesBackendFirst.mockResolvedValueOnce([closedPackage])
+    getRiskDashboard.mockRejectedValueOnce(new Error('risk events unavailable after assistant closure'))
+
+    await wrapper.get('.close-handoff').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('Assistant 恢复交接闭环后风险事件刷新失败')
+    expect(note.text()).toContain('risk events unavailable after assistant closure')
+    const suggestion = wrapper.get('.agent-suggestion')
+    expect(suggestion.text()).toContain('Assistant 恢复交接闭环复核建议')
+    expect(suggestion.text()).toContain('TRACE-AST-RECOVERY-CLOSED-001')
   })
 
   it('keeps drag reschedule save failures visible after reloading the plan', async () => {
@@ -740,6 +1419,63 @@ describe('ScheduleBoard', () => {
     expect(alert.text()).toContain('reschedule API unavailable')
   })
 
+  it('fails loud when drag reschedule cannot write back without a schedule plan id', async () => {
+    getCurrentPlan.mockResolvedValueOnce({
+      ...makePlan(),
+      id: '',
+    })
+    const wrapper = mountScheduleBoard({
+      GanttChart: {
+        emits: ['task-drag-end'],
+        template: `
+          <button
+            type="button"
+            class="drag-task"
+            @click="$emit('task-drag-end', 'item-1', new Date('2026-06-01T09:00:00.000Z'), new Date('2026-06-01T13:00:00.000Z'))"
+          >
+            drag
+          </button>
+        `,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.drag-task').trigger('click')
+    await flushPromises()
+
+    expect(rescheduleItem).not.toHaveBeenCalled()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('error-banner')
+    expect(alert.text()).toContain('保存失败')
+    expect(alert.text()).toContain('当前排产计划缺少 ID')
+  })
+
+  it('fails loud when drag reschedule cannot find a writable task', async () => {
+    const wrapper = mountScheduleBoard({
+      GanttChart: {
+        emits: ['task-drag-end'],
+        template: `
+          <button
+            type="button"
+            class="drag-task"
+            @click="$emit('task-drag-end', 'missing-item', new Date('2026-06-01T09:00:00.000Z'), new Date('2026-06-01T13:00:00.000Z'))"
+          >
+            drag
+          </button>
+        `,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.drag-task').trigger('click')
+    await flushPromises()
+
+    expect(rescheduleItem).not.toHaveBeenCalled()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('error-banner')
+    expect(alert.text()).toContain('保存失败')
+    expect(alert.text()).toContain('未找到可写回的排产任务 missing-item')
+  })
   it('announces batch objective feedback sync failures after applying a compared plan', async () => {
     submitAdoptionFeedback.mockRejectedValueOnce(new Error('batch feedback API unavailable'))
     optimizeSchedule.mockResolvedValueOnce({
@@ -774,6 +1510,95 @@ describe('ScheduleBoard', () => {
     expect(note.text()).toContain('batch feedback API unavailable')
   })
 
+  it('closes the comparison panel and syncs audit feedback after applying a compared plan', async () => {
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    optimizeSchedule.mockResolvedValueOnce({
+      plan: {
+        ...makePlan(),
+        id: 'plan-balanced-apply',
+        planName: '综合平衡批量对比方案',
+        onTimeDeliveryRate: 0.95,
+      },
+      assignments: [],
+      estimatedCompletionRate: 0.96,
+      utilizationRate: 0.89,
+      warnings: ['综合平衡方案已应用'],
+    })
+    const wrapper = mountScheduleBoard({
+      GanttToolbar: {
+        emits: ['compare'],
+        template: '<button type="button" class="compare-button" @click="$emit(\'compare\')">compare</button>',
+      },
+      ScheduleFeedbackPanel: false,
+      ParetoCompare: {
+        props: ['visible'],
+        emits: ['apply'],
+        template: `
+          <section class="pareto-compare-probe" :data-visible="String(visible)">
+            <button type="button" class="apply-objective" @click="$emit('apply', 'balanced')">采用综合方案</button>
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.compare-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.pareto-compare-probe').attributes('data-visible')).toBe('true')
+
+    await wrapper.get('.apply-objective').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.pareto-compare-probe').attributes('data-visible')).toBe('false')
+    expect(optimizeSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      optimizationObjective: 'balanced',
+    }))
+    expect(submitAdoptionFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      schedulePlanId: 'plan-1',
+      workshopId: 'workshop-1',
+      optimizationObjective: 'balanced',
+      reasonCategory: 'batch_optimize_apply',
+      reasonDetail: '从批量对比中选择此方案',
+    }))
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('批量方案采纳反馈正在同步后台')
+    expect(note.text()).toContain('批量方案采纳反馈已同步后台')
+    expect(wrapper.text()).toContain('综合平衡方案已应用')
+  })
+
+  it('preserves existing business sync notes when batch objective feedback fails', async () => {
+    submitAdoptionFeedback
+      .mockRejectedValueOnce(new Error('existing adoption sync unavailable'))
+      .mockRejectedValueOnce(new Error('batch feedback API unavailable'))
+    optimizeSchedule.mockResolvedValueOnce({
+      plan: makePlan(),
+      assignments: [],
+      estimatedCompletionRate: 0.94,
+      utilizationRate: 0.87,
+      warnings: ['综合平衡方案已应用'],
+    })
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ParetoCompare: {
+        emits: ['apply'],
+        template: '<button type="button" class="apply-objective" @click="$emit(\'apply\', \'balanced\')">采用综合方案</button>',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.btn.accept').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.sync-note').text()).toContain('existing adoption sync unavailable')
+
+    await wrapper.get('.apply-objective').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('existing adoption sync unavailable')
+    expect(note.text()).toContain('批量方案采纳反馈同步失败')
+    expect(note.text()).toContain('batch feedback API unavailable')
+  })
+
   it('announces outsourcing schedule release failures after adopting an agent suggestion', async () => {
     const outsourcingCommitment = makeReceivedOutsourcingCommitment()
     readLatestOutsourcingCommitmentPackage.mockReturnValue(outsourcingCommitment)
@@ -798,6 +1623,34 @@ describe('ScheduleBoard', () => {
     expect(note.attributes('aria-live')).toBe('polite')
     expect(note.text()).toContain('外协排产释放同步失败')
     expect(note.text()).toContain('outsourcing release storage unavailable')
+  })
+
+  it('fails loud when outsourcing schedule release returns no audit record after adoption', async () => {
+    const outsourcingCommitment = makeReceivedOutsourcingCommitment()
+    readLatestOutsourcingCommitmentPackage.mockReturnValue(outsourcingCommitment)
+    readLatestOutsourcingCommitmentPackageBackendFirst.mockResolvedValue(outsourcingCommitment)
+    confirmOutsourcingScheduleRelease.mockReturnValueOnce(null)
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+
+    await wrapper.get('.event-card.resolved button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.adopt-suggestion').trigger('click')
+    await flushPromises()
+
+    expect(confirmOutsourcingScheduleRelease).toHaveBeenCalledWith('product-flange', '调度员 李工')
+    const note = wrapper.get('.sync-note')
+    expect(note.attributes('role')).toBe('status')
+    expect(note.attributes('aria-live')).toBe('polite')
+    expect(note.text()).toContain('外协排产释放同步失败')
+    expect(note.text()).toContain('未拿到释放审计记录')
+    expect(note.text()).toContain('product-flange')
+    expect(note.text()).not.toContain('外协排产释放已归档')
+    expect(wrapper.get('.agent-suggestion').text()).toContain('外协到货后的排产释放复核')
   })
 
   it('archives outsourcing schedule release evidence after adopting the received commitment suggestion', async () => {
@@ -832,4 +1685,241 @@ describe('ScheduleBoard', () => {
     expect(suggestion.text()).toContain('OTD +2% 已释放归档')
     expect(suggestion.text()).toContain('延期 0 单外部等待')
   })
+
+  it('keeps outsourcing release confirmation visible when risk refresh fails after release', async () => {
+    const outsourcingCommitment = makeReceivedOutsourcingCommitment()
+    const releasedCommitment = {
+      ...outsourcingCommitment,
+      statusLabel: '排产释放已确认',
+      scheduleReleaseTraceId: 'TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521',
+      scheduleReleaseAuditId: 'AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001',
+      scheduleReleaseMessage: '法兰组件外协到货已释放到排产窗口。',
+    }
+    readLatestOutsourcingCommitmentPackage.mockReturnValue(outsourcingCommitment)
+    readLatestOutsourcingCommitmentPackageBackendFirst.mockResolvedValue(outsourcingCommitment)
+    confirmOutsourcingScheduleRelease.mockReturnValueOnce(releasedCommitment)
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+    getRiskDashboard.mockRejectedValueOnce(new Error('risk refresh unavailable after release'))
+
+    await wrapper.get('.event-card.resolved button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.adopt-suggestion').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('外协排产释放已归档')
+    expect(note.text()).toContain('风险事件刷新失败')
+    expect(note.text()).toContain('risk refresh unavailable after release')
+    expect(note.text()).toContain('释放确认仍保留')
+    expect(note.text()).toContain('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+    const riskNote = wrapper.get('.risk-event-sync-note')
+    expect(riskNote.text()).toContain('风险事件加载失败')
+    expect(riskNote.text()).toContain('risk refresh unavailable after release')
+    const suggestion = wrapper.get('.agent-suggestion')
+    expect(suggestion.text()).toContain('外协排产释放已确认')
+    expect(suggestion.text()).toContain('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+  })
+
+  it('keeps rush-order adoption separate from formal schedule execution', async () => {
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleEventQueuePanel: false,
+    })
+    await flushPromises()
+
+    const rushEvent = wrapper.findAll('.event-card')
+      .find(card => card.text().includes('WO-RUSH-9001 客户插单'))
+    expect(rushEvent).toBeTruthy()
+    await rushEvent!.get('button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.adopt-suggestion').trigger('click')
+    await flushPromises()
+
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('反馈已同步后台')
+    expect(note.text()).toContain('尚未写入正式排产计划')
+    expect(note.text()).toContain('执行排产优化或拖拽保存')
+  })
+
+  it('does not require formal schedule writeback when operators reject a rush-order agent suggestion', async () => {
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    optimizeSchedule.mockResolvedValueOnce({
+      plan: {
+        ...makePlan(),
+        id: 'plan-formally-saved-before-rejection',
+        planName: '已正式保存的排产计划',
+        onTimeDeliveryRate: 0.93,
+      },
+      assignments: [],
+      estimatedCompletionRate: 0.94,
+      utilizationRate: 0.87,
+      warnings: [],
+    })
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: {
+        props: ['latestFeedback', 'syncNote'],
+        emits: ['decision'],
+        template: `
+          <section class="feedback-probe">
+            <p class="feedback-record">{{ latestFeedback?.decisionLabel ?? '' }} {{ latestFeedback?.reasonCategory ?? '' }}</p>
+            <p class="sync-note" role="status" aria-live="polite">{{ syncNote }}</p>
+            <button
+              class="reject-rush-suggestion"
+              @click="$emit('decision', {
+                decision: 'rejected',
+                reasonCategory: 'rush_event_agent',
+                categoryLabel: '急单 Agent 建议',
+                reasonDetail: '调度员拒绝急单插单建议，保留当前正式计划'
+              })"
+            >
+              reject
+            </button>
+          </section>
+        `,
+      },
+      ScheduleEventQueuePanel: false,
+      ScheduleAgentWorkbenchPanel: {
+        props: {
+          latestFeedback: Object,
+          formalScheduleWriteback: String,
+        },
+        template: '<section class="agent-workbench-probe" :data-writeback="formalScheduleWriteback">{{ latestFeedback?.decisionLabel ?? "" }}</section>',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.optimize-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('saved')
+
+    await wrapper.get('.reject-rush-suggestion').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.feedback-record').text()).toContain('已拒绝 Agent 推荐')
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('saved')
+    const note = wrapper.get('.sync-note')
+    expect(note.text()).toContain('反馈已同步后台')
+    expect(note.text()).not.toContain('尚未写入正式排产计划')
+    expect(note.text()).not.toContain('执行排产优化或拖拽保存')
+  })
+
+  it('marks rush-order adoption as formally saved after a successful optimization', async () => {
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    optimizeSchedule.mockResolvedValueOnce({
+      plan: {
+        ...makePlan(),
+        id: 'plan-optimized-after-rush',
+        planName: '急单采纳后正式排产计划',
+        onTimeDeliveryRate: 0.94,
+      },
+      assignments: [],
+      estimatedCompletionRate: 0.95,
+      utilizationRate: 0.88,
+      warnings: ['急单采纳后正式计划已更新'],
+    })
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleEventQueuePanel: false,
+      ScheduleAgentWorkbenchPanel: {
+        props: {
+          latestFeedback: Object,
+          formalScheduleWriteback: String,
+        },
+        template: `
+          <section class="agent-workbench-probe" :data-writeback="formalScheduleWriteback">
+            {{ latestFeedback?.reasonCategory ?? '' }}
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    const rushEvent = wrapper.findAll('.event-card')
+      .find(card => card.text().includes('WO-RUSH-9001 客户插单'))
+    expect(rushEvent).toBeTruthy()
+    await rushEvent!.get('button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.adopt-suggestion').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('pending')
+
+    await wrapper.get('.optimize-button').trigger('click')
+    await flushPromises()
+
+    expect(optimizeSchedule).toHaveBeenCalled()
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('saved')
+  })
+
+  it('marks rush-order adoption as formally saved after a successful drag reschedule', async () => {
+    submitAdoptionFeedback.mockResolvedValueOnce(undefined)
+    rescheduleItem.mockResolvedValueOnce(undefined)
+    const wrapper = mountScheduleBoard({
+      ScheduleFeedbackPanel: false,
+      ScheduleEventQueuePanel: false,
+      GanttChart: {
+        props: ['data'],
+        emits: ['task-drag-end'],
+        methods: {
+          formatWindowDate(value: Date | string | undefined) {
+            return value instanceof Date ? value.toISOString() : value
+          },
+        },
+        template: `
+          <section>
+            <button
+              class="drag-save-task"
+              @click="$emit('task-drag-end', 'item-1', new Date('2026-06-01T09:00:00.000Z'), new Date('2026-06-01T13:00:00.000Z'))"
+            >
+              drag save
+            </button>
+            <output class="drag-save-window">
+              {{ formatWindowDate(data.tasks.find((task) => task.id === 'item-1')?.start_date) }}
+              |
+              {{ formatWindowDate(data.tasks.find((task) => task.id === 'item-1')?.end_date) }}
+            </output>
+          </section>
+        `,
+      },
+      ScheduleAgentWorkbenchPanel: {
+        props: {
+          latestFeedback: Object,
+          formalScheduleWriteback: String,
+        },
+        template: `
+          <section class="agent-workbench-probe" :data-writeback="formalScheduleWriteback">
+            {{ latestFeedback?.reasonCategory ?? '' }}
+          </section>
+        `,
+      },
+    })
+    await flushPromises()
+
+    const rushEvent = wrapper.findAll('.event-card')
+      .find(card => card.text().includes('WO-RUSH-9001 客户插单'))
+    expect(rushEvent).toBeTruthy()
+    await rushEvent!.get('button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.adopt-suggestion').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('pending')
+
+    await wrapper.get('.drag-save-task').trigger('click')
+    await flushPromises()
+
+    expect(rescheduleItem).toHaveBeenCalledWith(
+      'plan-1',
+      'item-1',
+      '2026-06-01T09:00:00.000Z',
+      '2026-06-01T13:00:00.000Z',
+    )
+    expect(wrapper.get('.agent-workbench-probe').attributes('data-writeback')).toBe('saved')
+    expect(wrapper.get('.schedule-save-status').text()).toContain('已保存到正式排产计划')
+  })
+
 })

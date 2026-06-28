@@ -1,14 +1,20 @@
 import { test, expect } from '@playwright/test'
 
+function offlineDemoPath(path: string) {
+  return `${path}?offlineDemo=1`
+}
+
 test.describe('Barcode 条码打印追溯标签', () => {
   test.describe.configure({ timeout: 60000 })
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('barcode', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('barcode'), { waitUntil: 'commit' })
     await expect(page.getByRole('heading', { name: '条码 / QR 打印' })).toBeVisible({ timeout: 30000 })
   })
 

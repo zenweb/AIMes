@@ -1,20 +1,22 @@
 import http from './http'
 import type { OtdKpiCommitmentPackage } from '../utils/otd-kpi-commitment-sync'
 
-export async function queryOtdKpiCommitments(take = 8): Promise<OtdKpiCommitmentPackage[]> {
+export async function queryOtdKpiCommitments(take = 8, options?: { failLoud?: boolean }): Promise<OtdKpiCommitmentPackage[]> {
   try {
     const { data } = await http.get<OtdKpiCommitmentPackage[]>('/scheduling/otd-kpi-commitments', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
 
-export async function getLatestOtdKpiCommitment(): Promise<OtdKpiCommitmentPackage | null> {
+export async function getLatestOtdKpiCommitment(options?: { failLoud?: boolean }): Promise<OtdKpiCommitmentPackage | null> {
   try {
     const { data } = await http.get<OtdKpiCommitmentPackage>('/scheduling/otd-kpi-commitments/latest')
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return null
   }
 }

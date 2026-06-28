@@ -30,6 +30,23 @@
         </div>
       </section>
 
+      <section class="schedule-workbench-guidance" aria-label="排产操作指引">
+        <div>
+          <strong>优化或采纳前，请确认目标、锁定期、证据链和回写路径。</strong>
+          <span>Before optimizing or adopting a plan, confirm objective, lock window, evidence trail, and writeback path.</span>
+        </div>
+        <nav aria-label="排产关联证据">
+          <a :href="auditTrailLink">审计回放 / Audit trail</a>
+          <a :href="deliveryReportLink">交付报表 / Delivery report</a>
+          <a href="#schedule-workbench-help">帮助 / Help</a>
+        </nav>
+      </section>
+
+      <section id="schedule-workbench-help" class="schedule-workbench-help" aria-label="排产帮助">
+        <strong>先复核影响范围，再执行优化、采纳或拖拽回写。</strong>
+        <span>Review impact scope before optimization, adoption, or drag writeback.</span>
+      </section>
+
       <GanttToolbar
         :scale="currentScale"
         :objective="currentObjective"
@@ -56,6 +73,7 @@
         :comparison="impactComparison"
         :latest-feedback="latestFeedback"
         :active-suggestion="activeAgentSuggestion"
+        :formal-schedule-writeback="formalScheduleWriteback"
       />
 
       <ScheduleImpactPanel :comparison="impactComparison" />
@@ -102,6 +120,10 @@
           {{ error }}
           <button @click="retryScheduleData">重试</button>
         </div>
+
+        <p v-if="scheduleSaveStatus" class="schedule-save-status" role="status" aria-live="polite">
+          {{ scheduleSaveStatus }}
+        </p>
 
         <div v-if="displayWarnings.length > 0" class="warnings-bar" role="status" aria-live="polite" aria-label="排产预警">
           <span class="warnings-icon">⚠</span>
@@ -221,7 +243,7 @@ import { readQualityReworkImpactBackendFirst } from '../../utils/quality-rework-
 import { readQualityMrbDispositionRecord, readQualityMrbDispositionRecordBackendFirst } from '../../utils/quality-mrb-disposition-sync'
 import { readEquipmentDowntimeEvent } from '../../utils/equipment-risk-sync'
 import { readAnomalyDispatchRecords, readAnomalyDispatchRecordsBackendFirst, type AnomalyDispatchRecord } from '../../utils/anomaly-dispatch-sync'
-import { writeScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
+import { readScheduleFeedbackSnapshot, writeScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
 import {
   readAlternateMaterialApproval,
   readAlternateMaterialApprovalBackendFirst,
@@ -308,6 +330,10 @@ const showFeedbackForm = ref(false)
 const showParetoCompare = ref(false)
 const feedbackSubmitting = ref(false)
 const feedbackSyncNote = ref('')
+const formalScheduleWriteback = ref<'pending' | 'saved'>('pending')
+const scheduleSaveStatus = ref('')
+const auditTrailLink = scheduleRoutePath('audit-logs')
+const deliveryReportLink = scheduleRoutePath('report')
 const riskEventSyncNote = ref('')
 const latestFeedback = ref<ScheduleFeedbackRecord | null>(null)
 const activeAgentSuggestion = ref<ScheduleAgentSuggestion | null>(null)
@@ -455,8 +481,10 @@ const rushOrderImpact = reactive<RushOrderImpact>({
 })
 const warnings = ref<string[]>([])
 const abReportWarning = ref('')
+const startupEngineeringConstraintWarnings = ref<string[]>([])
 const laborEvidenceStartupWarnings = ref<string[]>([])
 const displayWarnings = computed(() => [
+  ...startupEngineeringConstraintWarnings.value,
   ...laborEvidenceStartupWarnings.value,
   ...warnings.value,
   ...(abReportWarning.value ? [abReportWarning.value] : []),
@@ -851,6 +879,67 @@ watch(activeAgentSuggestion, (suggestion) => {
   }
 })
 
+function scheduleRoutePath(path: string) {
+  const normalized = path.startsWith('/') ? path.slice(1) : path
+  const base = import.meta.env.BASE_URL === '/' ? '/scheduling/' : import.meta.env.BASE_URL
+  return `${base}${normalized}`
+}
+
+function appendFeedbackSyncNote(message: string) {
+  feedbackSyncNote.value = feedbackSyncNote.value
+    ? `${feedbackSyncNote.value}；${message}`
+    : message
+}
+
+function keepClosedAssistantRecoveryPackageVisible(closed: AssistantRecoveryPackage) {
+  if (assistantRecoveryPackageRecords.value.some(record => record.id === closed.id)) return
+  assistantRecoveryPackageRecords.value = [closed, ...assistantRecoveryPackageRecords.value]
+}
+
+function missingFeedbackSnapshotFields(snapshot: Partial<ScheduleFeedbackRecord> | null | undefined) {
+  if (!snapshot) return ['反馈记录']
+  const requiredFields: Array<[keyof ScheduleFeedbackRecord, string]> = [
+    ['decision', '决策'],
+    ['decisionLabel', '决策标签'],
+    ['reasonCategory', '原因分类'],
+    ['categoryLabel', '分类标签'],
+    ['reasonDetail', '原因说明'],
+    ['objectiveLabel', '目标'],
+    ['createdAt', '时间'],
+  ]
+  return requiredFields
+    .filter(([key]) => typeof snapshot[key] !== 'string' || !String(snapshot[key]).trim())
+    .map(([, label]) => label)
+}
+
+async function restoreLatestFeedbackSnapshot() {
+  let backendSnapshot: ScheduleFeedbackRecord | null = null
+  try {
+    backendSnapshot = await api.getLatestAdoptionFeedback()
+  } catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      feedbackSyncNote.value = `后端最新采纳反馈读取失败，已继续加载排产计划并回退本地最近反馈：${errorMessage(error, '未知错误')}`
+    }
+  }
+  let snapshot = backendSnapshot
+  const backendMissingFields = missingFeedbackSnapshotFields(backendSnapshot)
+  if (backendSnapshot && backendMissingFields.length) {
+    feedbackSyncNote.value = `后端最新采纳反馈不可审计，缺少${backendMissingFields.join('、')}，已回退本地最近反馈。`
+    snapshot = readScheduleFeedbackSnapshot()
+  } else if (!snapshot) {
+    snapshot = readScheduleFeedbackSnapshot()
+  }
+  if (!snapshot) return
+  latestFeedback.value = {
+    decision: snapshot.decision,
+    decisionLabel: snapshot.decisionLabel,
+    reasonCategory: snapshot.reasonCategory,
+    categoryLabel: snapshot.categoryLabel,
+    reasonDetail: snapshot.reasonDetail,
+    objectiveLabel: snapshot.objectiveLabel,
+    createdAt: snapshot.createdAt,
+  }
+}
 async function loadData(options: { preserveError?: boolean } = {}) {
   loading.value = true
   loadingMessage.value = '加载排产计划...'
@@ -1018,7 +1107,7 @@ async function applyDemoSchedule() {
   error.value = ''
 }
 
-async function loadRiskTriggeredEvents() {
+async function loadRiskTriggeredEvents(options: { failLoud?: boolean } = {}) {
   riskEventSyncNote.value = ''
   try {
     const riskDashboard = await getRiskDashboard()
@@ -1027,6 +1116,9 @@ async function loadRiskTriggeredEvents() {
     logUnlessOfflineDemo('warn', '加载风险触发事件失败，使用演示事件队列:', e)
     scheduleEvents.value = await enrichRiskEvents(demoScheduleEvents)
     riskEventSyncNote.value = `风险事件加载失败，已显示本地演示事件：${errorMessage(e, '未知错误')}`
+    if (options.failLoud === true) {
+      throw e
+    }
   }
   activeAgentSuggestion.value = null
 }
@@ -1586,9 +1678,10 @@ function readBarcodeScheduleReleaseRecord() {
 }
 
 async function applyEngineeringChangeApprovals() {
-  const approval = await readAlternateMaterialApprovalBackendFirst()
+  const readbackOptions = { failLoud: true }
+  const approval = await readAlternateMaterialApprovalBackendFirst(readbackOptions)
   alternateMaterialApproval.value = approval
-  const impact = await readEngineeringChangeImpactAnalysisBackendFirst()
+  const impact = await readEngineeringChangeImpactAnalysisBackendFirst(readbackOptions)
   engineeringChangeImpact.value = impact
   const bomKittingPackage = readBomKittingPackage()
 
@@ -1671,7 +1764,7 @@ async function applyEngineeringChangeApprovals() {
 }
 
 async function applyRouteCapabilityValidation() {
-  const validation = await readRouteCapabilityValidationBackendFirst()
+  const validation = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
   routeCapabilityValidation.value = validation
   if (!validation) return
 
@@ -1698,6 +1791,26 @@ async function applyRouteCapabilityValidation() {
   }
 }
 
+async function loadStartupEngineeringConstraints() {
+  const failures: string[] = []
+  try {
+    await applyEngineeringChangeApprovals()
+  } catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      failures.push(`工程变更/替代料约束：${errorMessage(error, '未知错误')}`)
+    }
+  }
+  try {
+    await applyRouteCapabilityValidation()
+  } catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      failures.push(`工艺能力约束：${errorMessage(error, '未知错误')}`)
+    }
+  }
+  if (failures.length) {
+    startupEngineeringConstraintWarnings.value = [`工程约束启动证据加载失败，已继续加载排产主数据：${failures.join('；')}`]
+  }
+}
 async function loadStartupLaborEvidence() {
   try {
     const [backendBlocks, backendReassignments] = await Promise.all([
@@ -1947,6 +2060,7 @@ async function handleOptimize() {
       applyImpactComparison(result.plan)
       ganttData.value = planToGanttData(result.plan, equipmentList.value, bottleneckIds.value)
       warnings.value = result.warnings ?? result.plan.warnings ?? []
+      formalScheduleWriteback.value = 'saved'
     }
   } catch (e: unknown) {
     logUnlessOfflineDemo('error', '排产优化失败:', e)
@@ -2064,8 +2178,18 @@ function buildDemoWorkOrder(task: GanttTask): WorkOrderDto {
 
 function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
   const task = ganttData.value.tasks.find(t => t.id === taskId)
-  if (!task || !planData.value?.id) return
+  if (!task) {
+    error.value = `保存失败: 未找到可写回的排产任务 ${taskId}`
+    scheduleSaveStatus.value = ''
+    return
+  }
+  if (!planData.value?.id) {
+    error.value = `保存失败: 当前排产计划缺少 ID，无法写回任务 ${taskId}`
+    scheduleSaveStatus.value = ''
+    return
+  }
 
+  scheduleSaveStatus.value = ''
   // 调用 API 持久化
   api.rescheduleItem(
     planData.value.id,
@@ -2075,10 +2199,14 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
   ).then(() => {
     // 更新本地数据
     task.start_date = newStart
+    task.end_date = newEnd
     task.duration = (newEnd.getTime() - newStart.getTime()) / (1000 * 60 * 60 * 24)
     error.value = ''
+    formalScheduleWriteback.value = 'saved'
+    scheduleSaveStatus.value = `${task.text} 已保存到正式排产计划：${formatScheduleSaveDate(newStart)} - ${formatScheduleSaveDate(newEnd)}`
   }).catch((e: unknown) => {
     logUnlessOfflineDemo('error', '重排保存失败:', e)
+    scheduleSaveStatus.value = ''
     error.value = isOfflineDemoError(e) ? '离线演示模式：拖拽调整已保留在当前页面，未写入后端。' : `保存失败: ${errorMessage(e, '未知错误')}`
     // 重新加载以恢复原始状态
     loadData({ preserveError: true })
@@ -2186,9 +2314,21 @@ function objectiveLabel(objective: string): string {
   return labels[objective] ?? objective
 }
 
+function formatScheduleSaveDate(value: Date) {
+  return value.toISOString().slice(0, 16).replace('T', ' ')
+}
+
+function needsFormalScheduleWritebackNotice(payload: ScheduleFeedbackPayload) {
+  return payload.decision === 'accepted' && payload.reasonCategory === 'rush_event_agent'
+}
+
 async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
   const decisionLabel = payload.decision === 'accepted' ? '已采纳 Agent 推荐' : '已拒绝 Agent 推荐'
   const detail = payload.reasonDetail || `${payload.categoryLabel}，调度员未补充说明`
+  const needsWritebackNotice = needsFormalScheduleWritebackNotice(payload)
+  if (needsWritebackNotice) {
+    formalScheduleWriteback.value = 'pending'
+  }
 
   const feedbackRecord: ScheduleFeedbackRecord = {
     decision: payload.decision,
@@ -2204,10 +2344,12 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
     ...feedbackRecord,
     traceId: `TRACE-SCH-FEEDBACK-${rushOrderImpact.orderNumber || 'DEMO'}`,
   })
-  feedbackSyncNote.value = '反馈已写入本地复盘记录，正在同步后台。'
+  appendFeedbackSyncNote('反馈已写入本地复盘记录，正在同步后台。')
 
   if (!planData.value?.id) {
-    feedbackSyncNote.value = '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台。'
+    appendFeedbackSyncNote(needsWritebackNotice
+      ? '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台，且尚未写入正式排产计划。'
+      : '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台。')
     return
   }
 
@@ -2222,10 +2364,12 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
       movedOrderIds: rushOrderImpact.affectedOrders,
       aiTraceId: `rush-impact-${rushOrderImpact.orderNumber || 'demo'}`,
     })
-    feedbackSyncNote.value = '反馈已同步后台，可用于后续审计与模型复盘。'
+    appendFeedbackSyncNote(needsWritebackNotice
+      ? '反馈已同步后台，可用于后续审计与模型复盘；尚未写入正式排产计划，请执行排产优化或拖拽保存后再交接生产。'
+      : '反馈已同步后台，可用于后续审计与模型复盘。')
   } catch (e: unknown) {
     logUnlessOfflineDemo('warn', '排产反馈同步失败:', e)
-    feedbackSyncNote.value = `后台反馈接口不可用，当前先保留本地复盘记录用于演示。原因：${errorMessage(e, '未知错误')}`
+    appendFeedbackSyncNote(`后台反馈接口不可用，当前先保留本地复盘记录用于演示。原因：${errorMessage(e, '未知错误')}`)
   } finally {
     feedbackSubmitting.value = false
   }
@@ -2665,12 +2809,21 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
     released = confirmOutsourcingScheduleRelease(activeOutsourcingCommitment.sourceKpiId, '调度员 李工')
   } catch (e: unknown) {
     logUnlessOfflineDemo('warn', '外协排产释放确认失败:', e)
-    feedbackSyncNote.value = `外协排产释放同步失败，采纳反馈已保留但释放审计未归档：${errorMessage(e, '未知错误')}`
+    appendFeedbackSyncNote(`外协排产释放同步失败，采纳反馈已保留但释放审计未归档：${errorMessage(e, '未知错误')}`)
     return
   }
-  if (!released) return
+  if (!released) {
+    appendFeedbackSyncNote(`外协排产释放同步失败，采纳反馈已保留但未拿到释放审计记录：${activeOutsourcingCommitment.sourceKpiId}`)
+    return
+  }
   outsourcingCommitmentRecord.value = released
-  await loadRiskTriggeredEvents()
+  try {
+    await loadRiskTriggeredEvents({ failLoud: true })
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', '外协排产释放后风险事件刷新失败:', e)
+    appendFeedbackSyncNote(`外协排产释放已归档；风险事件刷新失败，释放确认仍保留：${errorMessage(e, '未知错误')}`)
+  }
+  appendFeedbackSyncNote(`外协排产释放已归档：${released.scheduleReleaseTraceId}`)
   activeAgentSuggestion.value = {
     eventId: `evt-outsourcing-commitment-${released.sourceKpiId}`,
     title: '外协排产释放已确认',
@@ -2683,10 +2836,35 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
 
 async function closeAssistantRecoveryHandoff(id: string) {
   const closed = closeAssistantRecoveryPackage(id, '调度员 李工')
-  if (!closed) return
-  assistantRecoveryPackageRecords.value = await readAssistantRecoveryPackagesBackendFirst()
-  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
-  await loadRiskTriggeredEvents()
+  if (!closed) {
+    appendFeedbackSyncNote(`Assistant 恢复交接闭环保存失败，未找到可闭环的本地执行包：${id}`)
+    return
+  }
+  try {
+    const refreshedPackages = await readAssistantRecoveryPackagesBackendFirst({ failLoud: true })
+    assistantRecoveryPackageRecords.value = refreshedPackages
+    if (!refreshedPackages.some(record => record.id === closed.id)) {
+      keepClosedAssistantRecoveryPackageVisible(closed)
+      appendFeedbackSyncNote(`Assistant 恢复交接闭环刷新缺少刚闭环的执行包，已保留本地闭环建议：${closed.id}`)
+    }
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', 'Assistant 恢复交接闭环刷新失败:', e)
+    keepClosedAssistantRecoveryPackageVisible(closed)
+    appendFeedbackSyncNote(`Assistant 恢复交接闭环刷新失败，已保留本地闭环建议：${errorMessage(e, '未知错误')}`)
+  }
+  try {
+    assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', 'Assistant 工程约束包刷新失败:', e)
+    appendFeedbackSyncNote(`Assistant 工程约束包刷新失败，恢复交接闭环建议仍保留：${errorMessage(e, '未知错误')}`)
+  }
+  try {
+    await loadRiskTriggeredEvents({ failLoud: true })
+  } catch (e: unknown) {
+    logUnlessOfflineDemo('warn', 'Assistant 恢复交接闭环后风险事件刷新失败:', e)
+    appendFeedbackSyncNote(`Assistant 恢复交接闭环后风险事件刷新失败，闭环建议仍保留：${errorMessage(e, '未知错误')}`)
+  }
+  keepClosedAssistantRecoveryPackageVisible(closed)
   const eventId = `evt-assistant-recovery-${closed.id}`
   activeAgentSuggestion.value = {
     eventId,
@@ -2708,7 +2886,7 @@ function onApplyObjective(objective: string) {
 
   // 记录方案采纳
   if (planData.value?.id) {
-    feedbackSyncNote.value = '批量方案采纳反馈正在同步后台。'
+    appendFeedbackSyncNote('批量方案采纳反馈正在同步后台。')
     api.submitAdoptionFeedback({
       schedulePlanId: planData.value.id,
       workshopId: 'workshop-1',
@@ -2716,10 +2894,10 @@ function onApplyObjective(objective: string) {
       reasonCategory: 'batch_optimize_apply',
       reasonDetail: '从批量对比中选择此方案',
     }).then(() => {
-      feedbackSyncNote.value = '批量方案采纳反馈已同步后台，可用于后续审计与模型复盘。'
+      appendFeedbackSyncNote('批量方案采纳反馈已同步后台，可用于后续审计与模型复盘。')
     }).catch((e: unknown) => {
       logUnlessOfflineDemo('warn', '采纳记录提交失败:', e)
-      feedbackSyncNote.value = `批量方案采纳反馈同步失败，当前仅保留本地目标切换：${errorMessage(e, '未知错误')}`
+      appendFeedbackSyncNote(`批量方案采纳反馈同步失败，当前仅保留本地目标切换：${errorMessage(e, '未知错误')}`)
     })
   }
 
@@ -2727,8 +2905,8 @@ function onApplyObjective(objective: string) {
 }
 
 onMounted(async () => {
-  await applyEngineeringChangeApprovals()
-  await applyRouteCapabilityValidation()
+  await restoreLatestFeedbackSnapshot()
+  await loadStartupEngineeringConstraints()
   await loadStartupLaborEvidence()
   applyLaborReassignmentClosure()
   applyLaborQualificationBlockClosure()
@@ -2906,6 +3084,76 @@ onMounted(async () => {
   }
 }
 
+.schedule-save-status {
+  margin: 4px 8px;
+  padding: 8px 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+}
+
+.schedule-workbench-guidance,
+.schedule-workbench-help {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #d8e2ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.schedule-workbench-guidance div,
+.schedule-workbench-help {
+  min-width: 0;
+}
+
+.schedule-workbench-guidance strong,
+.schedule-workbench-help strong {
+  display: block;
+  color: #0b1220;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.schedule-workbench-guidance span,
+.schedule-workbench-help span {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.schedule-workbench-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.schedule-workbench-guidance a {
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.schedule-workbench-guidance a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .error-banner {
   padding: 10px 16px;
   background: #fff2f0;
@@ -2953,6 +3201,15 @@ onMounted(async () => {
   .scheduler-pro-hero,
   .scheduler-hero-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .schedule-workbench-guidance {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .schedule-workbench-guidance nav {
+    justify-content: flex-start;
   }
 }
 </style>

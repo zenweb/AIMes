@@ -1,0 +1,174 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "nuxt": [
+        "../../src/frontend/node_modules/nuxt"
+      ],
+      "@unhead/vue": [
+        "../../src/frontend/node_modules/@unhead/vue"
+      ],
+      "@nuxt/devtools": [
+        "../../src/frontend/node_modules/nuxt/node_modules/@nuxt/devtools"
+      ],
+      "@vue/runtime-core": [
+        "../../src/frontend/node_modules/@vue/runtime-core"
+      ],
+      "@vue/compiler-sfc": [
+        "../../src/frontend/node_modules/@vue/compiler-sfc"
+      ],
+      "@nuxt/schema": [
+        "../../src/frontend/node_modules/@nuxt/schema"
+      ],
+      "defu": [
+        "../../src/frontend/node_modules/defu"
+      ],
+      "h3": [
+        "../../src/frontend/node_modules/h3"
+      ],
+      "consola": [
+        "../../src/frontend/node_modules/consola"
+      ],
+      "ofetch": [
+        "../../src/frontend/node_modules/ofetch"
+      ],
+      "crossws": [
+        "../../src/frontend/node_modules/crossws"
+      ],
+      "unplugin-vue-router/client": [
+        "../../src/frontend/node_modules/unplugin-vue-router/client"
+      ],
+      "nitropack": [
+        "../../src/frontend/node_modules/nitropack"
+      ],
+      "nitropack/types": [
+        "../../src/frontend/node_modules/nitropack/types"
+      ],
+      "nitropack/runtime": [
+        "../../src/frontend/node_modules/nitropack/runtime"
+      ],
+      "~": [
+        "../../src/frontend"
+      ],
+      "~/*": [
+        "../../src/frontend/*"
+      ],
+      "@": [
+        "../../../../../..//src"
+      ],
+      "~~": [
+        "../../src/frontend"
+      ],
+      "~~/*": [
+        "../../src/frontend/*"
+      ],
+      "@@": [
+        "../../src/frontend"
+      ],
+      "@@/*": [
+        "../../src/frontend/*"
+      ],
+      "#shared": [
+        "../../src/frontend/shared"
+      ],
+      "#shared/*": [
+        "../../src/frontend/shared/*"
+      ],
+      "assets": [
+        "../../src/frontend/assets"
+      ],
+      "assets/*": [
+        "../../src/frontend/assets/*"
+      ],
+      "public": [
+        "../../src/frontend/public"
+      ],
+      "public/*": [
+        "../../src/frontend/public/*"
+      ],
+      "#server": [
+        "../../src/frontend/server"
+      ],
+      "#server/*": [
+        "../../src/frontend/server/*"
+      ],
+      "#app": [
+        "../../src/frontend/node_modules/nuxt/dist/app"
+      ],
+      "#app/*": [
+        "../../src/frontend/node_modules/nuxt/dist/app/*"
+      ],
+      "vue-demi": [
+        "../../src/frontend/node_modules/nuxt/dist/app/compat/vue-demi"
+      ],
+      "#vue-router": [
+        "../../src/frontend/node_modules/vue-router"
+      ],
+      "#unhead/composables": [
+        "../../src/frontend/node_modules/nuxt/dist/head/runtime/composables/v3"
+      ],
+      "#imports": [
+        "./imports"
+      ],
+      "#app-manifest": [
+        "./manifest/meta/a4d6581c-2179-451b-8ae7-9b0b3bd79f7e.json"
+      ],
+      "#components": [
+        "./components"
+      ],
+      "#build": [
+        "."
+      ],
+      "#build/*": [
+        "./*"
+      ]
+    },
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowArbitraryExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitOverride": true,
+    "module": "preserve",
+    "noEmit": true,
+    "lib": [
+      "ESNext",
+      "dom",
+      "dom.iterable",
+      "webworker"
+    ],
+    "jsx": "preserve",
+    "jsxImportSource": "vue",
+    "types": [],
+    "moduleResolution": "Bundler",
+    "useDefineForClassFields": true,
+    "noImplicitThis": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "../../src/frontend/**/*",
+    "../../src/frontend/.config/nuxt.*",
+    "./nuxt.d.ts",
+    "../../src/frontend/node_modules/runtime",
+    "../../src/frontend/node_modules/dist/runtime",
+    "../../src/frontend",
+    "../../../../../..//src",
+    ".",
+    "./imports",
+    "./manifest/meta/a4d6581c-2179-451b-8ae7-9b0b3bd79f7e.json"
+  ],
+  "exclude": [
+    "../../src/frontend/dist",
+    "../../src/frontend/.data",
+    "../../node_modules",
+    "../../src/frontend/node_modules/runtime/server",
+    "../../src/frontend/node_modules/dist/runtime/server",
+    "../employee-preview-output"
+  ]
+}

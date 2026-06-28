@@ -19,7 +19,7 @@
       {{ actionError }}
     </div>
 
-    <section class="sla-review-panel" aria-label="风险 SLA 晨会复核">
+    <section class="sla-review-panel" aria-label="风险 SLA 晨会复核" aria-describedby="risk-sla-review-help">
       <div class="sla-review-heading">
         <div>
           <span class="eyebrow">SLA Review</span>
@@ -37,6 +37,19 @@
             确认责任动作闭环
           </button>
         </div>
+      </div>
+
+      <div id="risk-sla-review-help" class="risk-sla-guidance">
+        <div>
+          <strong>生成或关闭晨会复核前，请核对逾期风险、责任动作、排产保护和审计留痕。</strong>
+          <span>Before generating or closing the daily review, verify overdue risks, accountable actions, scheduling protection, and audit trail.</span>
+        </div>
+        <nav aria-label="风险 SLA 复核关联入口">
+          <a href="/scheduling">AI 排产 / Scheduling</a>
+          <a href="/report">报表证据 / Reports</a>
+          <a href="/audit-logs">审计回放 / Audit trail</a>
+          <a href="#risk-sla-review-help">帮助 / Help</a>
+        </nav>
       </div>
 
       <div v-if="slaReview" class="sla-review-card">
@@ -329,9 +342,13 @@ async function readRiskActionSource<T>(label: string, loader: () => Promise<T>, 
   try {
     return await loader()
   } catch (error: unknown) {
-    actionError.value = `${label}加载失败：${errorMessage(error, '请稍后重试')}`
+    appendActionError(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
     return fallback
   }
+}
+
+function appendActionError(message: string) {
+  actionError.value = actionError.value ? `${actionError.value}；${message}` : message
 }
 
 const openCount = computed(() => actionItems.value.filter(item => item.status !== 'closed').length)
@@ -388,7 +405,13 @@ function closeItem(id: string) {
   }
   if (id.startsWith('risk-monitoring-situation-')) {
     const escalationId = id.replace(/^risk-/, '')
-    const closedRecord = closeMonitoringSituationEscalation(escalationId, trace, item.owner)
+    let closedRecord
+    try {
+      closedRecord = closeMonitoringSituationEscalation(escalationId, trace, item.owner)
+    } catch (error: unknown) {
+      actionError.value = `现场态势处置包关闭失败，风险关闭留痕已写入但实时监控处置包未闭环：${errorMessage(error, '请稍后重试')}`
+      return
+    }
     if (closedRecord) {
       item.deliveryImpact = closedRecord.delayImpact
       item.suggestion = `${closedRecord.riskSuggestion} 已反写现场处置包，闭环：${closedRecord.closureTrace}`
@@ -568,6 +591,51 @@ h3 {
   color: #6b7280;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.risk-sla-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid #fed7aa;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.risk-sla-guidance strong {
+  display: block;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.risk-sla-guidance span {
+  display: block;
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-sla-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.risk-sla-guidance a {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 4px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .sla-review-buttons {
@@ -841,6 +909,7 @@ h3 {
 
 @media (max-width: 1180px) {
   .action-grid,
+  .risk-sla-guidance,
   .sla-review-metrics,
   .sla-review-columns {
     grid-template-columns: 1fr;
@@ -852,6 +921,10 @@ h3 {
   }
 
   .sla-review-buttons {
+    justify-content: flex-start;
+  }
+
+  .risk-sla-guidance nav {
     justify-content: flex-start;
   }
 }

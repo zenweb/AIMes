@@ -70,6 +70,40 @@ describe('engineering change sync', () => {
     await expect(readRouteCapabilityValidationBackendFirst()).resolves.toEqual(route)
   })
 
+  it('keeps local alternate material evidence when backend returns an incomplete record', async () => {
+    const localAlternate = writeAlternateMaterialApproval({
+      alternateMaterialCode: 'M-AL-6061B-LOCAL',
+      traceId: 'TRACE-ENG-ALT-LOCAL',
+      summary: '本地完整替代料放行记录保留 BOM、原物料、替代料、影响工单、审批人与审计责任链。',
+    })
+    httpGet.mockResolvedValue({
+      data: {
+        alternateMaterialCode: 'M-AL-6061B-BACKEND-PARTIAL',
+        traceId: 'TRACE-ENG-ALT-BACKEND-PARTIAL',
+      },
+    })
+
+    await expect(readAlternateMaterialApprovalBackendFirst()).resolves.toEqual(localAlternate)
+    expect(readAlternateMaterialApproval()).toEqual(localAlternate)
+  })
+
+  it('keeps local engineering impact evidence when backend returns an incomplete record', async () => {
+    const localImpact = writeEngineeringChangeImpactAnalysis({
+      changeId: 'ECN-BOM-A100-6061B-LOCAL',
+      traceId: 'TRACE-ENG-ECN-LOCAL',
+      summary: '本地完整工程影响分析保留库存、质量、供应、成本与 OTD 责任链。',
+    })
+    httpGet.mockResolvedValue({
+      data: {
+        changeId: 'ECN-BOM-A100-6061B-BACKEND-PARTIAL',
+        traceId: 'TRACE-ENG-ECN-BACKEND-PARTIAL',
+      },
+    })
+
+    await expect(readEngineeringChangeImpactAnalysisBackendFirst()).resolves.toEqual(localImpact)
+    expect(readEngineeringChangeImpactAnalysis()).toEqual(localImpact)
+  })
+
   it('throws route capability backend failures when fail-loud evidence is required', async () => {
     const route = writeRouteCapabilityValidation()
     const backendError = new Error('route capability backend unavailable')
@@ -77,6 +111,54 @@ describe('engineering change sync', () => {
 
     await expect(readRouteCapabilityValidationBackendFirst({ failLoud: true })).rejects.toThrow('route capability backend unavailable')
     expect(readRouteCapabilityValidation()).toEqual(route)
+  })
+
+  it('throws alternate material backend failures when fail-loud evidence is required', async () => {
+    const alternate = writeAlternateMaterialApproval()
+    httpGet.mockRejectedValueOnce(new Error('alternate material backend unavailable'))
+
+    await expect(readAlternateMaterialApprovalBackendFirst({ failLoud: true }))
+      .rejects.toThrow('alternate material backend unavailable')
+    expect(readAlternateMaterialApproval()).toEqual(alternate)
+  })
+
+  it('throws engineering impact backend failures when fail-loud evidence is required', async () => {
+    const impact = writeEngineeringChangeImpactAnalysis()
+    httpGet.mockRejectedValueOnce(new Error('engineering impact backend unavailable'))
+
+    await expect(readEngineeringChangeImpactAnalysisBackendFirst({ failLoud: true }))
+      .rejects.toThrow('engineering impact backend unavailable')
+    expect(readEngineeringChangeImpactAnalysis()).toEqual(impact)
+  })
+
+  it('throws incomplete route capability backend payloads when fail-loud evidence is required', async () => {
+    const route = writeRouteCapabilityValidation()
+    httpGet.mockResolvedValue({
+      data: {
+        routeCode: 'R-B200-BACKEND-PARTIAL',
+        traceId: 'TRACE-ROUTE-CAP-BACKEND-PARTIAL',
+      },
+    })
+
+    await expect(readRouteCapabilityValidationBackendFirst({ failLoud: true })).rejects.toThrow('后端返回非完整工艺能力放行证据')
+    expect(readRouteCapabilityValidation()).toEqual(route)
+  })
+
+  it('keeps local route capability evidence when backend returns an incomplete record', async () => {
+    const localRoute = writeRouteCapabilityValidation({
+      routeCode: 'R-B200-LOCAL',
+      traceId: 'TRACE-ROUTE-CAP-LOCAL',
+      summary: '本地完整工艺能力记录保留瓶颈、候选资源、影响工单、换线和审计责任链。',
+    })
+    httpGet.mockResolvedValue({
+      data: {
+        routeCode: 'R-B200-BACKEND-PARTIAL',
+        traceId: 'TRACE-ROUTE-CAP-BACKEND-PARTIAL',
+      },
+    })
+
+    await expect(readRouteCapabilityValidationBackendFirst()).resolves.toEqual(localRoute)
+    expect(readRouteCapabilityValidation()).toEqual(localRoute)
   })
 
   it('removes incomplete alternate material approvals that cannot explain release responsibility', () => {

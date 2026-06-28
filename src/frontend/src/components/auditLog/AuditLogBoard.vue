@@ -93,6 +93,7 @@ import type { AuditLog, AuditLogDetail } from '../../types/auditLog'
 import { getAuditLogs, getAuditLogDetail } from '../../api/auditLog'
 import AuditDecisionReplayPanel from './AuditDecisionReplayPanel.vue'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 
 const logs = ref<AuditLog[]>([])
 const detail = ref<AuditLogDetail | null>(null)
@@ -125,6 +126,10 @@ async function load() {
     ]
     totalCount.value = logs.value.length
     totalPages.value = 1
+    if (isOfflineDemoError(error)) {
+      loadError.value = ''
+      return
+    }
     loadError.value = `审计日志列表加载失败，已显示本地演示日志：${errorMessage(error, '请稍后重试')}`
   }
 }

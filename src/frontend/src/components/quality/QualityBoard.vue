@@ -98,6 +98,15 @@
             <h4>扫码返工样本沉淀为 CAPA 推荐</h4>
             <p>把 `WO-RUSH-9001 / OP-10` 的隔离、返工成本、复验释放和排产回写合成可复用质量样本，供同类批次、同类设备和同类缺陷复盘。</p>
           </div>
+          <div id="barcode-quality-knowledge-help" class="barcode-knowledge-guidance">
+            <strong>沉淀质量知识前，请确认返工冻结、复验释放、CAPA 复用范围和审计追踪。</strong>
+            <p>Before publishing quality knowledge, confirm rework freeze, release evidence, CAPA reuse scope, and audit trail.</p>
+          </div>
+          <nav class="barcode-knowledge-links" aria-label="质量知识关联证据">
+            <a href="/audit-logs">审计回放 / Audit trail</a>
+            <a href="/report">报表证据 / Report evidence</a>
+            <a href="#barcode-quality-knowledge-help">帮助 / Help</a>
+          </nav>
           <div class="sample-dimensions">
             <span>同类批次 AL-202605</span>
             <span>CNC-002 精加工</span>
@@ -335,6 +344,7 @@ import {
   upsertOtdEvidenceChainRecord,
   type OtdEvidenceChainItem,
 } from '../../utils/otd-evidence-chain-sync'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import {
   createBarcodeQualityReuseDraft,
   createBarcodeQualityKnowledgeSample,
@@ -450,13 +460,18 @@ function formatTime(t: string) {
 }
 
 function handleCreateReworkEvent(event: QualityReworkImpact) {
-  const impact = {
-    ...event,
-    createdAt: new Date().toISOString(),
+  try {
+    const impact = {
+      ...event,
+      createdAt: new Date().toISOString(),
+    }
+    writeQualityReworkImpact(impact)
+    qualityReworkEvent.value = impact
+    reworkSyncMessage.value = '返工排产事件已生成：排产工作台将出现质量返工触发器，报表中心会纳入 OTD 复盘。'
+    if (qualityError.value.startsWith('质量返工排产证据写入失败')) qualityError.value = ''
+  } catch (e: unknown) {
+    qualityError.value = `质量返工排产证据写入失败：${e instanceof Error ? e.message : '请稍后重试'}`
   }
-  writeQualityReworkImpact(impact)
-  qualityReworkEvent.value = impact
-  reworkSyncMessage.value = '返工排产事件已生成：排产工作台将出现质量返工触发器，报表中心会纳入 OTD 复盘。'
 }
 
 async function refreshQualityMrbDisposition() {
@@ -784,10 +799,32 @@ async function loadSpc() {
     if (qualityError.value.startsWith('SPC 趋势分析加载失败')) qualityError.value = ''
   } catch (e: unknown) {
     if (spcParam.value === requestedParam) {
+      if (isOfflineDemoError(e)) {
+        generateSpcData(requestedParam)
+        return
+      }
       qualityError.value = `SPC 趋势分析加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
       generateSpcData(requestedParam)
     }
   }
+}
+
+function fallbackQualityAnomalies(): AnomalyDto[] {
+  return [
+    { id: 'ANM-001', workOrderId: 'WO-004', anomalyType: '尺寸超差', severity: 'critical', description: '装配后轴孔配合间隙 0.12mm，超过 0.08mm 标准上限', status: 'open', detectedAt: '2026-05-12T09:15:00' },
+    { id: 'ANM-002', workOrderId: 'WO-003', anomalyType: '硬度不足', severity: 'major', description: '热处理后硬度 HB89，低于 HB95 标准下限', status: 'investigating', detectedAt: '2026-05-12T08:30:00' },
+    { id: 'ANM-003', workOrderId: 'WO-001', anomalyType: '表面粗糙度', severity: 'minor', description: 'Ra 3.6μm，接近 3.2μm 标准上限，建议监控', status: 'open', detectedAt: '2026-05-11T16:00:00' },
+  ]
+}
+
+function fallbackQualityInspections(): InspectionDto[] {
+  return [
+    { id: 'INS-001', workOrderId: 'WO-001', productCode: 'PRD-001', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 50, qualifiedQuantity: 48, defectQuantity: 2, result: 'pass', inspectorId: 'USR-001', inspectedAt: '2026-05-11T10:30:00', passRate: 96 },
+    { id: 'INS-002', workOrderId: 'WO-002', productCode: 'PRD-002', processName: '注塑成型', inspectionPoint: '外观检验', inspectionQuantity: 100, qualifiedQuantity: 97, defectQuantity: 3, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-11T14:00:00', passRate: 97 },
+    { id: 'INS-003', workOrderId: 'WO-003', productCode: 'PRD-003', processName: '热处理', inspectionPoint: '硬度检测', inspectionQuantity: 20, qualifiedQuantity: 18, defectQuantity: 2, result: 'rework', inspectorId: 'USR-001', inspectedAt: '2026-05-12T08:00:00', passRate: 90 },
+    { id: 'INS-004', workOrderId: 'WO-004', productCode: 'PRD-001', processName: '装配', inspectionPoint: '功能测试', inspectionQuantity: 30, qualifiedQuantity: 26, defectQuantity: 4, result: 'fail', inspectorId: 'USR-003', inspectedAt: '2026-05-12T09:00:00', passRate: 86.7 },
+    { id: 'INS-005', workOrderId: 'WO-005', productCode: 'PRD-004', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 40, qualifiedQuantity: 40, defectQuantity: 0, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-12T11:00:00', passRate: 100 },
+  ]
 }
 
 onMounted(async () => {
@@ -813,14 +850,12 @@ onMounted(async () => {
     if (!Array.isArray(result)) throw new Error('后端返回非数组质检载荷')
     inspections.value = result
   } catch (e: unknown) {
+    if (isOfflineDemoError(e)) {
+      inspections.value = fallbackQualityInspections()
+    } else {
     qualityError.value = `质检批次加载失败，已显示本地演示批次：${e instanceof Error ? e.message : '请稍后重试'}`
-    inspections.value = [
-      { id: 'INS-001', workOrderId: 'WO-001', productCode: 'PRD-001', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 50, qualifiedQuantity: 48, defectQuantity: 2, result: 'pass', inspectorId: 'USR-001', inspectedAt: '2026-05-11T10:30:00', passRate: 96 },
-      { id: 'INS-002', workOrderId: 'WO-002', productCode: 'PRD-002', processName: '注塑成型', inspectionPoint: '外观检验', inspectionQuantity: 100, qualifiedQuantity: 97, defectQuantity: 3, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-11T14:00:00', passRate: 97 },
-      { id: 'INS-003', workOrderId: 'WO-003', productCode: 'PRD-003', processName: '热处理', inspectionPoint: '硬度检测', inspectionQuantity: 20, qualifiedQuantity: 18, defectQuantity: 2, result: 'rework', inspectorId: 'USR-001', inspectedAt: '2026-05-12T08:00:00', passRate: 90 },
-      { id: 'INS-004', workOrderId: 'WO-004', productCode: 'PRD-001', processName: '装配', inspectionPoint: '功能测试', inspectionQuantity: 30, qualifiedQuantity: 26, defectQuantity: 4, result: 'fail', inspectorId: 'USR-003', inspectedAt: '2026-05-12T09:00:00', passRate: 86.7 },
-      { id: 'INS-005', workOrderId: 'WO-005', productCode: 'PRD-004', processName: 'CNC精加工', inspectionPoint: '尺寸检验', inspectionQuantity: 40, qualifiedQuantity: 40, defectQuantity: 0, result: 'pass', inspectorId: 'USR-002', inspectedAt: '2026-05-12T11:00:00', passRate: 100 },
-    ]
+      inspections.value = fallbackQualityInspections()
+    }
   }
   await applyAuditFocus()
   syncQualityReworkFromInspections()
@@ -830,12 +865,12 @@ onMounted(async () => {
     const { data } = await http.get('/anomaly')
     anomalies.value = data.items ?? data
   } catch (e: unknown) {
-    qualityError.value = `质量异常告警加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
-    anomalies.value = [
-      { id: 'ANM-001', workOrderId: 'WO-004', anomalyType: '尺寸超差', severity: 'critical', description: '装配后轴孔配合间隙 0.12mm，超过 0.08mm 标准上限', status: 'open', detectedAt: '2026-05-12T09:15:00' },
-      { id: 'ANM-002', workOrderId: 'WO-003', anomalyType: '硬度不足', severity: 'major', description: '热处理后硬度 HB89，低于 HB95 标准下限', status: 'investigating', detectedAt: '2026-05-12T08:30:00' },
-      { id: 'ANM-003', workOrderId: 'WO-001', anomalyType: '表面粗糙度', severity: 'minor', description: 'Ra 3.6μm，接近 3.2μm 标准上限，建议监控', status: 'open', detectedAt: '2026-05-11T16:00:00' },
-    ]
+    if (isOfflineDemoError(e)) {
+      anomalies.value = fallbackQualityAnomalies()
+    } else {
+      qualityError.value = `质量异常告警加载失败：${e instanceof Error ? e.message : '请稍后重试'}`
+      anomalies.value = fallbackQualityAnomalies()
+    }
   }
 
   await loadSpc()
@@ -1092,6 +1127,45 @@ onMounted(async () => {
   color: #4b5563;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.barcode-knowledge-guidance,
+.barcode-knowledge-links {
+  grid-column: 1 / -1;
+}
+
+.barcode-knowledge-guidance {
+  padding: 9px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.barcode-knowledge-guidance strong {
+  display: block;
+  color: #111827;
+  font-size: 12px;
+}
+
+.barcode-knowledge-guidance p {
+  margin-top: 3px;
+}
+
+.barcode-knowledge-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.barcode-knowledge-links a {
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .sample-dimensions,

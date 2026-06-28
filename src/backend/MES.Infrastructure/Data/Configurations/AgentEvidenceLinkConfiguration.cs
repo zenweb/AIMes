@@ -14,7 +14,7 @@ public class AgentEvidenceLinkConfiguration : IEntityTypeConfiguration<AgentEvid
         entity.Property(e => e.AgentDecisionId).HasColumnName("agent_decision_id").IsRequired().HasMaxLength(100);
         entity.Property(e => e.EvidenceType).HasColumnName("evidence_type").IsRequired().HasMaxLength(80);
         entity.Property(e => e.EvidenceKey).HasColumnName("evidence_key").IsRequired().HasMaxLength(160);
-        entity.Property(e => e.EvidenceSummary).HasColumnName("evidence_summary").HasMaxLength(1000);
+        entity.Property(e => e.EvidenceSummary).HasColumnName("evidence_summary");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at");
         entity.HasIndex(e => e.AgentDecisionId);
         entity.HasIndex(e => new { e.EvidenceType, e.EvidenceKey });

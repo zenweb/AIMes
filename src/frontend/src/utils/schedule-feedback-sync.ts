@@ -35,6 +35,7 @@ export function writeScheduleFeedbackSnapshot(input: Omit<ScheduleFeedbackSnapsh
     object: record.objectiveLabel,
     source: 'AI 排产 / 人机协同复盘',
     traceId: record.traceId ?? `TRACE-SCH-FEEDBACK-${Date.now()}`,
+    evidenceRef: record.agentDecisionId,
     status: record.decision === 'accepted' ? 'ready' : 'active',
     statusLabel: record.decision === 'accepted' ? '已采纳' : '已拒绝',
     createdAt: record.createdAt,

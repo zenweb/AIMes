@@ -5,6 +5,12 @@ const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
   '人员替班证据释放排产人员约束',
   '人员无有效替班候选时排产保持停工复核事件',
 ]
+const AGENT_BACKEND_EVIDENCE_TITLES = [
+  '调度员 Agent 工作台通过后端 API',
+  '调度员 Agent 工作台后端 403',
+  '调度员 Agent 工作台 API 不可用',
+]
+const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
 
 const laborEvidenceRetryReads = {
   blocks: 0,
@@ -16,12 +22,24 @@ test.describe.configure({ timeout: 90000 })
 test.describe('Scheduling 排产甘特图', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+    const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+    const usesFormalWritebackMock = testInfo.title.includes(FORMAL_WRITEBACK_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
       localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
-    }, usesLegacyPersonnelOfflineDemo)
+    }, !usesLiveBackendMock)
+    if (usesAgentBackendMock) {
+      await mockSchedulingPlanApis(page, {
+        agentApiUnavailable: testInfo.title.includes('调度员 Agent 工作台 API 不可用'),
+        agentAdoptStatus: testInfo.title.includes('调度员 Agent 工作台后端 403') ? 403 : 200,
+      })
+    }
+    if (usesFormalWritebackMock) {
+      await mockSchedulingPlanApis(page)
+    }
     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
       await page.addInitScript(() => {
         localStorage.setItem('aimes_offline_demo', 'false')
@@ -31,12 +49,14 @@ test.describe('Scheduling 排产甘特图', () => {
       await mockLaborRetrySchedulingPlanApis(page)
       await mockLaborEvidenceRetryApis(page)
     }
-    const entry = testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
-      ? 'scheduling?offlineDemo=0'
-      : 'scheduling'
+    const entry = usesLiveBackendMock
+      ? '/scheduling/scheduling?offlineDemo=0'
+      : '/scheduling/scheduling?offlineDemo=1'
     if (!usesLegacyPersonnelOfflineDemo) {
       await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
-      await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+      await page.waitForURL('**/scheduling/scheduling**', { timeout: 45000 })
+      await expect(page.locator('.schedule-board')).toBeVisible({ timeout: 45000 })
+      await expect(page.getByRole('heading', { name: 'AI 调度员专业台' })).toBeVisible({ timeout: 45000 })
     }
   })
 
@@ -84,41 +104,28 @@ test.describe('Scheduling 排产甘特图', () => {
   })
 
   test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
-    await mockAgentApi(page, { adoptStatus: 200 })
-    await page.reload({ waitUntil: 'commit' })
-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
-
     const panel = page.locator('.agent-workbench-panel')
-    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await clickAgentWorkbenchButton(page, '生成后端建议')
     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
     await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
 
-    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await clickAgentWorkbenchButton(page, '采纳推荐')
     await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
     await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
   })
 
   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
-    await mockAgentApi(page, { adoptStatus: 403 })
-    await page.reload({ waitUntil: 'commit' })
-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
-
     const panel = page.locator('.agent-workbench-panel')
-    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await clickAgentWorkbenchButton(page, '生成后端建议')
     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
 
-    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await clickAgentWorkbenchButton(page, '采纳推荐')
     await expect(panel.getByText('采纳失败，请确认当前用户具有 Admin 或 Planner 权限。')).toBeVisible()
   })
 
   test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-    await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
-    await page.reload({ waitUntil: 'commit' })
-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
-
     const panel = page.locator('.agent-workbench-panel')
-    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await clickAgentWorkbenchButton(page, '生成后端建议')
     await expect(panel.getByText('后端建议生成失败，已保留 demo fallback。')).toBeVisible()
     await expect(panel.getByText(/API 不可用 \/ demo fallback/)).toBeVisible()
   })
@@ -719,6 +726,23 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(scheduleEvidence.getByText(/急单插入重排建议/)).toBeVisible()
   })
 
+  test('急单 Agent 采纳后区分反馈与正式排产回写', async ({ page }) => {
+    const eventPanel = page.locator('.event-queue-panel')
+    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+    await eventPanel.getByRole('button', { name: '采纳此建议' }).click()
+
+    const workbench = page.locator('.agent-workbench-panel')
+    await expect(workbench.getByText('已进入反馈数据集')).toBeVisible()
+    await expect(workbench.getByText('排产反馈已写入本地复盘记录；正式计划待优化或保存')).toBeVisible()
+    const writebackStep = workbench.locator('li').filter({ hasText: '执行回写' })
+    await expect(writebackStep).toHaveClass(/current/)
+
+    await page.getByRole('button', { name: '排产优化' }).click()
+
+    await expect(workbench.getByText('排产反馈已写入本地复盘记录；正式排产计划已更新')).toBeVisible()
+    await expect(writebackStep).toHaveClass(/done/)
+  })
+
   test('点击任务条展示任务级排产解释', async ({ page }) => {
     await page.locator('.task-explain-shortcuts').getByRole('button', { name: /打开 .* 排产解释/ }).first().click()
 
@@ -857,9 +881,57 @@ test.describe('Scheduling 排产甘特图', () => {
   })
 })
 
-async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
-  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
 
+async function clickAgentWorkbenchButton(page: import('@playwright/test').Page, label: string) {
+  const clicked = await page.evaluate((buttonLabel) => {
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.agent-workbench-panel button'))
+    const button = buttons.find(candidate => candidate.textContent?.trim() === buttonLabel)
+    if (!button || button.disabled) return false
+    button.scrollIntoView({ block: 'center', inline: 'center' })
+    button.click()
+    return true
+  }, label)
+  expect(clicked, `Agent workbench button is missing or disabled: ${label}`).toBe(true)
+}
+
+async function mockSchedulingPlanApis(
+  page: import('@playwright/test').Page,
+  options: { agentApiUnavailable?: boolean; agentAdoptStatus?: 200 | 403 } = {},
+) {
+  const plan = {
+    id: 'plan-agent-e2e',
+    planName: 'Agent E2E 排产计划',
+    planStartDate: '2026-05-20T08:00:00.000Z',
+    planEndDate: '2026-05-20T20:00:00.000Z',
+    overallUtilizationRate: 0.82,
+    onTimeDeliveryRate: 0.91,
+    totalChangeoverMinutes: 35,
+    groupCount: 1,
+    createdAt: '2026-05-20T08:00:00.000Z',
+    items: [
+      {
+        id: 'agent-e2e-item-001',
+        workOrderId: 'wo-agent-e2e-001',
+        workOrderNumber: 'WO-AGENT-E2E-001',
+        equipmentId: 'eq-agent-e2e-001',
+        equipmentName: 'CNC Agent E2E',
+        plannedStartTime: '2026-05-20T08:00:00.000Z',
+        plannedEndTime: '2026-05-20T10:00:00.000Z',
+        sequence: 1,
+        setupTime: '20 分钟',
+        dependentItems: [],
+      },
+    ],
+  }
+  const optimizedPlan = {
+    ...plan,
+    id: 'plan-agent-e2e-optimized',
+    planName: 'Agent E2E 正式排产计划',
+    overallUtilizationRate: 0.87,
+    onTimeDeliveryRate: 0.94,
+    totalChangeoverMinutes: 42,
+    groupCount: 2,
+  }
   const pendingDecision = {
     id: 'agent-decision-e2e-001',
     triggerEventId: 'trigger-e2e-001',
@@ -902,35 +974,117 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
     ],
   }
 
-  await page.route('**/api/v1/scheduling/agent/decisions**', route => route.fulfill({
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      token: 'mock-e2e-token',
+      refreshToken: 'mock-e2e-refresh',
+      expiresAt: '2026-12-31T23:59:59Z',
+    }),
+  }))
+  await page.route('**/api/v1/llm/status', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ available: false, provider: 'mock-e2e' }),
+  }))
+  await page.route('**/api/v1/dashboard', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      equipmentStatus: [],
+      todaySchedules: [],
+      materialAlerts: [],
+      qualityStats: { passRate: 0, totalInspections: 0, passedInspections: 0, defects: 0 },
+    }),
+  }))
+  await page.route('**/api/v1/risk/dashboard', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+  }))
+  await page.route('**/api/v1/**', route => {
+    const url = route.request().url()
+    if (url.includes('/api/v1/auth/refresh')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          token: 'mock-e2e-token',
+          refreshToken: 'mock-e2e-refresh',
+          expiresAt: '2026-12-31T23:59:59Z',
+        }),
+      })
+    }
+    if (options.agentApiUnavailable && url.includes('/api/v1/scheduling/agent/')) {
+      return route.abort()
+    }
+    if (url.includes('/api/v1/scheduling/agent/recommend')) {
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(pendingDecision),
+      })
+    }
+    if (url.includes('/api/v1/scheduling/agent/agent-decision-e2e-001/adopt')) {
+      if (options.agentAdoptStatus === 403) {
+        return route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...pendingDecision,
+          status: 'Adopted',
+          adoptedScenarioId: 'scenario-weighted',
+        }),
+      })
+    }
+    if (url.includes('/api/v1/scheduling/agent/decisions')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      })
+    }
+    if (url.includes('/api/v1/scheduling/optimize')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          plan: optimizedPlan,
+          assignments: [],
+          estimatedCompletionRate: 0.94,
+          utilizationRate: 0.87,
+          warnings: ['Agent E2E 正式排产计划已更新'],
+        }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+    })
+  })
+  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(plan),
+  }))
+  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify([]),
   }))
-  await page.route('**/api/v1/scheduling/agent/recommend', route => route.fulfill({
-    status: 201,
+  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+    status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(pendingDecision),
+    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
   }))
-  await page.route('**/api/v1/scheduling/agent/agent-decision-e2e-001/adopt', route => {
-    if (options.adoptStatus === 403) {
-      return route.fulfill({
-        status: 403,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
-      })
-    }
-
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ...pendingDecision,
-        status: 'Adopted',
-        adoptedScenarioId: 'scenario-weighted',
-      }),
-    })
-  })
 }
 
 async function mockLaborRetrySchedulingPlanApis(page: import('@playwright/test').Page) {

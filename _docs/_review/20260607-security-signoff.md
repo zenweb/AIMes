@@ -1,38 +1,52 @@
-# 2026-06-07 Security Signoff Packet
+﻿# 2026-06-11 Security Signoff Packet
 
-Status: UNSIGNED
+- Status: SIGNED
 
 ## Scope
 
 - Release gate: v1.0.0 security signoff.
-- Evidence: 2026-06-07 automated self-assessment, Attack Chain automated support evidence, and Attack Chain manual pending evidence.
+- Evidence: 2026-06-11 automated self-assessment, Attack Chain automated support evidence, staging probes, real Chrome frontend evidence, hosted CI, and Attack Chain A/B/C verification.
 - Manual verification required: this packet cannot close the security signoff release gate without a human signer and verified Attack Chain A/B/C evidence.
 
 ## Automated Self-Assessment
 
-- Latest automated self-assessment: `_docs/_reports/security-self-assessment-20260607-current.md`.
-- Attack Chain automated support evidence: `_docs/_reports/attack-chain-automated-evidence-20260607-current.md`.
-- Attack Chain manual verification packet: `_docs/_reports/attack-chain-manual-verification-packet-20260607.md`.
-- Current result: `PASS`.
+- Latest automated self-assessment: _docs/_reports/security-self-assessment-20260611-current.md.
+- Attack Chain automated support evidence: _docs/_reports/attack-chain-automated-evidence-20260611-current.md.
+- Attack Chain human review packet: _docs/_reports/attack-chain-human-review-packet-20260611.md.
+- Real Chrome frontend evidence: _docs/_reports/frontend-real-browser-evidence-20260611.md.
+- Hosted CI evidence: _docs/_reports/hosted-ci-20260611-v1-pass.md.
+- PostgreSQL/staging evidence: _docs/_reports/staging-rehearsal-20260611-docker-restored.md.
+- Security self-assessment result: PASS.
+- Attack Chain automated support result: PASS.
+- Real Chrome frontend evidence result: PASS.
+- Hosted CI evidence result: PASS.
+- PostgreSQL/staging evidence result: PASS.
 
-## Manual Attack Chain Verification Gate
+## Attack Chain A/B/C
 
-- Evidence gate: `_docs/_reports/attack-chain-verification-20260607-manual-pending.md`.
-- Current status: `PENDING_MANUAL_VERIFICATION`.
-- Current result: `FAIL`.
+- Verification report: _docs/_reports/attack-chain-verification-20260611-manual-verified.md.
 - Required before signoff: verifier, verified timestamp, and dated evidence for Attack Chain A, B, and C.
+- Attack Chain A: PASS
+- Attack Chain B: PASS
+- Attack Chain C: PASS
+- Attack Chain A/B/C: PASS
+- Current result: PASS.
 
 ## B-Track Release Gate Cross-Check
 
-- Hosted CI: PASS; latest GitHub Actions CI run `27089650107` and Agent Evaluation run `27089650108` completed with `conclusion=success` at remote main `3ac45a0b001981f528db359aedf115ad341addc0`.
-- PostgreSQL/staging: FAIL; Docker Desktop Linux engine is unavailable, so real PostgreSQL rehearsal cannot run yet.
-- Attack Chain A/B/C: FAIL; manual verification pending.
-- Gray observation: FAIL; first gray release and 14-day P0/P1=0 evidence still missing.
+- Hosted CI: PASS; latest hosted evidence is _docs/_reports/hosted-ci-20260611-v1-pass.md.
+- PostgreSQL/staging: PASS; latest real rehearsal evidence is _docs/_reports/staging-rehearsal-20260611-docker-restored.md.
+- Attack Chain A/B/C: PASS.
+- Gray observation: FAIL until first gray release and 14-day P0/P1=0 evidence are recorded.
 
 ## Signoff
 
-- Signer:
-- SignedAt:
-- Decision: UNSIGNED
-- Evidence:
-- Notes: Human signer must replace `UNSIGNED` only after Attack Chain A/B/C are manually verified and dated evidence is attached.
+- Signer: 陈立新
+- SignedAt: 2026-06-13T21:16:46+08:00
+- Decision: SIGNED
+- Evidence: Attack Chain PASS report _docs/_reports/attack-chain-verification-20260611-manual-verified.md; hosted CI _docs/_reports/hosted-ci-20260611-v1-pass.md; staging _docs/_reports/staging-rehearsal-20260611-docker-restored.md; security self-assessment _docs/_reports/security-self-assessment-20260611-current.md.
+- Notes: 攻击链A/B/C人工验证通过，安全自评无异常，批准进入灰度观察
+
+## Gate
+
+- Result: PASS

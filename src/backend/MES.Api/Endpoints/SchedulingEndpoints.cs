@@ -475,7 +475,7 @@ public static class SchedulingEndpoints
         IScheduleRepository scheduleRepo,
         CancellationToken ct)
     {
-        var plan = await scheduleRepo.GetByIdAsync(planId, ct);
+        var plan = await scheduleRepo.GetByIdForUpdateAsync(planId, ct);
         if (plan is null)
             return TypedResults.NotFound(new { message = $"排产计划 {planId} 不存在" });
 
@@ -588,6 +588,8 @@ public static class SchedulingEndpoints
             return TypedResults.BadRequest(new { message = "车间ID不能为空" });
         if (string.IsNullOrWhiteSpace(request.ReasonCategory))
             return TypedResults.BadRequest(new { message = "修改原因分类不能为空" });
+        if (string.IsNullOrWhiteSpace(request.ReasonDetail))
+            return TypedResults.BadRequest(new { message = "修改原因说明不能为空" });
 
         var operatorUser = httpContext.User.Identity?.Name ?? "unknown";
         await schedulingService.RecordAdoptionFeedbackAsync(request, operatorUser, ct);

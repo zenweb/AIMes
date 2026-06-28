@@ -95,8 +95,51 @@ describe('risk action sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/risk-action-traces', { params: { take: 12 } })
   })
 
+  it('falls back to local traces when backend returns only partial risk action payloads', async () => {
+    const localTrace = trace({ id: 'RISK-LOCAL-COMPLETE' })
+    appendRiskActionTrace(localTrace)
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'RISK-PARTIAL',
+          title: '缺料处置',
+          trace: '缺少责任人与影响工单',
+        },
+      ],
+    })
+
+    await expect(readRiskActionTracesBackendFirst()).resolves.toEqual([localTrace])
+  })
+
+  it('fails loud when risk action trace backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readRiskActionTracesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组风险动作审计载荷')
+  })
+
+  it('fails loud for risk action trace refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('risk action trace backend unavailable'))
+
+    await expect(readRiskActionTracesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('risk action trace backend unavailable')
+  })
+
   it('removes corrupt trace JSON so risk boards do not render stale evidence', () => {
     localStorage.setItem('aimes_risk_action_traces', '{bad json')
+
+    expect(readRiskActionTraces()).toEqual([])
+    expect(localStorage.getItem('aimes_risk_action_traces')).toBeNull()
+  })
+
+  it('removes incomplete local traces that cannot explain owner and delivery impact', () => {
+    localStorage.setItem('aimes_risk_action_traces', JSON.stringify([
+      {
+        id: 'RISK-PARTIAL',
+        title: '缺料处置',
+        trace: '缺少责任人与影响工单',
+      },
+    ]))
 
     expect(readRiskActionTraces()).toEqual([])
     expect(localStorage.getItem('aimes_risk_action_traces')).toBeNull()

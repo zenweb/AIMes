@@ -117,6 +117,40 @@ function isApprovalOverride(item: unknown): item is Partial<AgentConfigApprovalR
     && (override.status === undefined || isApprovalStatus(override.status))
 }
 
+function isPolicyMetric(item: unknown): item is AgentConfigApprovalRecord['policyMetrics'][number] {
+  if (!item || typeof item !== 'object') return false
+  const metric = item as Partial<AgentConfigApprovalRecord['policyMetrics'][number]>
+  return typeof metric.label === 'string'
+    && typeof metric.fromValue === 'string'
+    && typeof metric.toValue === 'string'
+}
+
+function isCompleteBackendApprovalRecord(item: unknown): item is AgentConfigApprovalRecord {
+  if (!item || typeof item !== 'object') return false
+  const record = item as Partial<AgentConfigApprovalRecord>
+  const hasRequiredFields = typeof record.id === 'string'
+    && typeof record.title === 'string'
+    && typeof record.replayTitle === 'string'
+    && typeof record.configKey === 'string'
+    && typeof record.fromValue === 'string'
+    && typeof record.toValue === 'string'
+    && typeof record.reason === 'string'
+    && typeof record.owner === 'string'
+    && isApprovalStatus(record.status)
+    && typeof record.auditId === 'string'
+    && typeof record.submittedBy === 'string'
+    && typeof record.submittedAt === 'string'
+    && typeof record.risk === 'string'
+  if (!hasRequiredFields) return false
+  if (record.id !== QUALITY_EXPERIMENT_GATE_APPROVAL_ID) return true
+  return record.policyArea === 'quality'
+    && Array.isArray(record.policyMetrics)
+    && record.policyMetrics.length > 0
+    && record.policyMetrics.every(isPolicyMetric)
+    && typeof record.controlSummary === 'string'
+    && record.controlSummary.trim().length > 0
+}
+
 function readOverrides(): Partial<AgentConfigApprovalRecord>[] {
   if (!canUseStorage()) return []
   try {
@@ -143,16 +177,42 @@ export function readAgentConfigApprovals(): AgentConfigApprovalRecord[] {
   })
 }
 
+function mergeApprovalRecord(
+  defaultRecord: AgentConfigApprovalRecord,
+  backendRecord: AgentConfigApprovalRecord | undefined,
+  localRecord: AgentConfigApprovalRecord | undefined,
+): AgentConfigApprovalRecord {
+  if (!backendRecord) return localRecord ? { ...defaultRecord, ...localRecord } : { ...defaultRecord }
+  if (!localRecord) return { ...defaultRecord, ...backendRecord }
+
+  const backendTime = new Date(backendRecord.decidedAt ?? backendRecord.submittedAt).getTime()
+  const localTime = new Date(localRecord.decidedAt ?? localRecord.submittedAt).getTime()
+  return localTime >= backendTime
+    ? { ...defaultRecord, ...backendRecord, ...localRecord }
+    : { ...defaultRecord, ...localRecord, ...backendRecord }
+}
+
 export async function readAgentConfigApprovalsBackendFirst(options?: { failLoud?: boolean }): Promise<AgentConfigApprovalRecord[]> {
-  const backendRecords = await queryAgentConfigApprovals(12, options)
+  const localRecords = readAgentConfigApprovals()
+  let backendRecords: AgentConfigApprovalRecord[]
+  try {
+    backendRecords = await queryAgentConfigApprovals(12, options)
+  } catch (error: unknown) {
+    if (options?.failLoud) {
+      throw error
+    }
+    return localRecords
+  }
   if (!Array.isArray(backendRecords)) {
     if (options?.failLoud) throw new Error('后端返回非数组审计载荷')
-    return readAgentConfigApprovals()
+    return localRecords
   }
-  if (backendRecords.length === 0) return readAgentConfigApprovals()
+  const completeBackendRecords = backendRecords.filter(isCompleteBackendApprovalRecord)
+  if (completeBackendRecords.length === 0) return localRecords
   return DEFAULT_APPROVALS.map(defaultRecord => {
-    const backendRecord = backendRecords.find(item => item.id === defaultRecord.id)
-    return backendRecord ? { ...defaultRecord, ...backendRecord } : { ...defaultRecord }
+    const backendRecord = completeBackendRecords.find(item => item.id === defaultRecord.id)
+    const localRecord = localRecords.find(item => item.id === defaultRecord.id)
+    return mergeApprovalRecord(defaultRecord, backendRecord, localRecord)
   })
 }
 

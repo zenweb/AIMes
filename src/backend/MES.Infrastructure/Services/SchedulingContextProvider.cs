@@ -3,6 +3,7 @@ using MES.Domain.Entities.Scheduling;
 using MES.Domain.Events;
 using MES.Domain.Interfaces.Repositories;
 using MES.Domain.Interfaces.Services;
+using MES.Domain.ValueObjects;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -57,13 +58,19 @@ public class SchedulingContextProvider : ISchedulingContextProvider
             .OrderBy(m => m.MaterialCode)
             .ToListAsync(ct);
 
-        var executions = await _dbContext.OperationExecutions
+        var workOrderKeys = workOrders
+            .SelectMany(w => new[] { w.Id, w.OrderNumber })
+            .ToList();
+
+        var executions = (await _dbContext.OperationExecutions
             .AsNoTracking()
-            .Where(e => workOrders.Select(w => w.Id).Contains(e.WorkOrderId)
-                || workOrders.Select(w => w.OrderNumber).Contains(e.WorkOrderId))
-            .OrderBy(e => e.WorkOrderId)
-            .ThenBy(e => e.OperationCode)
-            .ToListAsync(ct);
+            .Where(e => workOrderKeys.Contains(e.WorkOrderId))
+            .ToListAsync(ct))
+            .OrderBy(e => e.WorkOrderId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => new OperationCode(e.OperationCode).NumericSequence)
+            .ThenBy(e => e.OperationCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.CreatedAt)
+            .ToList();
 
         var plannedQuantityByWorkOrder = workOrders.ToDictionary(w => w.Id, w => w.PlannedQuantity);
         foreach (var workOrder in workOrders)
@@ -251,4 +258,5 @@ public class SchedulingContextProvider : ISchedulingContextProvider
         }
         return matrix;
     }
+
 }

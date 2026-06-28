@@ -219,11 +219,13 @@ export function readQualityMrbDispositionRecord(): QualityMrbDispositionRecord |
   }
 }
 
-export async function readQualityMrbDispositionRecordBackendFirst(): Promise<QualityMrbDispositionRecord | null> {
+export async function readQualityMrbDispositionRecordBackendFirst(options?: { failLoud?: boolean }): Promise<QualityMrbDispositionRecord | null> {
   try {
     const { getLatestQualityMrbDisposition } = await import('../api/qualityEvidence')
-    return await getLatestQualityMrbDisposition() ?? readQualityMrbDispositionRecord()
-  } catch {
+    const record = await getLatestQualityMrbDisposition(options)
+    return isQualityMrbDispositionRecord(record) ? record : readQualityMrbDispositionRecord()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readQualityMrbDispositionRecord()
   }
 }

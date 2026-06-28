@@ -104,11 +104,13 @@ export function readRiskSlaReviewRecord(): RiskSlaReviewRecord | null {
   }
 }
 
-export async function readRiskSlaReviewRecordBackendFirst(): Promise<RiskSlaReviewRecord | null> {
+export async function readRiskSlaReviewRecordBackendFirst(options?: { failLoud?: boolean }): Promise<RiskSlaReviewRecord | null> {
   try {
     const { getLatestRiskSlaReview } = await import('../api/riskEvidence')
-    return await getLatestRiskSlaReview() ?? readRiskSlaReviewRecord()
-  } catch {
+    const record = await getLatestRiskSlaReview(options)
+    return isRiskSlaReviewRecord(record) ? record : readRiskSlaReviewRecord()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readRiskSlaReviewRecord()
   }
 }

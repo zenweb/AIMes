@@ -11,13 +11,28 @@ const latestAbReport = JSON.parse(
 ) as LatestAbReport
 const expectedDelayedOrdersReduced = `${latestAbReport.delta.delayedOrdersReduced} 单`
 
+function offlineDemoPath(path: string) {
+  return `${path}?offlineDemo=1`
+}
+
+async function enableLivePurchaseRequest(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    window.history.replaceState(null, '', '/scheduling/purchase?offlineDemo=0')
+    localStorage.setItem('aimes_offline_demo', 'false')
+    localStorage.setItem('aimes_token', 'mock-e2e-token')
+    localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+  })
+}
+
 test.describe('Purchase 采购协同', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'true')
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('purchase')
+    await page.goto(offlineDemoPath('purchase'))
     await page.waitForSelector('.po-board', { timeout: 20000 })
   })
 
@@ -38,7 +53,7 @@ test.describe('Purchase 采购协同', () => {
         body: JSON.stringify({ message: 'supplier master data missing from chromium' }),
       })
     })
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await enableLivePurchaseRequest(page)
 
     await page.locator('.list-panel').scrollIntoViewIfNeeded()
     await page.getByRole('button', { name: '+ 新建' }).click()
@@ -73,12 +88,11 @@ test.describe('Purchase 采购协同', () => {
         body: JSON.stringify({ message: 'supplier credit hold from chromium' }),
       })
     })
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-
     await page.locator('.list-panel').scrollIntoViewIfNeeded()
     await page.getByRole('option', { name: /PO-20260502/ }).click()
     await expect(page.locator('.detail-header')).toContainText('PO-20260502')
     await expect(page.locator('.detail-header .tag')).toHaveText('已提交')
+    await enableLivePurchaseRequest(page)
     await page.locator('.act-confirm').click()
 
     const alert = page.locator('.purchase-notification')
@@ -106,8 +120,6 @@ test.describe('Purchase 采购协同', () => {
         body: JSON.stringify({ message: 'received quantity exceeds remaining from chromium' }),
       })
     })
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-
     await page.locator('.list-panel').scrollIntoViewIfNeeded()
     await page.getByRole('option', { name: /PO-20260501/ }).click()
     await expect(page.locator('.detail-header')).toContainText('PO-20260501')
@@ -120,6 +132,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(dialog).toBeVisible()
     await dialog.locator('select').selectOption('MAT-A01')
     await dialog.locator('input[type="number"]').fill('2500')
+    await enableLivePurchaseRequest(page)
     await dialog.locator('.btn-ok').click()
 
     const alert = page.locator('.purchase-notification')
@@ -146,6 +159,301 @@ test.describe('Purchase 采购协同', () => {
     await expect(dialog.getByRole('button', { name: '确认收货' })).toBeVisible()
   })
 
+  test('启动证据多源同步失败时真实浏览器保留全部 fail-loud 告警且采购列表可用', async ({ page }) => {
+    await page.route('**/api/v1/shortage-evidence/supply-risk-escalations/latest**', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'supply risk backend unavailable from chromium' }),
+      })
+    })
+    await page.route('**/api/v1/shortage-evidence/supplier-network-decisions/latest**', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'supplier network backend unavailable from chromium' }),
+      })
+    })
+    await page.route('**/api/v1/outsourcing-evidence/commitments/latest**', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'outsourcing backend unavailable from chromium' }),
+      })
+    })
+    await page.route('**/api/v1/scheduling/anomaly-dispatch-records**', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'material dispatch backend unavailable from chromium' }),
+      })
+    })
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithEvidenceReadFailure(key: string) {
+        if (
+          key === 'aimes_supply_risk_escalation'
+          || key === 'aimes_supplier_network_decision'
+          || key === 'aimes_outsourcing_commitment_packages'
+          || key === 'aimes_anomaly_dispatch_records'
+        ) {
+          throw new Error(`${key} storage read unavailable from chromium`)
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithEvidenceCleanupFailure(key: string) {
+        if (
+          key === 'aimes_supply_risk_escalation'
+          || key === 'aimes_supplier_network_decision'
+          || key === 'aimes_outsourcing_commitment_packages'
+          || key === 'aimes_anomaly_dispatch_records'
+        ) {
+          throw new Error(`${key} storage cleanup unavailable from chromium`)
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.po-board', { timeout: 20000 })
+
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('供应风险状态同步失败')
+    await expect(alert).toContainText('aimes_supply_risk_escalation storage read unavailable from chromium')
+    await expect(alert).toContainText('供应网络决策同步失败')
+    await expect(alert).toContainText('aimes_supplier_network_decision storage read unavailable from chromium')
+    await expect(alert).toContainText('外协承诺同步失败')
+    await expect(alert).toContainText('aimes_outsourcing_commitment_packages storage cleanup unavailable from chromium')
+    await expect(alert).toContainText('异常分流供应整改同步失败')
+    await expect(alert).toContainText('aimes_anomaly_dispatch_records storage cleanup unavailable from chromium')
+    await expect(page.getByRole('option', { name: /PO-20260501/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: '+ 新建' })).toBeVisible()
+  })
+
+  test('详情加载失败后再次选择成功时清理陈旧详情告警并保留启动证据告警', async ({ page }) => {
+    let firstOrderDetailRequests = 0
+    await page.route('**/api/v1/**', async route => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const method = request.method()
+
+      if (method === 'GET' && url.pathname === '/api/v1/purchase') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              {
+                id: 'po1',
+                orderNumber: 'PO-20260501',
+                supplierName: '华东轴承有限公司',
+                status: 'Confirmed',
+                orderDate: '2026-05-01T00:00:00',
+                expectedDeliveryDate: '2026-05-20',
+                totalAmount: 45000,
+                itemCount: 3,
+                createdBy: 'admin',
+                createdAt: '2026-05-01T00:00:00',
+              },
+              {
+                id: 'po2',
+                orderNumber: 'PO-20260502',
+                supplierName: '南方钢材集团',
+                status: 'Submitted',
+                orderDate: '2026-05-08T00:00:00',
+                expectedDeliveryDate: '2026-05-25',
+                totalAmount: 128000,
+                itemCount: 2,
+                createdBy: 'admin',
+                createdAt: '2026-05-08T00:00:00',
+              },
+            ],
+            totalCount: 2,
+          }),
+        })
+        return
+      }
+
+      if (method === 'GET' && url.pathname === '/api/v1/scheduling/supplier-network-decision/latest') {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'supplier network startup unavailable from chromium' }),
+        })
+        return
+      }
+
+      if (method === 'GET' && url.pathname === '/api/v1/purchase/po1') {
+        firstOrderDetailRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'purchase detail unavailable from chromium' }),
+        })
+        return
+      }
+
+      if (method === 'GET' && url.pathname === '/api/v1/purchase/po2') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'po2',
+            orderNumber: 'PO-20260502',
+            supplierName: '南方钢材集团',
+            supplierContact: '李经理',
+            status: 'Submitted',
+            orderDate: '2026-05-02T00:00:00',
+            expectedDeliveryDate: '2026-05-22',
+            totalAmount: 128000,
+            completedDate: null,
+            remark: null,
+            createdBy: 'admin',
+            createdAt: '2026-05-02T00:00:00',
+            updatedAt: null,
+            items: [],
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        status: method === 'GET' ? 404 : 200,
+        contentType: 'application/json',
+        body: JSON.stringify(method === 'GET' ? { message: 'not relevant to purchase detail recovery fixture' } : {}),
+      })
+    })
+    await page.addInitScript(() => {
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithSupplierNetworkFailure(key: string) {
+        if (key === 'aimes_supplier_network_decision') {
+          throw new Error('supplier network local fallback unavailable from chromium')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithSupplierNetworkFailure(key: string) {
+        if (key === 'aimes_supplier_network_decision') {
+          throw new Error('supplier network local cleanup unavailable from chromium')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await enableLivePurchaseRequest(page)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.po-board', { timeout: 20000 })
+
+    await page.getByRole('option', { name: /PO-20260501/ }).click()
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toContainText('供应网络决策同步失败')
+    await expect(alert).toContainText('purchase detail unavailable from chromium')
+
+    await page.getByRole('option', { name: /PO-20260502/ }).click()
+
+    await expect(page.locator('.detail-header')).toContainText('PO-20260502')
+    await expect(alert).toContainText('供应网络决策同步失败')
+    await expect(alert).toContainText('supplier network local fallback unavailable from chromium')
+    await expect(alert).not.toContainText('采购订单详情加载失败')
+    await expect(alert).not.toContainText('purchase detail unavailable from chromium')
+    expect(firstOrderDetailRequests).toBe(1)
+  })
+
+  test('列表首次降级后确认采购订单成功仍保留列表告警', async ({ page }) => {
+    let listRequests = 0
+    let confirmRequests = 0
+
+    await page.route('**/api/v1/**', async route => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const method = request.method()
+
+      if (method === 'GET' && url.pathname === '/api/v1/purchase') {
+        listRequests += 1
+        if (listRequests === 1) {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ message: 'purchase list unavailable from chromium' }),
+          })
+          return
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              {
+                id: 'po2',
+                orderNumber: 'PO-20260502',
+                supplierName: '南方钢材集团',
+                status: 'Confirmed',
+                orderDate: '2026-05-08T00:00:00',
+                expectedDeliveryDate: '2026-05-25',
+                totalAmount: 128000,
+                itemCount: 0,
+                createdBy: 'admin',
+                createdAt: '2026-05-08T00:00:00',
+              },
+            ],
+            totalCount: 1,
+          }),
+        })
+        return
+      }
+
+      if (method === 'POST' && url.pathname === '/api/v1/purchase/po2/confirm') {
+        confirmRequests += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'po2',
+            orderNumber: 'PO-20260502',
+            supplierName: '南方钢材集团',
+            supplierContact: '李经理',
+            status: 'Confirmed',
+            orderDate: '2026-05-08T00:00:00',
+            expectedDeliveryDate: '2026-05-25',
+            totalAmount: 128000,
+            completedDate: null,
+            remark: null,
+            createdBy: 'admin',
+            createdAt: '2026-05-08T00:00:00',
+            updatedAt: '2026-05-08T10:00:00',
+            items: [],
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        status: method === 'GET' ? 404 : 200,
+        contentType: 'application/json',
+        body: JSON.stringify(method === 'GET' ? { message: 'not relevant to purchase list recovery fixture' } : {}),
+      })
+    })
+    await enableLivePurchaseRequest(page)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.po-board', { timeout: 20000 })
+
+    const alert = page.locator('.purchase-notification')
+    await expect(alert).toContainText('采购订单列表加载失败')
+    await expect(alert).toContainText('purchase list unavailable from chromium')
+
+    await page.getByRole('option', { name: /PO-20260502/ }).click()
+    await expect(page.locator('.detail-header')).toContainText('PO-20260502')
+    await page.locator('.act-confirm').click()
+
+    await expect(page.locator('.detail-header .tag')).toHaveText('已确认')
+    await expect(alert).toContainText('采购订单列表加载失败')
+    await expect(alert).toContainText('purchase list unavailable from chromium')
+    expect(confirmRequests).toBe(1)
+  })
+
   test('缺料事件生成采购加急单并回写风险下降', async ({ page }) => {
     const panel = page.locator('.shortage-action-panel')
     await expect(panel).toBeVisible()
@@ -167,7 +475,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(panel.getByText(/缺口清零/)).toBeVisible()
     await expect(page.locator('.detail-header').getByText('已完成')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     const eventPanel = page.locator('.event-queue-panel')
     await expect(eventPanel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' }).getByText('风险下降')).toBeVisible()
     await expect(eventPanel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' }).getByText('已缓解')).toBeVisible()
@@ -175,17 +483,17 @@ test.describe('Purchase 采购协同', () => {
     await eventPanel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' }).getByRole('button', { name: '复核排产影响' }).click()
     await expect(eventPanel.getByText('缺料缓解后排产复核')).toBeVisible()
 
-    await page.goto('dashboard')
+    await page.goto(offlineDemoPath('dashboard'))
     await expect(page.locator('.risk-sync-card').getByText('M-AL-6061 缺料已缓解')).toBeVisible()
     await expect(page.locator('.risk-sync-card').getByText(/缺口清零/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const purchaseEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'M-AL-6061 加急采购收货已释放缺料风险' })
     await expect(purchaseEvidence.locator('.evidence-topline span').getByText('采购回写', { exact: true })).toBeVisible()
     await expect(purchaseEvidence.locator('code').getByText('PO-RUSH-20260519', { exact: true })).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '采购收货回放' }).getByText('1')).toBeVisible()
@@ -199,19 +507,19 @@ test.describe('Purchase 采购协同', () => {
   })
 
   test('采购收货后关闭缺料齐套 Agent 治理待办', async ({ page }) => {
-    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('inventory'), { waitUntil: 'commit' })
     await page.waitForSelector('.inv-board', { timeout: 30000 })
     const kittingPanel = page.locator('.kitting-panel')
     await kittingPanel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
     await expect(kittingPanel.getByText('缺料事件已同步 AI 排产')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const pendingPanel = page.locator('.agent-governance-panel')
     await expect(pendingPanel.locator('.agent-metric').filter({ hasText: '缺料齐套治理' }).getByText('1 待处理 / 1 条')).toBeVisible()
 
-    await page.goto('purchase', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('purchase'), { waitUntil: 'commit' })
     await page.waitForSelector('.po-board', { timeout: 30000 })
     const purchasePanel = page.locator('.shortage-action-panel')
     await purchasePanel.getByRole('button', { name: '生成采购加急单' }).click()
@@ -219,7 +527,7 @@ test.describe('Purchase 采购协同', () => {
     await purchasePanel.getByRole('button', { name: '模拟加急收货' }).click()
     await expect(purchasePanel.getByText('风险下降')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('admin'), { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const closedPanel = page.locator('.agent-governance-panel')
@@ -249,7 +557,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(panel.getByText('供应延期已升级')).toBeVisible()
     await expect(panel.getByText('TRACE-PUR-MAT-B02-SUPPLY-RISK-ESCALATED')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     const eventPanel = page.locator('.event-queue-panel')
     const supplyEvent = eventPanel.locator('.event-card').filter({ hasText: 'MAT-B02 供应延期风险' })
     await expect(supplyEvent.getByText('供应风险')).toBeVisible()
@@ -259,7 +567,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(eventPanel.getByText('供应延期升级后的排产保护')).toBeVisible()
     await expect(eventPanel.getByText(/评估 华东快供二厂 替代承诺/)).toBeVisible()
 
-    await page.goto('purchase')
+    await page.goto(offlineDemoPath('purchase'))
     await page.waitForSelector('.po-board', { timeout: 20000 })
     const reloadedPanel = page.locator('.supply-risk-panel')
     await reloadedPanel.getByRole('button', { name: '锁定替代供应商' }).click()
@@ -267,20 +575,20 @@ test.describe('Purchase 采购协同', () => {
     await expect(reloadedPanel.getByText('替代供应商已锁定')).toBeVisible()
     await expect(reloadedPanel.getByText('TRACE-PUR-MAT-B02-ALT-SUPPLIER-COMMITTED')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     const resolvedSupplyEvent = page.locator('.event-queue-panel .event-card').filter({ hasText: 'MAT-B02 供应延期风险' })
     await expect(resolvedSupplyEvent.getByText('风险下降')).toBeVisible()
     await expect(resolvedSupplyEvent.getByText('已缓解')).toBeVisible()
     await resolvedSupplyEvent.getByRole('button', { name: '复核排产影响' }).click()
     await expect(page.locator('.agent-suggestion').getByText('替代供应商承诺后的排产复核')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'MAT-B02 替代供应商已锁定' })
     await expect(evidence.locator('.evidence-topline span').getByText('供应风险', { exact: true })).toBeVisible()
     await expect(evidence.locator('code').getByText('TRACE-PUR-MAT-B02-ALT-SUPPLIER-COMMITTED', { exact: true })).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '供应风险回放' }).getByText('1')).toBeVisible()
@@ -292,7 +600,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(auditPanel.locator('.replay-detail').getByText(/供应延期、替代供应商承诺、原交期和影响工单/)).toBeVisible()
     await expect(auditPanel.locator('.replay-detail').getByText(/冻结窗口、替代承诺、加急到货和排产复核是否闭环/)).toBeVisible()
 
-    await page.goto('purchase')
+    await page.goto(offlineDemoPath('purchase'))
     await page.waitForSelector('.po-board', { timeout: 20000 })
     const receivedPanel = page.locator('.supply-risk-panel')
     await receivedPanel.getByRole('button', { name: '确认替代到货' }).click()
@@ -300,7 +608,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(receivedPanel.getByText('替代到货已确认')).toBeVisible()
     await expect(receivedPanel.getByText('TRACE-PUR-MAT-B02-ALT-SUPPLIER-RECEIVED')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     const closedSupplyEvent = page.locator('.event-queue-panel .event-card').filter({ hasText: 'MAT-B02 供应延期风险' })
     await expect(closedSupplyEvent.getByText('已关闭')).toBeVisible()
     await expect(closedSupplyEvent.getByText('已缓解')).toBeVisible()
@@ -308,13 +616,13 @@ test.describe('Purchase 采购协同', () => {
     await closedSupplyEvent.getByRole('button', { name: '复核排产影响' }).click()
     await expect(page.locator('.agent-suggestion').getByText('替代供应商到货后的排产释放')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const receiptEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'MAT-B02 替代供应商到货已确认' })
     await expect(receiptEvidence.locator('.evidence-topline span').getByText('供应到货', { exact: true })).toBeVisible()
     await expect(receiptEvidence.locator('code').getByText('TRACE-PUR-MAT-B02-ALT-SUPPLIER-RECEIVED', { exact: true })).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const receiptAuditPanel = page.locator('.audit-replay-panel')
     await expect(receiptAuditPanel.locator('.metric-chip').filter({ hasText: '采购收货回放' }).getByText('1')).toBeVisible()
@@ -339,8 +647,9 @@ test.describe('Purchase 采购协同', () => {
     await expect(panel.getByText('供应网络已选优')).toBeVisible()
     await expect(panel.getByText('TRACE-PUR-MAT-B02-SUPPLIER-NETWORK-SLA')).toBeVisible()
     await expect(panel.locator('.supplier-candidate-card.selected').getByText('华东快供二厂')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '选优供应商并生成 SLA 决策' })).toBeDisabled()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     const supplierNetworkEvent = page.locator('.event-queue-panel .event-card').filter({ hasText: 'MAT-B02 供应商绩效与 SLA 选优' })
     await expect(supplierNetworkEvent.getByText('供应网络')).toBeVisible()
     await expect(supplierNetworkEvent.getByText('已选优')).toBeVisible()
@@ -348,13 +657,13 @@ test.describe('Purchase 采购协同', () => {
     await supplierNetworkEvent.getByRole('button', { name: '复核排产影响' }).click()
     await expect(page.locator('.agent-suggestion').getByText('供应商 SLA 选优后的排产复核')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'MAT-B02 供应商绩效与 SLA 选优已确认' })
     await expect(evidence.locator('.evidence-topline span').getByText('供应网络', { exact: true })).toBeVisible()
     await expect(evidence.locator('code').getByText('TRACE-PUR-MAT-B02-SUPPLIER-NETWORK-SLA', { exact: true })).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '供应网络回放' }).getByText('1')).toBeVisible()
@@ -368,7 +677,7 @@ test.describe('Purchase 采购协同', () => {
   })
 
   test('报表生成的外协承诺可在采购确认到货并释放排产复核', async ({ page }) => {
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const kpiPanel = page.locator('.otd-kpi-drilldown-panel')
     await kpiPanel.getByRole('tab', { name: '产品族' }).click()
@@ -376,7 +685,7 @@ test.describe('Purchase 采购协同', () => {
     await kpiPanel.getByRole('button', { name: '生成外协承诺包' }).click()
     await expect(kpiPanel.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
 
-    await page.goto('purchase', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('purchase'), { waitUntil: 'commit' })
     await page.waitForSelector('.po-board', { timeout: 20000 })
     const outsourcingPanel = page.locator('.outsourcing-receipt-panel')
     await expect(outsourcingPanel.getByRole('heading', { name: '外协承诺到货确认与排产释放' })).toBeVisible()
@@ -386,7 +695,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(outsourcingPanel.locator('.risk-badge').getByText('外协到货已确认', { exact: true })).toBeVisible()
     await expect(outsourcingPanel.getByText('TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521')).toBeVisible()
 
-    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('scheduling'), { waitUntil: 'commit' })
     await page.waitForSelector('.schedule-board', { timeout: 60000 })
     const outsourcingEvent = page.locator('.event-queue-panel .event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
     await expect(outsourcingEvent.locator('.event-severity').getByText('已到货', { exact: true })).toBeVisible()
@@ -402,7 +711,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(releasedOutsourcingEvent.locator('.event-severity').getByText('已释放', { exact: true })).toBeVisible()
     await expect(releasedOutsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const releasedKpiPanel = page.locator('.otd-kpi-drilldown-panel')
     await expect(page.locator('.otd-hero').getByText(/法兰盘 DN100 外协到货和 AI 排产释放已关闭厂外等待口径/)).toBeVisible()
@@ -424,7 +733,7 @@ test.describe('Purchase 采购协同', () => {
     await expect(releaseEvidence.locator('.evidence-topline span').getByText('外协排产释放', { exact: true })).toBeVisible()
     await expect(releaseEvidence.locator('code').getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521', { exact: true })).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     const replay = auditPanel.locator('.decision-card').filter({ hasText: '外协到货：法兰盘 DN100 外协到货已确认' })

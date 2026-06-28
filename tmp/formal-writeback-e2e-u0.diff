@@ -1,0 +1,56 @@
+diff --git a/src/frontend/tests/e2e/scheduling.spec.ts b/src/frontend/tests/e2e/scheduling.spec.ts
+index 9b0026f..8619c5c 100644
+--- a/src/frontend/tests/e2e/scheduling.spec.ts
++++ b/src/frontend/tests/e2e/scheduling.spec.ts
+@@ -12,0 +13 @@ const AGENT_BACKEND_EVIDENCE_TITLES = [
++const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
+@@ -25 +26,2 @@ test.describe('Scheduling 排产甘特图', () => {
+-    const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
++    const usesFormalWritebackMock = testInfo.title.includes(FORMAL_WRITEBACK_EVIDENCE_TITLE)
++    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+@@ -37,0 +40,3 @@ test.describe('Scheduling 排产甘特图', () => {
++    if (usesFormalWritebackMock) {
++      await mockSchedulingPlanApis(page)
++    }
+@@ -723,0 +729,17 @@ test.describe('Scheduling 排产甘特图', () => {
++  test('急单 Agent 采纳后区分反馈与正式排产回写', async ({ page }) => {
++    const eventPanel = page.locator('.event-queue-panel')
++    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
++    await eventPanel.getByRole('button', { name: '采纳此建议' }).click()
++
++    const workbench = page.locator('.agent-workbench-panel')
++    await expect(workbench.getByText('已进入反馈数据集')).toBeVisible()
++    await expect(workbench.getByText('排产反馈已写入本地复盘记录；正式计划待优化或保存')).toBeVisible()
++    const writebackStep = workbench.locator('li').filter({ hasText: '执行回写' })
++    await expect(writebackStep).toHaveClass(/current/)
++
++    await page.getByRole('button', { name: '排产优化' }).click()
++
++    await expect(workbench.getByText('排产反馈已写入本地复盘记录；正式排产计划已更新')).toBeVisible()
++    await expect(writebackStep).toHaveClass(/done/)
++  })
++
+@@ -903,0 +926,9 @@ async function mockSchedulingPlanApis(
++  const optimizedPlan = {
++    ...plan,
++    id: 'plan-agent-e2e-optimized',
++    planName: 'Agent E2E 正式排产计划',
++    overallUtilizationRate: 0.87,
++    onTimeDeliveryRate: 0.94,
++    totalChangeoverMinutes: 42,
++    groupCount: 2,
++  }
+@@ -1022,0 +1054,13 @@ async function mockSchedulingPlanApis(
++    if (url.includes('/api/v1/scheduling/optimize')) {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: JSON.stringify({
++          plan: optimizedPlan,
++          assignments: [],
++          estimatedCompletionRate: 0.94,
++          utilizationRate: 0.87,
++          warnings: ['Agent E2E 正式排产计划已更新'],
++        }),
++      })
++    }

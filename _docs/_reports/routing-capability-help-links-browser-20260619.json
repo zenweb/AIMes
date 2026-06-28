@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-06-19T12:22:00+08:00",
+  "url": "http://127.0.0.1:4173/scheduling/routing",
+  "guidance": "操作提示 / Operation guide\n\n先运行能力校验，确认瓶颈、夜班窗口和外协兜底后，再确认分流/合批方案。\n\nRun capability validation first, then confirm split or batch release with trace evidence.",
+  "links": [
+    {
+      "text": "AI 排产复核",
+      "href": "/scheduling/scheduling"
+    },
+    {
+      "text": "审计回放",
+      "href": "/scheduling/audit-logs"
+    },
+    {
+      "text": "报表证据",
+      "href": "/scheduling/report"
+    }
+  ],
+  "help": {
+    "text": "帮助：能力校验支持",
+    "href": "#route-capability-help",
+    "ariaLabel": "打开工艺能力校验帮助"
+  },
+  "visibleStatus": "待校验",
+  "screenshotPath": "C:\\AIWorks\\AIMes\\v1\\_docs\\_reports\\routing-capability-help-links-browser-20260619.png"
+}

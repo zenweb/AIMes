@@ -186,9 +186,17 @@ docker compose up -d --build
 
 启动后访问：
 
-- 前端入口: `http://localhost:5000/scheduling/`
-- API Swagger: `http://localhost:5000/swagger`
-- 健康检查: `http://localhost:5000/health`
+- 前端入口: `http://localhost:5003/scheduling/`
+- API Swagger: `http://localhost:5003/swagger`
+- 健康检查: `http://localhost:5003/health`
+
+如果本机 `5003` 已被其他服务占用，可以显式改宿主机端口，例如：
+
+```powershell
+$env:AIMES_API_HOST_PORT = "5004"
+docker compose up -d --build api
+$env:VITE_API_TARGET = "http://localhost:5004"
+```
 
 停止服务：
 
@@ -243,7 +251,7 @@ npm run dev
 开发模式访问：
 
 - 前端: `http://localhost:5173/scheduling/`
-- 后端: `http://localhost:5147`
+- 后端: `http://localhost:5003`
 
 ## 登录用户
 
@@ -273,7 +281,7 @@ npm run dev
 
 ## 预览与排查
 
-`npm run preview` 只会启动前端预览服务，默认监听 `http://localhost:4173/scheduling/`，不会自动拉起后端。它依赖后端 API `http://localhost:5147`，所以如果没有先启动 `MES.Api`，登录和业务请求都会失败。
+`npm run preview` 只会启动前端预览服务，默认监听 `http://localhost:4173/scheduling/`，不会自动拉起后端。它依赖后端 API `http://localhost:5003`，所以如果没有先启动 `MES.Api`，登录和业务请求都会失败。
 
 `npm run test:e2e` 会先构建前端，再用 Playwright 跑完整 E2E。它也是基于前端预览产物来执行，不是单独跑一个后端。
 
@@ -352,7 +360,7 @@ dotnet ef database update `
 | 变量 | 说明 |
 |------|------|
 | `ASPNETCORE_ENVIRONMENT` | `Development` 或 `Production` |
-| `ASPNETCORE_URLS` | API 监听地址，例如 `http://+:5000` |
+| `ASPNETCORE_URLS` | API 监听地址，例如 `http://+:5003` |
 | `Jwt__SigningKey` | JWT 签名密钥，生产必须配置强随机值 |
 | `Database__Provider` | 数据库提供方：`SqlServer` 或 `PostgreSQL` |
 | `ConnectionStrings__DefaultConnection` | SQL Server 或 PostgreSQL 连接串 |
@@ -363,7 +371,9 @@ dotnet ef database update `
 | `Aimes__EnableSwagger` | Production 下显式启用 Swagger |
 | `Aimes__DisableHttpsRedirect` | Docker 演示场景关闭 HTTPS 重定向 |
 
-本地 `dotnet run` 默认读取 `src/backend/MES.Api/Properties/launchSettings.json`，HTTP 端口是 `5147`。前端 `npm run dev` 和 `npm run preview` 默认会把 `/api` 代理到 `http://localhost:5147`；如需连接 Docker Compose 暴露的 `5000`，可设置 `VITE_API_TARGET=http://localhost:5000` 后重启前端服务。
+本地 `dotnet run` 默认读取 `src/backend/MES.Api/Properties/launchSettings.json`，HTTP 端口是 `5003`。前端 `npm run dev` 和 `npm run preview` 默认会把 `/api` 代理到 `http://localhost:5003`；如需连接其他后端地址，可设置 `VITE_API_TARGET=<后端地址>` 后重启前端服务。
+
+Docker Compose 默认把 API 发布到宿主机 `5003`；如需避开端口冲突，可设置 `AIMES_API_HOST_PORT=5004`，容器内 API 仍监听 `5003`。
 
 现有 EF 迁移文件按 PostgreSQL 生成。Development + SQL Server 路径使用 EF `EnsureCreated` 初始化本地演示库；正式迁移仍以 PostgreSQL 迁移为准。
 

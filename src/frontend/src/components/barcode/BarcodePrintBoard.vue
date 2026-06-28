@@ -52,7 +52,7 @@
       <div class="trace-bridge">
         <span>扫描后动作</span>
         <strong>工单标签进入生产报工，设备标签进入设备维护/实时监控，物料标签进入库存齐套与 BOM 用量追溯；现场确认后写入 OTD 证据链。</strong>
-        <router-link to="/scanner">去扫描验证</router-link>
+        <router-link :to="scannerRouteTarget()">去扫描验证</router-link>
       </div>
     </section>
 
@@ -91,6 +91,7 @@ import QRCode from 'qrcode'
 import type { InventoryItem } from '../../types/inventory'
 import { getInventoryList } from '../../api/inventory'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import {
   readOtdEvidenceChainRecords,
   type OtdEvidenceChainItem,
@@ -177,6 +178,20 @@ function isReleasedLabelStatus(code: string) {
   return labelStatusFor(code)?.traceId.endsWith('LABEL-RELEASE') ?? false
 }
 
+function scannerRouteTarget() {
+  if (typeof window === 'undefined') return '/scanner'
+
+  const params = new URLSearchParams(window.location.search)
+  const queryValue = params.get('offlineDemo') ?? params.get('demoMode')
+  const explicitOfflineDemo = queryValue === '1' || queryValue === 'true' || queryValue === 'offline'
+
+  if (explicitOfflineDemo || localStorage.getItem('aimes_offline_demo') === 'true') {
+    return { path: '/scanner', query: { offlineDemo: '1' } }
+  }
+
+  return '/scanner'
+}
+
 function handlePrint() {
   const selectedItems = items.value.filter(i => selected.value.has(i.id))
   if (!selectedItems.length) return
@@ -221,7 +236,9 @@ async function loadInventoryList() {
     loadError.value = ''
   }
   catch (e: unknown) {
-    loadError.value = `标签列表加载失败：${errorMessage(e, '请稍后重试')}`
+    if (!isOfflineDemoError(e)) {
+      loadError.value = `标签列表加载失败：${errorMessage(e, '请稍后重试')}`
+    }
     items.value = [
       { id: 'm1', materialCode: 'M-AL-6061', materialName: '铝合金 6061', materialType: 'RawMaterial', unit: '件', availableQuantity: 45, reservedQuantity: 30, realQuantity: 15, safetyStock: 64, storageLocation: '缺料预警 / 待采购收货', expiryDate: null, createdAt: '2026-01-01T00:00:00' },
       { id: 'm2', materialCode: 'WO-RUSH-9001', materialName: '急单阀体组件流转卡', materialType: 'Finished', unit: '单', availableQuantity: 1, reservedQuantity: 0, realQuantity: 1, safetyStock: 1, storageLocation: '生产一线', expiryDate: null, createdAt: '2026-01-01T00:00:00' },

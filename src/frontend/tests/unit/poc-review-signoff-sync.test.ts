@@ -77,6 +77,30 @@ describe('poc review signoff sync', () => {
     await expect(readPocReviewSignoffRecordBackendFirst()).resolves.toEqual(localRecord)
   })
 
+  it('ignores incomplete backend review signoff so score reviewers and evidence stay auditable', async () => {
+    const localRecord = writePocReviewSignoffRecord(signoff())
+    getLatestPocReviewSignoff.mockResolvedValueOnce({
+      meetingId: 'POC-REVIEW-20260520-001',
+      auditId: 'AUD-POC-REVIEW-BACKEND-PARTIAL',
+      signedAt: '2026-06-01T08:00:00.000Z',
+    })
+
+    await expect(readPocReviewSignoffRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for incomplete backend review signoff when audit replay requires backend payload evidence', async () => {
+    writePocReviewSignoffRecord(signoff())
+    getLatestPocReviewSignoff.mockResolvedValueOnce({
+      id: 'poc-review-signoff-missing-payload',
+      meetingId: 'POC-REVIEW-MISSING-PAYLOAD',
+      auditId: 'AUD-POC-REVIEW-MISSING-PAYLOAD',
+      signedAt: '2026-06-02T01:20:00.000Z',
+    })
+
+    await expect(readPocReviewSignoffRecordBackendFirst({ failLoud: true }))
+      .rejects.toThrow('poc-review-signoff-missing-payload 复盘签署审计载荷缺失')
+  })
+
   it('removes corrupt signoff JSON so review boards do not render stale approval', () => {
     localStorage.setItem('aimes_poc_review_signoff', '{bad json')
 

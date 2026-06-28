@@ -55,9 +55,15 @@ export function readPocReviewSignoffRecord(): PocReviewSignoffRecord | null {
   }
 }
 
-export async function readPocReviewSignoffRecordBackendFirst(): Promise<PocReviewSignoffRecord | null> {
+export async function readPocReviewSignoffRecordBackendFirst(options?: { failLoud?: boolean }): Promise<PocReviewSignoffRecord | null> {
   const record = await getLatestPocReviewSignoff()
-  return record ?? readPocReviewSignoffRecord()
+  if (record === null || record === undefined) return readPocReviewSignoffRecord()
+  if (isPocReviewSignoffRecord(record)) return record
+  if (options?.failLoud) {
+    const candidate = record as Partial<PocReviewSignoffRecord>
+    throw new Error(`${candidate.id || candidate.meetingId || 'POC 复盘签署'} 复盘签署审计载荷缺失`)
+  }
+  return readPocReviewSignoffRecord()
 }
 
 export function writePocReviewSignoffRecord(input: Partial<PocReviewSignoffRecord>) {

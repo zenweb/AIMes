@@ -7,6 +7,24 @@
       </button>
     </div>
 
+    <section class="scanner-guidance" aria-label="扫码操作指引">
+      <div>
+        <strong>扫码或手动查询前，请确认条码类型、现场工位和证据写入责任人。</strong>
+        <span>Before scanning or manual lookup, confirm barcode type, workstation, and evidence owner.</span>
+      </div>
+      <nav aria-label="扫码关联入口">
+        <a href="/production">生产报工 / Production</a>
+        <a href="/audit-logs">审计回放 / Audit trail</a>
+        <a href="/report">报表证据 / Reports</a>
+        <a href="#scanner-help">帮助 / Help</a>
+      </nav>
+    </section>
+
+    <section id="scanner-help" class="scanner-help" aria-label="扫码帮助">
+      <strong>扫描后先核对上下文，再进入生产报工、排产影响或库存齐套。</strong>
+      <span>After scanning, verify context before production reporting, scheduling impact, or kitting review.</span>
+    </section>
+
     <div class="scanner-body">
       <!-- 摄像头扫描区 -->
       <div class="scanner-section" :class="{ active: scannerActive }">
@@ -113,6 +131,7 @@ import {
 } from '../../utils/barcode-scan-evidence-sync'
 import { errorMessage } from '../../utils/error-message'
 import { getLocalUserDisplayName } from '../../utils/local-user'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 
 interface ScanResult {
   type: string
@@ -186,6 +205,8 @@ const scanEvidenceHint = computed(() => {
   return '确认扫码上下文'
 })
 
+const invalidScanPayloadMessage = '扫码查询返回非扫码结果载荷'
+
 function typeLabel(type: string) {
   const map: Record<string, string> = { Material: '物料', Equipment: '设备', WorkOrder: '工单' }
   return map[type] || type
@@ -235,6 +256,19 @@ function buildDemoScanResult(code: string): ScanResult | null {
   return null
 }
 
+function isScanResult(value: unknown): value is ScanResult {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<ScanResult>
+  return typeof candidate.type === 'string'
+    && candidate.type.trim().length > 0
+    && typeof candidate.id === 'string'
+    && candidate.id.trim().length > 0
+    && typeof candidate.code === 'string'
+    && candidate.code.trim().length > 0
+    && typeof candidate.name === 'string'
+    && candidate.name.trim().length > 0
+}
+
 function startScanner() {
   scanner = new Html5Qrcode('qr-reader')
   scanner.start(
@@ -259,13 +293,22 @@ function stopScanner() {
 }
 
 async function handleScan(code: string) {
-  scanError.value = ''
+  if (!scanError.value.startsWith('扫码证据启动刷新失败')) scanError.value = ''
   manualCode.value = code
   try {
     const { data } = await http.get<ScanResult>(`/scan/${encodeURIComponent(code)}`)
+    if (!isScanResult(data)) {
+      throw new Error(invalidScanPayloadMessage)
+    }
     result.value = data
     pushHistory(code, data)
-  } catch {
+  } catch (error: unknown) {
+    const message = errorMessage(error, '')
+    if (message === invalidScanPayloadMessage) {
+      result.value = null
+      scanError.value = message
+      return
+    }
     const demo = buildDemoScanResult(code)
     if (!demo) {
       result.value = null
@@ -316,7 +359,20 @@ async function confirmScanEvidence() {
       ...scanEvidenceRecords.value.filter(item => item.id !== record.id),
     ]
     try {
-      scanEvidenceRecords.value = await readBarcodeScanEvidenceRecordsBackendFirst()
+      const refreshedRecords = await readBarcodeScanEvidenceRecordsBackendFirst({ failLoud: true })
+      const normalizedCode = record.code.trim().toUpperCase()
+      const hasReadbackRecord = refreshedRecords.some(item =>
+        item.id === record.id || item.code.trim().toUpperCase() === normalizedCode,
+      )
+      if (!hasReadbackRecord) {
+        scanEvidenceRecords.value = [
+          record,
+          ...refreshedRecords.filter(item => item.id !== record.id),
+        ]
+        scanError.value = `扫码证据读回缺失：${record.code} 已保留本地证据，请稍后复核后端证据链。`
+        return
+      }
+      scanEvidenceRecords.value = refreshedRecords
     } catch (error: unknown) {
       scanError.value = `扫码证据刷新失败：${errorMessage(error, '请稍后重试')}`
     }
@@ -350,7 +406,13 @@ onBeforeUnmount(() => {
 scanEvidenceRecords.value = readBarcodeScanEvidenceRecords()
 
 onMounted(async () => {
-  scanEvidenceRecords.value = await readBarcodeScanEvidenceRecordsBackendFirst()
+  try {
+    scanEvidenceRecords.value = await readBarcodeScanEvidenceRecordsBackendFirst({ failLoud: true })
+  } catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      scanError.value = `扫码证据启动刷新失败：${errorMessage(error, '请稍后重试')}`
+    }
+  }
 })
 </script>
 
@@ -360,6 +422,17 @@ onMounted(async () => {
 .page-title { font-size: 16px; font-weight: 700; margin: 0; }
 .btn-toggle { padding: 8px 16px; border-radius: 4px; border: 1px solid #1890ff; background: #fff; color: #1890ff; cursor: pointer; font-size: 13px; }
 .btn-toggle:hover { background: #e6f7ff; }
+
+.scanner-guidance,
+.scanner-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px; border: 1px solid #dbeafe; border-radius: 8px; background: #fff; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); }
+.scanner-guidance div,
+.scanner-help { min-width: 0; }
+.scanner-guidance strong,
+.scanner-help strong { display: block; color: #111827; font-size: 13px; line-height: 1.45; }
+.scanner-guidance span,
+.scanner-help span { display: block; margin-top: 3px; color: #64748b; font-size: 12px; line-height: 1.45; }
+.scanner-guidance nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.scanner-guidance a { min-height: 28px; padding: 6px 10px; border: 1px solid #bfdbfe; border-radius: 4px; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 700; text-decoration: none; }
 
 .scanner-body { display: flex; gap: 24px; flex: 1; min-height: 0; }
 .scanner-section { flex: 1; min-width: 320px; max-width: 500px; border: 2px dashed #d9d9d9; border-radius: 8px; display: flex; align-items: center; justify-content: center; min-height: 300px; }
@@ -410,4 +483,9 @@ onMounted(async () => {
 .hist-type { width: 40px; color: #666; font-size: 11px; flex-shrink: 0; }
 .hist-code { font-family: monospace; font-weight: 600; width: 120px; flex-shrink: 0; }
 .hist-name { color: #333; flex: 1; }
+
+@media (max-width: 920px) {
+  .scanner-guidance { align-items: flex-start; flex-direction: column; }
+  .scanner-guidance nav { justify-content: flex-start; }
+}
 </style>

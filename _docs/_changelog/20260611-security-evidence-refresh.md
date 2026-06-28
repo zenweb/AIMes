@@ -1,0 +1,258 @@
+# 2026-06-11 Security Evidence Refresh
+
+## 变更
+
+- 刷新 v1.0.0 security self-assessment 当前证据。
+- 刷新 Attack Chain A/B/C 自动化辅助证据。
+- 新增 `scripts/run-attack-chain-staging-transcript.ps1`，脚本化生成当前 staging 的 non-mutating HTTP transcript，覆盖匿名拒绝、坏 token 拒绝、错误登录不泄漏和 CORS 拒绝。
+- 新增 `scripts/prepare-attack-chain-staging-accounts.ps1`，可 dry-run/apply/remove 临时 Attack Chain staging 账号。
+- 新增 `scripts/run-attack-chain-staging-account-probes.ps1`，脚本化 account-backed staging probes，覆盖 admin/operator 登录与 admin endpoint 授权边界。
+- 新增 `scripts/run-attack-chain-staging-audit-redaction-probe.ps1`，脚本化 audit redaction staging probe，验证 Admin 创建用户的审计 payload 脱敏。
+- 修正 `scripts/run-attack-chain-staging-transcript.ps1` 报告文案中的 system user count 插值。
+- 新增真实 Chrome 前端证据报告 `_docs/_reports/frontend-real-browser-evidence-20260611.md`。
+- Docker/网络恢复确认后复跑真实 Chrome release-critical 前端证据：`npm run test:e2e -- login.spec.ts audit.spec.ts monitoring.spec.ts quality.spec.ts` PASS，78 passed，并追加到 `_docs/_reports/frontend-real-browser-evidence-20260611.md`。
+- 新增真实 Chrome 关键页面截图：`output/playwright/20260611-real-browser/`，覆盖 login/audit/monitoring/quality。
+- 新增 Attack Chain A/B/C 人工复核包 `_docs/_reports/attack-chain-human-review-packet-20260611.md`，汇总 A/B/C 可供人类 verifier 接受的机器证据。
+- 新增 hosted CI `V1` 分支复核报告 `_docs/_reports/hosted-ci-20260611-v1-recheck.md`：历史 `main` CI PASS 不再作为当前 GitHub 默认分支 `V1` 的发布证据。
+- 新增 release gate audit `_docs/_reports/release-gate-audit-20260611-after-hosted-ci-v1-recheck.md`，显式把 Hosted CI 也列为当前 FAIL。
+- 新增 `scripts/test-github-v1-push-readiness.ps1`，固化 GitHub `V1` hosted CI 证据检查。
+- 推送本地 `V1` 到 GitHub `V1`，触发并等待 hosted `CI` / `Agent Evaluation`。
+- 新增 hosted CI PASS 报告 `_docs/_reports/hosted-ci-20260611-v1-pass.md`。
+- 新增 release gate audit `_docs/_reports/release-gate-audit-20260611-after-hosted-ci-v1-pass.md`，Hosted CI 已恢复 PASS。
+- 更新 Attack Chain / security signoff / gray readiness 证据引用到 2026-06-11 当前 Hosted CI 与 staging 证据。
+- 新增 release human action packet：`_docs/_reports/release-human-action-packet-20260611.md`，串联人工 Attack Chain、security signoff、gray start/pass 命令。
+- 新增 `scripts/run-security-signoff.ps1`，脚本化生成 security signoff 报告，并要求 Attack Chain VERIFIED/PASS 后才可 SIGNED。
+- 新增 pending signoff 证据 `_docs/_review/20260611-security-signoff-pending.md`，保持 expected FAIL。
+- 强化 `scripts/run-gray-observation.ps1`：`OBSERVING` / `PASS` 状态必须先读取到 SIGNED security signoff。
+- 新增灰度未签字阻断证据 `_docs/_reports/gray-observation-20260611-observing-blocked-unsigned.md`。
+- 强化 `scripts/prepare-attack-chain-staging-accounts.ps1`：新增 `-IncludeAuditProbe` / `-ProbeUsername`，让 admin/operator 与 audit redaction probe 样本可在人工验证后统一显式清理，默认仍为 dry-run。
+- 新增 staging 临时账号清理 dry-run 证据 `_docs/_reports/attack-chain-staging-cleanup-20260611-dry-run.md`。
+- 更新 release human action packet，加入人工证据采集后的 staging cleanup 命令。
+- 修复 `scripts/run-release-gate-audit.ps1` 的 security signoff 阻断文本判断：签字包自身已 SIGNED 且 Attack Chain PASS 时，允许正文说明独立 Gray observation gate 仍 FAIL，避免未来真人签字后被总审计误判为 Security signoff FAIL。
+- 更新 `MES.ArchitectureTests` 的 release gate 审计约束，防止 security signoff predicate 回退到整份报告扫描任意 `PENDING` / `UNSIGNED` / `FAIL`。
+- 强化 `scripts/run-gray-observation.ps1` 的 OBSERVING 证据校验：灰度观察启动后也必须提供 `ObservationStartedAt` 和非占位 gray start evidence；OBSERVING 仍保持 `Result: FAIL`。
+- 更新 gray observation start readiness packet 的 OBSERVING/PASS 命令模板，显式传入 `-SecuritySignoffPath _docs/_review/20260607-security-signoff.md`。
+- 强化 `scripts/run-gray-observation.ps1` 的 security signoff 前置校验：灰度启动不再只接受 `Status/Decision: SIGNED`，还要求 signoff packet 自身 `Result: PASS`、Signer、SignedAt 非未来、Evidence 非占位，以及 Attack Chain A/B/C 为 PASS。
+- 强化 `scripts/run-attack-chain-verification.ps1` 的人工证据占位拒绝：Verifier 不能是占位值，每链 evidence 也会拒绝 `Chain A: TBD` 这类冒号尾部占位。
+- 更新 release human action packet 与 Attack Chain human review packet，使人工执行说明匹配最新 guard：Attack Chain verifier/evidence 不能使用占位，gray start 必须等待有效 `Result: PASS` security signoff packet。
+- 更新 `_docs/_review/20260607-security-signoff.md`：主 signoff packet 现在明确禁止手工薄签字，要求通过 `scripts/run-security-signoff.ps1` 生成带 `Result: PASS`、signer、SignedAt、evidence 和 Attack Chain PASS 的有效签字包。
+- 强化 `scripts/run-security-signoff.ps1`：签字前置 Attack Chain 校验现在复核 verifier、VerifiedAt 和 A/B/C 每链 `Manual verification: PASS` + 非占位 evidence，不再接受只有总体 `Status: VERIFIED` / `Result: PASS` 的薄报告。
+- 生成 2026-06-11 Attack Chain manual pending 报告，继续 fail loud 要求人类 verifier、VerifiedAt 和 A/B/C 逐链证据。
+- 强化 `scripts/run-gray-observation.ps1` 的 evidence 占位拒绝：`UNSIGNED` / `FAIL` 现在也不能作为 signoff 或 gray start evidence，避免薄签字包用失败状态伪装成证据。
+- 新增灰度签字 evidence 失败阻断证据 `_docs/_reports/gray-observation-20260611-observing-blocked-fail-signoff-evidence.md`。
+- 刷新 release gate audit，使其引用 2026-06-11 当前 staging 与安全证据。
+- Docker/网络恢复后重新运行当前 release gate audit，生成 `_docs/_reports/release-gate-audit-20260611-current-rerun.md`；Hosted CI 与 PostgreSQL/staging 继续 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 更新 release human action packet、Attack Chain human review packet 与 gray observation readiness packet：统一引用 Docker 恢复后的 staging 证据 `_docs/_reports/staging-rehearsal-20260611-docker-restored.md`，并在人工签字后、灰度启动后、灰度 PASS 后加入 release gate audit 复跑命令。
+- 新增阶段一 Sprint 0-3 验收矩阵 `_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md`，把 CC plan 验收项映射到 hosted CI、staging、security self-assessment、Attack Chain automated support、ArchitectureTests 和真实 Chrome 证据。
+- 更新 repo-local CC plan bridge `_docs/_plan/20260514-cc-remediation-plan.md`，引用 Docker 恢复后的 staging 证据和当前 release gate audit 复跑报告。
+- 新增阶段一间接证据收紧报告 `_docs/_reports/phase-one-partial-evidence-tightening-20260611.md`，把五个核心模块持久化、六个 Agent C6 测试覆盖、Metrics background structured logging 三项从 `PARTIAL/INDIRECT` 收紧为可追踪 `PASS`。
+
+## 验证
+
+- `scripts/run-security-self-assessment.ps1 -ReportPath _docs/_reports/security-self-assessment-20260611-current.md`：PASS。
+- `scripts/run-attack-chain-automated-evidence.ps1 -ReportPath _docs/_reports/attack-chain-automated-evidence-20260611-current.md`：PASS。
+- `scripts/run-attack-chain-staging-transcript.ps1 -ReportPath _docs/_reports/attack-chain-staging-transcript-20260611.md -ApiBaseUrl http://localhost:5000`：PREPARED_ONLY；当前 staging `system_users` 为 0，真实登录/低权限链仍需人工账号。
+- `scripts/prepare-attack-chain-staging-accounts.ps1 -ReportPath _docs/_reports/attack-chain-staging-accounts-20260611-dry-run.md`：DRY_RUN。
+- `scripts/prepare-attack-chain-staging-accounts.ps1 -ReportPath _docs/_reports/attack-chain-staging-accounts-20260611-applied.md -Apply ...`：APPLIED，准备 `attack_chain_admin` / `attack_chain_operator`。
+- `scripts/run-attack-chain-staging-account-probes.ps1 -ReportPath _docs/_reports/attack-chain-staging-account-probes-20260611.md ...`：PREPARED_ONLY；admin 访问 admin endpoint 200，operator 访问 admin endpoint 403，operator 访问普通保护资源 200。
+- `scripts/run-attack-chain-staging-audit-redaction-probe.ps1 -ReportPath _docs/_reports/attack-chain-staging-audit-redaction-probe-20260611.md ...`：PREPARED_ONLY；audit log 包含 `***REDACTED***` 且不含明文密码。
+- `scripts/run-attack-chain-staging-transcript.ps1 -ReportPath _docs/_reports/attack-chain-staging-transcript-20260611.md -ApiBaseUrl http://localhost:5000`：PREPARED_ONLY；报告已正确显示当前 staging `system_users` 数量。
+- `npm run test:e2e -- login.spec.ts audit.spec.ts monitoring.spec.ts quality.spec.ts`：真实 Chrome 78 passed。
+- Playwright/Chrome one-shot screenshot capture：login/audit/monitoring/quality 4 张 PNG 已生成并通过页面 DOM 断言与文件大小校验。
+- `gh run list --repo zenweb/AIMes --workflow CI --branch V1 --limit 5`：无 runs。
+- `git push github V1:V1`：FAIL，GitHub HTTPS transport 443 超时。
+- `ssh -T git@github.com`：FAIL，publickey denied。
+- `ssh -i ~/.ssh/aa -o IdentitiesOnly=yes -T git@github.com`：FAIL，publickey denied；`aa.pub` 指纹 `SHA256:ig8/HELl51W0VVjhPqHmHWIiHtzlQBOk555r8N6wwbc`。
+- `gh auth refresh -h github.com -s admin:public_key`：FAIL，GitHub device code 443 连接超时。
+- `scripts/run-release-gate-audit.ps1 -HostedCiReportPath _docs/_reports/hosted-ci-20260611-v1-recheck.md ...`：按预期 FAIL，Hosted CI / Attack Chain manual / security signoff / gray observation 未关闭。
+- `git push github V1:V1`：PASS，GitHub `V1` 更新到 `d8bb6e484f86a6fbd6673317385caf34ba774ee2`。
+- GitHub Actions `CI` run `27318467207`：PASS。
+- GitHub Actions `Agent Evaluation` run `27318467206`：PASS。
+- `scripts/test-github-v1-push-readiness.ps1 -ReportPath _docs/_reports/github-v1-push-readiness-20260611-after-ci-pass.md`：PASS。
+- `scripts/run-release-gate-audit.ps1 -HostedCiReportPath _docs/_reports/hosted-ci-20260611-v1-pass.md ...`：按预期 FAIL；Hosted CI 已 PASS，剩余 Attack Chain manual / security signoff / gray observation。
+- Release human action packet：PREPARED_ONLY；未代填 verifier、signer 或 gray timestamp。
+- `scripts/run-security-signoff.ps1 -ReportPath _docs/_review/20260611-security-signoff-pending.md`：按预期 FAIL；未代签，且 Attack Chain 未 VERIFIED/PASS。
+- `scripts/run-gray-observation.ps1 -Status OBSERVING ...`：按预期 FAIL；security signoff 仍未 SIGNED，脚本阻止灰度启动证据被误当成有效。
+- `scripts/prepare-attack-chain-staging-accounts.ps1 -ReportPath _docs/_reports/attack-chain-staging-cleanup-20260611-dry-run.md -IncludeAuditProbe`：DRY_RUN；列出 `attack_chain_admin` / `attack_chain_operator` / `attack_chain_audit_probe_20260611`，未删除账号。
+- `scripts/run-attack-chain-verification.ps1 -ReportPath _docs/_reports/attack-chain-verification-20260611-manual-pending.md`：按预期 FAIL，因为缺 verifier、VerifiedAt 和 A/B/C 人工证据。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-security-evidence-refresh.md ...`：按预期 FAIL，因为 Attack Chain manual、security signoff、gray observation 未关闭。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-staging-cleanup-dry-run.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "ReleaseGateAudit_ShouldRequireSecuritySignoffEvidenceFields" --no-restore`：PASS。
+- `run-release-gate-audit.ps1` PowerShell parser：PASS。
+- 临时 release gate 样本 `output/tmp-release-gate-signoff-scope/`：Hosted CI、staging、Attack Chain、security signoff 均 PASS，signoff 正文仍提 `Gray observation: FAIL until...`，总审计按预期只输出 Gray observation FAIL。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-signoff-scope-fix.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "GrayObservationGate_ShouldFailWhileObservationIsStillRunning" --no-restore`：PASS。
+- `run-gray-observation.ps1` PowerShell parser：PASS。
+- `scripts/run-gray-observation.ps1 -ReportPath _docs/_reports/gray-observation-20260611-observing-missing-start-evidence.md -Status OBSERVING ... -Evidence TBD ...`：按预期 FAIL；报告明确缺 `ObservationStartedAt`、缺非占位 evidence，且 security signoff 仍未 SIGNED。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-gray-observing-evidence-guard.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "GrayObservationGate_ShouldHaveEvidencePacketAndFailLoudUntilObservationCompletes" --no-restore`：PASS。
+- `run-gray-observation.ps1` PowerShell parser：PASS。
+- `scripts/run-gray-observation.ps1 -ReportPath _docs/_reports/gray-observation-20260611-observing-blocked-thin-signoff.md -Status OBSERVING ... -SecuritySignoffPath output/tmp-gray-thin-signoff/thin-signoff.md`：按预期 FAIL；只有 `Status/Decision: SIGNED` 的薄签字文件不能启动灰度。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-gray-signoff-validity-guard.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "AttackChainManualVerification_ShouldHaveEvidenceScriptAndFailLoudUntilVerified" --no-restore`：PASS。
+- `run-attack-chain-verification.ps1` PowerShell parser：PASS。
+- `scripts/run-attack-chain-verification.ps1 -ReportPath _docs/_reports/attack-chain-verification-20260611-placeholder-guard.md -Verifier TBD ... -AttackChainAEvidence "Chain A: TBD"`：按预期 FAIL；Verifier 占位和 Chain A evidence 尾部占位均被拒绝。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-attack-chain-placeholder-guard.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 文档一致性复核：`_docs/_reports/release-human-action-packet-20260611.md` 与 `_docs/_reports/attack-chain-human-review-packet-20260611.md` 已明确 placeholder guard 和有效 security signoff PASS 前置条件。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-human-packet-sync.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 主 signoff packet 一致性复核：`_docs/_review/20260607-security-signoff.md` 已明确 `scripts/run-security-signoff.ps1` 为签字入口，并保留 `Result: FAIL`。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-signoff-packet-sync.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "SecuritySignoff_ShouldHaveSelfAssessmentScriptAndUnsignedPacket" --no-restore`：PASS。
+- `run-security-signoff.ps1` PowerShell parser：PASS。
+- `scripts/run-security-signoff.ps1 -ReportPath _docs/_review/20260611-security-signoff-blocked-thin-attack-chain.md -Status SIGNED ... -AttackChainReportPath output/tmp-signoff-thin-attack-chain/thin-attack-chain.md`：按预期 FAIL；只有总体 `Status: VERIFIED` / `Result: PASS`、缺 A/B/C 逐链证据的薄 Attack Chain 报告不能触发签字。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-signoff-attack-chain-section-guard.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "GrayObservationGate_ShouldHaveEvidencePacketAndFailLoudUntilObservationCompletes" --no-restore`：PASS。
+- `run-gray-observation.ps1` PowerShell parser：PASS。
+- `scripts/run-gray-observation.ps1 -ReportPath _docs/_reports/gray-observation-20260611-observing-blocked-fail-signoff-evidence.md -Status OBSERVING ... -SecuritySignoffPath output/tmp-gray-fail-evidence-signoff/fail-evidence-signoff.md`：按预期 FAIL；`Evidence: FAIL` 的薄签字样本不能启动灰度。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-current-rerun.md ...`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 人工执行包一致性复核：`_docs/_reports/release-human-action-packet-20260611.md` 已使用 docker-restored staging 证据，并包含三处后续审计复跑模板。
+- 阶段一验收矩阵已生成：自动化实现证据整体为绿；仍显式保留 Attack Chain manual、security signoff、gray observation 为人工/墙钟未关闭。
+- 阶段一间接证据收紧：轻量静态扫描完成，未运行长测试；三项原 `PARTIAL/INDIRECT` 已有独立报告承接，release gate 剩余三项不变。
+- 复跑当前 release gate audit：Hosted CI 与 PostgreSQL/staging 继续 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 修正主 security signoff packet 的 PostgreSQL/staging 证据引用，统一到 Docker 恢复后的 `_docs/_reports/staging-rehearsal-20260611-docker-restored.md`。
+- 修正 `scripts/run-security-signoff.ps1` 默认 staging 证据路径和 `scripts/run-attack-chain-staging-transcript.ps1` transcript 证据源输出，避免后续人工签字/复核默认拿旧 `staging-rehearsal-20260611-current.md`。
+- 强化 `scripts/run-security-signoff.ps1`：SIGNED 时必须确认 hosted CI、PostgreSQL/staging、security self-assessment、Attack Chain automated support、真实 Chrome 前端证据文件存在且 `Result: PASS`，不能只靠文本 evidence 字段薄签字。
+- 新增薄签字阻断证据 `_docs/_review/20260611-security-signoff-blocked-missing-staging-evidence.md`，证明 Attack Chain 样本 PASS 但 staging evidence 缺失时 security signoff 仍按预期 FAIL。
+- 更新 `MES.ArchitectureTests` 的 security signoff 约束，固定上述引用证据 PASS 校验。
+
+- 修正 `scripts/run-release-gate-audit.ps1` 默认参数，默认无参审计现在指向当前 `V1` hosted CI、docker-restored staging、manual pending Attack Chain、主 security signoff packet 与 gray not-started 证据，不再停留在 2026-06-02 旧路径。
+- 新增默认参数证据 `_docs/_reports/release-gate-audit-20260611-default-current.md`，证明无参审计默认使用当前证据且仍只失败三个人工/墙钟门禁。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence" --no-restore`：新增当前默认参数约束前按预期 FAIL，修正 `run-release-gate-audit.ps1` 默认参数后 PASS。
+- `run-release-gate-audit.ps1` PowerShell parser：PASS。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-default-current.md`：按预期 FAIL；无参默认已使用当前证据，Hosted CI / PostgreSQL-staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 修正 `MES.ArchitectureTests` 中 `ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence` 的报告锚点，测试现在读取 `_docs/_reports/release-gate-audit-20260611-default-current.md`，不再读取 2026-06-02 旧审计报告。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence|SecuritySignoff_ShouldHaveSelfAssessmentScriptAndUnsignedPacket" --no-restore`：PASS，2 passed。
+- `run-release-gate-audit.ps1` PowerShell parser：PASS；旧 2026-06-02 release gate evidence 锚点扫描无命中；敏感串扫描无命中。
+- 补强 release human action packet 的 security signoff 命令：显式 pin Hosted CI、PostgreSQL/staging、security self-assessment、Attack Chain automated support、Attack Chain verified report、真实 Chrome frontend evidence，避免人工 runbook 依赖脚本默认值。
+- 新增 `ReleaseHumanActionPacket_ShouldPinSecuritySignoffEvidenceInputs` 架构测试；RED 时抓到缺 `-SecuritySelfAssessmentPath`，补齐 runbook 后与 `SecuritySignoff_ShouldHaveSelfAssessmentScriptAndUnsignedPacket` 一起 PASS。
+- `run-security-signoff.ps1` PowerShell parser：PASS；release human action packet 新增参数扫描通过；敏感串和旧证据锚点扫描无命中。
+- 修正 `scripts/run-security-signoff.ps1` 报告正文：Hosted CI、PostgreSQL/staging、security self-assessment、Attack Chain automated support、真实 Chrome frontend evidence 现在按实际引用证据动态写 PASS/FAIL，不再在失败报告正文里硬编码 PASS。
+- 更新 `SecuritySignoff_ShouldHaveSelfAssessmentScriptAndUnsignedPacket`，禁止 signoff 脚本输出固定 `Current result: PASS`、`Hosted CI: PASS` 或 `PostgreSQL/staging: PASS` 文案。
+- 新增负例 `_docs/_review/20260611-security-signoff-blocked-dynamic-evidence-status.md`：缺 staging evidence 时 signoff 按预期 FAIL，且正文明确 `PostgreSQL/staging evidence result: FAIL`。
+- 收紧 Hosted CI release gate：`scripts/run-hosted-ci-evidence.ps1` 现在显式记录并校验 `Repository=zenweb/AIMes`、`Branch=V1`；`scripts/run-release-gate-audit.ps1` 也要求 Hosted CI 证据报告锚定同一仓库与 release 分支。
+- 新增 `HostedCiEvidence_ShouldRequireReleaseRepositoryAndBranch` 架构测试；RED 时证明脚本缺 repo/branch 硬约束，修正后与 Hosted CI 相关测试一起 PASS。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-hosted-ci-branch-guard.md`：当前 V1 Hosted CI 与 PostgreSQL/staging 仍 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 继续收紧 Hosted CI head SHA 绑定：`scripts/run-hosted-ci-evidence.ps1` 现在要求 `CommitSha`，并校验 `gh run view` 的 `headSha` 与 `CommitSha` 一致；`scripts/run-release-gate-audit.ps1` 要求 Hosted CI 报告中的 `HeadSha` 匹配 40 位 `CommitSha`。
+- 新增 `HostedCiEvidence_ShouldBindRunToReleaseHeadSha` 架构测试；错误 HeadSha 负例已证明旧成功 run/错 commit 不能关闭 Hosted CI gate。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-hosted-ci-headsha-guard.md`：当前正式 V1 Hosted CI 仍 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 对齐 Hosted CI required evidence 文案：`run-hosted-ci-evidence.ps1` 与 `run-release-gate-audit.ps1` 现在都明确要求 hosted runner RunUrl、RunId、release repository、release branch、head SHA 和 job summary。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-hosted-ci-required-evidence-text.md`，证明当前 Hosted CI 行的 Required evidence 已与实际判定一致。
+- 对齐 PostgreSQL/staging required evidence 文案：`run-release-gate-audit.ps1` 表格现在明确要求 Production environment、PostgreSQL connection、Docker dependencies、EF migrations、API startup、`/live` 与 `/ready`。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-staging-required-evidence-text.md`，证明当前 PostgreSQL/staging 行的 Required evidence 已与实际判定一致。
+- 对齐 Security signoff required evidence 文案：`run-release-gate-audit.ps1` 表格现在明确要求 human SIGNED decision、signer、SignedAt、evidence、self-assessment 与 Attack Chain A/B/C PASS。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-signoff-required-evidence-text.md`，证明当前 Security signoff 行的 Required evidence 已与实际判定一致。
+- 对齐 Gray observation required evidence 文案：`run-release-gate-audit.ps1` 表格现在明确要求 PASS gray release id、observation timestamps、14 calendar days、P0/P1=0 与 evidence。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-gray-required-evidence-text.md`，证明当前 Gray observation 行的 Required evidence 已与实际判定一致。
+- 对齐 Attack Chain A/B/C required evidence 文案：`run-release-gate-audit.ps1` 表格现在明确要求 VERIFIED status、verifier、VerifiedAt、A/B/C 每链 Manual verification PASS 与非占位 evidence。
+- 新增复跑审计 `_docs/_reports/release-gate-audit-20260611-after-attack-chain-required-evidence-text.md`，证明当前 Attack Chain A/B/C 行的 Required evidence 已与实际判定一致。
+- 修正默认当前 release gate audit 报告漂移：`_docs/_reports/release-gate-audit-20260611-default-current.md` 现在也输出最新五项 Required evidence 文案，不再保留旧 Hosted CI/staging/Attack Chain/signoff/gray 简写。
+- 补强 `ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence`，要求默认当前报告包含五项最新 Required evidence 文案，防止脚本表格和默认报告再次漂移。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence" --no-restore`：新增 Required evidence 报告 token 后先按预期 FAIL，抓到默认当前报告仍缺 Hosted CI 最新文案。
+- `scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-default-current.md`：按预期 FAIL；报告已重生成并显示 Hosted CI / PostgreSQL-staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence" --no-restore`：重生成默认当前报告后 PASS。
+- `run-release-gate-audit.ps1` PowerShell parser：PASS；本轮触及文件敏感串扫描无命中。
+- 新增 `CoreModulePersistenceRecoveryTests.CoreModules_ShouldSurviveApplicationRestartAndRemainQueryable`，用 file-backed SQLite 验证 Anomaly/BOM/Employee/Inventory/Purchase 五个核心模块 create → dispose API host → reopen API host → query 仍可查。
+- 新增 `Sprint0CoreModulePersistence_ShouldHaveRestartRecoveryEvidence` 架构测试，固定 Sprint 0 持久化恢复专项证据。
+- 更新阶段一验收矩阵与 partial evidence tightening 报告：五个核心模块持久化证据从“静态扫描 + 间接支持”升级为 standalone restart-recovery evidence。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "CoreModules_ShouldSurviveApplicationRestartAndRemainQueryable" --no-restore`：先因缺 `NoOpNotificationService` 编译失败、再因 SQLite 文件句柄清理失败，补齐测试夹具后 PASS。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint0CoreModulePersistence_ShouldHaveRestartRecoveryEvidence" --no-restore`：PASS。
+- 补强 Sprint 3 sensitive audit fields redaction 证据口径：阶段一矩阵现在引用 `AuditRedactionTests.RedactAndSerialize_ShouldMaskNestedSensitiveFields`、`AdminControllerTests.CreateUser_ShouldRedactPasswordInAuditLog` 和新增 `Sprint3AuditRedaction_ShouldHaveDirectUnitAndEndpointEvidence`，不再只写 staging audit redaction probe prepared。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "RedactAndSerialize_ShouldMaskNestedSensitiveFields" --no-restore`：PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "CreateUser_ShouldRedactPasswordInAuditLog" --no-restore`：PASS。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3AuditRedaction_ShouldHaveDirectUnitAndEndpointEvidence" --no-restore`：PASS；构建期间出现一次 `latest-ab-report.json` copy retry warning，最终未阻塞测试。
+- 补强 Sprint 3 non-auth `/api/v1/*` authorization 证据：`EndpointAuthorizationTests.ApiV1EndpointsExceptAuth_ShouldRejectAnonymousRequests` 现在覆盖 16 个真实非 auth API group endpoint 的匿名 401 拒绝，不再只抽样 equipment/dashboard 或依赖 staging probe prepared。
+- 新增 `Sprint3ApiV1Authorization_ShouldHaveDirectAnonymousRejectionCoverage` 架构守护，固定上述 16 个匿名拒绝路径。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "ApiV1EndpointsExceptAuth_ShouldRejectAnonymousRequests" --no-restore`：PASS，16 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3ApiV1Authorization_ShouldHaveDirectAnonymousRejectionCoverage" --no-restore`：PASS。
+- 补强 Sprint 1 SignalR subscribe role boundary 证据：阶段一矩阵现在引用 `NotificationHub.CanSubscribeToChannel`、`NotificationHubChannelPolicyTests.CanSubscribe_WhenRoleDoesNotMatchChannel_ShouldReject`、`NotificationHubChannelPolicyTests.CanSubscribe_WhenRoleMatchesChannel_ShouldAllow` 和新增 `Sprint1SignalRSubscribeRoleBoundary_ShouldHaveDirectPolicyEvidence`，不再只写宽泛 Attack Chain A 自动支持。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1SignalRSubscribeRoleBoundary_ShouldHaveDirectPolicyEvidence" --no-restore`：新增矩阵直接证据锚点前按预期 FAIL，更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "CanSubscribe_WhenRoleDoesNotMatchChannel_ShouldReject|CanSubscribe_WhenRoleMatchesChannel_ShouldAllow" --no-restore`：PASS。
+- 补强 Sprint 1 refresh tokens stored hashed 证据：阶段一矩阵现在引用 `AuthEndpoints.HashToken`、`AuthControllerTests.Login_ShouldPersistOnlyHashedRefreshToken` 和新增 `Sprint1RefreshTokens_ShouldHaveDirectHashStorageEvidence`，不再只写宽泛 Attack Chain B credential/token leakage controls。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1RefreshTokens_ShouldHaveDirectHashStorageEvidence" --no-restore`：新增矩阵直接证据锚点前按预期 FAIL，更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "Login_ShouldPersistOnlyHashedRefreshToken" --no-restore`：PASS。
+- 补强 Sprint 1 Login rate limit partitioned by IP + username 证据：阶段一矩阵现在引用 `AuthRateLimitUsernameMiddleware`、`AuthRateLimitPartitionKeyTests.Create_ShouldIncludeRemoteIpAndUsername`、`Create_ShouldNormalizeUsername`、`Create_WhenUsernameMissing_ShouldKeepUnknownBucket` 和新增 `Sprint1LoginRateLimit_ShouldHaveIpAndUsernamePartitionEvidence`，不再只写宽泛 security self-assessment。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1LoginRateLimit_ShouldHaveIpAndUsernamePartitionEvidence" --no-restore`：新增矩阵直接证据锚点前按预期 FAIL，更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "AuthRateLimitPartitionKeyTests" --no-restore`：PASS。
+- 补强 Sprint 1 Seeder does not create empty password hash 证据与领域防线：`SystemUser.Create` 现在拒绝空白 `passwordHash`；阶段一矩阵引用 `EfDemoDataSeeder`、`PasswordHasher.Hash("admin123")` / `Hash("operator123")`、`SystemUserTests.Create_WhenPasswordHashIsEmpty_ShouldReject`、`AuthControllerTests.Login_WithValidCredentials_ShouldReturnToken` 和新增 `Sprint1DemoSeeder_ShouldCreateNonEmptyHashedInitialPasswords`，不再只写宽泛 security self-assessment。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "Create_WhenPasswordHashIsEmpty_ShouldReject" --no-restore`：先按预期 FAIL，补 `ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash)` 后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "Login_WithValidCredentials_ShouldReturnToken" --no-restore`：PASS。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1DemoSeeder_ShouldCreateNonEmptyHashedInitialPasswords" --no-restore`：PASS。
+- 修复 Sprint 1 Admin default password removed and first-login change enforced 证据与实现缺口：`Program.cs` 启动日志不再输出 `DefaultAccount=admin / admin123`，改为不含密码的 development-only demo credential 提示；阶段一矩阵引用 `PasswordChangeRequiredMiddleware`、`SystemUserTests.Create_ShouldRequirePasswordChange`、`AuthControllerTests.ChangePassword_ShouldClearPasswordChangeRequirement`、`AdminControllerTests.GetUsers_WhenPasswordChangeRequired_ShouldReturnForbidden` 和新增 `Sprint1AdminDefaultPassword_ShouldNotBeAdvertisedAndFirstLoginShouldBeEnforced`。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1AdminDefaultPassword_ShouldNotBeAdvertisedAndFirstLoginShouldBeEnforced" --no-restore`：先因启动日志公开默认凭据 FAIL，移除后又因矩阵缺直接锚点 FAIL，更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "Create_ShouldRequirePasswordChange|ChangePassword_ShouldClearPasswordChangeRequirement" --no-restore`：PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "ChangePassword_ShouldClearPasswordChangeRequirement|GetUsers_WhenPasswordChangeRequired_ShouldReturnForbidden|CreateUser_ShouldReturnCreated" --no-restore`：PASS。
+- 补强 Sprint 1 ChatPanel markdown/XSS 证据：阶段一矩阵现在引用 `ChatPanel.vue` escape-first renderer、`chat-panel.test.ts` unsafe HTML 单测、`chat.spec.ts` 真实 Chrome XSS 用例和新增 `Sprint1ChatPanelMarkdownXss_ShouldHaveDirectEscapingEvidence`，不再只写宽泛 security self-assessment / real Chrome 说明。
+- `npm run test:unit -- chat-panel.test.ts`：PASS，39 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1ChatPanelMarkdownXss_ShouldHaveDirectEscapingEvidence" --no-restore`：PASS。
+- `npm run test:e2e -- chat.spec.ts -g "真实浏览器转义后端返回的 unsafe HTML 且只渲染受限 markdown"`：PASS，1 passed，真实 Chrome 证明 unsafe `<script>` / `<img onerror>` 不落 DOM 且 `window.__aimesXss` 未执行。
+- 补强 Sprint 1 Anomaly frontend double-prefix 证据：阶段一矩阵现在引用 `anomaly.ts` baseURL-relative wrapper、`anomaly-api.test.ts` 路径单测、`anomaly.spec.ts` 真实 Chrome 请求路径用例和新增 `Sprint1AnomalyFrontendDoublePrefix_ShouldHaveDirectRouteEvidence`，不再只写宽泛 real Chrome frontend flows。
+- `npm run test:unit -- anomaly-api.test.ts`：PASS，1 passed。
+- `npm run test:e2e -- anomaly.spec.ts -g "真实浏览器只请求单层 api/v1 anomaly 路径"`：首次因测试未关闭 offline demo mode 按预期 FAIL；修正测试前置条件后 PASS，1 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint1AnomalyFrontendDoublePrefix_ShouldHaveDirectRouteEvidence" --no-restore`：PASS。
+- 补强 Sprint 0 Dashboard KPI no Random.Shared 证据：阶段一矩阵现在引用 `DashboardKpiService` 确定性服务计算、`dashboard.spec.ts` 真实 Chrome 后端响应原样展示用例和新增 `Sprint0DashboardKpi_ShouldHaveDirectRealBrowserDeterministicEvidence`，不再只写宽泛 endpoint `Random` 扫描。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint0DashboardKpi_ShouldHaveDirectRealBrowserDeterministicEvidence" --no-restore`：新增守卫后先按预期 FAIL，抓到缺真实浏览器 KPI 证据；补 e2e、矩阵和 frontend evidence 后 PASS。
+- `npm run test:e2e -- dashboard.spec.ts -g "真实浏览器按后端生产概览响应原样展示 KPI，不回退随机指标"`：PASS，1 passed；真实 Chrome 证明页面请求 `/api/v1/dashboard` 并原样展示 `91.7%` / `88.4%` / `63.2%` / `17`，未回退演示或随机指标。
+- 补强 Sprint 0 JWT signing key fail-closed / production config gate 证据：阶段一矩阵现在引用 `JwtOptions` required settings、`ValidateOnStart()`、`SigningKeyStore` 从已验证 `IOptions<JwtOptions>` 构造、`JwtStartupValidationTests` 缺 key/短 key 启动失败用例和新增 `Sprint0JwtSigningKey_ShouldHaveDirectFailClosedStartupEvidence`，不再只写宽泛 security self-assessment。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint0JwtSigningKey_ShouldHaveDirectFailClosedStartupEvidence" --no-restore`：新增守卫后先按预期 FAIL，抓到矩阵缺直接证据锚点；更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "JwtStartupValidationTests" --no-restore`：PASS，2 passed。
+- 补强 Sprint 0 Production CORS not AllowAnyOrigin 证据：阶段一矩阵现在引用 `CorsOptions` / `AddCorsServices` Production policy、`CorsPolicyTests` 配置 origin 不通配与缺 origin 启动失败用例，以及新增 `Sprint0ProductionCors_ShouldHaveDirectNoWildcardEvidence`，不再只写宽泛 Attack Chain C / staging transcript。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint0ProductionCors_ShouldHaveDirectNoWildcardEvidence" --no-restore`：新增守卫后先按预期 FAIL，抓到矩阵缺直接证据锚点；更新矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "CorsPolicyTests" --no-restore`：PASS，2 passed。
+- 补强 Sprint 3 quality gray monitoring UI 证据：阶段一矩阵现在引用 `admin.spec.ts` 用例 `R3 灰度发布进入 Agent 灰度监控指标`、`frontend-real-browser-evidence-20260611.md` targeted rerun 和新增 `Sprint3QualityGrayMonitor_ShouldHaveDirectRealBrowserEvidence`，证明 Agent 治理页在真实 Chrome 中展示 R3 灰度监控指标、audit id 和 trace id。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3QualityGrayMonitor_ShouldHaveDirectRealBrowserEvidence" --no-restore`：新增守卫后先按预期 FAIL，抓到 frontend evidence 缺 targeted gray monitor 章节。
+- `npm run test:e2e -- admin.spec.ts -g "R3 灰度发布进入 Agent 灰度监控指标"`：PASS，1 passed。
+- 补强 Sprint 2 Anomaly create transaction rollback 证据：阶段一矩阵现在引用 `AnomalyEndpoints.CreateAsync` 的 `IUnitOfWork.ExecuteAsync` 包裹、`AuditLogRepository.AddAsync` 不自提交、`Create_WhenNotificationFails_ShouldRollbackAnomalyAndAudit` 以及新增 `Sprint2AnomalyCreateTransaction_ShouldHaveDirectRollbackEvidence`，不再只写宽泛 UoW/audit layering gates。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "Create_WhenNotificationFails_ShouldRollbackAnomalyAndAudit" --no-restore`：PASS，1 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2AnomalyCreateTransaction_ShouldHaveDirectRollbackEvidence" --no-restore`：新增守卫后先因签名 token 检查过严 FAIL，修正守卫后按预期因矩阵缺直接证据锚点 FAIL。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2AnomalyCreateTransaction_ShouldHaveDirectRollbackEvidence" --no-restore`：更新矩阵和 partial evidence 后 PASS。
+- 补强 Sprint 2 Inventory StockOut material + stock transaction atomicity 证据：阶段一矩阵现在引用 `InventoryAppService.StockOutAsync` 的 `_unitOfWork.ExecuteAsync` 顺序、`MaterialRepository.UpdateAsync` / `StockTransactionRepository.AddAsync` 不自提交、`StockOutAsync_ShouldCommitMaterialUpdateAndTransactionThroughUnitOfWork`、`StockOutAsync_WhenTransactionWriteFails_ShouldNotPersistMaterialDecrement` 以及新增 `Sprint2InventoryStockOutTransaction_ShouldHaveDirectAtomicEvidence`，不再只写宽泛 UoW/audit layering gates。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2InventoryStockOutTransaction_ShouldHaveDirectAtomicEvidence" --no-restore`：新增守卫后按预期因矩阵缺直接证据锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "StockOutAsync_ShouldCommitMaterialUpdateAndTransactionThroughUnitOfWork|StockOutAsync_WhenTransactionWriteFails_ShouldNotPersistMaterialDecrement" --no-restore`：PASS，2 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2InventoryStockOutTransaction_ShouldHaveDirectAtomicEvidence" --no-restore`：矩阵补宽泛锚点后又按预期因缺精确回滚断言 token FAIL；补 `material.AvailableQuantity.Should().Be(100` 后 PASS。
+- 补强 Sprint 2 Scheduling/Equipment/Admin pagination returns precise page size 证据：阶段一矩阵现在引用 `EquipmentAppServiceTests.GetEquipmentsAsync_ShouldUseRepositoryPagingForFilters`、`AdminAppServiceTests.GetAllUsersAsync_ShouldUseRepositoryPaging`、`SchedulingAppServiceTests.GetWorkOrdersAsync_ShouldUseRepositoryPagingWithFilters`、`SchedulingControllerTests.GetWorkOrders_WithPaging_ShouldRespectParameters` 以及新增 `Sprint2CriticalListPagination_ShouldHaveDirectPageSizeEvidence`，不再只写宽泛 list app-service repository paging gates。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2CriticalListPagination_ShouldHaveDirectPageSizeEvidence" --no-restore`：新增守卫后先因 Scheduling controller token 过严 FAIL，修正后按预期因矩阵缺直接分页测试锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "GetEquipmentsAsync_ShouldUseRepositoryPagingForFilters|GetAllUsersAsync_ShouldUseRepositoryPaging|GetWorkOrdersAsync_ShouldUseRepositoryPagingWithFilters" --no-restore`：首次并行验证遇到 `MES.Api` static web assets compression build-state error，非断言失败；立即复跑 PASS，3 passed。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "GetWorkOrders_WithPaging_ShouldRespectParameters" --no-restore`：PASS，1 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2CriticalListPagination_ShouldHaveDirectPageSizeEvidence" --no-restore`：矩阵和证据报告更新后 PASS。
+- 补强 Sprint 3 Purchase submit/confirm/cancel validation filter 证据：阶段一矩阵现在引用 `PurchaseEndpoints.cs` 的 submit/confirm/cancel `ValidationEndpointFilter` 与 `Audit` 链、`ValidationEndpointFilter` 行为、`PurchaseControllerTests.SubmitAndConfirm_ShouldTransitionStatus`、`Cancel_ShouldSetCancelled` 以及新增 `Sprint3PurchaseStateChangeValidation_ShouldHaveDirectEndpointEvidence`，不再只写宽泛 H9 purchase validation gate。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3PurchaseStateChangeValidation_ShouldHaveDirectEndpointEvidence" --no-restore`：新增守卫后按预期因矩阵缺直接 Purchase endpoint/filter/flow 证据锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "SubmitAndConfirm_ShouldTransitionStatus|Cancel_ShouldSetCancelled" --no-restore`：PASS，2 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3PurchaseStateChangeValidation_ShouldHaveDirectEndpointEvidence" --no-restore`：首次 GREEN 尝试在测试执行前遇到 `MES.Api.csproj` `wwwroot/scheduling` 清理瞬时错误；立即复跑 PASS，1 passed。
+- 补强 Sprint 3 `OperationCanceledException` handled separately 证据：阶段一矩阵现在引用 `ExceptionMiddleware.InvokeAsync` 的 `OperationCanceledException` 先于 generic exception catch、`HandleOperationCanceledAsync` 返回 499 且不写 ProblemDetails、`ExceptionMiddlewareTests.InvokeAsync_WhenOperationCanceled_ShouldReturnClientClosedRequestWithoutProblemDetails` 以及新增 `Sprint3OperationCanceledException_ShouldHaveDirectMiddlewareEvidence`，不再只写宽泛 M11 exception middleware gate。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3OperationCanceledException_ShouldHaveDirectMiddlewareEvidence" --no-restore`：新增守卫后按预期因矩阵缺直接 middleware/test 证据锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "InvokeAsync_WhenOperationCanceled_ShouldReturnClientClosedRequestWithoutProblemDetails" --no-restore`：PASS，1 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3OperationCanceledException_ShouldHaveDirectMiddlewareEvidence" --no-restore`：矩阵和证据报告更新后 PASS。
+- 补强 Sprint 3 Domain state rules use `DomainRuleViolationException` 证据：领域单测现在直接断言 `DomainRuleViolationException`，覆盖 WorkOrder、Equipment、OperationExecution 和 Material 库存规则；新增 `Sprint3DomainRuleViolationException_ShouldHaveDirectDomainUnitEvidence`，不再只依赖 M12 泛化扫描和 `InvalidOperationException` 基类断言。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3DomainRuleViolationException_ShouldHaveDirectDomainUnitEvidence" --no-restore`：新增守卫后先按预期因测试/矩阵缺直接证据 FAIL；更新单测后又按预期因矩阵缺直接锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "WorkOrderTests|EquipmentTests|OperationExecutionStateMachineTests|MaterialTests" --no-restore`：PASS，89 passed。
+- 补强 Sprint 2 concurrency token 证据：新增 `ConcurrencyTokenTests`，覆盖 WorkOrder、Equipment、Material、SchedulePlan 旧版本保存时抛 `DbUpdateConcurrencyException`；新增 `Sprint2ConcurrencyTokens_ShouldHaveDirectUpdateConflictEvidence`，不再只靠 M7 模型元数据和 hosted CI。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "ConcurrencyTokenTests" --no-restore`：首次因 EF1002 raw SQL 插值警告视为错误 FAIL；改为白名单 SQL + 参数化 id 后 PASS，4 passed。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2ConcurrencyTokens_ShouldHaveDirectUpdateConflictEvidence" --no-restore`：新增守卫后按预期因直接测试/矩阵锚点缺失 FAIL；补测试后又按预期因矩阵缺直接锚点 FAIL。
+- 补强 Sprint 2 `ScheduleRepository.GetAllAsync` split query / stable paging 证据：阶段一矩阵现在引用 `ScheduleRepositoryTests.GetAllAsync_UsesSplitQueryAndStablePagedOrdering` 和新增 `Sprint2ScheduleRepositoryPaging_ShouldHaveDirectSplitQueryEvidence`，不再只写静态架构门和 hosted CI。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2ScheduleRepositoryPaging_ShouldHaveDirectSplitQueryEvidence" --no-restore`：新增守卫后按预期因矩阵缺直接集成测试锚点 FAIL。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "GetAllAsync_UsesSplitQueryAndStablePagedOrdering" --no-restore`：PASS，1 passed。
+- Docker Desktop 在当前 Codex 会话内恢复后，复跑 PostgreSQL/staging rehearsal 生成 fresh 证据 `_docs/_reports/staging-rehearsal-20260611-docker-restored-current.md`：Production 环境、PostgreSQL 连接、Docker dependencies、EF migrations、API startup、`/live` 和 `/ready` 均 PASS。
+- `./scripts/run-staging-rehearsal.ps1 -ReportPath _docs/_reports/staging-rehearsal-20260611-docker-restored-current.md -ImagePullMode Missing -DockerPullTimeoutSeconds 120 -ReadyTimeoutSeconds 180`：PASS，报告 `Result: PASS`，`/live` 与 `/ready` 均 HTTP 200。
+- `./scripts/run-release-gate-audit.ps1 -ReportPath _docs/_reports/release-gate-audit-20260611-after-docker-current-staging-rerun.md -StagingReportPath _docs/_reports/staging-rehearsal-20260611-docker-restored-current.md`：按预期 FAIL；Hosted CI 与 PostgreSQL/staging 为 PASS，剩余失败项仍只有 Attack Chain manual、security signoff、gray observation。
+- 补强 Sprint 2 repository reads `AsNoTracking()` 证据：新增 `RepositoryAsNoTrackingTests.CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext`，用 SQLite 真实 `MesDbContext` 证明 WorkOrder/Equipment/Material/BOM/Employee/Purchase/Quality/Schedule/Admin users 代表性读路径 materialize 后 `ChangeTracker.Entries()` 为空，不再只依赖静态扫描。
+- 新增 `Sprint2RepositoryAsNoTracking_ShouldHaveDirectChangeTrackerEvidence` 架构守护，固定运行时集成测试、partial evidence 和阶段一矩阵锚点。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint2RepositoryAsNoTracking_ShouldHaveDirectChangeTrackerEvidence" --no-restore`：新增守卫后先按预期因缺 ChangeTracker 集成证据 FAIL，补测试和矩阵后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext" --no-restore`：PASS，1 passed。
+- 补强 Sprint 3 target mutating endpoints audit 证据：阶段一矩阵现在引用 `H7TargetMutatingEndpoints_ShouldUseAuditEndpointFilter` 的静态端点链覆盖、`EmployeeControllerTests.Create_ShouldPersistAuditLogFromEndpointFilter` 的真实 HTTP endpoint audit 落库证据，以及 `AdminControllerTests.CreateUser_ShouldRedactPasswordInAuditLog` 的真实 HTTP admin audit 脱敏证据。
+- 新增 `Sprint3TargetMutatingEndpoints_ShouldHaveDirectEndpointAuditEvidence` 架构守护，固定 Employee/Admin 直接 endpoint audit 测试、partial evidence 和阶段一矩阵锚点，不再只靠 H7 静态扫描。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3TargetMutatingEndpoints_ShouldHaveDirectEndpointAuditEvidence" --no-restore`：新增守卫后先按预期因矩阵缺直接 endpoint audit 锚点 FAIL，补矩阵和证据报告后 PASS。
+- `dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --filter "Create_ShouldPersistAuditLogFromEndpointFilter|CreateUser_ShouldRedactPasswordInAuditLog" --no-restore`：PASS，2 passed。
+- 补强 Sprint 3 `AuditEndpointFilter` 分层证据：新增 `AuditEndpointFilterTests.Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork`，直接调用 filter 并证明 POST 审计写入通过 `IUnitOfWork.ExecuteAsync` 和 `IAuditLogAppService.WriteAuditLogAsync`，携带 user/resource/id/action/payload context。
+- 收紧 `H3AuditEndpointFilter_ShouldDependOnAuditAppServiceNotDbContext`：除了禁止 `MesDbContext` / `.AuditLogs` / `new AuditLog` / `SaveChangesAsync`，现在也要求 filter 使用 `IUnitOfWork`。
+- 新增 `Sprint3AuditEndpointFilterLayering_ShouldHaveDirectUnitEvidence` 架构守护，固定 filter、单测、partial evidence 和阶段一矩阵锚点。
+- `dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --filter "Sprint3AuditEndpointFilterLayering_ShouldHaveDirectUnitEvidence" --no-restore`：新增守卫后先按预期因缺直接 filter 单测/矩阵锚点 FAIL，补测试和文档后 PASS。
+- `dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --filter "Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork" --no-restore`：PASS，1 passed。
+- Docker/网络恢复确认后复跑 5 分钟 Demo 主链路真实 Chrome 证据：`npm run test:e2e -- tests/e2e/demo-smoke.spec.ts -g "Dashboard -> Scheduling -> Audit -> Report"` production build PASS，1 passed；已追加到 `_docs/_reports/frontend-real-browser-evidence-20260611.md`，证明 Dashboard -> Scheduling -> Audit -> Report 当前仍可回放。
+
+## 发布闸门
+
+- Security self-assessment：PASS。
+- Attack Chain automated support：PASS。
+- Attack Chain A/B/C manual verification：FAIL。
+- Security signoff：FAIL。
+- Gray observation：FAIL。

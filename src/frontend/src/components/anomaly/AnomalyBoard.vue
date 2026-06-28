@@ -20,7 +20,19 @@
         </div>
         <span class="event-center-status">{{ openCount }} 个待闭环</span>
       </div>
-      <div class="event-lanes" role="list" :aria-label="eventLaneListLabel">
+      <div id="anomaly-dispatch-help" class="dispatch-guidance">
+        <p>
+          确认分流前，请核对异常类型、影响工单、目标模块、责任人和审计追踪。
+          Before confirming dispatch, verify anomaly type, impacted work orders, target modules, owner, and audit trace.
+        </p>
+        <nav aria-label="异常分流相关入口">
+          <router-link :to="linkedRoute('/risk')">风险预警 / Risk queue</router-link>
+          <router-link to="/quality">质量闭环 / Quality closure</router-link>
+          <router-link to="/scheduling">AI 排产 / Scheduling</router-link>
+          <a href="#anomaly-dispatch-help">帮助 / Help</a>
+        </nav>
+      </div>
+      <div class="event-lanes" role="list" :aria-label="eventLaneListLabel" aria-describedby="anomaly-dispatch-help">
         <div
           v-for="lane in eventLanes"
           :key="lane.title"
@@ -33,7 +45,11 @@
           <strong>{{ lane.title }}</strong>
           <p>{{ lane.detail }}</p>
           <div class="lane-route">{{ lane.route }}</div>
-          <button type="button" @click="dispatchEventLane(lane.id)">
+          <button
+            type="button"
+            :disabled="dispatchedLaneIds.includes(lane.id)"
+            @click="dispatchEventLane(lane.id)"
+          >
             {{ dispatchedLaneIds.includes(lane.id) ? '已确认分流' : '确认分流' }}
           </button>
         </div>
@@ -41,7 +57,7 @@
       <div class="event-bridge">
         <span>Agent 分流</span>
         <strong>设备异常进入风险队列和排产复核，质量异常进入隔离/返工窗口，物料异常进入采购协同与库存齐套。</strong>
-        <router-link to="/risk">查看风险处置队列</router-link>
+        <router-link :to="linkedRoute('/risk')">查看风险处置队列</router-link>
       </div>
       <div v-if="latestDispatch" class="dispatch-trace">
         <span>{{ latestDispatch.statusLabel }}</span>
@@ -166,6 +182,7 @@ import { ref, computed, onMounted } from 'vue'
 import type { ProductionAnomaly, ProductionAnomalyDetail, AnalyzeAnomalyResult } from '../../types/anomaly'
 import { getAnomalyList, getAnomalyById, analyzeAnomaly } from '../../api/anomaly'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import {
   readProductionAnomalyEventBackendFirst,
   toProductionAnomaly,
@@ -207,6 +224,10 @@ const analyzing = ref(false)
 const latestDispatch = ref<AnomalyDispatchRecord | null>(null)
 const dispatchedLaneIds = ref<string[]>([])
 const notification = ref('')
+const startupNotifications = ref<string[]>([])
+const detailNotification = ref('')
+const analysisNotification = ref('')
+const operationNotification = ref('')
 
 const eventLanes = [
   {
@@ -236,6 +257,16 @@ const eventLanes = [
 ]
 
 const eventLaneListLabel = computed(() => `异常分流事件队列：${eventLanes.length} 条`)
+
+function linkedRoute(path: string) {
+  const query: Record<string, string> = {}
+  const params = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+  for (const key of ['offlineDemo', 'demoMode']) {
+    const value = params.get(key)
+    if (value) query[key] = value
+  }
+  return Object.keys(query).length ? { path, query } : path
+}
 
 function eventLaneLabel(lane: typeof eventLanes[number]) {
   return `${lane.type}：${lane.title}，${lane.route}`
@@ -293,7 +324,9 @@ function formatTime(t: string) {
 
 async function selectAnomaly(a: ProductionAnomaly) {
   analysis.value = null
-  notification.value = ''
+  detailNotification.value = ''
+  analysisNotification.value = ''
+  syncNotification()
   const eventDetail = await currentProductionAnomalyDetail()
   if (eventDetail?.id === a.id) {
     detail.value = eventDetail
@@ -303,7 +336,8 @@ async function selectAnomaly(a: ProductionAnomaly) {
     detail.value = await getAnomalyById(a.id)
   } catch (error: unknown) {
     detail.value = demoDetail[a.id] || null
-    notification.value = `异常详情加载失败，已显示本地演示详情：${errorMessage(error, '请稍后重试')}`
+    detailNotification.value = `异常详情加载失败，已显示本地演示详情：${errorMessage(error, '请稍后重试')}`
+    syncNotification()
   }
 }
 
@@ -311,11 +345,13 @@ async function handleAnalyze() {
   if (!detail.value) return
   analyzing.value = true
   analysis.value = null
-  notification.value = ''
+  analysisNotification.value = ''
+  syncNotification()
   try {
     analysis.value = await analyzeAnomaly(detail.value.id)
   } catch (error: unknown) {
-    notification.value = `AI 分析加载失败，已显示本地演示建议：${errorMessage(error, '请稍后重试')}`
+    analysisNotification.value = `AI 分析加载失败，已显示本地演示建议：${errorMessage(error, '请稍后重试')}`
+    syncNotification()
     // demo AI analysis
     const type = detail.value.anomalyType
     if (type === 'equipment') {
@@ -366,24 +402,32 @@ async function loadAnomalies() {
       ? [toProductionAnomaly(event), ...demoAnomalies.filter(item => item.id !== event.id)]
       : demoAnomalies
     totalCount.value = anomalies.value.length
-    notification.value = `异常列表加载失败，已显示本地演示异常：${errorMessage(error, '请稍后重试')}`
+    if (isOfflineDemoError(error)) {
+      loading.value = false
+      return
+    }
+    pushStartupNotification(`异常列表加载失败，已显示本地演示异常：${errorMessage(error, '请稍后重试')}`)
   }
   loading.value = false
 }
 
 function dispatchEventLane(laneId: string) {
+  if (dispatchedLaneIds.value.includes(laneId)) return
   const lane = eventLanes.find(item => item.id === laneId)
   if (!lane) return
-  notification.value = ''
+  operationNotification.value = ''
+  syncNotification()
   let record: AnomalyDispatchRecord | null = null
   try {
     record = writeAnomalyDispatchRecord(dispatchRecordForLane(laneId))
   } catch (error: unknown) {
-    notification.value = `异常分流确认失败，未写入下游处置证据：${errorMessage(error, '请稍后重试')}`
+    operationNotification.value = `异常分流确认失败，未写入下游处置证据：${errorMessage(error, '请稍后重试')}`
+    syncNotification()
     return
   }
   if (!record) {
-    notification.value = '异常分流确认失败，未写入下游处置证据：浏览器存储不可用'
+    operationNotification.value = '异常分流确认失败，未写入下游处置证据：浏览器存储不可用'
+    syncNotification()
     return
   }
   latestDispatch.value = record
@@ -455,9 +499,31 @@ function dispatchRecordForLane(laneId: string): Omit<AnomalyDispatchRecord, 'id'
 }
 
 async function applyStoredDispatchRecords() {
-  const records = await readAnomalyDispatchRecordsBackendFirst()
-  latestDispatch.value = records[0] ?? null
-  dispatchedLaneIds.value = records.map(record => record.anomalyId)
+  try {
+    const records = await readAnomalyDispatchRecordsBackendFirst()
+    latestDispatch.value = records[0] ?? null
+    dispatchedLaneIds.value = records.map(record => record.anomalyId)
+  } catch (error: unknown) {
+    latestDispatch.value = null
+    dispatchedLaneIds.value = []
+    pushStartupNotification(`异常分流记录加载失败，仍可继续确认新的分流：${errorMessage(error, '请稍后重试')}`)
+  }
+}
+
+function pushStartupNotification(message: string) {
+  if (!startupNotifications.value.includes(message)) {
+    startupNotifications.value = [...startupNotifications.value, message]
+  }
+  syncNotification()
+}
+
+function syncNotification() {
+  notification.value = [
+    ...startupNotifications.value,
+    detailNotification.value,
+    analysisNotification.value,
+    operationNotification.value,
+  ].filter(Boolean).join('；')
 }
 
 onMounted(async () => {
@@ -467,17 +533,21 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.anomaly-board { height: 100%; display: flex; flex-direction: column; padding: 16px; }
+.anomaly-board { height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .btn { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn.active { background: #1890ff; color: #fff; border-color: #1890ff; }
 .anomaly-notification { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #ffccc7; border-radius: 6px; background: #fff2f0; color: #a8071a; font-size: 13px; }
-.event-center { background: #fff; border: 1px solid #e6edf5; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.event-center { position: relative; z-index: 0; flex: 0 0 auto; background: #fff; border: 1px solid #e6edf5; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
 .event-center-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .eyebrow { display: block; font-size: 11px; color: #1677ff; font-weight: 700; margin-bottom: 3px; }
 .event-center h3 { margin: 0; font-size: 14px; }
 .event-center-status { background: #fff7e6; border: 1px solid #ffd591; color: #d46b08; border-radius: 4px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.dispatch-guidance { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #d6e4ff; border-radius: 6px; background: #f5f9ff; font-size: 12px; }
+.dispatch-guidance p { margin: 0; color: #344054; line-height: 1.5; }
+.dispatch-guidance nav { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.dispatch-guidance a { color: #1677ff; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .event-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .event-lane { border: 1px solid #edf1f5; border-radius: 6px; padding: 10px; min-height: 120px; }
 .event-lane span { display: block; color: #667085; font-size: 11px; margin-bottom: 6px; }
@@ -497,9 +567,9 @@ onMounted(async () => {
 .dispatch-trace strong { color: #111827; }
 .dispatch-trace p { grid-column: 1 / -1; margin: 0; color: #4b5563; line-height: 1.45; }
 .dispatch-trace code { color: #1677ff; font-size: 12px; }
-.anomaly-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.anomaly-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.anomaly-card { display: flex; gap: 12px; padding: 12px 16px; background: #fff; border-radius: 6px; cursor: pointer; border-left: 4px solid #d9d9d9; transition: box-shadow 0.15s; }
+.anomaly-content { position: relative; z-index: 1; flex: 1 1 320px; min-height: 260px; display: flex; flex-direction: column; overflow: hidden; }
+.anomaly-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.anomaly-card { position: relative; z-index: 1; display: flex; gap: 12px; padding: 12px 16px; background: #fff; border-radius: 6px; cursor: pointer; border-left: 4px solid #d9d9d9; transition: box-shadow 0.15s; }
 .anomaly-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .anomaly-card.sev-critical { border-left-color: #ff4d4f; }
 .anomaly-card.sev-high { border-left-color: #ff7a45; }
@@ -562,6 +632,8 @@ onMounted(async () => {
 .page-ellipsis { width: 28px; text-align: center; color: #999; font-size: 12px; }
 .page-info { margin-left: auto; font-size: 12px; color: #999; }
 @media (max-width: 1100px) {
+  .dispatch-guidance { grid-template-columns: 1fr; }
+  .dispatch-guidance nav { justify-content: flex-start; }
   .event-lanes { grid-template-columns: 1fr; }
   .event-bridge { align-items: flex-start; flex-direction: column; }
 }

@@ -51,6 +51,21 @@ describe('customer order import sync', () => {
     await expect(readCustomerOrderImportEvidenceBackendFirst()).resolves.toEqual(localRecord)
   })
 
+  it('falls back to local import evidence when backend returns a partial mapping payload', async () => {
+    const localRecord = writeCustomerOrderImportEvidence(orderImport({
+      batchId: 'IMP-POC-WO-20260520-LOCAL',
+      mappedFields: ['工单号', '产品', '交期', '工艺路线'],
+    }))
+    getLatestCustomerOrderImport.mockResolvedValueOnce({
+      batchId: 'IMP-POC-WO-20260520-PARTIAL',
+      importedOrders: 30,
+      highRiskOrders: 6,
+      mappedFields: [],
+    })
+
+    await expect(readCustomerOrderImportEvidenceBackendFirst()).resolves.toEqual(localRecord)
+  })
+
   it('falls back to local import evidence when backend fails but a local POC sample exists', async () => {
     const localRecord = writeCustomerOrderImportEvidence(orderImport())
     getLatestCustomerOrderImport.mockRejectedValueOnce(new Error('backend unavailable'))
@@ -62,6 +77,14 @@ describe('customer order import sync', () => {
     getLatestCustomerOrderImport.mockRejectedValueOnce(new Error('backend unavailable'))
 
     await expect(readCustomerOrderImportEvidenceBackendFirst()).rejects.toThrow('backend unavailable')
+  })
+
+  it('returns empty local evidence in offline demo mode instead of surfacing backend skip errors', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/scheduling/customer-order-import/latest')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    getLatestCustomerOrderImport.mockRejectedValueOnce(offlineDemoError)
+
+    await expect(readCustomerOrderImportEvidenceBackendFirst()).resolves.toBeNull()
   })
 
   it('removes corrupt import JSON so POC evidence boards do not render stale samples', () => {

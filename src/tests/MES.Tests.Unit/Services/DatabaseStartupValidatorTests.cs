@@ -1,7 +1,9 @@
 using FluentAssertions;
+using MES.Api.Configuration;
 using MES.Api.Services;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace MES.Tests.Unit.Services;
@@ -15,6 +17,7 @@ public sealed class DatabaseStartupValidatorTests
         var validator = new DatabaseStartupValidator(
             schema,
             new FakeHostEnvironment(Environments.Production),
+            Options.Create(new AimesHostOptions()),
             new FakeDemoDataSeeder());
 
         var act = async () => await validator.ValidateAsync(CancellationToken.None);
@@ -31,11 +34,29 @@ public sealed class DatabaseStartupValidatorTests
         var validator = new DatabaseStartupValidator(
             schema,
             new FakeHostEnvironment(Environments.Production),
+            Options.Create(new AimesHostOptions()),
             new FakeDemoDataSeeder());
 
         await validator.ValidateAsync(CancellationToken.None);
 
         schema.MigrateCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_InProductionWithExplicitDemoSeed_ShouldSeedWithoutMigrating()
+    {
+        var schema = new FakeDatabaseSchemaState([]);
+        var seeder = new FakeDemoDataSeeder();
+        var validator = new DatabaseStartupValidator(
+            schema,
+            new FakeHostEnvironment(Environments.Production),
+            Options.Create(new AimesHostOptions { SeedDemoDataOnStartup = true }),
+            seeder);
+
+        await validator.ValidateAsync(CancellationToken.None);
+
+        schema.MigrateCalls.Should().Be(0);
+        seeder.SeedCalls.Should().Be(1);
     }
 
     [Fact]
@@ -46,6 +67,7 @@ public sealed class DatabaseStartupValidatorTests
         var validator = new DatabaseStartupValidator(
             schema,
             new FakeHostEnvironment(Environments.Development),
+            Options.Create(new AimesHostOptions()),
             seeder);
 
         await validator.ValidateAsync(CancellationToken.None);
@@ -62,6 +84,7 @@ public sealed class DatabaseStartupValidatorTests
         var validator = new DatabaseStartupValidator(
             schema,
             new FakeHostEnvironment(Environments.Development),
+            Options.Create(new AimesHostOptions()),
             seeder);
 
         await validator.ValidateAsync(CancellationToken.None);

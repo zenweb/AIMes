@@ -12,7 +12,7 @@
 | Docker | Docker Desktop ≥ 4.20（Win/Mac）或 Docker Engine ≥ 24（Linux） | 含 Compose v2 |
 | 内存 | 8 GB 可用 | 4 个数据容器 + API |
 | 磁盘 | 20 GB 可用 | 镜像 ~3 GB + 数据卷 |
-| 端口 | 5000 / 5432 / 6379 / 5672 / 6333 / 15672 | 见下方端口表 |
+| 端口 | 5003 / 5432 / 6379 / 5672 / 6333 / 15672 | 见下方端口表；API 宿主机端口可覆盖 |
 | 浏览器 | Chrome / Edge ≥ 100 | 仅看板需要 |
 
 不需要：.NET SDK / Node.js / 任何编译工具链。**全部容器化运行**。
@@ -43,7 +43,7 @@ docker compose ps
 
 ## 2. 第一次访问
 
-打开浏览器：**http://localhost:5000**
+打开浏览器：**http://localhost:5003**
 
 会自动跳转到登录页。用：
 
@@ -79,14 +79,14 @@ docker compose ps
 
 | 服务 | 主机端口 | 容器端口 | 用途 |
 |---|---|---|---|
-| AIMes API | 5000 | 5000 | 后端 + 前端静态资源 |
+| AIMes API | 5003 | 5003 | 后端 + 前端静态资源 |
 | PostgreSQL | 5432 | 5432 | 业务数据 |
 | Redis | 6379 | 6379 | SignalR backplane / 缓存 |
 | RabbitMQ AMQP | 5672 | 5672 | MassTransit 消息 |
 | RabbitMQ UI | 15672 | 15672 | 管理控制台 (guest/guest) |
 | Qdrant | 6333 | 6333 | 向量库（仅商业版完整启用） |
 
-如果某个端口被占用，启动会失败。修改 `docker-compose.yml` 的 `ports` 段，或停掉占用端口的本地进程。详见 [troubleshooting.md](troubleshooting.md)。
+如果 API 宿主机端口 `5003` 被占用，不要改回 `5000`；设置 `AIMES_API_HOST_PORT=5004` 后重新启动 API，并让前端使用 `VITE_API_TARGET=http://localhost:5004`。其他端口冲突可修改 `docker-compose.yml` 的对应 `ports` 段，或停掉占用端口的本地进程。详见 [troubleshooting.md](troubleshooting.md)。
 
 ---
 

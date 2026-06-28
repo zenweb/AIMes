@@ -1,0 +1,71 @@
+diff --git "a/tmp\\startup-engineering-slice\\a\\src\\frontend\\tests\\unit\\schedule-board.test.ts" "b/tmp\\startup-engineering-slice\\b\\src\\frontend\\tests\\unit\\schedule-board.test.ts"
+index 2a4c746..7234738 100644
+--- "a/tmp\\startup-engineering-slice\\a\\src\\frontend\\tests\\unit\\schedule-board.test.ts"
++++ "b/tmp\\startup-engineering-slice\\b\\src\\frontend\\tests\\unit\\schedule-board.test.ts"
+@@ -13,6 +13,9 @@ const getRiskDashboard = vi.hoisted(() => vi.fn())
+ const confirmOutsourcingScheduleRelease = vi.hoisted(() => vi.fn())
+ const readLatestOutsourcingCommitmentPackage = vi.hoisted(() => vi.fn())
+ const readLatestOutsourcingCommitmentPackageBackendFirst = vi.hoisted(() => vi.fn())
++const readAlternateMaterialApprovalBackendFirst = vi.hoisted(() => vi.fn())
++const readEngineeringChangeImpactAnalysisBackendFirst = vi.hoisted(() => vi.fn())
++const readRouteCapabilityValidationBackendFirst = vi.hoisted(() => vi.fn())
+ 
+ vi.mock('../../src/components/gantt/GanttChart.vue', () => ({
+   default: {
+@@ -91,11 +94,11 @@ vi.mock('../../src/utils/schedule-feedback-sync', () => ({
+ 
+ vi.mock('../../src/utils/engineering-change-sync', () => ({
+   readAlternateMaterialApproval: vi.fn(() => null),
+-  readAlternateMaterialApprovalBackendFirst: emptyAsyncRecordMock(),
++  readAlternateMaterialApprovalBackendFirst,
+   readEngineeringChangeImpactAnalysis: vi.fn(() => null),
+-  readEngineeringChangeImpactAnalysisBackendFirst: emptyAsyncRecordMock(),
++  readEngineeringChangeImpactAnalysisBackendFirst,
+   readRouteCapabilityValidation: vi.fn(() => null),
+-  readRouteCapabilityValidationBackendFirst: emptyAsyncRecordMock(),
++  readRouteCapabilityValidationBackendFirst,
+ }))
+ 
+ vi.mock('../../src/utils/outsourcing-commitment-sync', () => ({
+@@ -295,6 +298,12 @@ describe('ScheduleBoard', () => {
+     readLatestOutsourcingCommitmentPackage.mockReturnValue(null)
+     readLatestOutsourcingCommitmentPackageBackendFirst.mockReset()
+     readLatestOutsourcingCommitmentPackageBackendFirst.mockResolvedValue(null)
++    readAlternateMaterialApprovalBackendFirst.mockReset()
++    readAlternateMaterialApprovalBackendFirst.mockResolvedValue(null)
++    readEngineeringChangeImpactAnalysisBackendFirst.mockReset()
++    readEngineeringChangeImpactAnalysisBackendFirst.mockResolvedValue(null)
++    readRouteCapabilityValidationBackendFirst.mockReset()
++    readRouteCapabilityValidationBackendFirst.mockResolvedValue(null)
+     optimizeSchedule.mockReset()
+     rescheduleItem.mockReset()
+     getWorkOrderById.mockReset()
+@@ -310,6 +319,23 @@ describe('ScheduleBoard', () => {
+   })
+ 
+ 
++  it('keeps the schedule plan usable when startup engineering constraint sync fails', async () => {
++    readEngineeringChangeImpactAnalysisBackendFirst.mockRejectedValueOnce(new Error('engineering startup evidence unavailable'))
++
++    const wrapper = mountScheduleBoard()
++    await flushPromises()
++
++    expect(getCurrentPlan).toHaveBeenCalled()
++    expect(wrapper.text()).toContain('OTD 预测90%')
++    const status = wrapper.get('.warnings-bar')
++    expect(status.attributes('role')).toBe('status')
++    expect(status.attributes('aria-live')).toBe('polite')
++    expect(status.text()).toContain('工程约束启动证据加载失败')
++    expect(status.text()).toContain('engineering startup evidence unavailable')
++    expect(readAlternateMaterialApprovalBackendFirst).toHaveBeenCalledWith({ failLoud: true })
++    expect(readEngineeringChangeImpactAnalysisBackendFirst).toHaveBeenCalledWith({ failLoud: true })
++    expect(readRouteCapabilityValidationBackendFirst).toHaveBeenCalledWith({ failLoud: true })
++  })
+   it('guides scheduler operators with bilingual links before optimization and adoption actions', async () => {
+     const wrapper = mountScheduleBoard()
+     await flushPromises()
+@@ -991,3 +1017,4 @@ describe('ScheduleBoard', () => {
+   })
+ 
+ })
++

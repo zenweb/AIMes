@@ -1,0 +1,177 @@
+diff --git tmp/agent-index-stage/base/src/frontend/scripts/e2e.mjs tmp/agent-index-stage/desired/src/frontend/scripts/e2e.mjs
+index e861331..8169327 100644
+--- tmp/agent-index-stage/base/src/frontend/scripts/e2e.mjs
++++ tmp/agent-index-stage/desired/src/frontend/scripts/e2e.mjs
+@@ -5,7 +5,13 @@ import { runCommand } from '@nuxt/cli'
+ 
+ const e2eBuildId = process.env.AIMES_E2E_BUILD_ID ?? process.pid.toString()
+ const e2ePort = process.env.AIMES_E2E_PORT ?? await findAvailablePort(4173)
+-const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' ? 'false' : 'true'
++const targetsLiveBackendMock = process.argv.slice(2).some(arg =>
++  arg.includes('人员证据启动读取失败后可重试') ||
++  arg.includes('调度员 Agent 工作台通过后端 API') ||
++  arg.includes('调度员 Agent 工作台后端 403') ||
++  arg.includes('调度员 Agent 工作台 API 不可用')
++)
++const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' || targetsLiveBackendMock ? 'false' : 'true'
+ 
+ const testEnv = {
+   ...process.env,
+diff --git tmp/agent-index-stage/base/src/frontend/tests/e2e/scheduling.spec.ts tmp/agent-index-stage/desired/src/frontend/tests/e2e/scheduling.spec.ts
+index d65b185..6f22783 100644
+--- tmp/agent-index-stage/base/src/frontend/tests/e2e/scheduling.spec.ts
++++ tmp/agent-index-stage/desired/src/frontend/tests/e2e/scheduling.spec.ts
+@@ -5,6 +5,11 @@ const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
+   '人员替班证据释放排产人员约束',
+   '人员无有效替班候选时排产保持停工复核事件',
+ ]
++const AGENT_BACKEND_EVIDENCE_TITLES = [
++  '调度员 Agent 工作台通过后端 API',
++  '调度员 Agent 工作台后端 403',
++  '调度员 Agent 工作台 API 不可用',
++]
+ 
+ const laborEvidenceRetryReads = {
+   blocks: 0,
+@@ -16,12 +21,17 @@ test.describe.configure({ timeout: 90000 })
+ test.describe('Scheduling 排产甘特图', () => {
+   test.beforeEach(async ({ page }, testInfo) => {
+     const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+     await page.addInitScript((offlineDemoSession) => {
+       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
+       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
+       localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+-    }, usesLegacyPersonnelOfflineDemo)
++    }, !usesLiveBackendMock)
++    if (usesAgentBackendMock) {
++      await mockSchedulingPlanApis(page)
++    }
+     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
+       await page.addInitScript(() => {
+         localStorage.setItem('aimes_offline_demo', 'false')
+@@ -31,9 +41,9 @@ test.describe('Scheduling 排产甘特图', () => {
+       await mockLaborRetrySchedulingPlanApis(page)
+       await mockLaborEvidenceRetryApis(page)
+     }
+-    const entry = testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
++    const entry = usesLiveBackendMock
+       ? 'scheduling?offlineDemo=0'
+-      : 'scheduling'
++      : 'scheduling?offlineDemo=1'
+     if (!usesLegacyPersonnelOfflineDemo) {
+       await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
+       await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+@@ -85,8 +95,6 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+     await mockAgentApi(page, { adoptStatus: 200 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -100,8 +108,6 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+     await mockAgentApi(page, { adoptStatus: 403 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -112,10 +118,7 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ 
+   test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+     await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -857,9 +860,79 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ })
+ 
+-async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+-  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+ 
++async function mockSchedulingPlanApis(page: import('@playwright/test').Page) {
++  const plan = {
++    id: 'plan-agent-e2e',
++    planName: 'Agent E2E 排产计划',
++    planStartDate: '2026-05-20T08:00:00.000Z',
++    planEndDate: '2026-05-20T20:00:00.000Z',
++    overallUtilizationRate: 0.82,
++    onTimeDeliveryRate: 0.91,
++    totalChangeoverMinutes: 35,
++    groupCount: 1,
++    createdAt: '2026-05-20T08:00:00.000Z',
++    items: [
++      {
++        id: 'agent-e2e-item-001',
++        workOrderId: 'wo-agent-e2e-001',
++        workOrderNumber: 'WO-AGENT-E2E-001',
++        equipmentId: 'eq-agent-e2e-001',
++        equipmentName: 'CNC Agent E2E',
++        plannedStartTime: '2026-05-20T08:00:00.000Z',
++        plannedEndTime: '2026-05-20T10:00:00.000Z',
++        sequence: 1,
++        setupTime: '20 分钟',
++        dependentItems: [],
++      },
++    ],
++  }
++
++  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      token: 'mock-e2e-token',
++      refreshToken: 'mock-e2e-refresh',
++      expiresAt: '2026-12-31T23:59:59Z',
++    }),
++  }))
++  await page.route('**/api/v1/**', route => {
++    const url = route.request().url()
++    if (url.includes('/api/v1/scheduling/agent/recommend') || url.includes('/adopt')) {
++      return route.fallback()
++    }
++    if (url.includes('/api/v1/scheduling/agent/decisions')) {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: JSON.stringify([]),
++      })
++    }
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++    })
++  })
++  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(plan),
++  }))
++  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify([]),
++  }))
++  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++  }))
++}
++
++async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+   const pendingDecision = {
+     id: 'agent-decision-e2e-001',
+     triggerEventId: 'trigger-e2e-001',

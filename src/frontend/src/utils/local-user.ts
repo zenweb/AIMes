@@ -28,6 +28,13 @@ function normalizeCachedUser(user: CachedUser): CachedUser {
   }
 }
 
+function isCompleteCachedUser(user: CachedUser): boolean {
+  return isNonEmptyString(user.username)
+    && isNonEmptyString(user.displayName)
+    && isNonEmptyString(user.role)
+    && typeof user.mustChangePassword === 'boolean'
+}
+
 function readCachedUser(): CachedUser | null {
   if (!canUseStorage()) return null
   const raw = localStorage.getItem(LOCAL_USER_KEY)
@@ -43,7 +50,13 @@ function readCachedUser(): CachedUser | null {
 }
 
 export function getLocalUser(): CachedUser | null {
-  return readCachedUser()
+  const user = readCachedUser()
+  if (!user) return null
+  if (!isCompleteCachedUser(user)) {
+    localStorage.removeItem(LOCAL_USER_KEY)
+    return null
+  }
+  return user
 }
 
 export function getLocalUserRole(): string | null {

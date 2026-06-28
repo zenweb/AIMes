@@ -1,0 +1,1 @@
+import{h as n}from"./B1AU1yui.js";import"./DFrHaJHk.js";import"./o_aTnTH8.js";async function d(t=24){const{data:e}=await n.get("/scheduling/otd-evidence",{params:{take:t}});return e}async function o(t){const{data:e}=await n.post("/scheduling/otd-evidence",t);return e}export{d as getOtdEvidenceChain,o as upsertOtdEvidence};

@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using FluentAssertions;
 using MES.Application.Services;
 using MES.Domain.Entities.Equipment;
@@ -82,6 +84,34 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void BackendReportPdf_ShouldRenderScheduleFeedbackEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var exportSource = File.ReadAllText(Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Services/ExportAppService.cs"));
+        var violations = new List<string>();
+
+        foreach (var requiredToken in new[]
+        {
+            "if (report.ScheduleFeedback is not null)",
+            "Text(\"排产采纳反馈\")",
+            "Text(\"原因说明\")",
+            "Text(report.ScheduleFeedback.ReasonDetail)",
+            "Text(\"Trace ID\")",
+            "Text(report.ScheduleFeedback.TraceId ?? string.Empty)",
+            "Text(\"Agent Decision ID\")",
+            "Text(report.ScheduleFeedback.AgentDecisionId ?? string.Empty)"
+        })
+        {
+            if (!exportSource.Contains(requiredToken, StringComparison.Ordinal))
+            {
+                violations.Add($"ExportAppService PDF renderer missing schedule feedback evidence token: {requiredToken}");
+            }
+        }
+
+        violations.Should().BeEmpty("backend PDF exports must carry the same auditable schedule feedback evidence as dashboard JSON and Excel exports");
+    }
+
+    [Fact]
     public void AppServices_ShouldNotHaveStaticMutableFields()
     {
         var violations = typeof(IExportAppService).Assembly.GetTypes()
@@ -106,6 +136,126 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         violations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Sprint0DashboardKpi_ShouldHaveDirectRealBrowserDeterministicEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var servicePath = Path.Combine(repositoryRoot, "src/backend/MES.Application/Services/DashboardKpiService.cs");
+        var endpointPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Endpoints/DashboardEndpoints.cs");
+        var e2eTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/e2e/dashboard.spec.ts");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var frontendEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/frontend-real-browser-evidence-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { servicePath, endpointPath, e2eTestPath, matrixPath, frontendEvidencePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 0 dashboard KPI deterministic evidence.");
+            }
+        }
+
+        if (File.Exists(servicePath))
+        {
+            var service = File.ReadAllText(servicePath);
+            foreach (var forbiddenToken in new[] { "Random.Shared", "new Random", "Random." })
+            {
+                if (service.Contains(forbiddenToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"DashboardKpiService must not use random KPI generation token: {forbiddenToken}");
+                }
+            }
+
+            foreach (var requiredToken in new[]
+            {
+                "ProductionKpiCalculator.CalculateOnTimeRate(workOrders, DateTime.UtcNow) * 100",
+                "Math.Round(scheduleAdherence, 1)",
+                "Math.Round(qualityPassRate, 1)",
+                "Math.Round(utilizationRate, 1)",
+                "ActiveOrders = activeWo"
+            })
+            {
+                if (!service.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"DashboardKpiService missing deterministic KPI token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(endpointPath))
+        {
+            var endpoint = File.ReadAllText(endpointPath);
+            if (!endpoint.Contains("IDashboardKpiService kpiService", StringComparison.Ordinal)
+                || !endpoint.Contains("await kpiService.ComputeDashboardAsync(ct)", StringComparison.Ordinal))
+            {
+                violations.Add("Dashboard endpoint must return IDashboardKpiService output instead of inline/generated KPI values.");
+            }
+        }
+
+        if (File.Exists(e2eTestPath))
+        {
+            var e2eTests = File.ReadAllText(e2eTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "真实浏览器按后端生产概览响应原样展示 KPI，不回退随机指标",
+                "const dashboardRequests: string[] = []",
+                "localStorage.setItem('aimes_offline_demo', 'false')",
+                "page.route('**/api/v1/dashboard'",
+                "scheduleAdherence: 91.7",
+                "qualityPassRate: 88.4",
+                "equipmentUtilization: 63.2",
+                "activeOrders: 17",
+                "expect(dashboardRequests.some(url => url.includes('/api/v1/dashboard'))).toBe(true)"
+            })
+            {
+                if (!e2eTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"dashboard.spec.ts missing direct deterministic KPI evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Dashboard KPI no Random.Shared",
+                "DashboardKpiService",
+                "真实浏览器按后端生产概览响应原样展示 KPI，不回退随机指标",
+                "Sprint0DashboardKpi_ShouldHaveDirectRealBrowserDeterministicEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing dashboard KPI direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(frontendEvidencePath))
+        {
+            var frontendEvidence = File.ReadAllText(frontendEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "Targeted Dashboard KPI Rerun",
+                "真实浏览器按后端生产概览响应原样展示 KPI，不回退随机指标",
+                "91.7%",
+                "88.4%",
+                "63.2%",
+                "17"
+            })
+            {
+                if (!frontendEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Frontend real-browser evidence missing dashboard KPI token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 0 dashboard KPI no-random acceptance needs direct deterministic service tokens and real Chrome backend-response evidence, not only a broad endpoint Random scan");
     }
 
     [Fact]
@@ -143,6 +293,86 @@ public sealed class ArchitectureRuleTests
             .ToHashSet(StringComparer.Ordinal);
 
         repositoryFiles.Should().Contain(expectedCoreRepositories);
+    }
+
+    [Fact]
+    public void Sprint2RepositoryAsNoTracking_ShouldHaveDirectChangeTrackerEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Repositories/RepositoryAsNoTrackingTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var partialEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-partial-evidence-tightening-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { testPath, matrixPath, partialEvidencePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for direct repository AsNoTracking evidence.");
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext",
+                "queryContext.ChangeTracker.Entries().Should().BeEmpty",
+                "WorkOrderRepository(queryContext).GetAllAsync",
+                "EquipmentRepository(queryContext).GetAllAsync",
+                "MaterialRepository(queryContext).GetAllAsync",
+                "BomRepository(queryContext).GetAllAsync",
+                "EmployeeRepository(queryContext).GetAllAsync",
+                "PurchaseOrderRepository(queryContext).GetAllAsync",
+                "QualityInspectionRepository(queryContext).GetAllAsync",
+                "ScheduleRepository(queryContext).GetAllAsync(page: 1, pageSize: 20)",
+                "UserRepository(queryContext).GetAllAsync"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"RepositoryAsNoTrackingTests.cs missing direct no-tracking evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Repository reads use `AsNoTracking()`",
+                "RepositoryAsNoTrackingTests.CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext",
+                "ChangeTracker.Entries().Should().BeEmpty",
+                "Sprint2RepositoryAsNoTracking_ShouldHaveDirectChangeTrackerEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing repository no-tracking direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(partialEvidencePath))
+        {
+            var partialEvidence = File.ReadAllText(partialEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "Repository AsNoTracking runtime evidence",
+                "CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext",
+                "ChangeTracker.Entries().Should().BeEmpty"
+            })
+            {
+                if (!partialEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Partial evidence report missing repository no-tracking token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 repository no-tracking evidence must include runtime ChangeTracker assertions, not only static AsNoTracking scans");
     }
 
     [Fact]
@@ -187,6 +417,220 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint2CriticalListPagination_ShouldHaveDirectPageSizeEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var serviceDirectory = Path.Combine(repositoryRoot, "src/backend/MES.Application/Services");
+        var unitTestDirectory = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Application");
+        var schedulingControllerTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/SchedulingControllerTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        var requiredPaths = new[]
+        {
+            Path.Combine(serviceDirectory, "EquipmentAppService.cs"),
+            Path.Combine(serviceDirectory, "AdminAppService.cs"),
+            Path.Combine(serviceDirectory, "SchedulingAppService.cs"),
+            Path.Combine(unitTestDirectory, "EquipmentAppServiceTests.cs"),
+            Path.Combine(unitTestDirectory, "AdminAppServiceTests.cs"),
+            Path.Combine(unitTestDirectory, "SchedulingAppServiceTests.cs"),
+            schedulingControllerTestPath,
+            matrixPath
+        };
+
+        foreach (var path in requiredPaths)
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 2 critical list pagination evidence.");
+            }
+        }
+
+        if (File.Exists(Path.Combine(serviceDirectory, "EquipmentAppService.cs")))
+        {
+            var service = File.ReadAllText(Path.Combine(serviceDirectory, "EquipmentAppService.cs"));
+            var methodBody = ExtractMethodBody(service, "GetEquipmentsAsync");
+
+            foreach (var requiredToken in new[]
+            {
+                "ValidatePaging(page, pageSize);",
+                "_equipmentRepo.GetPagedAsync(workshopId, equipmentStatus, page, pageSize, ct)",
+                "_equipmentRepo.CountAsync(workshopId, equipmentStatus, ct)",
+                "Page = page",
+                "PageSize = pageSize"
+            })
+            {
+                if (!methodBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"EquipmentAppService.GetEquipmentsAsync missing paging token: {requiredToken}");
+                }
+            }
+
+            if (methodBody.Contains("_equipmentRepo.GetAllAsync", StringComparison.Ordinal)
+                || methodBody.Contains("_equipmentRepo.GetByWorkshopAsync", StringComparison.Ordinal))
+            {
+                violations.Add("EquipmentAppService.GetEquipmentsAsync must not use full-list repository reads for paged list responses.");
+            }
+        }
+
+        if (File.Exists(Path.Combine(serviceDirectory, "AdminAppService.cs")))
+        {
+            var service = File.ReadAllText(Path.Combine(serviceDirectory, "AdminAppService.cs"));
+            var methodBody = ExtractMethodBody(service, "GetAllUsersAsync");
+
+            foreach (var requiredToken in new[]
+            {
+                "ValidatePaging(page, pageSize);",
+                "_userRepo.GetPagedAsync(page, pageSize, ct)",
+                "_userRepo.CountAsync(ct)",
+                "Page = page",
+                "PageSize = pageSize"
+            })
+            {
+                if (!methodBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AdminAppService.GetAllUsersAsync missing paging token: {requiredToken}");
+                }
+            }
+
+            if (methodBody.Contains("_userRepo.GetAllAsync", StringComparison.Ordinal))
+            {
+                violations.Add("AdminAppService.GetAllUsersAsync must not use full-list repository reads for paged list responses.");
+            }
+        }
+
+        if (File.Exists(Path.Combine(serviceDirectory, "SchedulingAppService.cs")))
+        {
+            var service = File.ReadAllText(Path.Combine(serviceDirectory, "SchedulingAppService.cs"));
+            var methodBody = ExtractMethodBody(service, "GetWorkOrdersAsync");
+
+            foreach (var requiredToken in new[]
+            {
+                "_workOrderRepo.CountAsync(",
+                "_workOrderRepo.GetPagedAsync(",
+                "parameters.Page",
+                "parameters.PageSize",
+                "Page = parameters.Page",
+                "PageSize = parameters.PageSize"
+            })
+            {
+                if (!methodBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SchedulingAppService.GetWorkOrdersAsync missing paging token: {requiredToken}");
+                }
+            }
+
+            if (methodBody.Contains("_workOrderRepo.GetAllAsync", StringComparison.Ordinal))
+            {
+                violations.Add("SchedulingAppService.GetWorkOrdersAsync must not use full-list repository reads for paged list responses.");
+            }
+        }
+
+        if (File.Exists(Path.Combine(unitTestDirectory, "EquipmentAppServiceTests.cs")))
+        {
+            var tests = File.ReadAllText(Path.Combine(unitTestDirectory, "EquipmentAppServiceTests.cs"));
+            foreach (var requiredToken in new[]
+            {
+                "GetEquipmentsAsync_ShouldUseRepositoryPagingForFilters",
+                "GetEquipmentsAsync_WithInvalidPaging_ShouldRejectBeforeRepository",
+                "GetPagedAsync(\"WS-001\", EquipmentStatus.Running, 2, 1, ct)",
+                "result.Page.Should().Be(2)",
+                "result.PageSize.Should().Be(1)",
+                "GetAllAsync(It.IsAny<CancellationToken>()), Times.Never",
+                "GetByWorkshopAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"EquipmentAppServiceTests missing direct paging evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(Path.Combine(unitTestDirectory, "AdminAppServiceTests.cs")))
+        {
+            var tests = File.ReadAllText(Path.Combine(unitTestDirectory, "AdminAppServiceTests.cs"));
+            foreach (var requiredToken in new[]
+            {
+                "GetAllUsersAsync_ShouldUseRepositoryPaging",
+                "GetAllUsersAsync_WithInvalidPaging_ShouldRejectBeforeRepository",
+                "GetPagedAsync(2, 1, ct)",
+                "result.Page.Should().Be(2)",
+                "result.PageSize.Should().Be(1)",
+                "GetAllAsync(It.IsAny<CancellationToken>()), Times.Never"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AdminAppServiceTests missing direct paging evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(Path.Combine(unitTestDirectory, "SchedulingAppServiceTests.cs")))
+        {
+            var tests = File.ReadAllText(Path.Combine(unitTestDirectory, "SchedulingAppServiceTests.cs"));
+            foreach (var requiredToken in new[]
+            {
+                "GetWorkOrdersAsync_ShouldUseRepositoryPagingWithFilters",
+                "Page = 2",
+                "PageSize = 2",
+                "result.Page.Should().Be(2)",
+                "result.PageSize.Should().Be(2)",
+                "GetAllAsync(It.IsAny<WorkOrderStatus?>(), It.IsAny<CancellationToken>()), Times.Never",
+                "GetPagedAsync(",
+                "CountAsync("
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SchedulingAppServiceTests missing direct paging evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(schedulingControllerTestPath))
+        {
+            var tests = File.ReadAllText(schedulingControllerTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "GetWorkOrders_WithPaging_ShouldRespectParameters",
+                "/api/v1/scheduling/workorders?page=2&pageSize=5",
+                "Page.Should().Be(2)",
+                "result.PageSize.Should().Be(5)"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SchedulingControllerTests missing HTTP paging evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Scheduling/Equipment/Admin pagination returns precise page size",
+                "EquipmentAppServiceTests.GetEquipmentsAsync_ShouldUseRepositoryPagingForFilters",
+                "AdminAppServiceTests.GetAllUsersAsync_ShouldUseRepositoryPaging",
+                "SchedulingAppServiceTests.GetWorkOrdersAsync_ShouldUseRepositoryPagingWithFilters",
+                "SchedulingControllerTests.GetWorkOrders_WithPaging_ShouldRespectParameters",
+                "Sprint2CriticalListPagination_ShouldHaveDirectPageSizeEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing critical list pagination direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 critical list pagination needs direct page/pageSize propagation tests for Scheduling, Equipment, and Admin, not only broad static repository paging gates");
+    }
+
+    [Fact]
     public void ScheduleRepositoryGetAll_ShouldUseSplitQueryStableOrderingAndPaging()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -227,6 +671,93 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint2ScheduleRepositoryPaging_ShouldHaveDirectSplitQueryEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var repositoryPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Repositories/ScheduleRepository.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Repositories/ScheduleRepositoryTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (File.Exists(repositoryPath))
+        {
+            var repositorySource = File.ReadAllText(repositoryPath);
+            var methodBody = ExtractMethodBody(repositorySource, "GetAllAsync");
+            foreach (var requiredToken in new[]
+            {
+                ".AsNoTracking()",
+                ".AsSplitQuery()",
+                ".Include(p => p.Items)",
+                ".OrderByDescending(p => p.CreatedAt)",
+                ".ThenBy(p => p.Id)",
+                ".Skip((page - 1) * pageSize)",
+                ".Take(pageSize)"
+            })
+            {
+                if (!methodBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ScheduleRepository.GetAllAsync missing split/stable paging token: {requiredToken}");
+                }
+            }
+        }
+        else
+        {
+            violations.Add("ScheduleRepository.cs is required for direct split-query paging evidence.");
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "GetAllAsync_UsesSplitQueryAndStablePagedOrdering",
+                "var firstPage = await repository.GetAllAsync(page: 1, pageSize: 2)",
+                "var secondPage = await repository.GetAllAsync(page: 2, pageSize: 2)",
+                "firstPage.Select(p => p.Id).Should().Equal(\"plan-a\", \"plan-b\")",
+                "secondPage.Select(p => p.Id).Should().Equal(\"plan-c\")",
+                "firstPage.Concat(secondPage).Select(p => p.Id).Should().OnlyHaveUniqueItems()",
+                "firstPage.Should().OnlyContain(p => p.Items.Count == 2)",
+                "scheduleSelects.Count.Should().BeGreaterThanOrEqualTo(",
+                "command.Contains(\"ORDER BY\", StringComparison.OrdinalIgnoreCase)",
+                "command.Contains(\"created_at\", StringComparison.OrdinalIgnoreCase)",
+                "command.Contains(\"id\", StringComparison.OrdinalIgnoreCase)",
+                "command.Contains(\"LIMIT\", StringComparison.OrdinalIgnoreCase)"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ScheduleRepositoryTests missing direct split-query paging evidence token: {requiredToken}");
+                }
+            }
+        }
+        else
+        {
+            violations.Add("ScheduleRepositoryTests.cs is required for direct split-query paging evidence.");
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "`ScheduleRepository.GetAllAsync` uses `AsSplitQuery`, stable ordering, paging",
+                "ScheduleRepositoryTests.GetAllAsync_UsesSplitQueryAndStablePagedOrdering",
+                "firstPage.Select(p => p.Id).Should().Equal(\"plan-a\", \"plan-b\")",
+                "scheduleSelects.Count.Should().BeGreaterThanOrEqualTo",
+                "Sprint2ScheduleRepositoryPaging_ShouldHaveDirectSplitQueryEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing ScheduleRepository direct split-query evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 ScheduleRepository evidence must cite the integration test that proves split query and stable paged SQL behavior, not only the static architecture gate");
+    }
+
+    [Fact]
     public void InventoryTransactionRepositories_ShouldNotCommitInsideRepositoryMethods()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -248,6 +779,137 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         violations.Should().BeEmpty("Inventory StockOut relies on IUnitOfWork to atomically commit material changes and stock transactions");
+    }
+
+    [Fact]
+    public void Sprint2InventoryStockOutTransaction_ShouldHaveDirectAtomicEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var servicePath = Path.Combine(repositoryRoot, "src/backend/MES.Application/Services/InventoryAppService.cs");
+        var materialRepositoryPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Repositories/MaterialRepository.cs");
+        var transactionRepositoryPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Repositories/StockTransactionRepository.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Repositories/InventoryTransactionRepositoryTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { servicePath, materialRepositoryPath, transactionRepositoryPath, testPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 2 Inventory StockOut transaction evidence.");
+            }
+        }
+
+        if (File.Exists(servicePath))
+        {
+            var service = File.ReadAllText(servicePath);
+            var stockOutBody = ExtractMethodBody(service, "StockOutAsync");
+
+            foreach (var requiredToken in new[]
+            {
+                "_unitOfWork.ExecuteAsync(async innerCt =>",
+                "_materialRepo.GetByCodeForUpdateAsync(request.MaterialCode, innerCt)",
+                "material.Consume(request.Quantity)",
+                "await _materialRepo.UpdateAsync(material, innerCt);",
+                "TransactionType.StockOut",
+                "await _txRepo.AddAsync(tx, innerCt);",
+                "await WriteTransactionAuditAsync(\"InventoryStockOut\", tx, innerCt);",
+                "return MapTransaction(tx);"
+            })
+            {
+                if (!stockOutBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"InventoryAppService.StockOutAsync missing atomic transaction token: {requiredToken}");
+                }
+            }
+
+            var unitOfWorkIndex = stockOutBody.IndexOf("_unitOfWork.ExecuteAsync", StringComparison.Ordinal);
+            var consumeIndex = stockOutBody.IndexOf("material.Consume(request.Quantity)", StringComparison.Ordinal);
+            var materialUpdateIndex = stockOutBody.IndexOf("_materialRepo.UpdateAsync(material, innerCt)", StringComparison.Ordinal);
+            var transactionAddIndex = stockOutBody.IndexOf("_txRepo.AddAsync(tx, innerCt)", StringComparison.Ordinal);
+            var auditIndex = stockOutBody.IndexOf("WriteTransactionAuditAsync(\"InventoryStockOut\", tx, innerCt)", StringComparison.Ordinal);
+            var returnIndex = stockOutBody.IndexOf("return MapTransaction(tx);", StringComparison.Ordinal);
+
+            if (unitOfWorkIndex < 0
+                || consumeIndex < unitOfWorkIndex
+                || materialUpdateIndex < consumeIndex
+                || transactionAddIndex < materialUpdateIndex
+                || auditIndex < transactionAddIndex
+                || returnIndex < auditIndex)
+            {
+                violations.Add("Inventory StockOut must consume material, update material, add stock transaction, write audit, and return inside one UnitOfWork lambda.");
+            }
+        }
+
+        if (File.Exists(materialRepositoryPath))
+        {
+            var materialRepository = File.ReadAllText(materialRepositoryPath);
+            var updateBody = ExtractMethodBody(materialRepository, "UpdateAsync");
+            if (updateBody.Contains("SaveChangesAsync", StringComparison.Ordinal))
+            {
+                violations.Add("MaterialRepository.UpdateAsync must not self-commit; StockOut material decrement must commit or roll back with the stock transaction.");
+            }
+        }
+
+        if (File.Exists(transactionRepositoryPath))
+        {
+            var transactionRepository = File.ReadAllText(transactionRepositoryPath);
+            var addBody = ExtractMethodBody(transactionRepository, "AddAsync");
+            if (addBody.Contains("SaveChangesAsync", StringComparison.Ordinal))
+            {
+                violations.Add("StockTransactionRepository.AddAsync must not self-commit; StockOut transaction rows must share the surrounding UnitOfWork commit point.");
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "StockOutAsync_ShouldCommitMaterialUpdateAndTransactionThroughUnitOfWork",
+                "StockOutAsync_WhenTransactionWriteFails_ShouldNotPersistMaterialDecrement",
+                "PostgreSqlIntegrationTestScope.CreateAsync",
+                "new EfUnitOfWork(actContext)",
+                "new AuditLogAppService(new AuditLogRepository(actContext))",
+                "material.AvailableQuantity.Should().Be(70",
+                "transaction.TransactionType.ToString().Should().Be(\"StockOut\")",
+                "auditLog.Resource.Should().Be(\"Inventory\")",
+                "ThrowingStockTransactionRepository",
+                "throw new InvalidOperationException(\"stock transaction write failed\")",
+                "material.AvailableQuantity.Should().Be(100",
+                "transactionCount.Should().Be(0)"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Inventory transaction integration tests missing atomic evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Inventory StockOut material + stock transaction commit atomically",
+                "InventoryAppService.StockOutAsync",
+                "material.Consume(request.Quantity)",
+                "StockOutAsync_ShouldCommitMaterialUpdateAndTransactionThroughUnitOfWork",
+                "StockOutAsync_WhenTransactionWriteFails_ShouldNotPersistMaterialDecrement",
+                "ThrowingStockTransactionRepository",
+                "material.AvailableQuantity.Should().Be(100",
+                "Sprint2InventoryStockOutTransaction_ShouldHaveDirectAtomicEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Inventory StockOut direct atomic evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 Inventory StockOut needs direct atomic commit and rollback evidence, not only broad repository self-commit gates");
     }
 
     [Fact]
@@ -285,6 +947,128 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("Purchase status changes are part of the B4 critical aggregates that require a single UoW commit point");
+    }
+
+    [Fact]
+    public void Sprint2AnomalyCreateTransaction_ShouldHaveDirectRollbackEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var endpointPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Endpoints/AnomalyEndpoints.cs");
+        var auditRepositoryPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Repositories/AuditLogRepository.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AnomalyControllerTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { endpointPath, auditRepositoryPath, testPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 2 anomaly create transaction rollback evidence.");
+            }
+        }
+
+        if (File.Exists(endpointPath))
+        {
+            var endpoint = File.ReadAllText(endpointPath);
+            var createBody = ExtractMethodBody(endpoint, "CreateAsync");
+
+            if (!endpoint.Contains("IUnitOfWork unitOfWork", StringComparison.Ordinal))
+            {
+                violations.Add("AnomalyEndpoints.CreateAsync must accept IUnitOfWork so the create/audit/notification path has a single commit boundary.");
+            }
+
+            foreach (var requiredToken in new[]
+            {
+                "await unitOfWork.ExecuteAsync(async innerCt =>",
+                "anomalyService.CreateAnomalyAsync(request, innerCt)",
+                "auditLog.WriteAuditLogAsync",
+                "resource: \"Anomaly\"",
+                "action: \"CREATE\"",
+                "notification.NotifyAnomaly",
+                "return created;"
+            })
+            {
+                if (!createBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AnomalyEndpoints.CreateAsync missing transaction token: {requiredToken}");
+                }
+            }
+
+            var unitOfWorkIndex = createBody.IndexOf("unitOfWork.ExecuteAsync", StringComparison.Ordinal);
+            var createIndex = createBody.IndexOf("anomalyService.CreateAnomalyAsync", StringComparison.Ordinal);
+            var auditIndex = createBody.IndexOf("auditLog.WriteAuditLogAsync", StringComparison.Ordinal);
+            var notificationIndex = createBody.IndexOf("notification.NotifyAnomaly", StringComparison.Ordinal);
+            var createdResultIndex = createBody.IndexOf("TypedResults.Created", StringComparison.Ordinal);
+
+            if (unitOfWorkIndex < 0 || createIndex < unitOfWorkIndex || auditIndex < unitOfWorkIndex || notificationIndex < unitOfWorkIndex)
+            {
+                violations.Add("Anomaly create, audit, and notification must all execute inside the UnitOfWork lambda before the transaction can commit.");
+            }
+
+            if (notificationIndex >= 0 && createdResultIndex >= 0 && notificationIndex > createdResultIndex)
+            {
+                violations.Add("Anomaly notification must happen before returning Created so notification failure can fail closed before commit.");
+            }
+        }
+
+        if (File.Exists(auditRepositoryPath))
+        {
+            var auditRepository = File.ReadAllText(auditRepositoryPath);
+            var addBody = ExtractMethodBody(auditRepository, "AddAsync");
+            if (addBody.Contains("SaveChangesAsync", StringComparison.Ordinal))
+            {
+                violations.Add("AuditLogRepository.AddAsync must not self-commit; anomaly create audit rows must be committed or rolled back by the surrounding UnitOfWork.");
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "Create_WhenNotificationFails_ShouldRollbackAnomalyAndAudit",
+                "AnomalyTransactionWebApplicationFactory",
+                "services.AddScoped<INotificationService, ThrowingNotificationService>()",
+                "public sealed class ThrowingNotificationService : INotificationService",
+                "throw new Exception(\"Notification failure for transaction rollback test.\")",
+                "response.StatusCode.Should().Be(HttpStatusCode.InternalServerError)",
+                "db.ProductionAnomalies.Should().NotContain(a => a.Title == title)",
+                "db.AuditLogs.Should().NotContain(a =>",
+                "a.Resource == \"Anomaly\"",
+                "a.Action == \"CREATE\"",
+                "a.NewValues.Contains(title)"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Anomaly transaction integration test missing rollback token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Anomaly create transaction rolls back anomaly/audit/notification together",
+                "AnomalyEndpoints.CreateAsync",
+                "IUnitOfWork.ExecuteAsync",
+                "Create_WhenNotificationFails_ShouldRollbackAnomalyAndAudit",
+                "ThrowingNotificationService",
+                "ProductionAnomalies.Should().NotContain",
+                "AuditLogs.Should().NotContain",
+                "Sprint2AnomalyCreateTransaction_ShouldHaveDirectRollbackEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing anomaly transaction rollback token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 anomaly create needs direct fail-closed transaction evidence: create, audit, and notification before commit, with notification failure rolling back anomaly and audit persistence");
     }
 
     [Fact]
@@ -521,6 +1305,141 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint0JwtSigningKey_ShouldHaveDirectFailClosedStartupEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var programPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Program.cs");
+        var jwtOptionsPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Configuration/JwtOptions.cs");
+        var authEndpointsPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Endpoints/AuthEndpoints.cs");
+        var startupTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Security/JwtStartupValidationTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { programPath, jwtOptionsPath, authEndpointsPath, startupTestPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 0 JWT signing-key evidence.");
+            }
+        }
+
+        if (File.Exists(jwtOptionsPath))
+        {
+            var jwtOptionsSource = File.ReadAllText(jwtOptionsPath);
+            foreach (var requiredToken in new[]
+            {
+                "public sealed class JwtOptions",
+                "public const string SectionName = \"Jwt\"",
+                "[Required]",
+                "public string SigningKey { get; init; } = string.Empty;",
+                "Encoding.UTF8.GetByteCount(options.SigningKey) >= 32"
+            })
+            {
+                if (!jwtOptionsSource.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"JwtOptions.cs missing fail-closed signing-key token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(programPath))
+        {
+            var programSource = File.ReadAllText(programPath);
+            foreach (var requiredToken in new[]
+            {
+                "builder.Services.AddOptions<JwtOptions>()",
+                ".Bind(builder.Configuration.GetSection(JwtOptions.SectionName))",
+                ".ValidateDataAnnotations()",
+                ".Validate(JwtOptions.HasValidSigningKey, \"Jwt:SigningKey must be at least 32 bytes.\")",
+                ".ValidateOnStart()",
+                "sp.GetRequiredService<IOptions<JwtOptions>>().Value.SigningKey",
+                "ValidateIssuerSigningKey = true",
+                "IssuerSigningKeyResolver"
+            })
+            {
+                if (!programSource.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Program.cs missing JWT production config gate token: {requiredToken}");
+                }
+            }
+
+            foreach (var forbiddenToken in new[]
+            {
+                "configuredSigningKey",
+                "builder.Configuration.GetSection(\"Jwt\")",
+                "jwtSection["
+            })
+            {
+                if (programSource.Contains(forbiddenToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Program.cs must not bypass JwtOptions with raw configuration token: {forbiddenToken}");
+                }
+            }
+        }
+
+        if (File.Exists(authEndpointsPath))
+        {
+            var authEndpointsSource = File.ReadAllText(authEndpointsPath);
+            foreach (var requiredToken in new[]
+            {
+                "IOptions<JwtOptions> jwtOptions",
+                "GenerateToken(request.Username, role, displayName, mustChangePassword, keyStore, jwtOptions.Value)",
+                "issuer: jwtOptions.Issuer",
+                "audience: jwtOptions.Audience",
+                "SigningCredentials(key, SecurityAlgorithms.HmacSha256)"
+            })
+            {
+                if (!authEndpointsSource.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthEndpoints.cs missing validated JwtOptions signing token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(startupTestPath))
+        {
+            var startupTests = File.ReadAllText(startupTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "CreateClient_WithMissingSigningKey_ShouldRejectStartup",
+                "TemporaryEnvironmentVariable.Set(\"Jwt__SigningKey\", \"\")",
+                "CreateClient_WithSigningKeyShorterThan32Bytes_ShouldRejectStartup",
+                "TemporaryEnvironmentVariable.Set(\"Jwt__SigningKey\", \"short-key\")",
+                "Throw<OptionsValidationException>()",
+                ".WithMessage(\"*Jwt:SigningKey*\")",
+                ".WithMessage(\"*32 bytes*\")"
+            })
+            {
+                if (!startupTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"JwtStartupValidationTests.cs missing fail-closed startup token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "JWT signing key fail-closed and production config gate",
+                "JwtStartupValidationTests",
+                "CreateClient_WithMissingSigningKey_ShouldRejectStartup",
+                "CreateClient_WithSigningKeyShorterThan32Bytes_ShouldRejectStartup",
+                "Sprint0JwtSigningKey_ShouldHaveDirectFailClosedStartupEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing JWT fail-closed direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 0 JWT signing key gate needs direct fail-closed startup tests and validated-options evidence, not only broad security self-assessment wording");
+    }
+
+    [Fact]
     public void M1M2CorsConfiguration_ShouldUseValidatedOptionsInsteadOfRawConfiguration()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -562,6 +1481,130 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("Sprint 5 M1/M2 requires CORS configuration to flow through validated IOptions<T> and fail at startup when invalid");
+    }
+
+    [Fact]
+    public void Sprint0ProductionCors_ShouldHaveDirectNoWildcardEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var corsOptionsPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Configuration/CorsOptions.cs");
+        var serviceCollectionPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Extensions/ServiceCollectionExtensions.cs");
+        var corsTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Security/CorsPolicyTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { corsOptionsPath, serviceCollectionPath, corsTestPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 0 Production CORS evidence.");
+            }
+        }
+
+        if (File.Exists(corsOptionsPath))
+        {
+            var corsOptionsSource = File.ReadAllText(corsOptionsPath);
+            foreach (var requiredToken in new[]
+            {
+                "public sealed class CorsOptions",
+                "public const string OptionsName = \"Production\"",
+                "[Required]",
+                "public string[] AllowedOrigins { get; init; } = [];",
+                "AllowedOrigins.Any(origin => !string.IsNullOrWhiteSpace(origin))",
+                "GetNormalizedAllowedOrigins()",
+                "Distinct(StringComparer.OrdinalIgnoreCase)"
+            })
+            {
+                if (!corsOptionsSource.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"CorsOptions.cs missing Production CORS validation token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(serviceCollectionPath))
+        {
+            var serviceCollectionSource = File.ReadAllText(serviceCollectionPath);
+            var addCorsBody = ExtractMethodBody(serviceCollectionSource, "AddCorsServices");
+            foreach (var requiredToken in new[]
+            {
+                "services.AddOptions<CorsOptions>(CorsOptions.OptionsName)",
+                ".Validate(CorsOptions.HasAllowedOrigins, \"AllowedOrigins must contain at least one origin for the Production CORS policy.\")",
+                ".ValidateOnStart()",
+                "var allowedOrigins = productionCorsOptions.GetNormalizedAllowedOrigins();",
+                "options.AddPolicy(\"Production\", builder =>",
+                "builder.WithOrigins(allowedOrigins)",
+                ".AllowCredentials()"
+            })
+            {
+                if (!addCorsBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AddCorsServices missing Production CORS token: {requiredToken}");
+                }
+            }
+
+            var productionPolicyStart = addCorsBody.IndexOf("options.AddPolicy(\"Production\"", StringComparison.Ordinal);
+            if (productionPolicyStart < 0)
+            {
+                violations.Add("AddCorsServices must define a Production CORS policy.");
+            }
+            else
+            {
+                var productionPolicyBody = addCorsBody[productionPolicyStart..];
+                var nextPolicyIndex = productionPolicyBody.IndexOf("options.AddPolicy(", "options.AddPolicy(\"Production\"".Length, StringComparison.Ordinal);
+                if (nextPolicyIndex > 0)
+                {
+                    productionPolicyBody = productionPolicyBody[..nextPolicyIndex];
+                }
+
+                if (productionPolicyBody.Contains("AllowAnyOrigin()", StringComparison.Ordinal))
+                {
+                    violations.Add("Production CORS policy must never call AllowAnyOrigin().");
+                }
+            }
+        }
+
+        if (File.Exists(corsTestPath))
+        {
+            var corsTests = File.ReadAllText(corsTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "ProductionPolicy_WithConfiguredOrigin_ShouldEchoOriginWithoutWildcard",
+                "[\"AllowedOrigins:0\"] = \"https://mes.example.com\"",
+                "policy!.AllowAnyOrigin.Should().BeFalse",
+                "policy.Origins.Should().ContainSingle().Which.Should().Be(\"https://mes.example.com\")",
+                "ProductionPolicy_WithoutAllowedOrigins_ShouldRejectStartup",
+                "Throw<OptionsValidationException>()",
+                ".WithMessage(\"*AllowedOrigins*\")"
+            })
+            {
+                if (!corsTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"CorsPolicyTests.cs missing Production CORS evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Production CORS not AllowAnyOrigin",
+                "CorsPolicyTests",
+                "ProductionPolicy_WithConfiguredOrigin_ShouldEchoOriginWithoutWildcard",
+                "ProductionPolicy_WithoutAllowedOrigins_ShouldRejectStartup",
+                "Sprint0ProductionCors_ShouldHaveDirectNoWildcardEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Production CORS direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 0 Production CORS needs direct no-wildcard policy tests and validated-options evidence, not only broad Attack Chain C wording");
     }
 
     [Fact]
@@ -910,6 +1953,116 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint2ConcurrencyTokens_ShouldHaveDirectUpdateConflictEvidence()
+    {
+        var root = FindRepositoryRoot();
+        var violations = new List<string>();
+
+        var configurationPaths = new Dictionary<string, string>
+        {
+            ["WorkOrder"] = Path.Combine(root, "src/backend/MES.Infrastructure/Data/Configurations/WorkOrderConfiguration.cs"),
+            ["Equipment"] = Path.Combine(root, "src/backend/MES.Infrastructure/Data/Configurations/EquipmentConfiguration.cs"),
+            ["Material"] = Path.Combine(root, "src/backend/MES.Infrastructure/Data/Configurations/MaterialConfiguration.cs"),
+            ["SchedulePlan"] = Path.Combine(root, "src/backend/MES.Infrastructure/Data/Configurations/SchedulePlanConfiguration.cs")
+        };
+        var extensionPath = Path.Combine(root, "src/backend/MES.Infrastructure/Data/Configurations/ConcurrencyConfigurationExtensions.cs");
+        var testPath = Path.Combine(root, "src/tests/MES.Tests.Integration/Repositories/ConcurrencyTokenTests.cs");
+        var matrixPath = Path.Combine(root, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+
+        foreach (var (label, path) in configurationPaths)
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{label} configuration file missing.");
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            if (!source.Contains("entity.UseProviderShadowConcurrencyToken();", StringComparison.Ordinal))
+            {
+                violations.Add($"{label} must use provider shadow concurrency token configuration.");
+            }
+        }
+
+        if (File.Exists(extensionPath))
+        {
+            var extension = File.ReadAllText(extensionPath);
+            foreach (var requiredToken in new[]
+            {
+                "public static void UseProviderShadowConcurrencyToken<T>",
+                "entity.Property<uint>(\"version\")",
+                ".HasColumnName(\"xmin\")",
+                ".HasColumnType(\"xid\")",
+                ".ValueGeneratedOnAddOrUpdate()",
+                ".HasColumnName(\"version\")",
+                ".HasDefaultValue(0u)",
+                ".IsConcurrencyToken()"
+            })
+            {
+                if (!extension.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ConcurrencyConfigurationExtensions missing provider token evidence: {requiredToken}");
+                }
+            }
+        }
+        else
+        {
+            violations.Add("ConcurrencyConfigurationExtensions.cs is required for provider-aware concurrency evidence.");
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "WorkOrder_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "Equipment_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "Material_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "SchedulePlan_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "\"UPDATE work_orders SET updated_at = now() WHERE id = {0}\"",
+                "\"UPDATE equipment SET updated_at = now() WHERE id = {0}\"",
+                "\"UPDATE materials SET updated_at = now() WHERE id = {0}\"",
+                "\"UPDATE schedule_plans SET updated_at = now() WHERE id = {0}\"",
+                "ExecuteSqlRawAsync(sql, id)",
+                "BumpVersionAsync",
+                "ThrowAsync<DbUpdateConcurrencyException>()"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ConcurrencyTokenTests missing direct stale-update evidence token: {requiredToken}");
+                }
+            }
+        }
+        else
+        {
+            violations.Add("ConcurrencyTokenTests.cs is required to prove stale updates fail at SaveChanges.");
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Concurrency tokens configured for WorkOrder/Equipment/Material/SchedulePlan",
+                "ConcurrencyTokenTests.WorkOrder_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "ConcurrencyTokenTests.Equipment_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "ConcurrencyTokenTests.Material_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "ConcurrencyTokenTests.SchedulePlan_Update_WithStaleVersion_ShouldThrowConcurrencyException",
+                "Sprint2ConcurrencyTokens_ShouldHaveDirectUpdateConflictEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing direct concurrency evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 2 M7 concurrency evidence must prove stale updates fail, not only that EF model metadata contains a token");
+    }
+
+    [Fact]
     public void M8ToM10CoreQueries_ShouldHaveCompositeIndexesAndJsonbColumns()
     {
         var originalProvider = Environment.GetEnvironmentVariable("AIMES_DATABASE_PROVIDER");
@@ -959,6 +2112,1046 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         violations.Should().BeEmpty("Sprint 3 H6 requires every non-auth /api/v1 route group to be authenticated by default");
+    }
+
+    [Fact]
+    public void Sprint3ApiV1Authorization_ShouldHaveDirectAnonymousRejectionCoverage()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Security/EndpointAuthorizationTests.cs");
+        var violations = new List<string>();
+
+        if (!File.Exists(testPath))
+        {
+            violations.Add("EndpointAuthorizationTests.cs is required to prove anonymous rejection for non-auth API groups.");
+        }
+        else
+        {
+            var source = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "ApiV1EndpointsExceptAuth_ShouldRejectAnonymousRequests",
+                "/api/v1/admin/users",
+                "/api/v1/anomaly",
+                "/api/v1/audit-logs",
+                "/api/v1/bom",
+                "/api/v1/dashboard",
+                "/api/v1/employee",
+                "/api/v1/equipment",
+                "/api/v1/inventory",
+                "/api/v1/knowledge/chat-history/auth-boundary",
+                "/api/v1/purchase",
+                "/api/v1/quality/inspections",
+                "/api/v1/report/dashboard",
+                "/api/v1/risk/dashboard",
+                "/api/v1/routing",
+                "/api/v1/scan/AUTH-BOUNDARY",
+                "/api/v1/scheduling/current",
+                "HttpStatusCode.Unauthorized"
+            })
+            {
+                if (!source.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Endpoint authorization integration test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 H6 needs direct anonymous-rejection integration coverage for each non-auth API group, not only a staging probe or two sampled endpoints");
+    }
+
+    [Fact]
+    public void Sprint1SignalRSubscribeRoleBoundary_ShouldHaveDirectPolicyEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var hubPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Hubs/NotificationHub.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Security/NotificationHubChannelPolicyTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(hubPath))
+        {
+            violations.Add("NotificationHub.cs is required to enforce SignalR channel subscription policy.");
+        }
+        else
+        {
+            var hub = File.ReadAllText(hubPath);
+            foreach (var requiredToken in new[]
+            {
+                "[Authorize]",
+                "public async Task Subscribe(string channel)",
+                "public async Task Unsubscribe(string channel)",
+                "CanSubscribeToChannel(channel, role",
+                "ReservedChannels",
+                "AllowedPrefixes",
+                "ChannelRoles",
+                "\"equipment:\"",
+                "\"order:\"",
+                "\"anomaly:\"",
+                "\"quality:\"",
+                "\"material:\"",
+                "throw new HubException"
+            })
+            {
+                if (!hub.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"NotificationHub.cs missing required SignalR policy token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(testPath))
+        {
+            violations.Add("NotificationHubChannelPolicyTests.cs is required to prove role/channel allow and reject decisions directly.");
+        }
+        else
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "CanSubscribe_WhenRoleDoesNotMatchChannel_ShouldReject",
+                "CanSubscribe_WhenRoleMatchesChannel_ShouldAllow",
+                "NotificationHub.CanSubscribeToChannel",
+                "\"Operator\", \"quality:inspection-1\"",
+                "\"QC\", \"equipment:cnc-1\"",
+                "\"Operator\", \"order:wo-1\"",
+                "\"Admin\", \"material:mat-1\"",
+                "Should().BeFalse(\"entity channels must be scoped by the caller's role\")",
+                "Should().BeTrue()"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SignalR policy unit test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite SignalR direct policy evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "SignalR subscribe role boundary enforced",
+                "NotificationHubChannelPolicyTests.CanSubscribe_WhenRoleDoesNotMatchChannel_ShouldReject",
+                "NotificationHubChannelPolicyTests.CanSubscribe_WhenRoleMatchesChannel_ShouldAllow",
+                "Sprint1SignalRSubscribeRoleBoundary_ShouldHaveDirectPolicyEvidence",
+                "NotificationHub.CanSubscribeToChannel"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing SignalR direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 SignalR subscribe role boundary needs direct policy tests and an evidence matrix anchor, not only broad Attack Chain support");
+    }
+
+    [Fact]
+    public void Sprint1RefreshTokens_ShouldHaveDirectHashStorageEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var endpointPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Endpoints/AuthEndpoints.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AuthControllerTests.cs");
+        var configurationPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Data/Configurations/RefreshTokenConfiguration.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(endpointPath))
+        {
+            violations.Add("AuthEndpoints.cs is required to issue, refresh, and revoke hashed refresh tokens.");
+        }
+        else
+        {
+            var endpoint = File.ReadAllText(endpointPath);
+            foreach (var requiredToken in new[]
+            {
+                "private static string HashToken(string token)",
+                "SHA256.HashData(Encoding.UTF8.GetBytes(token))",
+                "Convert.ToBase64String(bytes)",
+                "var tokenHash = HashToken(request.RefreshToken)",
+                "refreshTokenRepo.GetByTokenAsync(tokenHash, ct)",
+                "Token = HashToken(tokenStr)",
+                "GenerateRefreshTokenString()",
+                "RandomNumberGenerator.GetBytes(32)"
+            })
+            {
+                if (!endpoint.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthEndpoints.cs missing refresh-token hashing token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(configurationPath))
+        {
+            violations.Add("RefreshTokenConfiguration.cs is required to constrain persisted refresh token hashes.");
+        }
+        else
+        {
+            var configuration = File.ReadAllText(configurationPath);
+            foreach (var requiredToken in new[]
+            {
+                "entity.Property(e => e.Token)",
+                "IsRequired()",
+                "HasMaxLength(128)",
+                "entity.HasIndex(e => e.Token).IsUnique()"
+            })
+            {
+                if (!configuration.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"RefreshTokenConfiguration.cs missing persisted hash constraint token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(testPath))
+        {
+            violations.Add("AuthControllerTests.cs is required to prove refresh token clear text is not persisted.");
+        }
+        else
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "Login_ShouldPersistOnlyHashedRefreshToken",
+                "body!.RefreshToken.Should().NotBeNullOrEmpty()",
+                "SHA256.HashData(Encoding.UTF8.GetBytes(body.RefreshToken))",
+                "db.RefreshTokens.Where(t => t.Username == \"admin\").Select(t => t.Token).ToList()",
+                "storedTokens.Should().Contain(expectedHash",
+                "storedTokens.Should().NotContain(body.RefreshToken"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Auth refresh-token integration test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct refresh-token hash storage evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Refresh tokens stored hashed",
+                "AuthControllerTests.Login_ShouldPersistOnlyHashedRefreshToken",
+                "Sprint1RefreshTokens_ShouldHaveDirectHashStorageEvidence",
+                "AuthEndpoints.HashToken",
+                "SHA-256"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing refresh-token direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 refresh token storage needs direct hash-storage integration evidence, not only broad Attack Chain B support");
+    }
+
+    [Fact]
+    public void Sprint1LoginRateLimit_ShouldHaveIpAndUsernamePartitionEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var programPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Program.cs");
+        var middlewarePath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Middleware/AuthRateLimitUsernameMiddleware.cs");
+        var partitionKeyPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Services/AuthRateLimitPartitionKey.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Security/AuthRateLimitPartitionKeyTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(programPath))
+        {
+            violations.Add("Program.cs is required to wire the auth rate limit policy.");
+        }
+        else
+        {
+            var program = File.ReadAllText(programPath);
+            foreach (var requiredToken in new[]
+            {
+                "builder.Services.AddRateLimiter",
+                "options.AddPolicy<string>(\"Auth\"",
+                "AuthRateLimitUsernameMiddleware.UsernameItemKey",
+                "AuthRateLimitPartitionKey.Create(",
+                "context.Connection.RemoteIpAddress?.ToString()",
+                "RateLimitPartition.GetFixedWindowLimiter",
+                "PermitLimit = 10",
+                "Window = TimeSpan.FromMinutes(1)",
+                "app.UseMiddleware<AuthRateLimitUsernameMiddleware>()",
+                "app.UseRateLimiter()"
+            })
+            {
+                if (!program.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Program.cs missing auth rate limit partition token: {requiredToken}");
+                }
+            }
+
+            if (program.IndexOf("app.UseMiddleware<AuthRateLimitUsernameMiddleware>()", StringComparison.Ordinal)
+                > program.IndexOf("app.UseRateLimiter()", StringComparison.Ordinal))
+            {
+                violations.Add("AuthRateLimitUsernameMiddleware must run before UseRateLimiter so username is available for partitioning.");
+            }
+        }
+
+        if (!File.Exists(middlewarePath))
+        {
+            violations.Add("AuthRateLimitUsernameMiddleware.cs is required to capture login/change-password usernames before rate limiting.");
+        }
+        else
+        {
+            var middleware = File.ReadAllText(middlewarePath);
+            foreach (var requiredToken in new[]
+            {
+                "public const string UsernameItemKey",
+                "request.Path.StartsWithSegments(\"/api/v1/auth/login\")",
+                "request.Path.StartsWithSegments(\"/api/v1/auth/change-password\")",
+                "context.Request.EnableBuffering()",
+                "ReadFromJsonAsync<LoginRequestDto>",
+                "context.Request.Body.Position = 0"
+            })
+            {
+                if (!middleware.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthRateLimitUsernameMiddleware.cs missing username capture token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(partitionKeyPath))
+        {
+            violations.Add("AuthRateLimitPartitionKey.cs is required to compose IP and username into one auth rate-limit bucket.");
+        }
+        else
+        {
+            var partitionKey = File.ReadAllText(partitionKeyPath);
+            foreach (var requiredToken in new[]
+            {
+                "public static string Create(string? remoteIp, string? username)",
+                "remoteIp.Trim()",
+                "username.Trim().ToLowerInvariant()",
+                "unknown",
+                "return $\"{ipPart}|{usernamePart}\""
+            })
+            {
+                if (!partitionKey.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthRateLimitPartitionKey.cs missing partition token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(testPath))
+        {
+            violations.Add("AuthRateLimitPartitionKeyTests.cs is required to prove IP+username partition behavior.");
+        }
+        else
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "Create_ShouldIncludeRemoteIpAndUsername",
+                "Create_ShouldNormalizeUsername",
+                "Create_WhenUsernameMissing_ShouldKeepUnknownBucket",
+                "192.0.2.10|admin",
+                "192.0.2.10|unknown"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthRateLimitPartitionKeyTests.cs missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct login rate-limit partition evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Login rate limit partitioned by IP + username",
+                "AuthRateLimitPartitionKeyTests.Create_ShouldIncludeRemoteIpAndUsername",
+                "AuthRateLimitPartitionKeyTests.Create_ShouldNormalizeUsername",
+                "AuthRateLimitPartitionKeyTests.Create_WhenUsernameMissing_ShouldKeepUnknownBucket",
+                "Sprint1LoginRateLimit_ShouldHaveIpAndUsernamePartitionEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing login rate-limit direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 login rate limiting needs direct IP+username partition evidence, not only broad security self-assessment support");
+    }
+
+    [Fact]
+    public void Sprint1DemoSeeder_ShouldCreateNonEmptyHashedInitialPasswords()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var seederPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Services/DatabaseStartupValidator.cs");
+        var hasherPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Services/PasswordHasher.cs");
+        var userPath = Path.Combine(repositoryRoot, "src/backend/MES.Domain/Entities/Admin/SystemUser.cs");
+        var authTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AuthControllerTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(seederPath))
+        {
+            violations.Add("DatabaseStartupValidator.cs is required to seed demo users through PasswordHasher.");
+        }
+        else
+        {
+            var seeder = File.ReadAllText(seederPath);
+            foreach (var requiredToken in new[]
+            {
+                "public sealed class EfDemoDataSeeder",
+                "PasswordHasher passwordHasher",
+                "passwordHasher.Hash(\"admin123\")",
+                "passwordHasher.Hash(\"operator123\")",
+                "SystemUser.Create("
+            })
+            {
+                if (!seeder.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"EfDemoDataSeeder missing non-empty password hash token: {requiredToken}");
+                }
+            }
+
+            if (seeder.Contains("SystemUser.Create(\r\n                \"admin\",\r\n                \"管理员\",\r\n                \"\"", StringComparison.Ordinal)
+                || seeder.Contains("SystemUser.Create(\n                \"admin\",\n                \"管理员\",\n                \"\"", StringComparison.Ordinal))
+            {
+                violations.Add("EfDemoDataSeeder must not seed admin with an empty password hash literal.");
+            }
+        }
+
+        if (!File.Exists(hasherPath))
+        {
+            violations.Add("PasswordHasher.cs is required to produce non-empty salted password hashes.");
+        }
+        else
+        {
+            var hasher = File.ReadAllText(hasherPath);
+            foreach (var requiredToken in new[]
+            {
+                "Rfc2898DeriveBytes.Pbkdf2",
+                "RandomNumberGenerator.GetBytes(SaltSize)",
+                "HashAlgorithmName.SHA256",
+                "Iterations = 100_000",
+                "return $\"{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}\""
+            })
+            {
+                if (!hasher.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"PasswordHasher.cs missing salted hash token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(userPath))
+        {
+            violations.Add("SystemUser.cs is required to reject empty password hashes at creation.");
+        }
+        else
+        {
+            var user = File.ReadAllText(userPath);
+            foreach (var requiredToken in new[]
+            {
+                "public static SystemUser Create",
+                "ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash)",
+                "PasswordHash = passwordHash",
+                "MustChangePassword = true"
+            })
+            {
+                if (!user.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SystemUser.cs missing initial password safety token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(authTestPath))
+        {
+            violations.Add("AuthControllerTests.cs is required to prove seeded demo credentials authenticate and force rotation.");
+        }
+        else
+        {
+            var authTests = File.ReadAllText(authTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "Login_WithValidCredentials_ShouldReturnToken",
+                "Password = \"admin123\"",
+                "body.MustChangePassword.Should().BeTrue"
+            })
+            {
+                if (!authTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthControllerTests.cs missing seeded login evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct seeder password hash evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Seeder does not create empty password hash",
+                "EfDemoDataSeeder",
+                "PasswordHasher.Hash(\"admin123\")",
+                "PasswordHasher.Hash(\"operator123\")",
+                "AuthControllerTests.Login_WithValidCredentials_ShouldReturnToken",
+                "Sprint1DemoSeeder_ShouldCreateNonEmptyHashedInitialPasswords"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing seeder password hash direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 demo seeding needs direct non-empty password hash evidence, not only broad security self-assessment support");
+    }
+
+    [Fact]
+    public void Sprint1AdminDefaultPassword_ShouldNotBeAdvertisedAndFirstLoginShouldBeEnforced()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var programPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Program.cs");
+        var middlewarePath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Middleware/PasswordChangeRequiredMiddleware.cs");
+        var systemUserTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Domain/SystemUserTests.cs");
+        var authTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AuthControllerTests.cs");
+        var adminTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AdminControllerTests.cs");
+        var migrationPath = Path.Combine(repositoryRoot, "src/backend/MES.Infrastructure/Data/Migrations/20260530090000_AddSystemUserMustChangePassword.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(programPath))
+        {
+            violations.Add("Program.cs is required to prove startup does not advertise default credentials.");
+        }
+        else
+        {
+            var program = File.ReadAllText(programPath);
+            foreach (var forbiddenToken in new[]
+            {
+                "DefaultAccount",
+                "admin / admin123"
+            })
+            {
+                if (program.Contains(forbiddenToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Program startup banner must not advertise default credentials: {forbiddenToken}");
+                }
+            }
+
+            if (!program.Contains("app.UseMiddleware<PasswordChangeRequiredMiddleware>()", StringComparison.Ordinal))
+            {
+                violations.Add("Program.cs must wire PasswordChangeRequiredMiddleware into the request pipeline.");
+            }
+        }
+
+        if (!File.Exists(middlewarePath))
+        {
+            violations.Add("PasswordChangeRequiredMiddleware.cs is required to enforce first-login password rotation.");
+        }
+        else
+        {
+            var middleware = File.ReadAllText(middlewarePath);
+            foreach (var requiredToken in new[]
+            {
+                "must_change_password",
+                "StatusCodes.Status403Forbidden",
+                "/api/v1/auth/change-password",
+                "/api/v1/auth/logout",
+                "必须先修改初始密码"
+            })
+            {
+                if (!middleware.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"PasswordChangeRequiredMiddleware.cs missing first-login enforcement token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(systemUserTestPath))
+        {
+            violations.Add("SystemUserTests.cs is required to prove new accounts require initial password rotation.");
+        }
+        else
+        {
+            var systemUserTests = File.ReadAllText(systemUserTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "Create_ShouldRequirePasswordChange",
+                "ChangePassword_ShouldClearPasswordChangeRequirement"
+            })
+            {
+                if (!systemUserTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"SystemUserTests.cs missing first-login domain token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(authTestPath))
+        {
+            violations.Add("AuthControllerTests.cs is required to prove seeded login responses expose the rotation requirement.");
+        }
+        else
+        {
+            var authTests = File.ReadAllText(authTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "Login_WithValidCredentials_ShouldReturnToken",
+                "body.MustChangePassword.Should().BeTrue",
+                "ChangePassword_ShouldClearPasswordChangeRequirement",
+                "body!.MustChangePassword.Should().BeFalse"
+            })
+            {
+                if (!authTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuthControllerTests.cs missing first-login auth token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(adminTestPath))
+        {
+            violations.Add("AdminControllerTests.cs is required to prove protected endpoints reject must-change-password users.");
+        }
+        else
+        {
+            var adminTests = File.ReadAllText(adminTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "GetUsers_WhenPasswordChangeRequired_ShouldReturnForbidden",
+                "X-Test-Must-Change-Password",
+                "HttpStatusCode.Forbidden",
+                "CreateUser_ShouldReturnCreated",
+                "result.MustChangePassword.Should().BeTrue"
+            })
+            {
+                if (!adminTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AdminControllerTests.cs missing first-login endpoint token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(migrationPath))
+        {
+            violations.Add("Must-change-password migration is required to persist first-login rotation state.");
+        }
+        else
+        {
+            var migration = File.ReadAllText(migrationPath);
+            foreach (var requiredToken in new[]
+            {
+                "must_change_password",
+                "defaultValue: true"
+            })
+            {
+                if (!migration.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Must-change-password migration missing token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct admin default-password and first-login evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Admin default password removed and first-login change enforced",
+                "Sprint1AdminDefaultPassword_ShouldNotBeAdvertisedAndFirstLoginShouldBeEnforced",
+                "PasswordChangeRequiredMiddleware",
+                "SystemUserTests.Create_ShouldRequirePasswordChange",
+                "AuthControllerTests.ChangePassword_ShouldClearPasswordChangeRequirement",
+                "AdminControllerTests.GetUsers_WhenPasswordChangeRequired_ShouldReturnForbidden"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing admin default-password/first-login evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 must not advertise default credentials and must directly prove first-login password rotation enforcement");
+    }
+
+    [Fact]
+    public void Sprint1ChatPanelMarkdownXss_ShouldHaveDirectEscapingEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var componentPath = Path.Combine(repositoryRoot, "src/frontend/src/components/chat/ChatPanel.vue");
+        var unitTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/unit/chat-panel.test.ts");
+        var e2eTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/e2e/chat.spec.ts");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(componentPath))
+        {
+            violations.Add("ChatPanel.vue is required to render assistant markdown safely.");
+        }
+        else
+        {
+            var component = File.ReadAllText(componentPath);
+            foreach (var requiredToken in new[]
+            {
+                "v-html=\"renderMarkdown(msg.content)\"",
+                "function escapeHtml(text: string): string",
+                ".replace(/&/g, '&amp;')",
+                ".replace(/</g, '&lt;')",
+                ".replace(/>/g, '&gt;')",
+                ".replace(/\"/g, '&quot;')",
+                ".replace(/'/g, '&#39;')",
+                ".replace(/\\//g, '&#x2F;')",
+                "return escapeHtml(text)",
+                ".replace(/```(\\w*)\\n([\\s\\S]*?)```/g, '<pre><code>$2</code></pre>')",
+                ".replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')"
+            })
+            {
+                if (!component.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ChatPanel.vue missing safe markdown token: {requiredToken}");
+                }
+            }
+
+            if (component.Contains("DOMPurify.sanitize", StringComparison.Ordinal)
+                || component.Contains("sanitizeHtml", StringComparison.Ordinal))
+            {
+                violations.Add("ChatPanel markdown evidence must stay anchored to the local escape-first renderer unless a sanitizer migration is explicitly tested and documented.");
+            }
+        }
+
+        if (!File.Exists(unitTestPath))
+        {
+            violations.Add("chat-panel.test.ts is required to prove unsafe backend HTML is escaped before v-html rendering.");
+        }
+        else
+        {
+            var unitTests = File.ReadAllText(unitTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "escapes unsafe backend HTML before rendering limited markdown",
+                "<script>alert(1)</script><img src=x onerror=alert(2)>",
+                "expect(html).toContain('<strong>安全摘要</strong>')",
+                "expect(html).not.toContain('<script')",
+                "expect(html).not.toContain('<img')",
+                "expect(assistantContent!.text()).toContain('<script>alert(1)</script>')"
+            })
+            {
+                if (!unitTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ChatPanel unit XSS test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(e2eTestPath))
+        {
+            violations.Add("chat.spec.ts is required to prove ChatPanel XSS escaping in real Chrome.");
+        }
+        else
+        {
+            var e2eTests = File.ReadAllText(e2eTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "真实浏览器转义后端返回的 unsafe HTML 且只渲染受限 markdown",
+                "window.__aimesXss = true",
+                "await expect(assistantContent.locator('strong')).toHaveText('安全摘要'",
+                "await expect(assistantContent.locator('script')).toHaveCount(0)",
+                "await expect(assistantContent.locator('img')).toHaveCount(0)",
+                "expect.poll(() => page.evaluate(() => Boolean((window as Window & { __aimesXss?: boolean }).__aimesXss))).toBe(false)"
+            })
+            {
+                if (!e2eTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ChatPanel real Chrome XSS test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct ChatPanel markdown/XSS evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "ChatPanel markdown/XSS escapes unsafe HTML",
+                "ChatPanel.vue",
+                "chat-panel.test.ts",
+                "escapes unsafe backend HTML before rendering limited markdown",
+                "chat.spec.ts",
+                "真实浏览器转义后端返回的 unsafe HTML 且只渲染受限 markdown",
+                "Sprint1ChatPanelMarkdownXss_ShouldHaveDirectEscapingEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing ChatPanel markdown/XSS direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 ChatPanel markdown/XSS needs direct unit and real Chrome evidence, not only broad security self-assessment wording");
+    }
+
+    [Fact]
+    public void Sprint1AnomalyFrontendDoublePrefix_ShouldHaveDirectRouteEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var anomalyApiPath = Path.Combine(repositoryRoot, "src/frontend/src/api/anomaly.ts");
+        var unitTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/unit/anomaly-api.test.ts");
+        var e2eTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/e2e/anomaly.spec.ts");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(anomalyApiPath))
+        {
+            violations.Add("anomaly.ts is required to keep frontend anomaly API paths baseURL-relative.");
+        }
+        else
+        {
+            var anomalyApi = File.ReadAllText(anomalyApiPath);
+            foreach (var requiredToken in new[]
+            {
+                "const BASE = '/anomaly'",
+                "http.get<PagedResult<ProductionAnomaly>>(BASE",
+                "http.get(`${BASE}/critical`)",
+                "http.get(`${BASE}/${id}`)",
+                "http.post(`${BASE}/${id}/analyze`)"
+            })
+            {
+                if (!anomalyApi.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"anomaly.ts missing baseURL-relative route token: {requiredToken}");
+                }
+            }
+
+            if (anomalyApi.Contains("'/api/v1/anomaly'", StringComparison.Ordinal)
+                || anomalyApi.Contains("\"/api/v1/anomaly\"", StringComparison.Ordinal))
+            {
+                violations.Add("anomaly.ts must not include /api/v1 in endpoint constants because http.ts already owns that baseURL.");
+            }
+        }
+
+        if (!File.Exists(unitTestPath))
+        {
+            violations.Add("anomaly-api.test.ts is required to prove the API wrapper does not pass duplicated prefixes to http.ts.");
+        }
+        else
+        {
+            var unitTests = File.ReadAllText(unitTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "uses http baseURL-relative anomaly paths without duplicating api/v1",
+                "expect(httpGet).toHaveBeenNthCalledWith(1, '/anomaly'",
+                "expect(httpGet).toHaveBeenNthCalledWith(2, '/anomaly/AN-001')",
+                "expect(httpPost).toHaveBeenCalledWith('/anomaly/AN-001/analyze')",
+                "expect(requestedPaths).not.toContain('/api/v1/anomaly')",
+                "!String(path).includes('/api/v1/api/v1/')"
+            })
+            {
+                if (!unitTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"anomaly-api.test.ts missing direct route-prefix token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(e2eTestPath))
+        {
+            violations.Add("anomaly.spec.ts is required to prove the anomaly page request path in real Chrome.");
+        }
+        else
+        {
+            var e2eTests = File.ReadAllText(e2eTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "真实浏览器只请求单层 api/v1 anomaly 路径",
+                "const anomalyRequests: string[] = []",
+                "page.route('**/api/v1/anomaly**'",
+                "localStorage.setItem('aimes_offline_demo', 'false')",
+                "double api prefix should not be requested",
+                "真实路径异常",
+                "expect(anomalyRequests.some(url => url.includes('/api/v1/anomaly'))).toBe(true)",
+                "expect(anomalyRequests.every(url => !url.includes('/api/v1/api/v1/'))).toBe(true)"
+            })
+            {
+                if (!e2eTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"anomaly.spec.ts missing real Chrome route-prefix token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite direct anomaly double-prefix evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Anomaly frontend double-prefix bug fixed",
+                "anomaly.ts",
+                "anomaly-api.test.ts",
+                "uses http baseURL-relative anomaly paths without duplicating api/v1",
+                "anomaly.spec.ts",
+                "真实浏览器只请求单层 api/v1 anomaly 路径",
+                "Sprint1AnomalyFrontendDoublePrefix_ShouldHaveDirectRouteEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing anomaly double-prefix direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 1 anomaly double-prefix fix needs direct API wrapper and real Chrome request evidence, not only broad frontend flow evidence");
+    }
+
+    [Fact]
+    public void Sprint3QualityGrayMonitor_ShouldHaveDirectRealBrowserEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var e2eTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/e2e/admin.spec.ts");
+        var frontendEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/frontend-real-browser-evidence-20260611.md");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var partialEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-partial-evidence-tightening-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { e2eTestPath, frontendEvidencePath, matrixPath, partialEvidencePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 3 quality gray monitor real-browser evidence.");
+            }
+        }
+
+        if (File.Exists(e2eTestPath))
+        {
+            var e2eTests = File.ReadAllText(e2eTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "R3 灰度发布进入 Agent 灰度监控指标",
+                "localStorage.setItem('aimes_quality_knowledge_recommendation_feedback'",
+                "localStorage.setItem('aimes_quality_knowledge_retraining_versions'",
+                "status: 'gray_published'",
+                "质量推荐灰度监控",
+                ".quality-gray-monitor-card",
+                "QK-TRAIN-20260521-R3 灰度监控",
+                "推荐采纳率",
+                "复验通过率",
+                "负样本误召回",
+                "AUD-KG-QA-RETRAINING-R3-GRAY-PUBLISH-20260521-001",
+                "TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-PUBLISHED"
+            })
+            {
+                if (!e2eTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"admin.spec.ts missing quality gray monitor real-browser token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(frontendEvidencePath))
+        {
+            var frontendEvidence = File.ReadAllText(frontendEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "Targeted Quality Gray Monitor Rerun",
+                "npm run test:e2e -- admin.spec.ts -g \"R3 灰度发布进入 Agent 灰度监控指标\"",
+                "R3 灰度发布进入 Agent 灰度监控指标",
+                "QK-TRAIN-20260521-R3 灰度监控",
+                "推荐采纳率 100%",
+                "复验通过率 100%",
+                "负样本误召回 0 次",
+                "AUD-KG-QA-RETRAINING-R3-GRAY-PUBLISH-20260521-001",
+                "TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-PUBLISHED",
+                "does not close the first gray release plus 14-day observation gate"
+            })
+            {
+                if (!frontendEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"frontend real-browser evidence missing quality gray monitor token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Minimum gray observability before first canary",
+                "admin.spec.ts",
+                "R3 灰度发布进入 Agent 灰度监控指标",
+                "Sprint3QualityGrayMonitor_ShouldHaveDirectRealBrowserEvidence",
+                "does not close First gray release + 14 days P0/P1=0"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing quality gray monitor real-browser token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(partialEvidencePath))
+        {
+            var partialEvidence = File.ReadAllText(partialEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "Quality gray monitoring UI evidence",
+                "R3 灰度发布进入 Agent 灰度监控指标",
+                "Sprint3QualityGrayMonitor_ShouldHaveDirectRealBrowserEvidence",
+                "does not close the release gray observation gate"
+            })
+            {
+                if (!partialEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Partial evidence report missing quality gray monitor token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 quality gray monitor evidence needs a targeted real Chrome run and explicit release-boundary wording so UI evidence cannot be mistaken for closing the wall-clock gray observation gate");
     }
 
     [Fact]
@@ -1026,6 +3219,101 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint3TargetMutatingEndpoints_ShouldHaveDirectEndpointAuditEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var employeeTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/EmployeeControllerTests.cs");
+        var adminTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AdminControllerTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var partialEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-partial-evidence-tightening-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { employeeTestPath, adminTestPath, matrixPath, partialEvidencePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for direct endpoint audit evidence.");
+            }
+        }
+
+        if (File.Exists(employeeTestPath))
+        {
+            var employeeTests = File.ReadAllText(employeeTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "Create_ShouldPersistAuditLogFromEndpointFilter",
+                "_client.DefaultRequestHeaders.Add(\"X-Test-User\", \"audit-filter-user\")",
+                "db.AuditLogs.Should().Contain(log =>",
+                "log.UserId == \"audit-filter-user\"",
+                "log.Action == \"POST\"",
+                "log.Resource == \"employee\"",
+                "log.NewValues.Contains(employeeNumber)"
+            })
+            {
+                if (!employeeTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"EmployeeControllerTests.cs missing direct endpoint audit token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(adminTestPath))
+        {
+            var adminTests = File.ReadAllText(adminTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "CreateUser_ShouldRedactPasswordInAuditLog",
+                "log.Resource == \"admin\" && log.Action == \"POST\"",
+                "audit.NewValues.Should().Contain(\"***REDACTED***\"",
+                "audit.NewValues.Should().NotContain(password"
+            })
+            {
+                if (!adminTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AdminControllerTests.cs missing admin audit endpoint token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Target mutating endpoints use `AuditEndpointFilter`",
+                "EmployeeControllerTests.Create_ShouldPersistAuditLogFromEndpointFilter",
+                "AdminControllerTests.CreateUser_ShouldRedactPasswordInAuditLog",
+                "Sprint3TargetMutatingEndpoints_ShouldHaveDirectEndpointAuditEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing target mutating endpoint audit token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(partialEvidencePath))
+        {
+            var partialEvidence = File.ReadAllText(partialEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "Target mutating endpoint audit evidence",
+                "Create_ShouldPersistAuditLogFromEndpointFilter",
+                "CreateUser_ShouldRedactPasswordInAuditLog"
+            })
+            {
+                if (!partialEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Partial evidence report missing target mutating endpoint audit token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 H7 must have direct HTTP endpoint audit persistence evidence in addition to static endpoint filter coverage");
+    }
+
+    [Fact]
     public void H9PurchaseStateChangeEndpoints_ShouldUseValidationEndpointFilter()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src/backend/MES.Api/Endpoints/PurchaseEndpoints.cs"));
@@ -1043,6 +3331,111 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         violations.Should().BeEmpty("Sprint 3 H9 requires Purchase submit/confirm/cancel endpoints to pass through the shared validation filter");
+    }
+
+    [Fact]
+    public void Sprint3PurchaseStateChangeValidation_ShouldHaveDirectEndpointEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var endpointPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Endpoints/PurchaseEndpoints.cs");
+        var filterPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Filters/ValidationEndpointFilter.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/PurchaseControllerTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { endpointPath, filterPath, testPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 3 Purchase state-change validation evidence.");
+            }
+        }
+
+        if (File.Exists(endpointPath))
+        {
+            var endpoint = File.ReadAllText(endpointPath);
+            foreach (var routeStart in new[]
+            {
+                "group.MapPost(\"/{id}/submit\", SubmitAsync)",
+                "group.MapPost(\"/{id}/confirm\", ConfirmAsync)",
+                "group.MapPost(\"/{id}/cancel\", CancelAsync)"
+            })
+            {
+                var statement = ExtractStatement(endpoint, routeStart);
+                if (!statement.Contains(".AddEndpointFilter<ValidationEndpointFilter>()", StringComparison.Ordinal))
+                {
+                    violations.Add($"PurchaseEndpoints.cs: {routeStart} missing ValidationEndpointFilter.");
+                }
+
+                if (!statement.Contains(".AddEndpointFilter(Audit)", StringComparison.Ordinal))
+                {
+                    violations.Add($"PurchaseEndpoints.cs: {routeStart} missing AuditEndpointFilter.");
+                }
+            }
+        }
+
+        if (File.Exists(filterPath))
+        {
+            var filter = File.ReadAllText(filterPath);
+            foreach (var requiredToken in new[]
+            {
+                "public sealed class ValidationEndpointFilter : IEndpointFilter",
+                "typeof(IValidator<>).MakeGenericType(arg.GetType())",
+                "validator.ValidateAsync(validationContext, context.HttpContext.RequestAborted)",
+                "TypedResults.ValidationProblem(errors)",
+                "return await next(context);"
+            })
+            {
+                if (!filter.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ValidationEndpointFilter missing validation token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "SubmitAndConfirm_ShouldTransitionStatus",
+                "PostAsync($\"/api/v1/purchase/{created!.Id}/submit\", null)",
+                "submitted!.Status.Should().Be(\"Submitted\")",
+                "PostAsync($\"/api/v1/purchase/{created.Id}/confirm\", null)",
+                "confirmed!.Status.Should().Be(\"Confirmed\")",
+                "Cancel_ShouldSetCancelled",
+                "PostAsync($\"/api/v1/purchase/{created!.Id}/cancel\", null)",
+                "result!.Status.Should().Be(\"Cancelled\")"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"PurchaseControllerTests missing state-change evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Purchase submit/confirm/cancel use validation filter",
+                "PurchaseEndpoints.cs",
+                "ValidationEndpointFilter",
+                "SubmitAndConfirm_ShouldTransitionStatus",
+                "Cancel_ShouldSetCancelled",
+                "Sprint3PurchaseStateChangeValidation_ShouldHaveDirectEndpointEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Purchase state-change validation evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 Purchase submit/confirm/cancel validation evidence needs endpoint filter tokens, shared filter behavior, integration flow tests, and a matrix anchor");
     }
 
     [Fact]
@@ -1168,7 +3561,163 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         source.Should().Contain("IAuditLogAppService", "Sprint 3 H3 requires endpoint audit writes to flow through the application service boundary");
+        source.Should().Contain("IUnitOfWork", "Sprint 3 H3 requires endpoint audit writes to use the shared transaction boundary");
         violations.Should().BeEmpty("Sprint 3 H3 keeps endpoint filters out of direct EF persistence");
+    }
+
+    [Fact]
+    public void Sprint3AuditEndpointFilterLayering_ShouldHaveDirectUnitEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var filterPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Filters/AuditEndpointFilter.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Filters/AuditEndpointFilterTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var partialEvidencePath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-partial-evidence-tightening-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { filterPath, testPath, matrixPath, partialEvidencePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for AuditEndpointFilter layering evidence.");
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork",
+                "new AuditEndpointFilter(\"employee\")",
+                "services.AddSingleton(auditLog.Object)",
+                "services.AddSingleton(unitOfWork.Object)",
+                "unitOfWork.Verify(u => u.ExecuteAsync(",
+                "auditLog.Verify(a => a.WriteAuditLogAsync(",
+                "user-123",
+                "POST",
+                "employee",
+                "employee-001"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"AuditEndpointFilterTests.cs missing layering evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "`AuditEndpointFilter` writes through `IAuditLogAppService`, not DbContext",
+                "AuditEndpointFilterTests.Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork",
+                "H3AuditEndpointFilter_ShouldDependOnAuditAppServiceNotDbContext",
+                "Sprint3AuditEndpointFilterLayering_ShouldHaveDirectUnitEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing AuditEndpointFilter layering evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(partialEvidencePath))
+        {
+            var partialEvidence = File.ReadAllText(partialEvidencePath);
+            foreach (var requiredToken in new[]
+            {
+                "AuditEndpointFilter layering evidence",
+                "Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork",
+                "IAuditLogAppService",
+                "IUnitOfWork"
+            })
+            {
+                if (!partialEvidence.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Partial evidence report missing AuditEndpointFilter layering token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 H3 needs direct unit evidence that AuditEndpointFilter writes through IAuditLogAppService inside IUnitOfWork, not only static no-DbContext scanning");
+    }
+
+    [Fact]
+    public void Sprint3AuditRedaction_ShouldHaveDirectUnitAndEndpointEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var redactionTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Security/AuditRedactionTests.cs");
+        var adminTestPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/AdminControllerTests.cs");
+        var filterPath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Filters/AuditEndpointFilter.cs");
+        var violations = new List<string>();
+
+        if (!File.Exists(redactionTestPath))
+        {
+            violations.Add("AuditRedactionTests.cs is required to prove sensitive field masking directly.");
+        }
+        else
+        {
+            var redactionTests = File.ReadAllText(redactionTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "RedactAndSerialize_ShouldMaskNestedSensitiveFields",
+                "Password",
+                "ApiKey",
+                "SecretToken",
+                "***REDACTED***",
+                "Should().NotContain(\"plain-password\")",
+                "Should().NotContain(\"api-key-value\")",
+                "Should().NotContain(\"secret-token-value\")"
+            })
+            {
+                if (!redactionTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Audit redaction unit test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(adminTestPath))
+        {
+            violations.Add("AdminControllerTests.cs is required to prove endpoint audit payload redaction.");
+        }
+        else
+        {
+            var adminTests = File.ReadAllText(adminTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "CreateUser_ShouldRedactPasswordInAuditLog",
+                "plain-password-",
+                "db.AuditLogs",
+                "audit.NewValues.Should().Contain(\"***REDACTED***\"",
+                "audit.NewValues.Should().NotContain(password"
+            })
+            {
+                if (!adminTests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Admin audit redaction integration test missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(filterPath))
+        {
+            violations.Add("AuditEndpointFilter.cs is required for endpoint-layer audit redaction.");
+        }
+        else
+        {
+            var filter = File.ReadAllText(filterPath);
+            if (!filter.Contains("AuditRedaction.RedactAndSerialize", StringComparison.Ordinal))
+            {
+                violations.Add("AuditEndpointFilter must redact endpoint arguments before writing NewValues.");
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 sensitive audit fields need direct unit and endpoint evidence, not only a prepared staging probe");
     }
 
     [Fact]
@@ -1299,6 +3848,601 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("Sprint 3 H20 requires the git repository root GitHub Actions workflow to block merges on quality gates");
+    }
+
+    [Fact]
+    public void BackendTestEntrypoints_ShouldSkipFrontendStaticCopy()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var checks = new[]
+        {
+            (
+                Path.Combine(repositoryRoot, ".github/workflows/ci.yml"),
+                new[]
+                {
+                    "dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true",
+                    "dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true",
+                    "dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true"
+                }
+            ),
+            (
+                Path.Combine(repositoryRoot, ".github/workflows/eval.yml"),
+                new[]
+                {
+                    "dotnet build src/backend/AIMes.slnx --no-restore /p:SkipFrontendBuildCopy=true",
+                    "dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-build /p:SkipFrontendBuildCopy=true",
+                    "dotnet test src/tests/MES.Tests.Evaluation/MES.Tests.Evaluation.csproj --no-build /p:SkipFrontendBuildCopy=true"
+                }
+            ),
+            (
+                Path.Combine(repositoryRoot, "scripts/run-attack-chain-automated-evidence.ps1"),
+                new[]
+                {
+                    "MES.Tests.Integration.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --filter",
+                    "MES.Tests.Unit.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --filter",
+                    "MES.ArchitectureTests.csproj --no-restore --configuration Release /p:SkipFrontendBuildCopy=true --filter"
+                }
+            ),
+            (
+                Path.Combine(repositoryRoot, "scripts/run-security-self-assessment.ps1"),
+                new[]
+                {
+                    "MES.Tests.Unit.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter",
+                    "MES.Tests.Integration.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter",
+                    "MES.ArchitectureTests.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter"
+                }
+            ),
+            (
+                Path.Combine(repositoryRoot, "scripts/run-employee-production-scheduling-evidence.ps1"),
+                new[]
+                {
+                    "dotnet build-server shutdown",
+                    "MES.Tests.Unit.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter",
+                    "MES.Tests.Integration.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter",
+                    "FullyQualifiedName~OperationCodeTests",
+                    "FullyQualifiedName~OperationServiceTests",
+                    "FullyQualifiedName~OperationRepositoryTests",
+                    "FullyQualifiedName~SchedulingContextProviderTests",
+                    "FullyQualifiedName~ProductionControllerTests"
+                }
+            )
+        };
+        var violations = new List<string>();
+
+        foreach (var (path, requiredTokens) in checks)
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is missing.");
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            violations.AddRange(requiredTokens
+                .Where(token => !source.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Path.GetRelativePath(repositoryRoot, path)} missing SkipFrontendBuildCopy test token: {token}"));
+        }
+
+        violations.Should().BeEmpty("backend test entrypoints should opt out of frontend static copy so test evidence is not blocked by locked wwwroot/scheduling assets");
+    }
+
+    [Fact]
+    public void FrontendEmployeeOfflineDemoEvidenceEntrypoint_ShouldBeRepeatableAndBounded()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts/run-employee-offline-demo-evidence.ps1");
+        var violations = new List<string>();
+
+        if (!File.Exists(scriptPath))
+        {
+            violations.Add("scripts/run-employee-offline-demo-evidence.ps1 is required to rerun the Employee offline-demo real-browser evidence.");
+        }
+        else
+        {
+            var source = File.ReadAllText(scriptPath);
+            foreach (var requiredToken in new[]
+            {
+                "frontend-real-browser-employee-offline-demo-20260621-current.md",
+                "tests/unit/offline-demo-mode.test.ts tests/unit/employee-board.test.ts",
+                "tests/e2e/employee.spec.ts -g",
+                "backend skip",
+                "AIMES_E2E_OFFLINE_DEMO",
+                "Result: PASS",
+                "Result: FAIL",
+                "Exit code:"
+            })
+            {
+                if (!source.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"scripts/run-employee-offline-demo-evidence.ps1 missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee offline-demo evidence should have one bounded repeatable script instead of relying on manual browser checks");
+    }
+
+    [Fact]
+    public void PhaseOneMatrix_ShouldCiteEmployeeOfflineDemoRealBrowserEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite Employee offline-demo real-browser evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Employee offline-demo backend skip quiet fallback",
+                "scripts/run-employee-offline-demo-evidence.ps1",
+                "frontend-real-browser-employee-offline-demo-20260621-current.md",
+                "offline-demo-mode.test.ts",
+                "employee-board.test.ts",
+                "employee.spec.ts",
+                "显式离线演示入口展示本地员工且不暴露 backend skip 技术错误",
+                "FrontendEmployeeOfflineDemoEvidenceEntrypoint_ShouldBeRepeatableAndBounded"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Employee offline-demo evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee offline-demo real-browser evidence should be part of the Sprint 0 audit matrix, not only a standalone report");
+    }
+
+    [Fact]
+    public void FrontendEmployeeLiveBackendEvidenceEntrypoint_ShouldBeRepeatableAndBounded()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts/run-employee-live-backend-evidence.ps1");
+        var violations = new List<string>();
+
+        if (!File.Exists(scriptPath))
+        {
+            violations.Add("scripts/run-employee-live-backend-evidence.ps1 is required to rerun the Employee live-backend recovery evidence.");
+        }
+        else
+        {
+            var source = File.ReadAllText(scriptPath);
+            foreach (var requiredToken in new[]
+            {
+                "employee-live-backend-evidence-20260622-current.md",
+                "Backend health preflight",
+                "tests/unit/offline-demo-mode.test.ts tests/unit/employee-board.test.ts tests/unit/router-auth.test.ts tests/unit/nuxt-auth-middleware.test.ts",
+                "tests/e2e/employee.spec.ts -g",
+                "employee-live-backend",
+                "AIMES_E2E_LIVE_BACKEND",
+                "AIMES_E2E_OFFLINE_DEMO",
+                "VITE_API_TARGET",
+                "Result: PASS",
+                "Result: FAIL",
+                "Exit code:"
+            })
+            {
+                if (!source.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"scripts/run-employee-live-backend-evidence.ps1 missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee live-backend recovery evidence should have one bounded repeatable script instead of relying on manual browser checks");
+    }
+
+    [Fact]
+    public void PhaseOneMatrix_ShouldCiteEmployeeLiveBackendRecoveryEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite Employee live-backend recovery evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Employee live-backend recovery from stale offline-demo state",
+                "scripts/run-employee-live-backend-evidence.ps1",
+                "employee-live-backend-evidence-20260622-current.md",
+                "offline-demo-mode.test.ts",
+                "router-auth.test.ts",
+                "nuxt-auth-middleware.test.ts",
+                "employee.spec.ts",
+                "employee-live-backend",
+                "/api/v1/employee",
+                "aimes_offline_demo=false",
+                "FrontendEmployeeLiveBackendEvidenceEntrypoint_ShouldBeRepeatableAndBounded",
+                "PhaseOneMatrix_ShouldCiteEmployeeLiveBackendRecoveryEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Employee live-backend recovery evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee live-backend recovery evidence should be discoverable from the Sprint 0 audit matrix, not only a standalone report");
+    }
+
+    [Fact]
+    public void Sprint0CurrentBaselineIndex_ShouldCiteEmployeeLiveBackendRecoveryEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var indexPath = Path.Combine(repositoryRoot, "_docs/_review/20260622-sprint0-current-baseline-index.md");
+        var bridgePath = Path.Combine(repositoryRoot, "_docs/_plan/20260514-cc-remediation-plan.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { indexPath, bridgePath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is missing.");
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            foreach (var requiredToken in new[]
+            {
+                "employee-live-backend-evidence-20260622-current.md",
+                "employee-live-backend",
+                "5003",
+                "/api/v1/employee"
+            })
+            {
+                if (!source.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} missing Employee live-backend baseline token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 0 baseline index and CC plan bridge should cite the latest Employee live-backend recovery evidence");
+    }
+
+    [Fact]
+    public void EmployeeLiveBackendRecoveryLink_ShouldUseConfiguredAppBasePath()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var componentPath = Path.Combine(repositoryRoot, "src/frontend/src/components/employee/EmployeeBoard.vue");
+        var unitTestPath = Path.Combine(repositoryRoot, "src/frontend/tests/unit/employee-board.test.ts");
+        var violations = new List<string>();
+
+        if (!File.Exists(componentPath))
+        {
+            violations.Add("EmployeeBoard.vue is required to render the Employee live-backend recovery action.");
+        }
+        else
+        {
+            var component = File.ReadAllText(componentPath);
+            foreach (var requiredToken in new[]
+            {
+                "appAssetPath",
+                "liveBackendRecoveryHref",
+                ":href=\"liveBackendRecoveryHref\"",
+                "login?offlineDemo=0&redirect=/employee?offlineDemo=0"
+            })
+            {
+                if (!component.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"EmployeeBoard.vue missing base-path-safe recovery token: {requiredToken}");
+                }
+            }
+
+            if (component.Contains("href=\"/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0\"", StringComparison.Ordinal))
+            {
+                violations.Add("EmployeeBoard.vue must not hardcode the /scheduling recovery href.");
+            }
+        }
+
+        if (!File.Exists(unitTestPath))
+        {
+            violations.Add("employee-board.test.ts is required to guard the recovery link base path.");
+        }
+        else
+        {
+            var unitTest = File.ReadAllText(unitTestPath);
+            foreach (var requiredToken in new[]
+            {
+                "builds the live backend recovery action from the configured app base path",
+                "vi.stubEnv('BASE_URL', '/factory/scheduling/')",
+                "/factory/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0",
+                "/scheduling/login?offlineDemo=0&redirect=/employee?offlineDemo=0"
+            })
+            {
+                if (!unitTest.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"employee-board.test.ts missing recovery base-path token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee live-backend recovery links should follow the configured app base path instead of only working under /scheduling");
+    }
+
+    [Fact]
+    public void PhaseOneMatrix_ShouldCiteEmployeeProductionSchedulingEvidenceChain()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to cite Employee -> Production -> Scheduling evidence-chain proof.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Employee -> Production -> Scheduling backend evidence chain",
+                "scripts/run-employee-production-scheduling-evidence.ps1",
+                "employee-production-scheduling-evidence-20260621-current.md",
+                "OperationCodeTests",
+                "OperationServiceTests",
+                "OperationRepositoryTests",
+                "SchedulingContextProviderTests",
+                "ProductionControllerTests",
+                "WO-013",
+                "PhaseOneMatrix_ShouldCiteEmployeeProductionSchedulingEvidenceChain"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing Employee -> Production -> Scheduling evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Employee -> Production -> Scheduling backend evidence should be discoverable from the phase-one matrix, not only from a standalone script report");
+    }
+
+    [Fact]
+    public void PhaseOneMatrix_ShouldReflectCurrentReleaseBoundaryEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(matrixPath))
+        {
+            violations.Add("Phase-one acceptance matrix is required to summarize the current release-boundary evidence.");
+        }
+        else
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "hosted-ci-20260621-v1-head-pass.md",
+                "47d65547557a8a6cf035327ae94455a1a1285daf",
+                "27848757617",
+                "27848757651",
+                "staging-rehearsal-20260621-5003-ef-tools-aligned-pass.md",
+                "no EF tools/runtime version-skew warning",
+                "reschedule plus commitment PostgreSQL persistence probes",
+                "attack-chain-verification-20260611-manual-verified.md",
+                "20260607-security-signoff.md",
+                "release-gate-audit-20260621-v1-head-staging-ef-tools-aligned-deferred-gray.md",
+                "release-gate-audit-20260621-v1-head-staging-current-deferred-gray.md",
+                "release-gate-audit-20260621-v1-head-deferred-gray-recheck.md",
+                "Attack Chain A/B/C manual verification | PASS",
+                "Security signoff | PASS",
+                "First gray release + 14 days P0/P1=0 | DEFERRED_BY_OWNER",
+                "PASS_WITH_DEFERRED_GRAY_OBSERVATION",
+                "prevents claiming final strict v1.0.0 PASS"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing current release-boundary evidence token: {requiredToken}");
+                }
+            }
+
+            foreach (var staleToken in new[]
+            {
+                "attack-chain-verification-20260611-manual-pending.md` remains FAIL",
+                "remains UNSIGNED/FAIL",
+                "The aggregate release gate remains FAIL because manual Attack Chain verification"
+            })
+            {
+                if (matrix.Contains(staleToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix still contains stale release-boundary wording: {staleToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("the phase-one matrix should not contradict the current verified Attack Chain, signed security packet, and deferred-gray release audit");
+    }
+
+    [Fact]
+    public void WorktreeInventory_ShouldExposeDirtyReviewSurfaceBeforeHostedCiClaims()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts/write-worktree-inventory-report.ps1");
+        var reportPath = Path.Combine(repositoryRoot, "_docs/_reports/worktree-inventory-20260621-current.md");
+        var planPath = Path.Combine(repositoryRoot, "_docs/_plan/20260514-cc-remediation-plan.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(scriptPath))
+        {
+            violations.Add("scripts/write-worktree-inventory-report.ps1 is required to size the dirty worktree before current-head CI claims.");
+        }
+        else
+        {
+            var script = File.ReadAllText(scriptPath);
+            foreach (var requiredToken in new[]
+            {
+                "git status --porcelain=v1",
+                "DirtyEntries",
+                "Bucket Summary",
+                "Hosted CI evidence only covers committed heads after push and workflow completion.",
+                "Stage or split an intended release-candidate slice before claiming current-head CI coverage."
+            })
+            {
+                if (!script.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Worktree inventory script missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(reportPath))
+        {
+            violations.Add("_docs/_reports/worktree-inventory-20260621-current.md is required as the latest local dirty worktree inventory.");
+        }
+        else
+        {
+            var report = File.ReadAllText(reportPath);
+            foreach (var requiredToken in new[]
+            {
+                "DirtyEntries:",
+                "src/frontend",
+                "src/backend",
+                "src/tests",
+                "scripts",
+                "Hosted CI evidence only covers committed heads after push and workflow completion.",
+                "This report does not prove the dirty worktree"
+            })
+            {
+                if (!report.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Worktree inventory report missing required token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!File.Exists(planPath))
+        {
+            violations.Add("Repo-local CC plan bridge is required to cite the worktree inventory boundary.");
+        }
+        else
+        {
+            var plan = File.ReadAllText(planPath);
+            foreach (var requiredToken in new[]
+            {
+                "worktree-inventory-20260621-current.md",
+                "hosted CI evidence covers committed heads only",
+                "does not prove the dirty worktree"
+            })
+            {
+                if (!plan.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Repo-local CC plan bridge missing worktree inventory token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("hosted CI evidence must not be confused with uncommitted dirty worktree coverage");
+    }
+
+    [Fact]
+    public void EfToolManifest_ShouldMatchPinnedEfCoreRuntimeVersion()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var toolsPath = Path.Combine(repositoryRoot, "dotnet-tools.json");
+        var packagesPath = Path.Combine(repositoryRoot, "Directory.Packages.props");
+        var violations = new List<string>();
+
+        if (!File.Exists(toolsPath))
+        {
+            violations.Add("dotnet-tools.json is required so EF migration tooling is repo-local and repeatable.");
+        }
+
+        if (!File.Exists(packagesPath))
+        {
+            violations.Add("Directory.Packages.props is required to read the pinned EF Core runtime version.");
+        }
+
+        if (violations.Count == 0)
+        {
+            using var tools = JsonDocument.Parse(File.ReadAllText(toolsPath));
+            var packages = XDocument.Load(packagesPath);
+            var efToolVersion = tools.RootElement
+                .GetProperty("tools")
+                .GetProperty("dotnet-ef")
+                .GetProperty("version")
+                .GetString();
+            var efCoreVersion = packages
+                .Descendants("PackageVersion")
+                .FirstOrDefault(element => string.Equals(
+                    element.Attribute("Include")?.Value,
+                    "Microsoft.EntityFrameworkCore",
+                    StringComparison.Ordinal))
+                ?.Attribute("Version")
+                ?.Value;
+
+            if (string.IsNullOrWhiteSpace(efToolVersion))
+            {
+                violations.Add("dotnet-tools.json must pin dotnet-ef version.");
+            }
+
+            if (string.IsNullOrWhiteSpace(efCoreVersion))
+            {
+                violations.Add("Directory.Packages.props must pin Microsoft.EntityFrameworkCore version.");
+            }
+
+            if (!string.Equals(efToolVersion, efCoreVersion, StringComparison.Ordinal))
+            {
+                violations.Add($"dotnet-ef version {efToolVersion} must match Microsoft.EntityFrameworkCore version {efCoreVersion}.");
+            }
+        }
+
+        violations.Should().BeEmpty("staging migrations should not emit EF tools/runtime version skew warnings");
+    }
+
+    [Fact]
+    public void Sprint0CoreModulePersistence_ShouldHaveRestartRecoveryEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Integration/Controllers/CoreModulePersistenceRecoveryTests.cs");
+        var violations = new List<string>();
+
+        if (!File.Exists(testPath))
+        {
+            violations.Add("Core module persistence restart-recovery integration test is required for Sprint 0 evidence.");
+        }
+        else
+        {
+            var source = File.ReadAllText(testPath);
+            var requiredTokens = new[]
+            {
+                "CoreModules_ShouldSurviveApplicationRestartAndRemainQueryable",
+                "PersistentPostgreSqlWebApplicationFactory",
+                "PostgreSqlIntegrationTestScope.RecreateDatabaseAsync",
+                "CreateAnomalyAsync",
+                "CreateBomAsync",
+                "CreateEmployeeAsync",
+                "StockInAsync",
+                "CreatePurchaseAsync",
+                "await using (var firstHost",
+                "await using var secondHost",
+                "/api/v1/anomaly/",
+                "/api/v1/bom/",
+                "/api/v1/employee/",
+                "/api/v1/inventory/",
+                "/api/v1/purchase/"
+            };
+
+            violations.AddRange(requiredTokens
+                .Where(token => !source.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"Core module restart-recovery test missing required token: {token}"));
+        }
+
+        violations.Should().BeEmpty("Sprint 0 persisted core-module evidence must prove data survives a recreated API host, not only static repository wiring");
     }
 
     [Fact]
@@ -1464,11 +4608,30 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
-    public void SecuritySignoff_ShouldHaveSelfAssessmentScriptAndUnsignedPacket()
+    public void StagingRehearsal_ShouldNotMisclassifyCompletedDockerInfoAsTimeout()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts/run-staging-rehearsal.ps1");
+        var source = File.ReadAllText(scriptPath);
+        var violations = new List<string>();
+
+        if (!source.Contains("[System.Diagnostics.ProcessStartInfo]::new()", StringComparison.Ordinal)
+            || !source.Contains("$process.WaitForExit($DockerEngineTimeoutSeconds * 1000)", StringComparison.Ordinal)
+            || !source.Contains("$dockerInfoExitCode = $process.ExitCode", StringComparison.Ordinal))
+        {
+            violations.Add("Docker engine preflight must use a ProcessStartInfo timeout and inspect the real docker info exit code.");
+        }
+
+        violations.Should().BeEmpty("staging rehearsal must fail only on real Docker engine failures, not on PowerShell Wait-Process's empty success output");
+    }
+
+    [Fact]
+    public void SecuritySignoff_ShouldHaveSelfAssessmentScriptAndSignedPacket()
     {
         var repositoryRoot = FindRepositoryRoot();
         var scriptPath = Path.Combine(repositoryRoot, "scripts/run-security-self-assessment.ps1");
-        var signoffPath = Path.Combine(repositoryRoot, "_docs/_review/20260602-security-signoff.md");
+        var signoffScriptPath = Path.Combine(repositoryRoot, "scripts/run-security-signoff.ps1");
+        var signoffPath = Path.Combine(repositoryRoot, "_docs/_review/20260607-security-signoff.md");
         var violations = new List<string>();
 
         if (!File.Exists(scriptPath))
@@ -1495,24 +4658,73 @@ public sealed class ArchitectureRuleTests
                 .Select(token => $"Security self-assessment script missing required token: {token}"));
         }
 
+        if (!File.Exists(signoffScriptPath))
+        {
+            violations.Add("scripts/run-security-signoff.ps1 is required to generate the human security signoff packet.");
+        }
+        else
+        {
+            var signoffScript = File.ReadAllText(signoffScriptPath);
+            var requiredSignoffScriptTokens = new[]
+            {
+                "Test-EvidenceReportPass",
+                "Test-RequiredEvidenceReport",
+                "Hosted CI evidence must exist and be PASS before security signoff.",
+                "PostgreSQL/staging evidence must exist and be PASS before security signoff.",
+                "Security self-assessment evidence must exist and be PASS before security signoff.",
+                "Attack Chain automated support evidence must exist and be PASS before security signoff.",
+                "Real Chrome frontend evidence must exist and be PASS before security signoff.",
+                "Test-AttackChainSectionPass",
+                "$hostedCiEvidenceResult",
+                "$stagingEvidenceResult",
+                "$securitySelfAssessmentResult",
+                "$attackChainAutomatedResult",
+                "$frontendEvidenceResult",
+                "Get-AnchoredLineValues",
+                "Manual verification: PASS",
+                "Attack Chain A",
+                "Attack Chain B",
+                "Attack Chain C"
+            };
+
+            violations.AddRange(requiredSignoffScriptTokens
+                .Where(token => !signoffScript.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"Security signoff script missing Attack Chain evidence token: {token}"));
+
+            foreach (var forbiddenToken in new[]
+            {
+                "Current result: `PASS`",
+                "Hosted CI: PASS; latest hosted evidence is",
+                "PostgreSQL/staging: PASS; latest real rehearsal evidence is"
+            })
+            {
+                if (signoffScript.Contains(forbiddenToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Security signoff script must not hard-code referenced evidence PASS in report output: {forbiddenToken}");
+                }
+            }
+        }
+
         if (!File.Exists(signoffPath))
         {
-            violations.Add("_docs/_review/20260602-security-signoff.md is required to fail loud on the security signoff gate.");
+            violations.Add("_docs/_review/20260607-security-signoff.md is required to fail loud on the security signoff gate.");
         }
         else
         {
             var signoff = File.ReadAllText(signoffPath);
             var requiredSignoffTokens = new[]
             {
-                "Status: UNSIGNED",
+                "Status: SIGNED",
+                "Decision: SIGNED",
+                "Result: PASS",
                 "Attack Chain A",
                 "Attack Chain B",
                 "Attack Chain C",
                 "Signer:",
                 "SignedAt:",
                 "Evidence:",
-                "Manual verification required",
-                "cannot close the security signoff release gate"
+                "Attack Chain A/B/C: PASS",
+                "Gray observation: FAIL until first gray release"
             };
 
             violations.AddRange(requiredSignoffTokens
@@ -1520,7 +4732,40 @@ public sealed class ArchitectureRuleTests
                 .Select(token => $"Security signoff packet missing required token: {token}"));
         }
 
-        violations.Should().BeEmpty("v1.0.0 security signoff must have an auditable self-assessment packet even before the human signer closes it");
+        violations.Should().BeEmpty("v1.0.0 security signoff must keep an auditable signed packet after the human signer closes it");
+    }
+
+    [Fact]
+    public void ReleaseHumanActionPacket_ShouldPinSecuritySignoffEvidenceInputs()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var packetPath = Path.Combine(repositoryRoot, "_docs/_reports/release-human-action-packet-20260611.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(packetPath))
+        {
+            violations.Add("_docs/_reports/release-human-action-packet-20260611.md is required to guide the remaining human release gates.");
+        }
+        else
+        {
+            var packet = File.ReadAllText(packetPath);
+            var requiredTokens = new[]
+            {
+                "scripts/run-security-signoff.ps1",
+                "-HostedCiReportPath _docs/_reports/hosted-ci-20260611-v1-pass.md",
+                "-StagingReportPath _docs/_reports/staging-rehearsal-20260611-docker-restored.md",
+                "-SecuritySelfAssessmentPath _docs/_reports/security-self-assessment-20260611-current.md",
+                "-AttackChainAutomatedPath _docs/_reports/attack-chain-automated-evidence-20260611-current.md",
+                "-AttackChainReportPath _docs/_reports/attack-chain-verification-20260611-manual-verified.md",
+                "-FrontendEvidencePath _docs/_reports/frontend-real-browser-evidence-20260611.md"
+            };
+
+            violations.AddRange(requiredTokens
+                .Where(token => !packet.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"Release human action packet security signoff command missing required pinned evidence input: {token}"));
+        }
+
+        violations.Should().BeEmpty("the human security signoff command must pin every machine evidence input instead of relying on script defaults that can drift later");
     }
 
     [Fact]
@@ -1545,10 +4790,12 @@ public sealed class ArchitectureRuleTests
                 "Attack Chain C",
                 "Manual verification",
                 "Verifier",
+                "Verifier cannot be a placeholder.",
                 "Evidence",
                 "[DateTimeOffset]::Parse",
                 "VerifiedAt must be a parseable timestamp",
                 "VerifiedAt must not be in the future.",
+                "LastIndexOf(\":\")",
                 "Result: FAIL",
                 "_docs/_reports",
                 "cannot close the security signoff release gate"
@@ -1607,6 +4854,51 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("manual Attack Chain evidence must be a concrete dated artifact, not a placeholder string");
+    }
+
+    [Fact]
+    public void AttackChainManualVerification_ShouldRejectMissingRepoEvidenceReferences()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var verificationScript = File.ReadAllText(Path.Combine(repositoryRoot, "scripts/run-attack-chain-verification.ps1"));
+        var releaseGateScript = File.ReadAllText(Path.Combine(repositoryRoot, "scripts/run-release-gate-audit.ps1"));
+        var violations = new List<string>();
+
+        foreach (var (scriptName, script) in new[]
+        {
+            ("run-attack-chain-verification.ps1", verificationScript),
+            ("run-release-gate-audit.ps1", releaseGateScript)
+        })
+        {
+            foreach (var requiredToken in new[]
+            {
+                "Test-EvidenceReferenceExists",
+                "_docs/",
+                "output/",
+                "Evidence reference does not exist",
+                "Split-Path"
+            })
+            {
+                if (!script.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"{scriptName} missing repo evidence reference validation token: {requiredToken}");
+                }
+            }
+        }
+
+        if (!verificationScript.Contains("Test-EvidenceReferenceExists $AttackChainAEvidence", StringComparison.Ordinal)
+            || !verificationScript.Contains("Test-EvidenceReferenceExists $AttackChainBEvidence", StringComparison.Ordinal)
+            || !verificationScript.Contains("Test-EvidenceReferenceExists $AttackChainCEvidence", StringComparison.Ordinal))
+        {
+            violations.Add("Attack-chain verification script must validate that each A/B/C repo-local evidence reference exists.");
+        }
+
+        if (!releaseGateScript.Contains("Test-EvidenceReferenceExists $_", StringComparison.Ordinal))
+        {
+            violations.Add("Release gate audit must validate that repo-local Attack Chain evidence references still exist when aggregating a PASS report.");
+        }
+
+        violations.Should().BeEmpty("Attack Chain evidence that names a repo-local artifact must fail loud when the artifact is missing");
     }
 
     [Fact]
@@ -1780,6 +5072,52 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void ApiProjectFrontendStaticCopy_ShouldBeSkippableForBackendTestBuilds()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var apiProjectSource = File.ReadAllText(Path.Combine(repositoryRoot, "src/backend/MES.Api/MES.Api.csproj"));
+
+        apiProjectSource.Should().Contain("SkipFrontendBuildCopy",
+            "backend test builds must be able to avoid deleting or copying frontend static assets that may be locked by local dev servers");
+        apiProjectSource.Should().Contain("'$(SkipFrontendBuildCopy)' != 'true'",
+            "the frontend copy target should keep default behavior while allowing explicit test builds to opt out");
+    }
+
+    [Fact]
+    public void TestProjectReferencesToApi_ShouldPropagateFrontendCopyOptOut()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var testProjectPaths = Directory.GetFiles(
+            Path.Combine(repositoryRoot, "src/tests"),
+            "*.csproj",
+            SearchOption.AllDirectories);
+        var violations = new List<string>();
+
+        foreach (var testProjectPath in testProjectPaths)
+        {
+            var document = XDocument.Load(testProjectPath);
+            var apiReferences = document
+                .Descendants("ProjectReference")
+                .Where(element => (string?)element.Attribute("Include") is { } include
+                    && include.Replace('\\', '/').EndsWith("backend/MES.Api/MES.Api.csproj", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var reference in apiReferences)
+            {
+                var metadata = reference.Elements()
+                    .FirstOrDefault(element => element.Name.LocalName == "SkipFrontendBuildCopy")
+                    ?.Value;
+
+                if (!string.Equals(metadata, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    violations.Add($"{Path.GetRelativePath(repositoryRoot, testProjectPath)} ProjectReference to MES.Api.csproj must set <SkipFrontendBuildCopy>true</SkipFrontendBuildCopy>.");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("manual dotnet test runs should not delete or copy frontend static assets through the MES.Api project reference");
+    }
+
+    [Fact]
     public void GrayObservationGate_ShouldHaveEvidencePacketAndFailLoudUntilObservationCompletes()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -1804,6 +5142,14 @@ public sealed class ArchitectureRuleTests
                 "14",
                 "Test-RealEvidence",
                 "Evidence cannot be a placeholder",
+                "Get-AnchoredLineValues",
+                "Test-AnchoredReportPass",
+                "UNSIGNED",
+                "FAIL",
+                "Signer",
+                "SignedAt",
+                "Attack Chain A/B/C",
+                "Security signoff must be SIGNED and PASS with signer, SignedAt, evidence, and Attack Chain PASS before gray release starts.",
                 "GrayReleaseId cannot be a placeholder.",
                 "GrayStartedAt must not be after ObservationStartedAt.",
                 "ObservationEndedAt must not be in the future.",
@@ -1853,6 +5199,8 @@ public sealed class ArchitectureRuleTests
         {
             "Status -eq \"OBSERVING\"",
             "Gray observation is still running.",
+            "ObservationStartedAt is required while gray observation is running.",
+            "OBSERVING requires gray start evidence. Evidence cannot be a placeholder.",
             "Result: FAIL"
         })
         {
@@ -1870,7 +5218,7 @@ public sealed class ArchitectureRuleTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var scriptPath = Path.Combine(repositoryRoot, "scripts/run-release-gate-audit.ps1");
-        var reportPath = Path.Combine(repositoryRoot, "_docs/_reports/release-gate-audit-20260602.md");
+        var reportPath = Path.Combine(repositoryRoot, "_docs/_reports/release-gate-audit-20260611-default-current.md");
         var violations = new List<string>();
 
         if (!File.Exists(scriptPath))
@@ -1884,11 +5232,15 @@ public sealed class ArchitectureRuleTests
             {
                 "Release gate audit",
                 "hosted-ci",
+                "hosted-ci-20260611-v1-pass.md",
                 "staging-rehearsal",
+                "staging-rehearsal-20260611-docker-restored.md",
                 "attack-chain-verification",
+                "attack-chain-verification-20260611-manual-pending.md",
                 "security-signoff",
-                "20260602-security-signoff",
+                "20260607-security-signoff.md",
                 "gray-observation",
+                "gray-observation-20260607-not-started.md",
                 "Evidence packet status",
                 "FOUND",
                 "MISSING",
@@ -1903,7 +5255,7 @@ public sealed class ArchitectureRuleTests
 
         if (!File.Exists(reportPath))
         {
-            violations.Add("_docs/_reports/release-gate-audit-20260602.md is required to summarize all current B-track release blockers.");
+            violations.Add("_docs/_reports/release-gate-audit-20260611-default-current.md is required to summarize all current B-track release blockers.");
         }
         else
         {
@@ -1911,11 +5263,16 @@ public sealed class ArchitectureRuleTests
             var requiredReportTokens = new[]
             {
                 "Hosted CI",
+                "Hosted runner RunUrl, RunId, release repository, release branch, head SHA, and job summary",
                 "PostgreSQL/staging",
+                "Production environment, PostgreSQL connection, Docker dependencies, EF migrations, API startup, /live, and /ready",
                 "Attack Chain A/B/C",
+                "VERIFIED status, verifier, VerifiedAt, and Attack Chain A/B/C Manual verification PASS with non-placeholder evidence",
                 "Security signoff",
-                "20260602-security-signoff",
+                "20260607-security-signoff.md",
+                "Human SIGNED decision, signer, SignedAt, evidence, self-assessment, and Attack Chain A/B/C PASS",
                 "Gray observation",
+                "PASS gray release id, observation timestamps, 14 calendar days, P0/P1=0, and evidence",
                 "Evidence packet status",
                 "FOUND",
                 "MISSING",
@@ -2001,7 +5358,8 @@ public sealed class ArchitectureRuleTests
             "Evidence",
             "Attack Chain A/B/C",
             "Test-RealEvidence",
-            "Evidence cannot be a placeholder"
+            "Evidence cannot be a placeholder",
+            "VERIFIED status, verifier, VerifiedAt, and Attack Chain A/B/C Manual verification PASS with non-placeholder evidence"
         })
         {
             if (!script.Contains(requiredToken, StringComparison.Ordinal))
@@ -2085,9 +5443,13 @@ public sealed class ArchitectureRuleTests
             "Evidence cannot be a placeholder",
             "Test-NoBlockingSecuritySignoffText",
             "Test-NoBlockingSecuritySignoffText $Text",
+            "Current status",
+            "Current result",
+            "PENDING_MANUAL_VERIFICATION",
             "PENDING",
             "UNSIGNED",
-            "FAIL"
+            "FAIL",
+            "Human SIGNED decision, signer, SignedAt, evidence, self-assessment, and Attack Chain A/B/C PASS"
         })
         {
             if (!script.Contains(requiredToken, StringComparison.Ordinal))
@@ -2099,6 +5461,18 @@ public sealed class ArchitectureRuleTests
         if (!script.Contains("Test-SecuritySignoffEvidencePass $securitySignoff", StringComparison.Ordinal))
         {
             violations.Add("Release gate audit must use the security-signoff-specific evidence predicate instead of anchored SIGNED lines only.");
+        }
+
+        if (script.Contains("$Text -match '\\b(PENDING|UNSIGNED|FAIL)\\b'", StringComparison.Ordinal)
+            || script.Contains("$Text -match \"\\b(PENDING|UNSIGNED|FAIL)\\b\"", StringComparison.Ordinal))
+        {
+            violations.Add("Security signoff predicate must not reject unrelated FAIL text from independent gates such as Gray observation.");
+        }
+
+        if (!script.Contains("Get-AnchoredLineValues $lines \"Current status\"", StringComparison.Ordinal)
+            || !script.Contains("Get-AnchoredLineValues $lines \"Current result\"", StringComparison.Ordinal))
+        {
+            violations.Add("Security signoff predicate must scope blocking text to anchored signoff and Attack Chain status/result fields.");
         }
 
         violations.Should().BeEmpty("security signoff cannot close from SIGNED lines unless signer, signed timestamp, self-assessment, Attack Chain, and evidence fields are also present");
@@ -2128,7 +5502,8 @@ public sealed class ArchitectureRuleTests
             "Test-SectionExitCodeZero $Text \"Docker version\"",
             "Test-SectionExitCodeZero $Text \"Start external dependencies\"",
             "Test-SectionExitCodeZero $Text \"Apply EF migrations\"",
-            "Test-SectionExitCodeZero $Text \"Start API\""
+            "Test-SectionExitCodeZero $Text \"Start API\"",
+            "Production environment, PostgreSQL connection, Docker dependencies, EF migrations, API startup, /live, and /ready"
         })
         {
             if (!script.Contains(requiredToken, StringComparison.Ordinal))
@@ -2189,6 +5564,10 @@ public sealed class ArchitectureRuleTests
         {
             "Test-HostedCiEvidencePass",
             "Status: READY_FOR_RELEASE_REVIEW",
+            "Repository",
+            "zenweb/AIMes",
+            "Branch",
+            "V1",
             "RunUrl",
             "RunId",
             "Evidence",
@@ -2202,7 +5581,8 @@ public sealed class ArchitectureRuleTests
             "Test-SectionExitCodeZero",
             "Test-SectionExitCodeZero $Text \"gh run\"",
             "Test-SectionContainsNumberToken",
-            "Test-SectionContainsNumberToken $Text \"gh run\" $runId"
+            "Test-SectionContainsNumberToken $Text \"gh run\" $runId",
+            "release repository, release branch, head SHA"
         })
         {
             if (!script.Contains(requiredToken, StringComparison.Ordinal))
@@ -2222,6 +5602,95 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("Hosted CI cannot close from Result: PASS unless remote run URL, run id, job summary, workflow files, and gh run evidence are also present");
+    }
+
+    [Fact]
+    public void HostedCiEvidence_ShouldRequireReleaseRepositoryAndBranch()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var evidenceScriptPath = Path.Combine(repositoryRoot, "scripts/run-hosted-ci-evidence.ps1");
+        var releaseGateScriptPath = Path.Combine(repositoryRoot, "scripts/run-release-gate-audit.ps1");
+        var evidenceScript = File.ReadAllText(evidenceScriptPath);
+        var releaseGateScript = File.ReadAllText(releaseGateScriptPath);
+        var violations = new List<string>();
+
+        foreach (var requiredToken in new[]
+        {
+            "[string]$Repository = \"zenweb/AIMes\"",
+            "[string]$Branch = \"V1\"",
+            "Repository: $Repository",
+            "Branch: $Branch",
+            "Hosted CI run must be for the release repository.",
+            "Hosted CI run must be for the V1 release branch."
+        })
+        {
+            if (!evidenceScript.Contains(requiredToken, StringComparison.Ordinal))
+            {
+                violations.Add($"Hosted CI evidence script missing repository/branch token: {requiredToken}");
+            }
+        }
+
+        foreach (var requiredToken in new[]
+        {
+            "Get-AnchoredLineValues $lines \"Repository\"",
+            "Get-AnchoredLineValues $lines \"Branch\"",
+            "zenweb/AIMes",
+            "V1",
+            "$hasReleaseRepository",
+            "$hasReleaseBranch"
+        })
+        {
+            if (!releaseGateScript.Contains(requiredToken, StringComparison.Ordinal))
+            {
+                violations.Add($"Release gate audit script missing hosted CI repository/branch validation token: {requiredToken}");
+            }
+        }
+
+        violations.Should().BeEmpty("hosted CI evidence for v1.0.0 must prove the GitHub Actions run belongs to zenweb/AIMes on the V1 release branch");
+    }
+
+    [Fact]
+    public void HostedCiEvidence_ShouldBindRunToReleaseHeadSha()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var evidenceScriptPath = Path.Combine(repositoryRoot, "scripts/run-hosted-ci-evidence.ps1");
+        var releaseGateScriptPath = Path.Combine(repositoryRoot, "scripts/run-release-gate-audit.ps1");
+        var evidenceScript = File.ReadAllText(evidenceScriptPath);
+        var releaseGateScript = File.ReadAllText(releaseGateScriptPath);
+        var violations = new List<string>();
+
+        foreach (var requiredToken in new[]
+        {
+            "[string]$CommitSha = \"\"",
+            "CommitSha is required to close the hosted CI release gate.",
+            "Hosted CI run headSha must match CommitSha.",
+            "HeadSha: $CommitSha",
+            "\"headSha\"",
+            "$ghRunViewText.Contains"
+        })
+        {
+            if (!evidenceScript.Contains(requiredToken, StringComparison.Ordinal))
+            {
+                violations.Add($"Hosted CI evidence script missing head SHA binding token: {requiredToken}");
+            }
+        }
+
+        foreach (var requiredToken in new[]
+        {
+            "Get-AnchoredLineValues $lines \"CommitSha\"",
+            "Get-AnchoredLineValues $lines \"HeadSha\"",
+            "$hasCommitSha",
+            "$hasMatchingHeadSha",
+            "^[0-9a-fA-F]{40}$"
+        })
+        {
+            if (!releaseGateScript.Contains(requiredToken, StringComparison.Ordinal))
+            {
+                violations.Add($"Release gate audit script missing hosted CI head SHA validation token: {requiredToken}");
+            }
+        }
+
+        violations.Should().BeEmpty("hosted CI evidence cannot close from an old successful run unless the run head SHA matches the release commit SHA");
     }
 
     [Fact]
@@ -2323,7 +5792,8 @@ public sealed class ArchitectureRuleTests
             "Evidence cannot be a placeholder",
             "GrayStartedAt must not be after ObservationStartedAt.",
             "ObservationEndedAt must not be in the future.",
-            "UtcNow"
+            "UtcNow",
+            "PASS gray release id, observation timestamps, 14 calendar days, P0/P1=0, and evidence"
         })
         {
             if (!script.Contains(requiredToken, StringComparison.Ordinal))
@@ -3090,6 +6560,105 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void Sprint3OperationCanceledException_ShouldHaveDirectMiddlewareEvidence()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var middlewarePath = Path.Combine(repositoryRoot, "src/backend/MES.Api/Middleware/ExceptionMiddleware.cs");
+        var testPath = Path.Combine(repositoryRoot, "src/tests/MES.Tests.Unit/Middleware/ExceptionMiddlewareTests.cs");
+        var matrixPath = Path.Combine(repositoryRoot, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+        var violations = new List<string>();
+
+        foreach (var path in new[] { middlewarePath, testPath, matrixPath })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{Path.GetRelativePath(repositoryRoot, path)} is required for Sprint 3 OperationCanceledException evidence.");
+            }
+        }
+
+        if (File.Exists(middlewarePath))
+        {
+            var middleware = File.ReadAllText(middlewarePath);
+            var invokeBody = ExtractMethodBody(middleware, "InvokeAsync");
+            var canceledHandlerBody = ExtractMethodBody(middleware, "HandleOperationCanceledAsync");
+
+            if (!invokeBody.Contains("catch (OperationCanceledException)", StringComparison.Ordinal))
+            {
+                violations.Add("ExceptionMiddleware.InvokeAsync must catch OperationCanceledException explicitly.");
+            }
+
+            if (invokeBody.IndexOf("catch (OperationCanceledException)", StringComparison.Ordinal)
+                > invokeBody.IndexOf("catch (Exception ex)", StringComparison.Ordinal))
+            {
+                violations.Add("ExceptionMiddleware.InvokeAsync must catch OperationCanceledException before the generic exception handler.");
+            }
+
+            foreach (var requiredToken in new[]
+            {
+                "await HandleOperationCanceledAsync(context);",
+                "context.Response.Clear();",
+                "context.Response.StatusCode = 499;",
+                "return Task.CompletedTask;"
+            })
+            {
+                if (!middleware.Contains(requiredToken, StringComparison.Ordinal)
+                    && !canceledHandlerBody.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ExceptionMiddleware missing OperationCanceled handling token: {requiredToken}");
+                }
+            }
+
+            if (canceledHandlerBody.Contains("WriteAsJsonAsync", StringComparison.Ordinal)
+                || canceledHandlerBody.Contains("ProblemDetails", StringComparison.Ordinal)
+                || canceledHandlerBody.Contains("LogError", StringComparison.Ordinal))
+            {
+                violations.Add("OperationCanceledException must not be logged or serialized as a ProblemDetails application fault.");
+            }
+        }
+
+        if (File.Exists(testPath))
+        {
+            var tests = File.ReadAllText(testPath);
+            foreach (var requiredToken in new[]
+            {
+                "InvokeAsync_WhenOperationCanceled_ShouldReturnClientClosedRequestWithoutProblemDetails",
+                "throw new OperationCanceledException(\"request canceled\")",
+                "context.Response.StatusCode.Should().Be(499",
+                "context.Response.ContentType.Should().BeNull()",
+                "responseBody.Length.Should().Be(0)"
+            })
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"ExceptionMiddlewareTests missing OperationCanceled evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "`OperationCanceledException` handled separately",
+                "ExceptionMiddleware.InvokeAsync",
+                "HandleOperationCanceledAsync",
+                "InvokeAsync_WhenOperationCanceled_ShouldReturnClientClosedRequestWithoutProblemDetails",
+                "StatusCode.Should().Be(499",
+                "Sprint3OperationCanceledException_ShouldHaveDirectMiddlewareEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing OperationCanceledException direct evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 OperationCanceledException handling needs direct middleware and unit-test evidence, not only the broad M11 gate");
+    }
+
+    [Fact]
     public void M12DomainEntities_ShouldUseDomainRuleViolationExceptionForStateRules()
     {
         var domainRoot = Path.Combine(FindRepositoryRoot(), "src/backend/MES.Domain");
@@ -3100,6 +6669,158 @@ public sealed class ArchitectureRuleTests
             .ToList();
 
         violations.Should().BeEmpty("Sprint 3 M12 requires domain entity rule violations to use DomainRuleViolationException instead of generic InvalidOperationException");
+    }
+
+    [Fact]
+    public void Sprint3DomainRuleViolationException_ShouldHaveDirectDomainUnitEvidence()
+    {
+        var root = FindRepositoryRoot();
+        var violations = new List<string>();
+
+        var exceptionPath = Path.Combine(root, "src/backend/MES.Domain/Exceptions/DomainRuleViolationException.cs");
+        var workOrderPath = Path.Combine(root, "src/backend/MES.Domain/Entities/Production/WorkOrder.cs");
+        var equipmentPath = Path.Combine(root, "src/backend/MES.Domain/Entities/Equipment/Equipment.cs");
+        var operationExecutionPath = Path.Combine(root, "src/backend/MES.Domain/Entities/Production/OperationExecution.cs");
+        var materialPath = Path.Combine(root, "src/backend/MES.Domain/Entities/Production/Material.cs");
+        var workOrderTestsPath = Path.Combine(root, "src/tests/MES.Tests.Unit/Domain/WorkOrderTests.cs");
+        var equipmentTestsPath = Path.Combine(root, "src/tests/MES.Tests.Unit/Domain/EquipmentTests.cs");
+        var operationTestsPath = Path.Combine(root, "src/tests/MES.Tests.Unit/Domain/OperationExecutionStateMachineTests.cs");
+        var materialTestsPath = Path.Combine(root, "src/tests/MES.Tests.Unit/Domain/MaterialTests.cs");
+        var matrixPath = Path.Combine(root, "_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md");
+
+        if (File.Exists(exceptionPath))
+        {
+            var exception = File.ReadAllText(exceptionPath);
+            foreach (var requiredToken in new[]
+            {
+                "public class DomainRuleViolationException : InvalidOperationException",
+                "public DomainRuleViolationException(string message)"
+            })
+            {
+                if (!exception.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"DomainRuleViolationException missing compatibility token: {requiredToken}");
+                }
+            }
+        }
+
+        foreach (var (path, label, requiredTokens) in new[]
+        {
+            (workOrderPath, "WorkOrder", new[]
+            {
+                "throw new DomainRuleViolationException($\"工单当前状态 {Status} 不允许启动\")",
+                "throw new DomainRuleViolationException($\"工单当前状态 {Status} 不允许完成\")",
+                "throw new DomainRuleViolationException($\"工单当前状态 {Status} 不允许取消\")",
+                "throw new DomainRuleViolationException($\"不支持转换到状态 {target}\")"
+            }),
+            (equipmentPath, "Equipment", new[]
+            {
+                "throw new DomainRuleViolationException($\"设备当前状态 {Status} 无法开始工作\")",
+                "throw new DomainRuleViolationException(\"只有运行中或空闲的设备可以报告故障\")",
+                "default: throw new DomainRuleViolationException($\"不支持转换到状态 {target}\")"
+            }),
+            (operationExecutionPath, "OperationExecution", new[]
+            {
+                "throw new DomainRuleViolationException(\"Only pending or paused operations can be started.\")",
+                "throw new DomainRuleViolationException(\"Only running operations can be completed.\")",
+                "throw new DomainRuleViolationException(\"Only active operations can report exceptions.\")"
+            }),
+            (materialPath, "Material", new[]
+            {
+                "throw new DomainRuleViolationException($\"可用库存不足：需要 {quantity}，可用 {NetAvailable}\")",
+                "throw new DomainRuleViolationException($\"库存不足：需要消耗 {quantity}，可用 {AvailableQuantity}\")"
+            })
+        })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{label} source file missing.");
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            foreach (var requiredToken in requiredTokens)
+            {
+                if (!source.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"{label} missing DomainRuleViolationException source token: {requiredToken}");
+                }
+            }
+        }
+
+        foreach (var (path, label, requiredTokens) in new[]
+        {
+            (workOrderTestsPath, "WorkOrderTests", new[]
+            {
+                "using MES.Domain.Exceptions;",
+                "Start_WhenCompleted_ShouldThrow",
+                "Complete_WhenNotStarted_ShouldThrow",
+                "Cancel_WhenCompleted_ShouldThrow",
+                "TransitionTo_InvalidTarget_ShouldThrow",
+                "Throw<DomainRuleViolationException>()"
+            }),
+            (equipmentTestsPath, "EquipmentTests", new[]
+            {
+                "using MES.Domain.Exceptions;",
+                "StartWork_WhenAlreadyRunning_ShouldThrow",
+                "SetFault_WhenAvailable_ShouldThrow",
+                "TransitionTo_InvalidTarget_ShouldThrow",
+                "Throw<DomainRuleViolationException>()"
+            }),
+            (operationTestsPath, "OperationExecutionStateMachineTests", new[]
+            {
+                "using MES.Domain.Exceptions;",
+                "Start_FromCompleted_ShouldThrow_PreventDoubleCount",
+                "Complete_FromPending_ShouldThrow",
+                "ReportException_FromCompleted_ShouldThrow",
+                "Throw<DomainRuleViolationException>()"
+            }),
+            (materialTestsPath, "MaterialTests", new[]
+            {
+                "using MES.Domain.Exceptions;",
+                "Reserve_WhenQuantityExceedsNetAvailable_ShouldThrowDomainRuleViolation",
+                "Consume_WhenQuantityExceedsAvailable_ShouldThrowDomainRuleViolation",
+                "Throw<DomainRuleViolationException>()"
+            })
+        })
+        {
+            if (!File.Exists(path))
+            {
+                violations.Add($"{label} file missing.");
+                continue;
+            }
+
+            var tests = File.ReadAllText(path);
+            foreach (var requiredToken in requiredTokens)
+            {
+                if (!tests.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"{label} missing direct DomainRuleViolationException evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        if (File.Exists(matrixPath))
+        {
+            var matrix = File.ReadAllText(matrixPath);
+            foreach (var requiredToken in new[]
+            {
+                "Domain state rules use `DomainRuleViolationException`",
+                "WorkOrderTests.Start_WhenCompleted_ShouldThrow",
+                "EquipmentTests.SetFault_WhenAvailable_ShouldThrow",
+                "OperationExecutionStateMachineTests.Start_FromCompleted_ShouldThrow_PreventDoubleCount",
+                "MaterialTests.Reserve_WhenQuantityExceedsNetAvailable_ShouldThrowDomainRuleViolation",
+                "Sprint3DomainRuleViolationException_ShouldHaveDirectDomainUnitEvidence"
+            })
+            {
+                if (!matrix.Contains(requiredToken, StringComparison.Ordinal))
+                {
+                    violations.Add($"Phase-one matrix missing direct DomainRuleViolationException evidence token: {requiredToken}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty("Sprint 3 domain rule evidence must prove concrete domain state/inventory rules throw DomainRuleViolationException directly, not only its InvalidOperationException base type");
     }
 
     private static bool IsMutableReference(Type type)

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { installMemoryLocalStorage } from './test-storage'
-import { getLocalUserDisplayName, getLocalUserReportActor, getLocalUserRole } from '../../src/utils/local-user'
+import { getLocalUser, getLocalUserDisplayName, getLocalUserReportActor, getLocalUserRole } from '../../src/utils/local-user'
 
 describe('local user parsing', () => {
   beforeEach(() => {
@@ -25,6 +25,17 @@ describe('local user parsing', () => {
 
     expect(getLocalUserRole()).toBeNull()
     expect(getLocalUserDisplayName('现场操作员')).toBe('现场操作员')
+  })
+
+  it('returns null for incomplete cached users so auth guards cannot reuse partial identity', () => {
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: '管理员',
+    }))
+
+    expect(getLocalUser()).toBeNull()
+    expect(getLocalUserRole()).toBeNull()
+    expect(localStorage.getItem('aimes_user')).toBeNull()
   })
 
   it('normalizes cached role whitespace so route authorization matches backend role names', () => {

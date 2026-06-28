@@ -1,0 +1,40 @@
+diff --git a/src/frontend/src/api/executionEvidence.ts b/src/frontend/src/api/executionEvidence.ts
+index abbfd15..82877f0 100644
+--- a/src/frontend/src/api/executionEvidence.ts
++++ b/src/frontend/src/api/executionEvidence.ts
+@@ -3,11 +3,15 @@ import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-s
+ import type { LaborQualificationBlockRecord, LaborReassignmentRecord } from '../utils/labor-assignment-sync'
+ import type { QualityCapaClosure } from '../utils/quality-capa-sync'
+ 
+-export async function queryLaborReassignments(take = 12): Promise<LaborReassignmentRecord[]> {
++export async function queryLaborReassignments(
++  take = 12,
++  options?: { failLoud?: boolean },
++): Promise<LaborReassignmentRecord[]> {
+   try {
+     const { data } = await http.get<LaborReassignmentRecord[]>('/scheduling/labor-reassignments', { params: { take } })
+     return data
+-  } catch {
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
+     return []
+   }
+ }
+@@ -17,11 +21,15 @@ export async function upsertLaborReassignment(item: LaborReassignmentRecord): Pr
+   return data
+ }
+ 
+-export async function queryLaborQualificationBlocks(take = 12): Promise<LaborQualificationBlockRecord[]> {
++export async function queryLaborQualificationBlocks(
++  take = 12,
++  options?: { failLoud?: boolean },
++): Promise<LaborQualificationBlockRecord[]> {
+   try {
+     const { data } = await http.get<LaborQualificationBlockRecord[]>('/scheduling/labor-qualification-blocks', { params: { take } })
+     return data
+-  } catch {
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
+     return []
+   }
+ }

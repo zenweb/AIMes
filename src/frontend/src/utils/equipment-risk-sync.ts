@@ -87,11 +87,16 @@ function isCustomerEquipmentFaultEvidence(value: unknown): value is CustomerEqui
     && isNonEmptyString(candidate.preparedAt)
 }
 
-export async function readEquipmentDowntimeEventBackendFirst(): Promise<EquipmentDowntimeEvent | null> {
+export async function readEquipmentDowntimeEventBackendFirst(options?: { failLoud?: boolean }): Promise<EquipmentDowntimeEvent | null> {
   try {
     const { getLatestEquipmentDowntime } = await import('../api/equipmentEvidence')
-    return await getLatestEquipmentDowntime() ?? readEquipmentDowntimeEvent()
-  } catch {
+    const record = await getLatestEquipmentDowntime(options)
+    if (record && !isEquipmentDowntimeEvent(record) && options?.failLoud) {
+      throw new Error('后端返回残缺设备停机审计载荷')
+    }
+    return isEquipmentDowntimeEvent(record) ? record : readEquipmentDowntimeEvent()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readEquipmentDowntimeEvent()
   }
 }
@@ -134,11 +139,16 @@ export function readCustomerEquipmentFaultEvidence(): CustomerEquipmentFaultEvid
   }
 }
 
-export async function readCustomerEquipmentFaultEvidenceBackendFirst(): Promise<CustomerEquipmentFaultEvidence | null> {
+export async function readCustomerEquipmentFaultEvidenceBackendFirst(options?: { failLoud?: boolean }): Promise<CustomerEquipmentFaultEvidence | null> {
   try {
     const { getLatestCustomerEquipmentFault } = await import('../api/equipmentEvidence')
-    return await getLatestCustomerEquipmentFault() ?? readCustomerEquipmentFaultEvidence()
-  } catch {
+    const record = await getLatestCustomerEquipmentFault(options)
+    if (record && !isCustomerEquipmentFaultEvidence(record) && options?.failLoud) {
+      throw new Error('后端返回残缺客户设备故障审计载荷')
+    }
+    return isCustomerEquipmentFaultEvidence(record) ? record : readCustomerEquipmentFaultEvidence()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readCustomerEquipmentFaultEvidence()
   }
 }

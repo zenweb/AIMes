@@ -68,7 +68,7 @@ services:
     volumes:
       - qdrantdata:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/localhost/6333; printf \"GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; timeout 3 head -n 1 <&3 | grep -q \" 200 \"'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -80,19 +80,22 @@ services:
     container_name: aimes-api
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "${AIMES_API_HOST_PORT:-5003}:5003"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:5000
+      ASPNETCORE_URLS: http://+:5003
       # 开源/演示场景：开启 Swagger UI + 关闭 HTTPS 重定向（避免 docker compose 起来后浏览器 307 翻车）
       Aimes__EnableSwagger: "true"
       Aimes__DisableHttpsRedirect: "true"
+      Aimes__SeedDemoDataOnStartup: "true"
       # ⚠️ JWT 签名密钥 — 仅用于本地评估！生产环境必须替换为强随机值（≥32 字节）。
       # 生成方式： openssl rand -base64 48
       Jwt__SigningKey: "DEMO-ONLY-DO-NOT-USE-IN-PRODUCTION-replace-with-openssl-rand-base64-48"
       ConnectionStrings__DefaultConnection: "Host=postgresql;Database=mes;Username=postgres;Password=postgres"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__RabbitMQ: "rabbitmq://rabbitmq"
+      AllowedOrigins__0: "http://127.0.0.1:4173"
+      AllowedOrigins__1: "http://localhost:4173"
       AI__VectorStore__Provider: "Qdrant"
       AI__VectorStore__Qdrant__Host: "qdrant"
       AI__VectorStore__Qdrant__Port: "6333"

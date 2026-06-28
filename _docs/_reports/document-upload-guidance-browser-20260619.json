@@ -1,0 +1,33 @@
+{
+  "verifiedAt": "2026-06-19T05:32:06.805Z",
+  "href": "http://127.0.0.1:4173/scheduling/knowledge/documents",
+  "documentTitle": "AIMes AI MES",
+  "heading": "文档上传",
+  "guidanceVisible": true,
+  "guidanceText": "知识入库提示上传前请确认分类、有效期和引用范围Before upload, confirm category, validity window, and citation scope.知识治理队列质量证据复核报表证据中心帮助：知识入库支持",
+  "links": [
+    {
+      "text": "知识治理队列",
+      "href": "#knowledge-governance"
+    },
+    {
+      "text": "质量证据复核",
+      "href": "/quality"
+    },
+    {
+      "text": "报表证据中心",
+      "href": "/report"
+    },
+    {
+      "text": "帮助：知识入库支持",
+      "href": "#knowledge-upload-help"
+    }
+  ],
+  "governanceExists": true,
+  "helpExists": true,
+  "helpText": "帮助：知识入库支持知识入库帮助选择分类后再上传，避免文档进入错误的治理队列。Choose a category before upload so the document enters the right governance queue.遇到索引或证据刷新失败时，保留当前页面证据并联系知识库管理员。If indexing or evidence refresh fails, keep the current evidence visible and contact the knowledge owner.",
+  "fallbackAlerts": [
+    "质量知识证据刷新失败，已保留本地治理数据：API 返回了 HTML fallback，疑似后端不可用：/scheduling/quality-knowledge-evidence",
+    "客户工单导入证据刷新失败，已保留本地导入样例状态：API 返回了 HTML fallback，疑似后端不可用：/scheduling/customer-order-import/latest重试加载"
+  ]
+}

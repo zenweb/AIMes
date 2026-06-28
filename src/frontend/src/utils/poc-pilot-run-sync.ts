@@ -114,7 +114,7 @@ export function readPocPilotRunRecord(): PocPilotRunRecord | null {
 
 export async function readPocPilotRunRecordBackendFirst(): Promise<PocPilotRunRecord | null> {
   const record = await getLatestPocPilotRun()
-  return record ?? readPocPilotRunRecord()
+  return isPocPilotRunRecord(record) ? record : readPocPilotRunRecord()
 }
 
 export function writePocPilotRunRecord(rollout: PocRolloutPackageRecord) {

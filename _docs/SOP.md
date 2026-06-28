@@ -10,7 +10,7 @@
 
 | 组件 | 容器 | 端口 | 健康检查 |
 |------|------|------|----------|
-| API (ASP.NET Core) | aimes-api | 5000 | `/live`, `/startup`, `/ready`, `/health` |
+| API (ASP.NET Core) | aimes-api | 5003:5003 by default | `/live`, `/startup`, `/ready`, `/health` |
 | PostgreSQL 16 | aimes-pg | 5432 | `pg_isready` |
 | Redis 7 | aimes-redis | 6379 | `redis-cli ping` |
 | RabbitMQ 4 | aimes-rabbitmq | 5672/15672 | `rabbitmqctl status` |
@@ -72,13 +72,13 @@ dotnet ef database update \
 docker compose up -d api
 
 # 6. 验证启动
-docker compose logs -f api   # 等待 "Now listening on http://[::]:5000"
-curl -s http://localhost:5000/live | jq .
-curl -s http://localhost:5000/ready | jq .
+docker compose logs -f api   # 等待 "Now listening on http://[::]:5003"
+curl -s http://localhost:5003/live | jq .
+curl -s http://localhost:5003/ready | jq .
 # 预期: {"status":"Healthy", ...}
 
 # 7. 验证前端
-curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/
+curl -s -o /dev/null -w "%{http_code}" http://localhost:5003/scheduling/
 # 预期: 200
 ```
 
@@ -100,8 +100,8 @@ dotnet ef database update \
 docker compose up -d api
 
 # 5. 验证
-curl -s http://localhost:5000/live
-curl -s http://localhost:5000/ready
+curl -s http://localhost:5003/live
+curl -s http://localhost:5003/ready
 ```
 
 ### 1.3 数据库迁移
@@ -153,7 +153,7 @@ docker exec -i aimes-pg pg_restore -U postgres -d mes \
 docker compose start api
 
 # 4. 验证数据完整性
-curl -s http://localhost:5000/ready
+curl -s http://localhost:5003/ready
 ```
 
 ---
@@ -254,7 +254,9 @@ docker compose logs api | grep -i "error\|critical\|fail"
 - 数据库未就绪（`depends_on` 仅检查容器，不代表 schema 已完成迁移）
 - Production 存在 pending migration，API 按设计拒绝启动
 - JWT SigningKey 为空（生产环境会抛出 `InvalidOperationException`）
-- 端口 5000 被占用
+- 宿主机端口 5003 被占用
+
+处理端口冲突时不要回退到宿主机 5000。使用 `AIMES_API_HOST_PORT=5004` 覆盖 Docker Compose 的 API 宿主机端口，并同步前端 `VITE_API_TARGET=http://localhost:5004`。
 
 ### 5.2 数据库连接失败
 
@@ -278,7 +280,7 @@ docker compose logs api | grep -i "scheduling\|SchedulingAgent\|llm"
 #   - optimizationNotes: LLM/规则引擎决策说明
 
 # 3. 验证 LLM 配置
-curl -s http://localhost:5000/ready | jq .
+curl -s http://localhost:5003/ready | jq .
 ```
 
 ### 5.4 前端白屏 / SPA 路由 404
@@ -288,10 +290,10 @@ curl -s http://localhost:5000/ready | jq .
 docker exec aimes-api ls -la /app/wwwroot/scheduling/index.html
 
 # 2. 验证静态文件中间件
-curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/
+curl -s -o /dev/null -w "%{http_code}" http://localhost:5003/scheduling/
 
 # 3. 确认 SPA fallback 路由 (预期 200)
-curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/scheduling/some-deep-route
+curl -s -o /dev/null -w "%{http_code}" http://localhost:5003/scheduling/some-deep-route
 ```
 
 ---
@@ -378,6 +380,6 @@ docker exec -it aimes-pg psql -U postgres -d mes
 docker compose ps
 
 # 健康检查
-curl -s http://localhost:5000/live | jq .
-curl -s http://localhost:5000/ready | jq .
+curl -s http://localhost:5003/live | jq .
+curl -s http://localhost:5003/ready | jq .
 ```

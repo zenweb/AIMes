@@ -13,33 +13,21 @@ namespace MES.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.RenameColumn(
+            migrationBuilder.DropColumn(
                 name: "version",
-                table: "purchase_orders",
-                newName: "xmin");
+                table: "purchase_orders");
 
-            migrationBuilder.RenameColumn(
+            migrationBuilder.DropColumn(
                 name: "version",
-                table: "production_anomalies",
-                newName: "xmin");
+                table: "production_anomalies");
 
-            migrationBuilder.RenameColumn(
+            migrationBuilder.DropColumn(
                 name: "version",
-                table: "operation_reports",
-                newName: "xmin");
+                table: "operation_reports");
 
-            migrationBuilder.RenameColumn(
+            migrationBuilder.DropColumn(
                 name: "version",
-                table: "operation_executions",
-                newName: "xmin");
-
-            migrationBuilder.AddColumn<uint>(
-                name: "xmin",
-                table: "work_orders",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                defaultValue: 0u);
+                table: "operation_executions");
 
             migrationBuilder.AddColumn<string>(
                 name: "password_hash",
@@ -55,58 +43,6 @@ namespace MES.Infrastructure.Data.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
-
-            migrationBuilder.AddColumn<uint>(
-                name: "xmin",
-                table: "schedule_plans",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                defaultValue: 0u);
-
-            migrationBuilder.AlterColumn<uint>(
-                name: "xmin",
-                table: "purchase_orders",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint");
-
-            migrationBuilder.AlterColumn<uint>(
-                name: "xmin",
-                table: "production_anomalies",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint");
-
-            migrationBuilder.AlterColumn<uint>(
-                name: "xmin",
-                table: "operation_reports",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint");
-
-            migrationBuilder.AlterColumn<uint>(
-                name: "xmin",
-                table: "operation_executions",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint");
-
-            migrationBuilder.AddColumn<uint>(
-                name: "xmin",
-                table: "materials",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                defaultValue: 0u);
 
             migrationBuilder.AddColumn<string>(
                 name: "business_key",
@@ -340,24 +276,12 @@ namespace MES.Infrastructure.Data.Migrations
                 table: "ai_decision_traces");
 
             migrationBuilder.DropColumn(
-                name: "xmin",
-                table: "work_orders");
-
-            migrationBuilder.DropColumn(
                 name: "password_hash",
                 table: "system_users");
 
             migrationBuilder.DropColumn(
                 name: "Status",
                 table: "schedule_plans");
-
-            migrationBuilder.DropColumn(
-                name: "xmin",
-                table: "schedule_plans");
-
-            migrationBuilder.DropColumn(
-                name: "xmin",
-                table: "materials");
 
             migrationBuilder.DropColumn(
                 name: "business_key",
@@ -391,61 +315,33 @@ namespace MES.Infrastructure.Data.Migrations
                 name: "linked_agent_decision_id",
                 table: "ai_decision_traces");
 
-            migrationBuilder.RenameColumn(
-                name: "xmin",
-                table: "purchase_orders",
-                newName: "version");
-
-            migrationBuilder.RenameColumn(
-                name: "xmin",
-                table: "production_anomalies",
-                newName: "version");
-
-            migrationBuilder.RenameColumn(
-                name: "xmin",
-                table: "operation_reports",
-                newName: "version");
-
-            migrationBuilder.RenameColumn(
-                name: "xmin",
-                table: "operation_executions",
-                newName: "version");
-
-            migrationBuilder.AlterColumn<long>(
+            migrationBuilder.AddColumn<long>(
                 name: "version",
                 table: "purchase_orders",
                 type: "bigint",
                 nullable: false,
-                oldClrType: typeof(uint),
-                oldType: "xid",
-                oldRowVersion: true);
+                defaultValue: 0L);
 
-            migrationBuilder.AlterColumn<long>(
+            migrationBuilder.AddColumn<long>(
                 name: "version",
                 table: "production_anomalies",
                 type: "bigint",
                 nullable: false,
-                oldClrType: typeof(uint),
-                oldType: "xid",
-                oldRowVersion: true);
+                defaultValue: 0L);
 
-            migrationBuilder.AlterColumn<long>(
+            migrationBuilder.AddColumn<long>(
                 name: "version",
                 table: "operation_reports",
                 type: "bigint",
                 nullable: false,
-                oldClrType: typeof(uint),
-                oldType: "xid",
-                oldRowVersion: true);
+                defaultValue: 0L);
 
-            migrationBuilder.AlterColumn<long>(
+            migrationBuilder.AddColumn<long>(
                 name: "version",
                 table: "operation_executions",
                 type: "bigint",
                 nullable: false,
-                oldClrType: typeof(uint),
-                oldType: "xid",
-                oldRowVersion: true);
+                defaultValue: 0L);
         }
     }
 }

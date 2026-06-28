@@ -113,12 +113,31 @@ export function readAssistantEngineeringConstraintPackages(): AssistantEngineeri
   return readRawAssistantEngineeringConstraintPackages()
 }
 
-export async function readAssistantEngineeringConstraintPackagesBackendFirst(): Promise<AssistantEngineeringConstraintPackage[]> {
+function mergeAssistantEngineeringConstraintPackages(
+  remoteRecords: AssistantEngineeringConstraintPackage[],
+  localRecords: AssistantEngineeringConstraintPackage[],
+): AssistantEngineeringConstraintPackage[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<AssistantEngineeringConstraintPackage[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_PACKAGES)
+}
+
+export async function readAssistantEngineeringConstraintPackagesBackendFirst(options?: { failLoud?: boolean }): Promise<AssistantEngineeringConstraintPackage[]> {
   try {
     const { queryAssistantEngineeringConstraintPackages } = await import('../api/assistantEvidence')
-    const records = await queryAssistantEngineeringConstraintPackages(MAX_PACKAGES)
-    return records.length > 0 ? records : readAssistantEngineeringConstraintPackages()
-  } catch {
+    const records = await queryAssistantEngineeringConstraintPackages(MAX_PACKAGES, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组工程约束包审计载荷')
+    }
+    const validRecords = records.filter(isAssistantEngineeringConstraintPackage)
+    return mergeAssistantEngineeringConstraintPackages(validRecords, readAssistantEngineeringConstraintPackages())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readAssistantEngineeringConstraintPackages()
   }
 }

@@ -16,11 +16,10 @@ namespace MES.AI.Pro.Services;
 /// </summary>
 public class LlmGatewayService : ILlmGateway
 {
-    private readonly Kernel _kernel;
     private readonly LlmConfig _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILlmConcurrencyGate _concurrencyGate;
-    private readonly IEmbeddingGenerator<string, Embedding<float>>? _embeddingGenerator;
+    private readonly Lazy<Kernel> _kernel;
 
     public LlmGatewayService(
         IOptions<LlmConfig> config,
@@ -30,9 +29,7 @@ public class LlmGatewayService : ILlmGateway
         _config = config.Value;
         _httpClientFactory = httpClientFactory;
         _concurrencyGate = concurrencyGate;
-        _kernel = BuildKernel();
-        _embeddingGenerator = _kernel.Services.GetService(typeof(IEmbeddingGenerator<string, Embedding<float>>))
-            as IEmbeddingGenerator<string, Embedding<float>>;
+        _kernel = new Lazy<Kernel>(BuildKernel);
     }
 
     private Kernel BuildKernel()
@@ -106,7 +103,7 @@ public class LlmGatewayService : ILlmGateway
     {
         return await _concurrencyGate.RunAsync(async innerCt =>
         {
-            var result = await _kernel.InvokePromptAsync<string>(prompt, cancellationToken: innerCt);
+            var result = await _kernel.Value.InvokePromptAsync<string>(prompt, cancellationToken: innerCt);
             return result ?? string.Empty;
         }, ct);
     }
@@ -121,21 +118,23 @@ public class LlmGatewayService : ILlmGateway
     {
         return await _concurrencyGate.RunAsync(async innerCt =>
         {
-            var result = await _kernel.InvokePromptAsync<T>(prompt, cancellationToken: innerCt);
+            var result = await _kernel.Value.InvokePromptAsync<T>(prompt, cancellationToken: innerCt);
             return result ?? throw new InvalidOperationException("Failed to generate JSON response");
         }, ct);
     }
 
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        if (_embeddingGenerator == null)
+        var embeddingGenerator = _kernel.Value.Services.GetService(typeof(IEmbeddingGenerator<string, Embedding<float>>))
+            as IEmbeddingGenerator<string, Embedding<float>>;
+        if (embeddingGenerator == null)
         {
             throw new InvalidOperationException("Embedding service is not configured");
         }
 
         return await _concurrencyGate.RunAsync(async innerCt =>
         {
-            var embedding = await _embeddingGenerator.GenerateVectorAsync(text, cancellationToken: innerCt);
+            var embedding = await embeddingGenerator.GenerateVectorAsync(text, cancellationToken: innerCt);
             return embedding.ToArray();
         }, ct);
     }

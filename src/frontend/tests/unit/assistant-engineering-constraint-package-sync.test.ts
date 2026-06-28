@@ -76,6 +76,37 @@ describe('assistant engineering constraint package sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/assistant-engineering-constraint-packages', { params: { take: 8 } })
   })
 
+  it('fails loud for engineering constraint package refresh when requested', async () => {
+    writeAssistantEngineeringConstraintPackage({ actor: 'admin', role: 'Planner' })
+    httpGet.mockRejectedValueOnce(new Error('assistant engineering backend unavailable'))
+
+    await expect(readAssistantEngineeringConstraintPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('assistant engineering backend unavailable')
+  })
+
+  it('fails loud when engineering constraint backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readAssistantEngineeringConstraintPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组工程约束包审计载荷')
+  })
+
+  it('keeps local complete engineering constraint package when backend returns incomplete package evidence', async () => {
+    const localRecord = writeAssistantEngineeringConstraintPackage({ actor: 'admin', role: 'Planner' })
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: localRecord.id,
+          title: localRecord.title,
+          traceId: 'TRACE-BACKEND-PARTIAL-ENG-CONSTRAINT',
+          createdAt: '2026-06-20T09:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(readAssistantEngineeringConstraintPackagesBackendFirst()).resolves.toEqual([localRecord])
+  })
+
   it('caps local engineering constraint packages at 8 records', () => {
     for (let index = 0; index < 9; index += 1) {
       writeAssistantEngineeringConstraintPackage({ actor: `actor-${index}`, role: 'Planner' })

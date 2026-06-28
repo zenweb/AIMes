@@ -63,7 +63,7 @@ defineEmits<{
   create: [event: QualityReworkImpact]
 }>()
 
-const createActionLabel = computed(() => `生成 ${props.event.workOrderId} ${props.event.inspectionId} 返工排产事件`)
+const createActionLabel = computed(() => `生成返工排产事件：${props.event.workOrderId} ${props.event.inspectionId}`)
 </script>
 
 <style scoped>

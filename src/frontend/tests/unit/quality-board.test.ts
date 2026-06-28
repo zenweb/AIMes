@@ -16,6 +16,7 @@ const createBarcodeQualityReuseDraft = vi.hoisted(() => vi.fn())
 const writeQualityKnowledgeReuseDraft = vi.hoisted(() => vi.fn())
 const readOtdEvidenceChainRecords = vi.hoisted(() => vi.fn())
 const upsertOtdEvidenceChainRecord = vi.hoisted(() => vi.fn())
+const writeQualityReworkImpact = vi.hoisted(() => vi.fn())
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -61,7 +62,7 @@ vi.mock('../../src/utils/quality-rework-sync', () => ({
     createdAt: '2026-05-12T08:00:00',
   })),
   selectQualityReworkInspection: vi.fn(() => null),
-  writeQualityReworkImpact: vi.fn(),
+  writeQualityReworkImpact,
 }))
 
 vi.mock('../../src/utils/quality-mrb-disposition-sync', () => ({
@@ -88,6 +89,10 @@ vi.mock('../../src/utils/quality-knowledge-sample-sync', () => ({
   readLatestQualityKnowledgeSample: vi.fn(() => null),
   writeQualityKnowledgeReuseDraft,
   writeQualityKnowledgeSample,
+}))
+
+vi.mock('../../src/utils/offline-demo-mode', () => ({
+  isOfflineDemoError: (error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError',
 }))
 
 function mountQualityBoard() {
@@ -209,6 +214,34 @@ describe('QualityBoard', () => {
     expect(alert.text()).toContain('MRB evidence backend unavailable')
   })
 
+  it('falls back to demo quality statistics and inspections when startup data loading fails', async () => {
+    getQualityStatistics.mockRejectedValueOnce(new Error('quality statistics unavailable'))
+    getInspections.mockRejectedValueOnce(new Error('inspection list unavailable'))
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    expect(wrapper.get('.kpi-row').text()).toContain('93.3%')
+    expect(wrapper.get('.inspection-table').text()).toContain('WO-004')
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('质检批次加载失败，已显示本地演示批次')
+    expect(alert.text()).toContain('inspection list unavailable')
+  })
+
+  it('keeps fallback inspections quiet when offline demo skips inspection backend read', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/quality/inspections')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    getInspections.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    expect(wrapper.get('.inspection-table').text()).toContain('WO-004')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
+    expect(wrapper.text()).not.toContain('质检批次加载失败')
+  })
+
   it('fails loud when MRB disposition evidence cannot be archived', async () => {
     writeQualityMrbDispositionRecord.mockImplementationOnce(() => {
       throw new Error('MRB disposition storage unavailable')
@@ -230,6 +263,22 @@ describe('QualityBoard', () => {
     expect(alert.text()).toContain('MRB 处置证据写入失败')
     expect(alert.text()).toContain('MRB disposition storage unavailable')
     expect(wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).props('record')).toBeNull()
+  })
+
+  it('syncs the created MRB disposition record back into the panel', async () => {
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).vm.$emit('create')
+    await flushPromises()
+
+    expect(writeQualityMrbDispositionRecord).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).props('record')).toMatchObject({
+      id: 'MRB-001',
+      traceId: 'TRACE-MRB-001',
+    })
+    expect(wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).props('syncMessage')).toContain('MRB 报废补料决策已生成')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
   it('fails loud when MRB disposition closure evidence cannot be archived', async () => {
@@ -263,6 +312,82 @@ describe('QualityBoard', () => {
       id: 'MRB-OPEN',
       status: 'open',
     })
+  })
+
+  it('syncs the closed MRB disposition record back into the panel', async () => {
+    readQualityMrbDispositionRecordBackendFirst.mockResolvedValueOnce({
+      id: 'MRB-OPEN',
+      traceId: 'TRACE-MRB-OPEN',
+      createdAt: '2026-05-21T09:30:00.000Z',
+      status: 'open',
+      statusLabel: '待闭环',
+    })
+    closeQualityMrbDispositionRecord.mockReturnValueOnce({
+      id: 'MRB-OPEN',
+      traceId: 'TRACE-MRB-OPEN',
+      createdAt: '2026-05-21T09:30:00.000Z',
+      closedAt: '2026-05-21T10:30:00.000Z',
+      status: 'closed',
+      statusLabel: '已闭环',
+    })
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).vm.$emit('close')
+    await flushPromises()
+
+    expect(closeQualityMrbDispositionRecord).toHaveBeenCalledWith('生产经理')
+    expect(wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).props('record')).toMatchObject({
+      id: 'MRB-OPEN',
+      status: 'closed',
+      statusLabel: '已闭环',
+    })
+    expect(wrapper.findComponent({ name: 'QualityMrbDispositionPanel' }).props('syncMessage')).toContain('MRB 处置闭环已确认')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it('fails loud when quality rework impact evidence cannot be archived', async () => {
+    writeQualityReworkImpact.mockImplementationOnce(() => {
+      throw new Error('quality rework storage unavailable')
+    })
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    let thrown: unknown
+    try {
+      wrapper.findComponent({ name: 'QualityReworkImpactPanel' }).vm.$emit('create', {
+        inspectionId: 'INS-FAIL-001',
+        workOrderId: 'WO-FAIL-001',
+        productCode: 'PRD-FAIL',
+        processName: 'CNC精加工',
+        equipmentCode: 'CNC-001',
+        materialBatchCode: 'MAT-001',
+        batchCode: 'BATCH-001',
+        inspectionPoint: '尺寸检验',
+        defectQuantity: 2,
+        reworkHours: 2,
+        otdImpact: '待复核',
+        recommendedAction: '复核',
+        rootCause: '待分析',
+        evidence: [],
+        createdAt: '2026-05-12T08:00:00',
+      })
+      await flushPromises()
+    } catch (e: unknown) {
+      thrown = e
+    }
+
+    expect(thrown).toBeUndefined()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('质量返工排产证据写入失败')
+    expect(alert.text()).toContain('quality rework storage unavailable')
+    expect(wrapper.findComponent({ name: 'QualityReworkImpactPanel' }).props('event')).toMatchObject({
+      inspectionId: 'INS-003',
+      workOrderId: 'WO-003',
+    })
+    expect(wrapper.findComponent({ name: 'QualityReworkImpactPanel' }).props('syncMessage')).toBe('')
   })
 
   it('fails loud when barcode quality knowledge sample cannot be archived', async () => {
@@ -301,6 +426,68 @@ describe('QualityBoard', () => {
     expect(alert.text()).toContain('quality knowledge storage unavailable')
     expect(wrapper.get('.barcode-knowledge-sample-panel').text()).toContain('沉淀为 CAPA 知识样本')
     expect(wrapper.find('.sample-synced').exists()).toBe(false)
+  })
+
+  it('guides barcode quality knowledge reuse with bilingual prompts, evidence links, and help support', async () => {
+    readOtdEvidenceChainRecords.mockReturnValue([
+      {
+        id: 'barcode-rework-WO-RUSH-9001-OP-10',
+        traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+        type: 'quality-gate',
+        stage: '扫码返工',
+        title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+        summary: '扫码返工证据等待复用。',
+        status: 'active',
+        statusLabel: '返工中',
+        object: 'WO-RUSH-9001 / OP-10',
+        createdAt: '2026-05-20T10:00:00.000Z',
+      },
+    ])
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    const guidance = wrapper.get('.barcode-knowledge-guidance')
+    expect(guidance.attributes('id')).toBe('barcode-quality-knowledge-help')
+    expect(guidance.text()).toContain('沉淀质量知识前，请确认返工冻结、复验释放、CAPA 复用范围和审计追踪。')
+    expect(guidance.text()).toContain('Before publishing quality knowledge, confirm rework freeze, release evidence, CAPA reuse scope, and audit trail.')
+
+    const links = wrapper.findAll('.barcode-knowledge-links a')
+    expect(links.map(link => link.text())).toEqual(['审计回放 / Audit trail', '报表证据 / Report evidence', '帮助 / Help'])
+    expect(links.map(link => link.attributes('href'))).toEqual([
+      '/audit-logs',
+      '/report',
+      '#barcode-quality-knowledge-help',
+    ])
+  })
+
+  it('publishes barcode quality knowledge samples for CAPA reuse', async () => {
+    readOtdEvidenceChainRecords.mockReturnValue([
+      {
+        id: 'barcode-rework-WO-RUSH-9001-OP-10',
+        traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+        type: 'quality-gate',
+        stage: '扫码返工',
+        title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+        summary: '扫码返工证据等待复用。',
+        status: 'active',
+        statusLabel: '返工中',
+        object: 'WO-RUSH-9001 / OP-10',
+        createdAt: '2026-05-20T10:00:00.000Z',
+      },
+    ])
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    await wrapper.get('.barcode-knowledge-sample-panel button').trigger('click')
+    await flushPromises()
+
+    expect(writeQualityKnowledgeSample).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.sample-synced').text()).toContain('QKS-001')
+    expect(wrapper.get('.sample-synced').text()).toContain('TRACE-QKS-001')
+    expect(wrapper.get('.barcode-release-message').text()).toContain('扫码质量样本已沉淀')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
   it('fails loud when barcode quality knowledge reuse draft cannot be archived', async () => {
@@ -344,6 +531,37 @@ describe('QualityBoard', () => {
     expect(wrapper.find('.reuse-draft-result').exists()).toBe(false)
   })
 
+  it('generates barcode quality reuse drafts after the sample is published', async () => {
+    readOtdEvidenceChainRecords.mockReturnValue([
+      {
+        id: 'barcode-rework-WO-RUSH-9001-OP-10',
+        traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+        type: 'quality-gate',
+        stage: '扫码返工',
+        title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+        summary: '扫码返工证据等待复用。',
+        status: 'active',
+        statusLabel: '返工中',
+        object: 'WO-RUSH-9001 / OP-10',
+        createdAt: '2026-05-20T10:00:00.000Z',
+      },
+    ])
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    await wrapper.get('.barcode-knowledge-sample-panel button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.reuse-draft-card button').trigger('click')
+    await flushPromises()
+
+    expect(writeQualityKnowledgeReuseDraft).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.reuse-draft-result').text()).toContain('QKD-001')
+    expect(wrapper.get('.reuse-draft-result').text()).toContain('TRACE-QKD-001')
+    expect(wrapper.get('.barcode-release-message').text()).toContain('同类缺陷处置草案已生成')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
   it('fails loud when barcode quality gate release evidence cannot be archived', async () => {
     readOtdEvidenceChainRecords.mockReturnValue([
       {
@@ -382,6 +600,55 @@ describe('QualityBoard', () => {
     expect(wrapper.find('.barcode-release-message').exists()).toBe(false)
   })
 
+  it('releases the barcode quality gate and writes the handoff evidence chain', async () => {
+    const activeRecords = [
+      {
+        id: 'barcode-rework-WO-RUSH-9001-OP-10',
+        traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-REWORK',
+        type: 'quality-gate',
+        stage: '扫码返工',
+        title: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结',
+        summary: '扫码返工证据等待复验释放。',
+        status: 'active',
+        statusLabel: '返工中',
+        object: 'WO-RUSH-9001 / OP-10',
+        createdAt: '2026-05-20T10:00:00.000Z',
+      },
+    ]
+    const releasedRecords = [
+      ...activeRecords,
+      {
+        id: 'barcode-release-WO-RUSH-9001-OP-10-OP-20',
+        traceId: 'TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20',
+        type: 'quality-gate',
+        stage: '交接释放',
+        title: 'WO-RUSH-9001 OP-20 接收已释放',
+        summary: '质量复验放行后解除 OP-10 到 OP-20 的交接冻结。',
+        status: 'ready',
+        statusLabel: 'OP-20 可接收',
+        object: 'WO-RUSH-9001',
+        createdAt: '2026-05-20T10:30:00.000Z',
+      },
+    ]
+    readOtdEvidenceChainRecords
+      .mockReturnValueOnce(activeRecords)
+      .mockReturnValueOnce(releasedRecords)
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    await wrapper.get('.barcode-release-banner button').trigger('click')
+    await flushPromises()
+
+    expect(upsertOtdEvidenceChainRecord).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'barcode-release-WO-RUSH-9001-OP-10-OP-20',
+      statusLabel: 'OP-20 可接收',
+    }))
+    expect(wrapper.get('.barcode-release-banner').text()).toContain('返工复验已放行')
+    expect(wrapper.get('.barcode-release-message').text()).toContain('OP-20 接收、排产窗口和流转卡标签状态均已更新')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
   it('alerts while showing fallback anomalies when the anomaly API is unavailable', async () => {
     httpGet.mockRejectedValueOnce(new Error('anomaly API unavailable'))
 
@@ -394,6 +661,34 @@ describe('QualityBoard', () => {
     expect(alert.text()).toContain('anomaly API unavailable')
   })
 
+  it('keeps fallback anomalies quiet when offline demo skips anomaly backend read', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/anomaly')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    httpGet.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    expect(wrapper.get('.anomalies-body').text()).toContain('装配后轴孔配合间隙')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
+    expect(wrapper.text()).not.toContain('质量异常告警加载失败')
+  })
+
+  it('continues loading SPC after offline demo skips anomaly backend read', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/anomaly')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    httpGet.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    expect(analyzeSpcTrend).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('.spc-chart circle').length).toBeGreaterThan(0)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+
   it('alerts while showing fallback SPC data when trend analysis is unavailable', async () => {
     analyzeSpcTrend.mockRejectedValueOnce(new Error('SPC backend unavailable'))
 
@@ -404,6 +699,20 @@ describe('QualityBoard', () => {
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain('SPC 趋势分析加载失败')
     expect(alert.text()).toContain('SPC backend unavailable')
+  })
+
+  it('keeps fallback SPC data quiet when offline demo skips trend analysis backend read', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/quality/spc/analyze')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    analyzeSpcTrend.mockRejectedValueOnce(offlineDemoError)
+
+    const wrapper = mountQualityBoard()
+    await flushPromises()
+
+    expect(wrapper.findAll('.spc-chart circle').length).toBeGreaterThan(0)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
+    expect(wrapper.text()).not.toContain('SPC 趋势分析加载失败')
   })
 
   it('clears the stale SPC fallback alert after a later trend analysis succeeds', async () => {

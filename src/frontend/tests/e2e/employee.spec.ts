@@ -1,9 +1,104 @@
+import { readFile } from 'node:fs/promises'
 import { test, expect, type Page } from '@playwright/test'
 
 test.describe.configure({ timeout: 90000 })
 
+async function seedOfflineDemoSession(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('aimes_offline_demo', 'true')
+    localStorage.setItem('aimes_token', 'demo-token-admin')
+    localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: '管理员',
+      role: 'Admin',
+      mustChangePassword: false,
+    }))
+  })
+}
+
+async function routeEvidenceWrites(page: Page) {
+  await page.route('**/hubs/notifications/negotiate**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        connectionId: 'mock-notifications',
+        connectionToken: 'mock-notifications',
+        availableTransports: [],
+      }),
+    })
+  })
+  await page.route('**/api/v1/**', (route) => {
+    const method = route.request().method()
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: method === 'GET' ? '[]' : route.request().postData() || '{}',
+    })
+  })
+  await page.route('**/api/v1/scheduling/labor-reassignments**', async (route) => {
+    if (route.request().method() === 'POST') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+      return
+    }
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  })
+  await page.route('**/api/v1/scheduling/labor-qualification-blocks**', async (route) => {
+    if (route.request().method() === 'POST') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+      return
+    }
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  })
+  await page.route('**/api/v1/scheduling/otd-evidence**', async (route) => {
+    if (route.request().method() === 'POST') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+      return
+    }
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  })
+}
+
 async function routeNoCandidateEmployees(page: Page) {
-  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+  const seedLiveMockSession = () => {
+    localStorage.setItem('aimes_e2e_live_mock', 'true')
+    localStorage.setItem('aimes_offline_demo', 'false')
+    localStorage.setItem('aimes_token', 'mock-e2e-token')
+    localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: '管理员',
+      role: 'Admin',
+      mustChangePassword: false,
+    }))
+  }
+  await page.addInitScript(seedLiveMockSession)
+  await routeEvidenceWrites(page)
+
+  await page.route('**/api/v1/auth/refresh', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'mock-e2e-token',
+        refreshToken: 'mock-e2e-refresh',
+        expiresAt: '2026-12-31T23:59:59Z',
+      }),
+    })
+  })
 
   await page.route('**/api/v1/employee**', (route) => {
     route.fulfill({
@@ -27,7 +122,33 @@ async function routeNoCandidateEmployees(page: Page) {
 }
 
 async function routeAvailabilityEmployees(page: Page) {
-  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+  const seedLiveMockSession = () => {
+    localStorage.setItem('aimes_e2e_live_mock', 'true')
+    localStorage.setItem('aimes_offline_demo', 'false')
+    localStorage.setItem('aimes_token', 'mock-e2e-token')
+    localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: '管理员',
+      role: 'Admin',
+      mustChangePassword: false,
+    }))
+  }
+  await page.addInitScript(seedLiveMockSession)
+  await page.evaluate(seedLiveMockSession)
+  await routeEvidenceWrites(page)
+
+  await page.route('**/api/v1/auth/refresh', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'mock-e2e-token',
+        refreshToken: 'mock-e2e-refresh',
+        expiresAt: '2026-12-31T23:59:59Z',
+      }),
+    })
+  })
 
   await page.route('**/api/v1/employee**', (route) => {
     route.fulfill({
@@ -50,13 +171,195 @@ async function routeAvailabilityEmployees(page: Page) {
   })
 }
 
+async function routeManyEmployees(page: Page) {
+  const seedLiveMockSession = () => {
+    localStorage.setItem('aimes_e2e_live_mock', 'true')
+    localStorage.setItem('aimes_offline_demo', 'false')
+    localStorage.setItem('aimes_token', 'mock-e2e-token')
+    localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: '管理员',
+      role: 'Admin',
+      mustChangePassword: false,
+    }))
+  }
+  await page.addInitScript(seedLiveMockSession)
+  await routeEvidenceWrites(page)
+
+  const employees = Array.from({ length: 25 }, (_, index) => {
+    const sequence = String(index + 1).padStart(3, '0')
+    return {
+      id: `emp-${sequence}`,
+      employeeNumber: `EMP-${sequence}`,
+      name: `员工${sequence}`,
+      role: index === 24 ? 'Engineer' : 'Operator',
+      team: index === 24 ? '技术组' : '甲班',
+      shift: 'Day',
+      phone: null,
+      email: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00',
+    }
+  })
+
+  await page.route('**/api/v1/auth/refresh', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'mock-e2e-token',
+        refreshToken: 'mock-e2e-refresh',
+        expiresAt: '2026-12-31T23:59:59Z',
+      }),
+    })
+  })
+
+  await page.route('**/api/v1/employee**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: employees,
+        totalCount: employees.length,
+        page: 1,
+        pageSize: 20,
+        totalPages: 2,
+      }),
+    })
+  })
+}
+
+test.describe('Employee pagination live mock', () => {
+  test('员工分页在搜索收窄结果时回到第一页', async ({ page }) => {
+    const navigations: string[] = []
+    const unauthorizedRequests: string[] = []
+    page.on('framenavigated', frame => {
+      if (frame === page.mainFrame()) navigations.push(frame.url())
+    })
+    page.on('response', response => {
+      if (response.status() === 401) unauthorizedRequests.push(response.url())
+    })
+    await routeManyEmployees(page)
+    await page.goto('employee?offlineDemo=0', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-001 员工001' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-013 员工013' })).toHaveCount(0)
+    await expect(page.getByText('共 25 条')).toBeVisible()
+
+    expect(unauthorizedRequests, `401 responses before pagination: ${unauthorizedRequests.join('\n')}`).toEqual([])
+    expect(page.url(), `unexpected navigations: ${navigations.join('\n')}`).toContain('/scheduling/employee')
+    await page.getByRole('button', { name: '下一页' }).click()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-013 员工013' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-001 员工001' })).toHaveCount(0)
+
+    await page.getByPlaceholder('搜索姓名/工号...').fill('EMP-025')
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-025 员工025' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-013 员工013' })).toHaveCount(0)
+    await expect(page.locator('.pagination-bar')).toHaveCount(0)
+  })
+})
+
+test.describe('Employee offline demo entry', () => {
+  test('[employee-live-backend] 真实在线员工后端恢复会清理离线残留并读取员工 API', async ({ page }) => {
+    test.skip(process.env.AIMES_E2E_LIVE_BACKEND !== 'true', 'requires live backend on the configured API target')
+
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
+      localStorage.setItem('aimes_user', JSON.stringify({
+        username: 'admin',
+        displayName: '管理员',
+        role: 'Admin',
+        mustChangePassword: false,
+      }))
+    })
+
+    await page.goto('login?offlineDemo=0&redirect=/employee?offlineDemo=0', { waitUntil: 'commit' })
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('aimes_offline_demo'))).toBe('false')
+
+    await page.getByLabel('用户名').fill('admin')
+    await page.getByLabel('密码').fill('admin123')
+    await page.getByRole('button', { name: '登 录' }).click()
+
+    const employeeResponse = await page.waitForResponse(response =>
+      response.url().includes('/api/v1/employee') && response.request().method() === 'GET',
+      { timeout: 30000 },
+    )
+    expect(employeeResponse.status()).toBe(200)
+
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+    await expect(page).toHaveURL(/\/scheduling\/employee\?offlineDemo=0$/)
+    await expect(page.getByRole('heading', { name: '人员管理' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-001 张三' })).toBeVisible()
+    await expect(page.getByText('员工列表加载失败')).toHaveCount(0)
+    await expect(page.getByText('Offline demo mode skipped backend request')).toHaveCount(0)
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('aimes_token')?.startsWith('demo-token-'))).toBe(false)
+  })
+
+  test('未登录访问离线演示员工入口后登录返回员工页且不暴露 backend skip 技术错误', async ({ page }) => {
+    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/scheduling\/login\?offlineDemo=1&redirect=\/employee\?offlineDemo=1$/)
+
+    await page.getByLabel('用户名').fill('admin')
+    await page.getByLabel('密码').fill('admin123')
+    await page.getByRole('button', { name: '登 录' }).click()
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+
+    await expect(page).toHaveURL(/\/scheduling\/employee\?offlineDemo=1$/)
+    await expect(page.getByRole('heading', { name: '人员管理' })).toBeVisible()
+    await expect(page.getByText('EMP-001 · 甲班 · 白班')).toBeVisible()
+    await expect(page.getByText('员工列表加载失败')).toHaveCount(0)
+    await expect(page.getByText('Offline demo mode skipped backend request')).toHaveCount(0)
+  })
+
+  test('显式离线演示入口展示本地员工且不暴露 backend skip 技术错误', async ({ page }) => {
+    await seedOfflineDemoSession(page)
+    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+
+    await expect(page.getByRole('heading', { name: '人员管理' })).toBeVisible()
+    await expect(page.getByText('EMP-001 · 甲班 · 白班')).toBeVisible()
+    await expect(page.getByText('EMP-006 · 甲班 · 白班')).toBeVisible()
+    await expect(page.getByText('Before reassignment or stop-work review')).toBeVisible()
+    await expect(page.getByRole('link', { name: '生产开工 / Production' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'AI 排产 / Scheduling' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '审计回放 / Audit trail' })).toBeVisible()
+    await expect(page.getByText('员工列表加载失败')).toHaveCount(0)
+    await expect(page.getByText('Offline demo mode skipped backend request')).toHaveCount(0)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+  })
+
+  test('离线员工页提供切换在线后端入口并保留员工页返回目标', async ({ page }) => {
+    await seedOfflineDemoSession(page)
+    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+
+    const recovery = page.locator('[data-employee-live-recovery]')
+    await expect(recovery).toContainText('当前展示本地示例数据')
+    await expect(recovery).toContainText('Current view is using local demo data')
+
+    const link = recovery.getByRole('link', { name: '切换在线后端' })
+    await expect(link).toHaveAttribute('href', /login\?offlineDemo=0&redirect=\/employee\?offlineDemo=0$/)
+    await link.click()
+
+    await expect(page).toHaveURL(/\/scheduling\/login\?offlineDemo=0&redirect=\/employee\?offlineDemo=0$/)
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('aimes_offline_demo'))).toBe('false')
+  })
+})
+
 test.describe('Employee 人员能力约束', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      if (localStorage.getItem('aimes_e2e_live_mock') === 'true') return
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('employee')
+    await page.goto('employee?offlineDemo=1')
     await page.waitForSelector('.emp-board', { timeout: 20000 })
   })
 
@@ -92,6 +395,103 @@ test.describe('Employee 人员能力约束', () => {
     const dialog = page.getByRole('dialog', { name: '编辑员工' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('textbox').first()).toHaveValue('EMP-001')
+  })
+
+  test('员工离职需要先展示确认提示且取消后不改变在职状态', async ({ page }) => {
+    await page.getByRole('button', { name: '查看员工详情：EMP-001 张三' }).click()
+
+    const dialog = page.getByRole('dialog', { name: '编辑员工' })
+    await expect(dialog).toBeVisible()
+
+    await dialog.getByRole('button', { name: '离职' }).click()
+    const confirmation = dialog.locator('[data-employee-deactivate-confirmation]')
+    await expect(confirmation).toBeVisible()
+    await expect(confirmation).toContainText('离职前请确认未完工派工、替班证据和审计留痕')
+    await expect(confirmation).toContainText('Before deactivating this employee, confirm open work assignments, reassignment evidence, and audit trail')
+    await expect(confirmation.getByRole('link', { name: '生产开工 / Production' })).toHaveAttribute('href', './production')
+    await expect(confirmation.getByRole('link', { name: 'AI 排产 / Scheduling' })).toHaveAttribute('href', './scheduling')
+    await expect(confirmation.getByRole('link', { name: '审计回放 / Audit trail' })).toHaveAttribute('href', './audit-logs')
+    await expect(confirmation.getByRole('link', { name: '帮助 / Help' })).toHaveAttribute('href', '#employee-deactivate-help')
+
+    await confirmation.getByRole('button', { name: '取消离职' }).click()
+    await expect(confirmation).toBeHidden()
+    await dialog.getByRole('button', { name: '关闭员工编辑' }).click()
+    await expect(dialog).toBeHidden()
+
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-001 张三' })).toBeVisible()
+    await expect(page.getByText('离职', { exact: true })).toHaveCount(0)
+  })
+
+  test('员工移动端弹窗保持在视口内并保留操作提示', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+
+    await page.getByRole('button', { name: '查看员工详情：EMP-001 张三' }).click()
+    const editDialog = page.getByRole('dialog', { name: '编辑员工' })
+    await expect(editDialog).toBeVisible()
+    await expect(editDialog.locator('[data-employee-edit-guidance]')).toContainText('Before saving employee changes')
+
+    const editBox = await editDialog.boundingBox()
+    expect(editBox).not.toBeNull()
+    expect(editBox!.x).toBeGreaterThanOrEqual(0)
+    expect(editBox!.x + editBox!.width).toBeLessThanOrEqual(390)
+
+    await editDialog.getByRole('button', { name: '离职' }).click()
+    const confirmation = editDialog.locator('[data-employee-deactivate-confirmation]')
+    await expect(confirmation).toBeVisible()
+    await expect(confirmation.getByRole('button', { name: '取消离职' })).toBeVisible()
+    await confirmation.getByRole('button', { name: '取消离职' }).click()
+    await editDialog.getByRole('button', { name: '关闭员工编辑' }).click()
+
+    await page.getByRole('button', { name: '+ 新增' }).click()
+    const createDialog = page.getByRole('dialog', { name: '新增员工' })
+    await expect(createDialog).toBeVisible()
+    await expect(createDialog.locator('[data-employee-create-guidance]')).toContainText('Before creating an employee')
+
+    const createBox = await createDialog.boundingBox()
+    expect(createBox).not.toBeNull()
+    expect(createBox!.x).toBeGreaterThanOrEqual(0)
+    expect(createBox!.x + createBox!.width).toBeLessThanOrEqual(390)
+    await expect(createDialog.getByRole('button', { name: '创建' })).toBeVisible()
+  })
+
+  test('导出员工 CSV 包含完整名册与在职状态证据', async ({ page }) => {
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: '导出 CSV' }).click()
+    const download = await downloadPromise
+
+    expect(download.suggestedFilename()).toBe('员工列表.csv')
+    const downloadPath = await download.path()
+    expect(downloadPath).toBeTruthy()
+
+    const csv = (await readFile(downloadPath!, 'utf8')).replace(/^\uFEFF/, '')
+    expect(csv).toContain('工号,姓名,角色,班组,班次,电话,邮箱,在职')
+    expect(csv).toContain('EMP-001,张三,Operator,甲班,Day,13800138001,,是')
+    expect(csv).toContain('EMP-008,吴十,Operator,乙班,Night,,,否')
+  })
+
+  test('员工筛选搜索会区分班组角色与离职可见性', async ({ page }) => {
+    await page.locator('.filter-select').first().selectOption('Operator')
+    await page.locator('.filter-select').nth(1).selectOption('乙班')
+
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-003 王五' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-009 高十一' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看离职员工详情：EMP-008 吴十' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-001 张三' })).toHaveCount(0)
+
+    await page.getByLabel('显示离职').check()
+    await expect(page.getByRole('button', { name: '查看离职员工详情：EMP-008 吴十' })).toBeVisible()
+
+    await page.getByPlaceholder('搜索姓名/工号...').fill('EMP-008')
+    await expect(page.getByRole('button', { name: '查看离职员工详情：EMP-008 吴十' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-003 王五' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '查看员工详情：EMP-009 高十一' })).toHaveCount(0)
+
+    await page.getByRole('button', { name: '查看离职员工详情：EMP-008 吴十' }).click()
+    const dialog = page.getByRole('dialog', { name: '员工详情' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '关闭员工详情' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '保存' })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '离职' })).toHaveCount(0)
   })
 
   test('新增员工弹窗支持 Escape 关闭并回到新增按钮', async ({ page }) => {
@@ -132,7 +532,7 @@ test.describe('Employee 人员能力约束', () => {
 
   test('排班请假人员不进入替班候选', async ({ page }) => {
     await routeAvailabilityEmployees(page)
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto('employee?offlineDemo=0', { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 20000 })
 
     const panel = page.locator('.skill-matrix-panel')
@@ -152,7 +552,7 @@ test.describe('Employee 人员能力约束', () => {
 
   test('无有效替班候选时生成停工复核阻断', async ({ page }) => {
     await routeNoCandidateEmployees(page)
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto('employee?offlineDemo=0', { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 20000 })
 
     const panel = page.locator('.skill-matrix-panel')
@@ -172,7 +572,7 @@ test.describe('Employee 人员能力约束', () => {
     expect(reassignment).toBeNull()
 
     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'true'))
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const blockEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: 'WO-013 淬火 / 回火 无有效替班候选需停工复核' })
@@ -180,7 +580,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(blockEvidence.locator('em').filter({ hasText: '停工复核' })).toBeVisible()
     await expect(blockEvidence.getByText('TRACE-LABOR-BLOCK-WO-013-OP-10')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '人员阻断回放' }).getByText('1')).toBeVisible()
@@ -196,7 +596,7 @@ test.describe('Employee 人员能力约束', () => {
 
   test('停工复核经主管补证改派后重新放行生产与排程', async ({ page }) => {
     await routeNoCandidateEmployees(page)
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto('employee?offlineDemo=0', { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 20000 })
 
     const panel = page.locator('.skill-matrix-panel')
@@ -221,7 +621,7 @@ test.describe('Employee 人员能力约束', () => {
     expect(releaseReassignment.replacementSkill).toContain('补证改派')
 
     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'true'))
-    await page.goto('production', { waitUntil: 'commit' })
+    await page.goto('production?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 20000 })
     await page.locator('.wo-card').filter({ hasText: 'WO-013' }).click()
     const heatOperation = page.locator('.op-card').filter({ hasText: 'OP-10' }).filter({ hasText: '淬火' })
@@ -233,14 +633,14 @@ test.describe('Employee 人员能力约束', () => {
     await expect(qualificationPanel.getByText('AUD-LABOR-RELEASE-20260520-001', { exact: true })).toBeVisible()
     await expect(page.locator('.dialog-confirm')).toBeEnabled()
 
-    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
     const constraintPanel = page.locator('.engineering-constraint-panel')
     await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
     await expect(constraintPanel.getByText(/生产开工可直接读取该证据/)).toBeVisible()
     await expect(page.locator('.event-queue-panel').getByText('人员替班事件')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const releaseEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: 'WO-013 淬火 / 回火 停工复核后重新放行' })
@@ -255,7 +655,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(panel.getByText('人员能力证据已同步 OTD 复盘')).toBeVisible()
     await expect(panel.getByText('7 名人员的技能和资质状态已写入统一证据链')).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const laborEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '王五 技能/资质校验进入开工约束' })
@@ -264,7 +664,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(laborEvidence.getByText('资质临期')).toBeVisible()
     await expect(laborEvidence.getByText('TRACE-LABOR-EMP-003')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governancePanel = page.locator('.agent-governance-panel')
@@ -273,7 +673,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(governanceLane.getByText('王五 技能/资质校验进入开工约束')).toBeVisible()
     await expect(governanceLane.getByText('TRACE-LABOR-EMP-003')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '人员能力回放' }).getByText('7')).toBeVisible()
@@ -317,7 +717,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(panel.locator('.reassignment-note').getByText(/AUD-LABOR-REASSIGN-20260520-001 已生成/)).toBeVisible()
     await expect(panel.locator('.reassignment-note').getByText(/TRACE-LABOR-REASSIGN-WO-013-OP-10/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const reassignmentEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: 'WO-013 淬火 / 回火 资质临期替班已确认' })
@@ -325,7 +725,7 @@ test.describe('Employee 人员能力约束', () => {
     await expect(reassignmentEvidence.getByText('已替班')).toBeVisible()
     await expect(reassignmentEvidence.getByText('TRACE-LABOR-REASSIGN-WO-013-OP-10')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '人员替班回放' }).getByText('1')).toBeVisible()

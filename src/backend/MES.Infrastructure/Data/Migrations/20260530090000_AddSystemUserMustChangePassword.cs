@@ -1,4 +1,3 @@
-using System;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -15,15 +14,11 @@ namespace MES.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DeleteData(
-                table: "system_users",
-                keyColumn: "id",
-                keyValue: "su-001");
-
-            migrationBuilder.DeleteData(
-                table: "system_users",
-                keyColumn: "id",
-                keyValue: "su-002");
+            migrationBuilder.Sql(
+                """
+                DELETE FROM system_users
+                WHERE id IN ('su-001', 'su-002');
+                """);
 
             migrationBuilder.AddColumn<bool>(
                 name: "must_change_password",
@@ -40,14 +35,13 @@ namespace MES.Infrastructure.Data.Migrations
                 name: "must_change_password",
                 table: "system_users");
 
-            migrationBuilder.InsertData(
-                table: "system_users",
-                columns: new[] { "id", "created_at", "display_name", "is_active", "last_login_at", "password_hash", "role", "username" },
-                values: new object[,]
-                {
-                    { "su-001", new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), "管理员", true, null, "AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=", "Admin", "admin" },
-                    { "su-002", new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), "操作员1", true, null, "AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=", "Operator", "operator1" }
-                });
+            migrationBuilder.Sql(
+                """
+                INSERT INTO system_users (id, created_at, display_name, is_active, last_login_at, password_hash, role, username)
+                VALUES
+                    ('su-001', TIMESTAMPTZ '2024-01-01T00:00:00Z', '管理员', TRUE, NULL, 'AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=', 'Admin', 'admin'),
+                    ('su-002', TIMESTAMPTZ '2024-01-01T00:00:00Z', '操作员1', TRUE, NULL, 'AQEBAQEBAQEBAQEBAQEBAQ==.35cziqw/zb53O4jwCidrn9gy/20A7z7NkbVtQGd8EZo=', 'Operator', 'operator1');
+                """);
         }
     }
 }

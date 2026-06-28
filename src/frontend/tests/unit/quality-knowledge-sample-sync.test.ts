@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMemoryLocalStorage } from './test-storage'
 import {
   approveQualityKnowledgeGrayReleaseExpansion,
+  approveQualityKnowledgeRetrainingCandidate,
   buildQualityKnowledgeAssetGovernanceRecords,
   buildQualityKnowledgeGrayReleaseMonitorRecords,
+  buildQualityKnowledgePolicyGovernanceRecords,
+  buildQualityKnowledgeRecommendationFeedbackGovernanceRecords,
   buildQualityKnowledgeRecommendationExperimentCandidateRecords,
+  buildQualityKnowledgeRecommendationExperimentComparisonRecords,
+  buildQualityKnowledgeReuseRanking,
+  buildQualityKnowledgeRetrainingGovernanceRecords,
   closeQualityKnowledgeGrayReviewIssueWithNegativeSample,
   closeLowScoreQualityKnowledgeReviewQueueRecord,
   createBarcodeQualityKnowledgeSample,
@@ -13,6 +19,7 @@ import {
   createLowScoreQualityKnowledgeReviewQueueRecord,
   decideQualityKnowledgeGrayRelease,
   grayPublishQualityExperimentShadowValidationVersion,
+  acceptQualityKnowledgeRecommendation,
   reopenQualityKnowledgeGrayPrevalidationWithScopeAdjustment,
   readQualityKnowledgeRecommendationFeedbackRecords,
   readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
@@ -40,6 +47,7 @@ import {
   readQualityKnowledgeSamples,
   readQualityKnowledgeSamplesBackendFirst,
   readQualityKnowledgeRetrainingVersionRecordsBackendFirst,
+  verifyQualityKnowledgeReuseClosure,
   writeQualityKnowledgeRecommendationFeedbackRecord,
   writeQualityKnowledgeReviewQueueRecord,
   writeQualityKnowledgeReuseClosure,
@@ -236,6 +244,38 @@ describe('quality knowledge sample sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/quality-knowledge-evidence', {
       params: { evidenceType: 'QualityKnowledgeSample', take: 12 },
     })
+  })
+
+  it('verifies reuse closure with formal CAPA and effect feedback OTD evidence', () => {
+    const sample = createBarcodeQualityKnowledgeSample('2026-05-31T08:00:00.000Z')
+    const draft = createBarcodeQualityReuseDraft(sample, '2026-05-31T08:30:00.000Z')
+    const closure = createBarcodeQualityReuseClosure(draft, '2026-05-31T09:30:00.000Z')
+
+    const verifiedClosure = verifyQualityKnowledgeReuseClosure(closure, '2026-05-31T10:30:00.000Z')
+
+    expect(readQualityKnowledgeReuseClosures()).toEqual([expect.objectContaining({
+      id: closure.id,
+      status: 'verified',
+      statusLabel: '复用效果已回写',
+      verifiedAt: '2026-05-31T10:30:00.000Z',
+    })])
+    expect(readOtdEvidenceChainRecords()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: `quality-reuse-formal-capa-${closure.id}`,
+        stage: '正式CAPA',
+        traceId: closure.traceId,
+        status: 'closed',
+        statusLabel: '正式 CAPA 已验证',
+      }),
+      expect.objectContaining({
+        id: `quality-reuse-effect-${closure.id}`,
+        stage: '质量复用效果',
+        traceId: closure.effectTraceId,
+        status: 'closed',
+        statusLabel: '效果已回写',
+        createdAt: verifiedClosure.verifiedAt,
+      }),
+    ]))
   })
 
   it('falls back to local retraining versions when backend payloads are invalid', async () => {
@@ -511,6 +551,14 @@ describe('quality knowledge sample sync', () => {
     httpGet.mockRejectedValueOnce(new Error('quality recommendation feedback backend unavailable'))
 
     await expect(readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst()).rejects.toThrow('quality recommendation feedback backend unavailable')
+  })
+
+  it('falls back to empty local quality knowledge records in offline demo mode instead of surfacing backend skip errors', async () => {
+    const offlineDemoError = new Error('Offline demo mode skipped backend request: /api/v1/scheduling/quality-knowledge-evidence')
+    offlineDemoError.name = 'OfflineDemoApiError'
+    httpGet.mockRejectedValueOnce(offlineDemoError)
+
+    await expect(readQualityKnowledgeSamplesBackendFirst()).resolves.toEqual([])
   })
 
   it('fails loud when backend retraining versions fail and no local version audit record exists', async () => {
@@ -1017,5 +1065,249 @@ describe('quality knowledge sample sync', () => {
       '跨线 OP-20 扭矩偏移影子灰度',
       '跨线影子场景 LX-A / LX-B 均未触发同名缺陷误召回。',
     ]))
+  })
+
+  it('summarizes expanded and rolled-back gray recommendation experiments with auditable gate evidence', () => {
+    const expandedGrayR6 = makeRetrainingVersion('QK-TRAIN-20260521-R6', 'gray_published', '2026-05-22T10:00:00.000Z')
+    const rolledBackGrayR5 = makeRetrainingVersion('QK-TRAIN-20260521-R5', 'gray_published', '2026-05-22T09:00:00.000Z')
+    const expandedDecision = makeGrayReleaseDecision(expandedGrayR6.trainingSetVersion, 'expanded', 'approved', {
+      releaseCycleLabel: '首次灰度发布',
+      decidedAt: '2026-05-22T12:00:00.000Z',
+      metricSnapshot: [
+        { label: '推荐采纳率', value: '100%' },
+        { label: '复验通过率', value: '100%' },
+        { label: '负样本误召回', value: '0 次' },
+      ],
+    })
+    const staleRollbackDecision = makeGrayReleaseDecision(expandedGrayR6.trainingSetVersion, 'rolled_back', 'not_required', {
+      releaseCycleLabel: '首次灰度发布',
+      decidedAt: '2026-05-22T11:00:00.000Z',
+      auditId: 'AUD-QK-TRAIN-20260521-R6-STALE-ROLLBACK',
+      traceId: 'TRACE-QK-TRAIN-20260521-R6-STALE-ROLLBACK',
+      metricSnapshot: [
+        { label: '推荐采纳率', value: '50%' },
+        { label: '复验通过率', value: '88%' },
+        { label: '负样本误召回', value: '1 次' },
+      ],
+    })
+    const rollbackDecision = makeGrayReleaseDecision(rolledBackGrayR5.trainingSetVersion, 'rolled_back', 'not_required', {
+      releaseCycleLabel: '首次灰度发布',
+      metricSnapshot: [
+        { label: '推荐采纳率', value: '50%' },
+        { label: '复验通过率', value: '88%' },
+        { label: '负样本误召回', value: '1 次' },
+      ],
+    })
+    const expandedFeedback = makeRecommendationFeedback({
+      id: 'quality-feedback-r6-adoption',
+      trainingSetVersion: expandedGrayR6.trainingSetVersion,
+      decision: 'accepted',
+      effectScoreAfter: 96,
+      effectTrendLabel: '91 -> 96',
+      auditId: 'AUD-KG-QA-FEEDBACK-R6-20260521-001',
+      traceId: 'TRACE-KG-QA-FEEDBACK-R6',
+      feedbackMetrics: [
+        { label: '推荐采纳率', value: '100%' },
+        { label: '复验通过率', value: '100%' },
+        { label: '负样本误召回', value: '0 次' },
+      ],
+    })
+    const rollbackFeedback = makeRecommendationFeedback({
+      id: 'quality-feedback-r5-rejected',
+      trainingSetVersion: rolledBackGrayR5.trainingSetVersion,
+      decision: 'rejected',
+      effectScoreAfter: 70,
+      effectTrendLabel: '89 -> 70',
+      auditId: 'AUD-KG-QA-FEEDBACK-R5-20260521-001',
+      traceId: 'TRACE-KG-QA-FEEDBACK-R5',
+      feedbackMetrics: [
+        { label: '推荐采纳率', value: '50%' },
+        { label: '复验通过率', value: '88%' },
+        { label: '负样本误召回', value: '1 次' },
+      ],
+    })
+
+    const comparisons = buildQualityKnowledgeRecommendationExperimentComparisonRecords(
+      [expandedGrayR6, rolledBackGrayR5],
+      [expandedFeedback, rollbackFeedback],
+      [staleRollbackDecision, expandedDecision, rollbackDecision]
+    )
+
+    expect(comparisons).toHaveLength(2)
+    expect(comparisons[0]).toEqual(expect.objectContaining({
+      trainingSetVersion: expandedGrayR6.trainingSetVersion,
+      statusLabel: '实验已扩大',
+      statusClass: 'accepted',
+      decisionLabel: '扩大灰度范围 / 质量主管已确认扩大',
+      decisionAuditId: expandedDecision.auditId,
+      decisionTraceId: expandedDecision.traceId,
+      adoptionRateLabel: '100%',
+      recheckPassRateLabel: '100%',
+      falseRecallLabel: '0 次',
+      gatePassLabel: '门禁通过',
+      feedbackAuditLabel: expandedFeedback.auditId,
+      feedbackTraceLabel: expandedFeedback.traceId,
+      experimentScoreLabel: '99 分',
+    }))
+    expect(comparisons[1]).toEqual(expect.objectContaining({
+      trainingSetVersion: rolledBackGrayR5.trainingSetVersion,
+      statusLabel: '实验已回滚',
+      statusClass: 'guarded',
+      decisionLabel: '回滚到 R2 正式版 / 回滚无需扩大审批',
+      decisionAuditId: rollbackDecision.auditId,
+      decisionTraceId: rollbackDecision.traceId,
+      adoptionRateLabel: '0%',
+      recheckPassRateLabel: '88%',
+      falseRecallLabel: '1 次',
+      gatePassLabel: '门禁未通过',
+      feedbackAuditLabel: rollbackFeedback.auditId,
+      feedbackTraceLabel: rollbackFeedback.traceId,
+      experimentScoreLabel: '8 分',
+    }))
+  })
+
+  it('prioritizes the latest approved gray expansion in quality knowledge reuse ranking', () => {
+    const publishedR2 = makeRetrainingVersion('QK-TRAIN-20260521-R2', 'published', '2026-05-21T10:00:00.000Z')
+    const expandedGrayR6 = makeRetrainingVersion('QK-TRAIN-20260521-R6', 'gray_published', '2026-05-22T10:00:00.000Z')
+    const staleRollbackDecision = makeGrayReleaseDecision(expandedGrayR6.trainingSetVersion, 'rolled_back', 'not_required', {
+      releaseCycleLabel: '首次灰度发布',
+      decidedAt: '2026-05-22T11:00:00.000Z',
+      auditId: 'AUD-QK-TRAIN-20260521-R6-STALE-ROLLBACK',
+      traceId: 'TRACE-QK-TRAIN-20260521-R6-STALE-ROLLBACK',
+    })
+    const approvedExpansionDecision = makeGrayReleaseDecision(expandedGrayR6.trainingSetVersion, 'expanded', 'approved', {
+      releaseCycleLabel: '首次灰度发布',
+      decidedAt: '2026-05-22T12:00:00.000Z',
+      auditId: 'AUD-QK-TRAIN-20260521-R6-LATEST-EXPANSION',
+      traceId: 'TRACE-QK-TRAIN-20260521-R6-LATEST-EXPANSION',
+      metricSnapshot: [
+        { label: '推荐采纳率', value: '100%' },
+        { label: '复验通过率', value: '100%' },
+        { label: '负样本误召回', value: '0 次' },
+      ],
+    })
+
+    const ranking = buildQualityKnowledgeReuseRanking(
+      null,
+      null,
+      [publishedR2, expandedGrayR6],
+      [],
+      [staleRollbackDecision, approvedExpansionDecision]
+    )
+    const torqueRanking = ranking.find(item => item.id === 'reuse-rank-published-torque-retraining')
+
+    expect(torqueRanking).toEqual(expect.objectContaining({
+      trainingSetVersion: expandedGrayR6.trainingSetVersion,
+      statusLabel: '实验扩大优先',
+      experimentDecisionLabel: '扩大灰度范围 / 质量主管已确认扩大',
+      experimentDecisionAuditId: approvedExpansionDecision.auditId,
+      experimentDecisionTraceId: approvedExpansionDecision.traceId,
+    }))
+    expect(torqueRanking?.rankReason).toContain(approvedExpansionDecision.auditId)
+    expect(torqueRanking?.rankReason).not.toContain(staleRollbackDecision.auditId)
+    expect(torqueRanking?.riskTags).toContain('实验已扩大')
+  })
+
+  it('persists accepted quality recommendation feedback with next-training OTD evidence', () => {
+    const publishedR2 = makeRetrainingVersion('QK-TRAIN-20260521-R2', 'published', '2026-05-21T10:00:00.000Z')
+    const [ranking] = buildQualityKnowledgeReuseRanking(null, null, [publishedR2], [], [])
+
+    const feedback = acceptQualityKnowledgeRecommendation(ranking, '2026-05-31T11:00:00.000Z')
+
+    expect(readQualityKnowledgeRecommendationFeedbackRecords()).toEqual([expect.objectContaining({
+      id: feedback.id,
+      rankingId: ranking.id,
+      trainingSetVersion: publishedR2.trainingSetVersion,
+      targetWorkOrderId: ranking.targetWorkOrderId,
+      operationCode: ranking.operationCode,
+      auditId: feedback.auditId,
+      traceId: feedback.traceId,
+      nextTrainingSetVersion: 'QK-TRAIN-20260521-R3',
+      nextTrainingTraceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R3',
+    })])
+    expect(readOtdEvidenceChainRecords()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: `quality-recommendation-feedback-${feedback.id}`,
+        stage: '推荐采纳反馈',
+        traceId: feedback.traceId,
+        status: 'closed',
+        statusLabel: feedback.decisionLabel,
+      }),
+      expect.objectContaining({
+        id: `quality-recommendation-next-training-${feedback.id}`,
+        stage: '下一轮训练集',
+        traceId: feedback.nextTrainingTraceId,
+        status: 'ready',
+        statusLabel: '下一轮候选',
+      }),
+    ]))
+  })
+
+  it('builds admin quality governance cards with status-specific audit and trace evidence', () => {
+    const openReview = createLowScoreQualityKnowledgeReviewQueueRecord('2026-05-31T09:40:00.000Z')
+    const closedReview = closeLowScoreQualityKnowledgeReviewQueueRecord(openReview, '2026-05-31T10:00:00.000Z')
+    const validationPassedVersion = runQualityKnowledgeNextTrainingSetValidationPass(
+      approveQualityKnowledgeRetrainingCandidate(closedReview, '2026-05-31T10:10:00.000Z'),
+      '2026-05-31T10:20:00.000Z'
+    )
+    const rolledBackVersion = rollbackQualityKnowledgeRetrainingVersion(validationPassedVersion, '2026-05-31T10:30:00.000Z')
+    const feedback = makeRecommendationFeedback({
+      id: 'quality-feedback-r3-governance',
+      trainingSetVersion: validationPassedVersion.trainingSetVersion,
+      nextTrainingSetVersion: 'QK-TRAIN-20260521-R4',
+      nextTrainingTraceId: 'TRACE-KG-QA-R4-MERGED',
+    })
+
+    const policyCards = buildQualityKnowledgePolicyGovernanceRecords([openReview, closedReview])
+    const retrainingCards = buildQualityKnowledgeRetrainingGovernanceRecords([validationPassedVersion, rolledBackVersion])
+    const feedbackCards = buildQualityKnowledgeRecommendationFeedbackGovernanceRecords([feedback])
+
+    expect(policyCards).toEqual([
+      expect.objectContaining({
+        id: `quality-policy-${openReview.id}`,
+        statusLabel: openReview.statusLabel,
+        statusClass: 'logged',
+        auditId: openReview.auditId,
+        traceId: openReview.traceId,
+      }),
+      expect.objectContaining({
+        id: `quality-policy-${closedReview.id}`,
+        statusLabel: closedReview.decisionLabel,
+        statusClass: 'guarded',
+        auditId: closedReview.decisionAuditId,
+        traceId: closedReview.decisionTraceId,
+        retrainingTraceId: closedReview.retrainingTraceId,
+      }),
+    ])
+    expect(retrainingCards).toEqual([
+      expect.objectContaining({
+        id: `quality-retraining-governance-${validationPassedVersion.id}`,
+        statusLabel: validationPassedVersion.statusLabel,
+        statusClass: 'accepted',
+        auditId: validationPassedVersion.validationAuditId,
+        traceId: validationPassedVersion.validationTraceId,
+        validationSummary: validationPassedVersion.validationFindings?.join(' / '),
+      }),
+      expect.objectContaining({
+        id: `quality-retraining-governance-${rolledBackVersion.id}`,
+        statusLabel: rolledBackVersion.statusLabel,
+        statusClass: 'guarded',
+        auditId: rolledBackVersion.rollbackAuditId,
+        traceId: rolledBackVersion.rollbackTraceId,
+        rollbackTarget: rolledBackVersion.rollbackTargetVersion,
+      }),
+    ])
+    expect(feedbackCards).toEqual([
+      expect.objectContaining({
+        id: `quality-recommendation-feedback-governance-${feedback.id}`,
+        statusLabel: feedback.decisionLabel,
+        statusClass: 'accepted',
+        trainingLabel: `${feedback.trainingSetVersion} -> ${feedback.nextTrainingSetVersion}`,
+        auditId: feedback.auditId,
+        traceId: feedback.traceId,
+        nextTrainingTraceId: feedback.nextTrainingTraceId,
+        metricsLabel: '推荐采纳率 100% / 复验通过率 100%',
+      }),
+    ])
   })
 })

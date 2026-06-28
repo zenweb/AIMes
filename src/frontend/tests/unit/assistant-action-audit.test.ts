@@ -110,6 +110,26 @@ describe('assistant action audit', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/assistant-action-audits', { params: { take: 12 } })
   })
 
+  it('ignores incomplete backend audits so permission result labels and trace evidence stay auditable', async () => {
+    recordAssistantActionAudit({
+      action: action(),
+      actor: 'admin',
+      role: 'Planner',
+      permitted: true,
+    })
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'AUD-CHAT-PARTIAL',
+          actionId: 'action-delivery-recovery',
+          auditCode: 'AUD-CHAT-PARTIAL',
+        },
+      ],
+    })
+
+    await expect(readAssistantActionAuditsBackendFirst()).resolves.toEqual(readAssistantActionAudits())
+  })
+
   it('surfaces backend failures when fail-loud replay evidence is requested', async () => {
     httpGet.mockRejectedValueOnce(new Error('assistant audit backend unavailable'))
 

@@ -86,6 +86,40 @@ describe('anomaly dispatch sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/anomaly-dispatch-records', { params: { take: 12 } })
   })
 
+  it('ignores incomplete backend dispatch records so owner action and affected orders stay auditable', async () => {
+    const localRecord = dispatch()
+    writeAnomalyDispatchRecord(localRecord)
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'anomaly-dispatch-AN-001',
+          anomalyId: 'AN-001',
+          type: 'equipment',
+          title: 'CNC-001 主轴温升异常',
+          traceId: 'TRACE-ANOMALY-DISPATCH-001',
+          createdAt: '2026-06-01T08:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(readAnomalyDispatchRecordsBackendFirst()).resolves.toEqual([localRecord])
+    await expect(readAnomalyDispatchRecordByTypeBackendFirst('equipment')).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud when anomaly dispatch backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readAnomalyDispatchRecordsBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组异常分流审计载荷')
+  })
+
+  it('fails loud for anomaly dispatch refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('anomaly dispatch backend unavailable'))
+
+    await expect(readAnomalyDispatchRecordsBackendFirst({ failLoud: true }))
+      .rejects.toThrow('anomaly dispatch backend unavailable')
+  })
+
   it('keeps only the latest dispatch for the same id and caps local records at 12', () => {
     writeAnomalyDispatchRecord(dispatch({ id: 'same-id', anomalyId: 'AN-001', summary: '旧分流' }))
     writeAnomalyDispatchRecord(dispatch({ id: 'same-id', anomalyId: 'AN-001', summary: '新分流' }))

@@ -9,6 +9,7 @@ import {
   isOfflineDemoMode,
   logUnlessOfflineDemo,
   setOfflineDemoMode,
+  shouldSkipBackendForOfflineDemo,
 } from '../../src/utils/offline-demo-mode'
 
 describe('offline demo mode utilities', () => {
@@ -56,6 +57,44 @@ describe('offline demo mode utilities', () => {
     expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
   })
 
+  it('keeps live backend requests enabled when a real token outlives stale persisted demo mode', () => {
+    setOfflineDemoMode(true)
+
+    expect(shouldSkipBackendForOfflineDemo('backend-access-token')).toBe(false)
+  })
+
+  it('still skips backend requests for explicit demo entry or demo tokens', () => {
+    setOfflineDemoMode(true)
+    expect(shouldSkipBackendForOfflineDemo('demo-token-admin')).toBe(true)
+
+    window.history.replaceState({}, '', '/dashboard?offlineDemo=1')
+    expect(shouldSkipBackendForOfflineDemo('backend-access-token')).toBe(true)
+  })
+
+  it('falls back to live mode when offline demo storage cannot be read', () => {
+    vi.stubEnv('VITE_OFFLINE_DEMO', 'true')
+    vi.spyOn(localStorage, 'getItem').mockImplementation((key: string) => {
+      if (key === 'aimes_offline_demo') {
+        throw new Error('offline demo storage unavailable')
+      }
+      return null
+    })
+
+    expect(isOfflineDemoMode()).toBe(false)
+  })
+
+  it('keeps URL live opt-out usable when offline demo storage cannot persist the value', () => {
+    vi.stubEnv('VITE_OFFLINE_DEMO', 'true')
+    window.history.replaceState({}, '', '/dashboard?offlineDemo=false')
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key: string) => {
+      if (key === 'aimes_offline_demo') {
+        throw new Error('offline demo storage unavailable')
+      }
+    })
+
+    expect(isOfflineDemoMode()).toBe(false)
+  })
+
   it('classifies offline demo backend skips by class, code, marker, or name', () => {
     const error = new OfflineDemoApiError('/api/v1/dashboard')
 
@@ -64,6 +103,47 @@ describe('offline demo mode utilities', () => {
     expect(isOfflineDemoError({ isOfflineDemoApiError: true })).toBe(true)
     expect(isOfflineDemoError({ name: 'OfflineDemoApiError' })).toBe(true)
     expect(isOfflineDemoError(new Error('network'))).toBe(false)
+  })
+
+  it('classifies wrapped offline demo backend skips by their preserved message', () => {
+    expect(isOfflineDemoError(new Error('Offline demo mode skipped backend request: /api/v1/employee'))).toBe(true)
+  })
+
+  it('classifies offline demo backend skips when an HTTP layer wraps the message', () => {
+    expect(isOfflineDemoError(new Error('Request failed: Offline demo mode skipped backend request: /api/v1/employee'))).toBe(true)
+  })
+
+  it('classifies offline demo backend skips from wrapped backend response messages', () => {
+    expect(isOfflineDemoError({
+      response: {
+        data: {
+          message: 'Offline demo mode skipped backend request: /api/v1/employee',
+        },
+      },
+    })).toBe(true)
+    expect(isOfflineDemoError({
+      response: {
+        data: {
+          title: 'Offline demo mode skipped backend request: /api/v1/employee',
+        },
+      },
+    })).toBe(true)
+  })
+
+  it('classifies offline demo backend skips when request layers preserve the original error as cause', () => {
+    expect(isOfflineDemoError(new Error('Request failed', {
+      cause: new OfflineDemoApiError('/api/v1/employee'),
+    }))).toBe(true)
+    expect(isOfflineDemoError({
+      message: '员工列表加载失败',
+      cause: {
+        response: {
+          data: {
+            title: 'Offline demo mode skipped backend request: /api/v1/employee',
+          },
+        },
+      },
+    })).toBe(true)
   })
 
   it('builds a useful skipped request error from axios config', () => {

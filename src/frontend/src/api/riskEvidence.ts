@@ -1,15 +1,17 @@
-import http from './http'
+import http, { type AimesRequestConfig } from './http'
 import type { AnomalyDispatchRecord } from '../utils/anomaly-dispatch-sync'
 import type { MonitoringSituationEscalation } from '../utils/monitoring-situation-escalation-sync'
 import type { ProductionAnomalyEvent } from '../utils/production-anomaly-sync'
 import type { RiskActionTrace } from '../utils/risk-action-sync'
 import type { RiskSlaReviewRecord } from '../utils/risk-sla-review-sync'
 
-export async function getLatestProductionAnomalyEvent(): Promise<ProductionAnomalyEvent | null> {
+export async function getLatestProductionAnomalyEvent(options?: { failLoud?: boolean }): Promise<ProductionAnomalyEvent | null> {
   try {
-    const { data } = await http.get<ProductionAnomalyEvent>('/scheduling/production-anomaly-event/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<ProductionAnomalyEvent>('/scheduling/production-anomaly-event/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -19,11 +21,12 @@ export async function upsertProductionAnomalyEvent(item: ProductionAnomalyEvent)
   return data
 }
 
-export async function queryAnomalyDispatchRecords(take = 12): Promise<AnomalyDispatchRecord[]> {
+export async function queryAnomalyDispatchRecords(take = 12, options?: { failLoud?: boolean }): Promise<AnomalyDispatchRecord[]> {
   try {
     const { data } = await http.get<AnomalyDispatchRecord[]>('/scheduling/anomaly-dispatch-records', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
@@ -48,11 +51,13 @@ export async function upsertMonitoringSituationEscalation(item: MonitoringSituat
   return data
 }
 
-export async function getLatestRiskSlaReview(): Promise<RiskSlaReviewRecord | null> {
+export async function getLatestRiskSlaReview(options?: { failLoud?: boolean }): Promise<RiskSlaReviewRecord | null> {
   try {
-    const { data } = await http.get<RiskSlaReviewRecord>('/scheduling/risk-sla-review/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<RiskSlaReviewRecord>('/scheduling/risk-sla-review/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -62,11 +67,12 @@ export async function upsertRiskSlaReview(item: RiskSlaReviewRecord): Promise<Ri
   return data
 }
 
-export async function queryRiskActionTraces(take = 12): Promise<RiskActionTrace[]> {
+export async function queryRiskActionTraces(take = 12, options?: { failLoud?: boolean }): Promise<RiskActionTrace[]> {
   try {
     const { data } = await http.get<RiskActionTrace[]>('/scheduling/risk-action-traces', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }

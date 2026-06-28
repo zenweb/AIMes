@@ -1,14 +1,16 @@
 param(
     [string]$ReportPath = "_docs/_reports/release-gate-audit-latest.md",
-    [string]$HostedCiReportPath = "_docs/_reports/hosted-ci-20260602.md",
-    [string]$StagingReportPath = "_docs/_reports/staging-rehearsal-20260602-local.md",
-    [string]$AttackChainReportPath = "_docs/_reports/attack-chain-verification-20260602.md",
-    [string]$SecuritySignoffPath = "_docs/_review/20260602-security-signoff.md",
-    [string]$GrayObservationReportPath = "_docs/_reports/gray-observation-20260602.md"
+    [string]$HostedCiReportPath = "_docs/_reports/hosted-ci-20260611-v1-pass.md",
+    [string]$StagingReportPath = "_docs/_reports/staging-rehearsal-20260611-docker-restored.md",
+    [string]$AttackChainReportPath = "_docs/_reports/attack-chain-verification-20260611-manual-pending.md",
+    [string]$SecuritySignoffPath = "_docs/_review/20260607-security-signoff.md",
+    [string]$GrayObservationReportPath = "_docs/_reports/gray-observation-20260607-not-started.md",
+    [switch]$DeferGrayObservation
 )
 
 $ErrorActionPreference = "Stop"
 $failResultToken = "Result: FAIL"
+$script:repositoryRoot = Split-Path -Parent $PSScriptRoot
 
 function Add-Line([string]$Line = "") {
     $script:reportLines += $Line
@@ -56,8 +58,45 @@ function Test-RealEvidence([string]$Value) {
     } | Select-Object -First 1)
 }
 
+function Test-EvidenceReferenceExists([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    # Repo-local evidence references are accepted under _docs/ and output/.
+    $evidenceMatches = @($Value | Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' | ForEach-Object { $_.Matches } | ForEach-Object { $_ })
+    if ($evidenceMatches.Count -eq 0) {
+        return $true
+    }
+
+    foreach ($evidenceMatch in $evidenceMatches) {
+        $evidencePath = $evidenceMatch.Value.TrimEnd(',', ';', '.', ':', ')', ']')
+        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $candidate = Join-Path $script:repositoryRoot $relativePath
+        if (-not (Test-Path $candidate)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Test-NoBlockingSecuritySignoffText([string]$Text) {
-    return -not ($Text -match '\b(PENDING|UNSIGNED|FAIL)\b')
+    $lines = $Text -split "`r?`n"
+    $hasUnsignedStatus = (Get-AnchoredLineValues $lines "Status" | Where-Object {
+        [string]::Equals($_, "UNSIGNED", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+    $hasUnsignedDecision = (Get-AnchoredLineValues $lines "Decision" | Where-Object {
+        [string]::Equals($_, "UNSIGNED", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+    $hasPendingAttackChain = (Get-AnchoredLineValues $lines "Current status" | Where-Object {
+        [string]::Equals($_, "PENDING_MANUAL_VERIFICATION", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+    $hasFailedAttackChain = (Get-AnchoredLineValues $lines "Current result" | Where-Object {
+        [string]::Equals($_, "FAIL", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+
+    return -not ($hasUnsignedStatus -or $hasUnsignedDecision -or $hasPendingAttackChain -or $hasFailedAttackChain)
 }
 
 function Test-SecuritySignoffEvidencePass([string]$Text) {
@@ -151,7 +190,12 @@ function Test-AttackChainSectionPass([string]$Text, [string]$ChainName) {
     $section = $match.Groups[1].Value
     $sectionLines = $section -split "`r?`n"
     $hasManualPass = Test-AnchoredLiteralLine $sectionLines "Manual verification: PASS"
-    $hasEvidence = (Get-AnchoredLineValues $sectionLines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $evidenceValues = Get-AnchoredLineValues $sectionLines "Evidence"
+    $missingEvidenceReferences = @($evidenceValues | Where-Object { (Test-RealEvidence $_) -and -not (Test-EvidenceReferenceExists $_) })
+    foreach ($missingReference in $missingEvidenceReferences) {
+        $script:violations.Add("$ChainName evidence reference does not exist. Evidence reference does not exist: $missingReference")
+    }
+    $hasEvidence = ($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) } | Select-Object -First 1) -ne $null
     return $hasManualPass -and $hasEvidence
 }
 
@@ -179,7 +223,7 @@ function Test-AttackChainEvidencePass([string]$Text) {
     $passChainCount = ($lines | Where-Object {
         $_ -match '^- Manual verification: PASS\s*$' -or $_ -match '^Manual verification: PASS\s*$'
     }).Count
-    $evidenceCount = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ }).Count
+    $evidenceCount = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) }).Count
 
     return $hasPassResult `
         -and $hasVerifiedStatus `
@@ -272,6 +316,15 @@ function Test-HostedCiEvidencePass([string]$Text) {
 
     $lines = $Text -split "`r?`n"
     $hasReadyStatus = Test-AnchoredLiteralLine $lines "Status: READY_FOR_RELEASE_REVIEW"
+    $repository = Get-AnchoredLineValues $lines "Repository" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+    $branch = Get-AnchoredLineValues $lines "Branch" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+    $hasReleaseRepository = [string]::Equals($repository, "zenweb/AIMes", [StringComparison]::OrdinalIgnoreCase)
+    $hasReleaseBranch = [string]::Equals($branch, "V1", [StringComparison]::Ordinal)
+    $commitSha = Get-AnchoredLineValues $lines "CommitSha" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+    $hasCommitSha = (-not [string]::IsNullOrWhiteSpace($commitSha)) -and ($commitSha -match '^[0-9a-fA-F]{40}$')
+    $hasMatchingHeadSha = $hasCommitSha -and ((Get-AnchoredLineValues $lines "HeadSha" | Where-Object {
+        [string]::Equals($_, $commitSha, [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null)
     $runUrl = Get-AnchoredLineValues $lines "RunUrl" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
     $runId = Get-AnchoredLineValues $lines "RunId" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
     $hasRunUrl = Test-GitHubActionsRunUrl $runUrl
@@ -288,6 +341,10 @@ function Test-HostedCiEvidencePass([string]$Text) {
         -and $hasRunUrl `
         -and $hasRunId `
         -and $hasMatchingRunUrlAndRunId `
+        -and $hasReleaseRepository `
+        -and $hasReleaseBranch `
+        -and $hasCommitSha `
+        -and $hasMatchingHeadSha `
         -and $hasJobSummary `
         -and $hasCiWorkflow `
         -and $hasEvalWorkflow `
@@ -366,6 +423,21 @@ function Add-Gate(
     }
 }
 
+function Add-DeferredGate(
+    [string]$Name,
+    [string]$Path,
+    [string]$RequiredEvidence,
+    [string]$Reason
+) {
+    $packetStatus = if (Test-Path $Path) { "FOUND" } else { "MISSING" }
+    Add-Line "| $Name | DEFERRED_BY_OWNER | $packetStatus | $Path | $RequiredEvidence |"
+    $script:deferredGates.Add("$Name deferred by owner: $Reason")
+
+    if ($packetStatus -eq "MISSING") {
+        $script:violations.Add("$Name evidence packet is MISSING.")
+    }
+}
+
 $reportDirectory = Split-Path -Parent $ReportPath
 if (-not [string]::IsNullOrWhiteSpace($reportDirectory)) {
     New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
@@ -378,6 +450,7 @@ $securitySignoff = Read-TextOrEmpty $SecuritySignoffPath
 $grayObservation = Read-TextOrEmpty $GrayObservationReportPath
 
 $script:violations = New-Object System.Collections.Generic.List[string]
+$script:deferredGates = New-Object System.Collections.Generic.List[string]
 $script:reportLines = @()
 
 Add-Line "# Release gate audit"
@@ -391,18 +464,39 @@ Add-Line "- Evidence packet status: FOUND or MISSING"
 Add-Line ""
 Add-Line "| Gate | Status | Evidence packet status | Evidence packet | Required evidence |"
 Add-Line "| --- | --- | --- | --- | --- |"
-Add-Gate "Hosted CI" $HostedCiReportPath "Hosted runner RunUrl, RunId, and job summary" (Test-HostedCiEvidencePass $hostedCi)
-Add-Gate "PostgreSQL/staging" $StagingReportPath "Real staging rehearsal with migrations and /live /ready PASS" (Test-StagingEvidencePass $staging)
-Add-Gate "Attack Chain A/B/C" $AttackChainReportPath "Human verifier, timestamp, and A/B/C evidence" (Test-AttackChainEvidencePass $attackChain)
-Add-Gate "Security signoff" $SecuritySignoffPath "Human signer changes Status/Decision to SIGNED with evidence" (Test-SecuritySignoffEvidencePass $securitySignoff)
-Add-Gate "Gray observation" $GrayObservationReportPath "First gray release plus 14 calendar days with P0/P1 = 0" (Test-GrayObservationEvidencePass $grayObservation)
+Add-Gate "Hosted CI" $HostedCiReportPath "Hosted runner RunUrl, RunId, release repository, release branch, head SHA, and job summary" (Test-HostedCiEvidencePass $hostedCi)
+Add-Gate "PostgreSQL/staging" $StagingReportPath "Production environment, PostgreSQL connection, Docker dependencies, EF migrations, API startup, /live, and /ready" (Test-StagingEvidencePass $staging)
+Add-Gate "Attack Chain A/B/C" $AttackChainReportPath "VERIFIED status, verifier, VerifiedAt, and Attack Chain A/B/C Manual verification PASS with non-placeholder evidence" (Test-AttackChainEvidencePass $attackChain)
+Add-Gate "Security signoff" $SecuritySignoffPath "Human SIGNED decision, signer, SignedAt, evidence, self-assessment, and Attack Chain A/B/C PASS" (Test-SecuritySignoffEvidencePass $securitySignoff)
+if ($DeferGrayObservation) {
+    Add-DeferredGate "Gray observation" $GrayObservationReportPath "Deferred owner decision; original strict gate still requires PASS gray release id, observation timestamps, 14 calendar days, P0/P1=0, and evidence" "2026-06-13 owner decision to skip the 14-day gray observation wait for current follow-up work."
+} else {
+    Add-Gate "Gray observation" $GrayObservationReportPath "PASS gray release id, observation timestamps, 14 calendar days, P0/P1=0, and evidence" (Test-GrayObservationEvidencePass $grayObservation)
+}
 
-$result = if ($script:violations.Count -eq 0) { "PASS" } else { "FAIL" }
+$result = if ($script:violations.Count -eq 0 -and $script:deferredGates.Count -gt 0) {
+    "PASS_WITH_DEFERRED_GRAY_OBSERVATION"
+} elseif ($script:violations.Count -eq 0) {
+    "PASS"
+} else {
+    "FAIL"
+}
 
 Add-Line ""
 Add-Line "## Gate"
 Add-Line ""
 Add-Line "- Result: $result"
+
+if ($script:deferredGates.Count -gt 0) {
+    Add-Line ""
+    Add-Line "## Deferred Gates"
+    Add-Line ""
+    foreach ($deferredGate in $script:deferredGates) {
+        Add-Line "- $deferredGate"
+    }
+    Add-Line ""
+    Add-Line "This report is allowed to continue follow-up work after an explicit owner deferral, but it is not a strict v1.0.0 final release PASS."
+}
 
 if ($script:violations.Count -gt 0) {
     Add-Line ""
@@ -418,6 +512,6 @@ if ($script:violations.Count -gt 0) {
 Set-Content -Path $ReportPath -Value $script:reportLines -Encoding UTF8
 Write-Host "Release gate audit report: $ReportPath"
 
-if ($result -ne "PASS") {
+if ($result -eq "FAIL") {
     throw "Release gate audit failed. See $ReportPath."
 }

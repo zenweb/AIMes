@@ -90,7 +90,8 @@ export function readKnowledgeGovernanceReviews(): KnowledgeGovernanceReviewRecor
 export async function readKnowledgeGovernanceReviewsBackendFirst(): Promise<KnowledgeGovernanceReviewRecord[]> {
   try {
     const records = await queryKnowledgeGovernanceReviews()
-    return records.length > 0 ? records : readKnowledgeGovernanceReviews()
+    const backendRecords = records.filter(isKnowledgeGovernanceReviewRecord)
+    return backendRecords.length > 0 ? backendRecords : readKnowledgeGovernanceReviews()
   } catch (error: unknown) {
     const localRecords = readKnowledgeGovernanceReviews()
     if (localRecords.length > 0) return localRecords

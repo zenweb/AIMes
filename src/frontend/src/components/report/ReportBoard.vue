@@ -6,6 +6,7 @@
         <button class="btn-export" @click="handleExportCsv">CSV</button>
         <button class="btn-export" @click="handleExportExcel">Excel</button>
         <button class="btn-export" @click="handleExportPdf">PDF</button>
+        <span class="export-boundary-note">本地采纳证据随 CSV 导出；Excel/PDF 为后端报表快照。</span>
       </div>
     </div>
 
@@ -120,6 +121,20 @@
           <strong>{{ qualityMrbDisposition.defectQuantity }} 件报废补料</strong>
           <em>{{ qualityMrbDisposition.otdImpact }}</em>
           <code>{{ qualityMrbDisposition.closureTraceId ?? qualityMrbDisposition.traceId }}</code>
+        </div>
+      </div>
+
+      <div v-if="riskSlaReview" class="risk-sla-report">
+        <div>
+          <span class="eyebrow warning">风险 SLA 复核</span>
+          <h4>{{ riskSlaReview.reviewMeetingId }} 晨会责任动作进入 OTD 复盘</h4>
+          <p>{{ riskSlaReview.closureSummary ?? riskSlaReview.summary }}</p>
+        </div>
+        <div class="risk-sla-report-metrics">
+          <span>逾期 {{ riskSlaReview.overdueCount }} 项 / 关键 {{ riskSlaReview.criticalCount }} 项</span>
+          <strong>{{ riskSlaReview.statusLabel }}</strong>
+          <em>{{ riskSlaReview.otdImpact }}</em>
+          <code>{{ riskSlaReview.closureTraceId ?? riskSlaReview.traceId }}</code>
         </div>
       </div>
 
@@ -406,7 +421,12 @@
                 <li v-for="action in selectedOtdKpiDrilldown.nextActions" :key="action">{{ action }}</li>
               </ul>
             </div>
-            <button type="button" class="kpi-commitment-btn" @click="handleGenerateOtdKpiCommitment">
+            <button
+              type="button"
+              class="kpi-commitment-btn"
+              :disabled="hasActiveOtdKpiCommitment"
+              @click="handleGenerateOtdKpiCommitment"
+            >
               {{ selectedOtdKpiCommitmentButtonLabel }}
             </button>
             <div v-if="activeOtdKpiCommitment" class="kpi-commitment-card">
@@ -452,6 +472,7 @@
               <code>{{ selectedOtdDrilldown.traceId }}</code>
             </div>
             <h5>{{ selectedOtdDrilldown.title }}</h5>
+            <strong class="drilldown-question">{{ selectedOtdDrilldown.businessQuestion }}</strong>
             <p>{{ selectedOtdDrilldown.explanation }}</p>
             <div class="drilldown-detail-grid">
               <div>
@@ -710,7 +731,7 @@
         </div>
       </div>
 
-      <div v-if="pocPilotRun" class="poc-hypercare-panel" :class="{ active: pocHypercareAcceptance }">
+      <div v-if="pocPilotRun || pocHypercareAcceptance" class="poc-hypercare-panel" :class="{ active: pocHypercareAcceptance }">
         <div>
           <span class="eyebrow success">正式上线验收</span>
           <h4>{{ pocHypercareAcceptance ? pocHypercareAcceptance.title : '生成上线验收与 Hypercare 监控包' }}</h4>
@@ -918,7 +939,7 @@ import { readRiskActionTracesBackendFirst, type RiskActionTrace } from '../../ut
 import { readOtdEvidenceChainRecordsBackendFirst, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readOtdKpiCommitmentPackagesBackendFirst, writeOtdKpiCommitmentPackage, type OtdKpiCommitmentPackage } from '../../utils/otd-kpi-commitment-sync'
 import { readOutsourcingCommitmentPackagesBackendFirst, writeOutsourcingCommitmentPackage, type OutsourcingCommitmentPackage } from '../../utils/outsourcing-commitment-sync'
-import { appAssetPath } from '../../utils/offline-demo-mode'
+import { appAssetPath, isOfflineDemoError } from '../../utils/offline-demo-mode'
 import { getLocalUserReportActor } from '../../utils/local-user'
 import { errorMessage } from '../../utils/error-message'
 import {
@@ -955,6 +976,9 @@ const otdEvidenceRecords = ref<OtdEvidenceChainItem[]>([])
 const otdKpiCommitmentPackages = ref<OtdKpiCommitmentPackage[]>([])
 const outsourcingCommitmentPackages = ref<OutsourcingCommitmentPackage[]>([])
 const reportActionError = ref('')
+const reportEvidenceLoadError = ref('')
+const reportOperationError = ref('')
+const reportEvidenceLoadFailures: string[] = []
 const qualityRecommendationFeedbackRecords = ref<QualityKnowledgeRecommendationFeedbackRecord[]>([])
 const qualityRetrainingVersionRecords = ref<QualityKnowledgeRetrainingVersionRecord[]>([])
 const qualityGrayReleaseDecisionRecords = ref<QualityKnowledgeGrayReleaseDecisionRecord[]>([])
@@ -1241,6 +1265,7 @@ const activeOtdKpiCommitment = computed(() =>
 const activeOutsourcingCommitment = computed(() =>
   outsourcingCommitmentPackages.value.find(item => item.sourceKpiId === selectedOtdKpiDrilldown.value?.id) ?? null
 )
+const hasActiveOtdKpiCommitment = computed(() => Boolean(activeOtdKpiCommitment.value || activeOutsourcingCommitment.value))
 const selectedOtdKpiCommitmentButtonLabel = computed(() =>
   selectedOtdKpiDrilldown.value?.id === 'product-flange' ? '生成外协承诺包' : '生成客户交付恢复承诺包'
 )
@@ -1322,6 +1347,7 @@ const otdEvidenceChain = computed<OtdEvidenceItem[]>(() => {
       object: scheduleFeedback.value.objectiveLabel,
       source: 'AI 排产 / 人机协同复盘',
       traceId: scheduleFeedback.value.traceId ?? 'TRACE-SCH-FEEDBACK-BACKEND',
+      evidenceRef: scheduleFeedback.value.agentDecisionId,
       status: scheduleFeedback.value.decision === 'accepted' ? 'ready' : 'active',
       statusLabel: scheduleFeedback.value.decision === 'accepted' ? '已采纳' : '已拒绝',
       createdAt: scheduleFeedback.value.createdAt,
@@ -1421,6 +1447,8 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
   const isProduction = stage.includes('生产') || source.includes('生产报工')
   const isRisk = stage.includes('风险') || source.includes('风险')
   const isAssistant = stage.includes('助手') || source.includes('AI 生产助手')
+  const isScheduleFeedback = stage.includes('人工采纳') || item.id === 'schedule-feedback'
+  const isBatchScheduleFeedback = isScheduleFeedback && item.summary.includes('批量对比采纳')
 
   const route = isAssistant
     ? '/scheduling'
@@ -1453,33 +1481,41 @@ function mapOtdEvidenceToDrilldown(item: OtdEvidenceItem): OtdDrilldownItem {
   const owner = source.includes('/')
     ? source.split('/').map(part => part.trim()).filter(Boolean).slice(-1)[0] ?? source
     : source
-  const businessQuestion = isPurchase
-    ? '缺料风险是否已被采购承诺消除？'
-    : isEquipment
-      ? '瓶颈设备停机是否还会拖累交期？'
-      : isInventory
-        ? '齐套缺口是否已转成可执行供应动作？'
-        : isQuality
-          ? '质量返工是否已回写排产和 OTD？'
-          : isProduction
-            ? '生产异常或执行结果是否已进入排产和 OTD 复核？'
-          : isRisk
-            ? '延期风险来源是否已进入处置队列？'
-            : isAssistant
-              ? 'AI 助手是否把问答转成了可执行闭环？'
-              : 'Agent 推荐为什么能提升 OTD？'
+  const businessQuestion = isScheduleFeedback
+    ? isBatchScheduleFeedback
+      ? '批量对比采纳是否已进入 OTD 复盘？'
+      : '调度员采纳是否已进入 OTD 复盘？'
+    : isPurchase
+      ? '缺料风险是否已被采购承诺消除？'
+      : isEquipment
+        ? '瓶颈设备停机是否还会拖累交期？'
+        : isInventory
+          ? '齐套缺口是否已转成可执行供应动作？'
+          : isQuality
+            ? '质量返工是否已回写排产和 OTD？'
+            : isProduction
+              ? '生产异常或执行结果是否已进入排产和 OTD 复核？'
+            : isRisk
+              ? '延期风险来源是否已进入处置队列？'
+              : isAssistant
+                ? 'AI 助手是否把问答转成了可执行闭环？'
+                : 'Agent 推荐为什么能提升 OTD？'
   const effectLabel = item.status === 'closed'
     ? '已闭环，进入复盘口径'
     : item.status === 'ready'
       ? '已解释，可作为采纳证据'
       : '处理中，仍影响 OTD 风险'
   const riskLabel = item.statusLabel
-  const nextAction = item.status === 'closed'
-    ? `在${routeLabel}核对归档结果，确认复盘证据是否完整。`
-    : item.status === 'ready'
-      ? `在${routeLabel}核对方案解释，确认是否需要扩大到真实工单。`
-      : `进入${routeLabel}处理责任动作，并回写 OTD 证据链。`
-  const explanation = `${item.title} 解释了 ${item.object} 的 OTD 变化来源。${item.summary} 该证据来自 ${item.source}，当前状态为 ${item.statusLabel}，追踪号 ${item.traceId}。`
+  const nextAction = isScheduleFeedback
+    ? item.evidenceRef
+      ? `在${routeLabel}核对${isBatchScheduleFeedback ? '批量对比采纳' : '调度员采纳'}记录，确认目标、原因、traceId 和 Agent 决策证据 是否已同步到 OTD 证据链。`
+      : `在${routeLabel}核对${isBatchScheduleFeedback ? '批量对比采纳' : '调度员采纳'}记录，确认目标、原因和 traceId 是否已同步到 OTD 证据链。`
+    : item.status === 'closed'
+      ? `在${routeLabel}核对归档结果，确认复盘证据是否完整。`
+      : item.status === 'ready'
+        ? `在${routeLabel}核对方案解释，确认是否需要扩大到真实工单。`
+        : `进入${routeLabel}处理责任动作，并回写 OTD 证据链。`
+  const explanation = `${item.title} 解释了 ${item.object} 的 OTD 变化来源。${item.summary} 该证据来自 ${item.source}，当前状态为 ${item.statusLabel}，追踪号 ${item.traceId}${item.evidenceRef ? `，证据引用 ${item.evidenceRef}` : ''}。`
 
   return {
     ...item,
@@ -1659,7 +1695,7 @@ function handleExportCsv() {
       rows.push(['OTD经营钻取', `${drilldown.stage} / ${drilldown.businessQuestion}`, `${drilldown.effectLabel} / ${drilldown.owner} / ${drilldown.routeLabel} / ${drilldown.nextAction}`])
     }
     for (const evidence of otdEvidenceChain.value) {
-      rows.push(['OTD复盘证据链', `${evidence.stage} / ${evidence.title}`, `${evidence.statusLabel} / ${evidence.object} / ${evidence.traceId}`])
+      rows.push(['OTD复盘证据链', `${evidence.stage} / ${evidence.title}`, `${evidence.statusLabel} / ${evidence.object} / ${evidence.traceId}${evidence.evidenceRef ? ` / ${evidence.evidenceRef}` : ''}`])
     }
     for (const record of qualityRecommendationFeedbackRecords.value) {
       rows.push(['质量推荐学习闭环', `${record.targetWorkOrderId} ${record.operationCode}`, `${record.trainingSetVersion} -> ${record.nextTrainingSetVersion} / ${record.effectTrendLabel} / ${record.auditId}`])
@@ -1724,6 +1760,8 @@ function handleExportCsv() {
     if (qualityCapaClosure.value) {
       rows.push(['质量CAPA', '验证任务', qualityCapaClosure.value.taskTitle])
       rows.push(['质量CAPA', 'OTD复盘口径', qualityCapaClosure.value.otdImpact])
+      rows.push(['质量CAPA', '复盘动作', qualityCapaClosure.value.reviewAction])
+      rows.push(['质量CAPA', '根因与证据强度', `${qualityCapaClosure.value.rootCause} / ${Math.round(qualityCapaClosure.value.evidenceStrength * 100)}% / ${qualityCapaClosure.value.owner}`])
       rows.push(['质量CAPA', '审计编号', qualityCapaClosure.value.traceId])
     }
     if (qualityMrbDisposition.value) {
@@ -1792,10 +1830,26 @@ function handleExportCsv() {
       }
     }
     downloadCsv(csvFilename('报表'), headers, rows)
-    reportActionError.value = ''
+    setReportOperationError('')
   } catch (error: unknown) {
-    reportActionError.value = `报表 CSV 导出失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`报表 CSV 导出失败：${errorMessage(error, '请稍后重试')}`)
   }
+}
+
+function syncReportActionError() {
+  reportActionError.value = [reportEvidenceLoadError.value, reportOperationError.value]
+    .filter(Boolean)
+    .join('；')
+}
+
+function setReportEvidenceLoadError(message: string) {
+  reportEvidenceLoadError.value = message
+  syncReportActionError()
+}
+
+function setReportOperationError(message: string) {
+  reportOperationError.value = message
+  syncReportActionError()
 }
 
 function currentActor() {
@@ -1805,6 +1859,7 @@ function currentActor() {
 async function handleGenerateOtdKpiCommitment() {
   const item = selectedOtdKpiDrilldown.value
   if (!item) return
+  if (hasActiveOtdKpiCommitment.value) return
   try {
     if (item.id === 'product-flange') {
       const record = writeOutsourcingCommitmentPackage({
@@ -1825,7 +1880,7 @@ async function handleGenerateOtdKpiCommitment() {
         affectedOrders: 'WO-DEMO-1013',
       })
       outsourcingCommitmentPackages.value = [record, ...outsourcingCommitmentPackages.value.filter(entry => entry.id !== record.id)]
-      reportActionError.value = ''
+      setReportOperationError('')
       otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
       return
     }
@@ -1844,10 +1899,10 @@ async function handleGenerateOtdKpiCommitment() {
       actor: currentActor(),
     })
     otdKpiCommitmentPackages.value = [record, ...otdKpiCommitmentPackages.value.filter(item => item.id !== record.id)]
-    reportActionError.value = ''
+    setReportOperationError('')
     otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
   } catch (error: unknown) {
-    reportActionError.value = `OTD KPI 承诺包生成失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`OTD KPI 承诺包生成失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1865,9 +1920,9 @@ function handleReportFileExport(label: string, href: string, download: string) {
     a.href = href
     a.download = download
     a.click()
-    reportActionError.value = ''
+    setReportOperationError(`报表 ${label} 已请求后端快照导出；本地批量采纳证据请使用 CSV 导出。`)
   } catch (error: unknown) {
-    reportActionError.value = `报表 ${label} 导出失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`报表 ${label} 导出失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1875,7 +1930,8 @@ async function readOptionalReportEvidence<T>(label: string, read: () => Promise<
   try {
     return await read()
   } catch (error: unknown) {
-    reportActionError.value = `${label}加载失败：${errorMessage(error, '请稍后重试')}`
+    if (isOfflineDemoError(error)) return fallback
+    reportEvidenceLoadFailures.push(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
     return fallback
   }
 }
@@ -1884,9 +1940,16 @@ async function readScheduleFeedbackReportEvidence() {
   try {
     return await getLatestAdoptionFeedback() ?? readScheduleFeedbackSnapshot()
   } catch (error: unknown) {
-    reportActionError.value = `排产采纳反馈证据加载失败：${errorMessage(error, '请稍后重试')}`
+    if (isOfflineDemoError(error)) return readScheduleFeedbackSnapshot()
+    reportEvidenceLoadFailures.push(`排产采纳反馈证据加载失败：${errorMessage(error, '请稍后重试')}`)
     return readScheduleFeedbackSnapshot()
   }
+}
+
+function flushReportEvidenceLoadFailures() {
+  if (!reportEvidenceLoadFailures.length) return
+  setReportEvidenceLoadError(`报表证据加载失败：${reportEvidenceLoadFailures.join('；')}。已保留报表入口和本地演示复盘口径。`)
+  reportEvidenceLoadFailures.splice(0)
 }
 
 onMounted(async () => {
@@ -1915,6 +1978,7 @@ onMounted(async () => {
   qualityRecommendationFeedbackRecords.value = await readOptionalReportEvidence('质量推荐反馈证据', readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst, [])
   qualityRetrainingVersionRecords.value = await readOptionalReportEvidence('质量推荐再训练版本证据', readQualityKnowledgeRetrainingVersionRecordsBackendFirst, [])
   qualityGrayReleaseDecisionRecords.value = await readOptionalReportEvidence('质量灰度决策证据', readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst, [])
+  flushReportEvidenceLoadFailures()
   try { r.value = await getReportDashboard() }
   catch {
     r.value = {
@@ -1948,14 +2012,14 @@ async function handlePocReviewSignoff() {
       summary: `POC 评分 ${pocEvaluationResult.value.totalScore} / 100，客户工单导入与设备故障样例证据齐套，达到 ${pocTemplate.value.passScore} 分通过线。`,
     })
     if (!signoff) {
-      reportActionError.value = 'POC 复盘签署失败：签署记录未写入，请稍后重试'
+      setReportOperationError('POC 复盘签署失败：签署记录未写入，请稍后重试')
       return
     }
     pocReviewSignoff.value = signoff
-    reportActionError.value = ''
+    setReportOperationError('')
     otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
   } catch (error: unknown) {
-    reportActionError.value = `POC 复盘签署失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`POC 复盘签署失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1964,14 +2028,14 @@ async function handleGeneratePocRolloutPackage() {
   try {
     const rolloutPackage = writePocRolloutPackageRecord(pocReviewSignoff.value)
     if (!rolloutPackage) {
-      reportActionError.value = 'POC 上线交付包生成失败：交付包未写入，请稍后重试'
+      setReportOperationError('POC 上线交付包生成失败：交付包未写入，请稍后重试')
       return
     }
     pocRolloutPackage.value = rolloutPackage
-    reportActionError.value = ''
+    setReportOperationError('')
     otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
   } catch (error: unknown) {
-    reportActionError.value = `POC 上线交付包生成失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`POC 上线交付包生成失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1980,14 +2044,14 @@ async function handleConfirmPocPilotRun() {
   try {
     const pilotRun = writePocPilotRunRecord(pocRolloutPackage.value)
     if (!pilotRun) {
-      reportActionError.value = 'POC 试点运行确认失败：试点运行记录未写入，请稍后重试'
+      setReportOperationError('POC 试点运行确认失败：试点运行记录未写入，请稍后重试')
       return
     }
     pocPilotRun.value = pilotRun
-    reportActionError.value = ''
+    setReportOperationError('')
     otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
   } catch (error: unknown) {
-    reportActionError.value = `POC 试点运行确认失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`POC 试点运行确认失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1996,14 +2060,14 @@ async function handleGeneratePocHypercareAcceptance() {
   try {
     const hypercareAcceptance = writePocHypercareAcceptanceRecord(pocPilotRun.value)
     if (!hypercareAcceptance) {
-      reportActionError.value = 'POC Hypercare 验收包生成失败：Hypercare 验收记录未写入，请稍后重试'
+      setReportOperationError('POC Hypercare 验收包生成失败：Hypercare 验收记录未写入，请稍后重试')
       return
     }
     pocHypercareAcceptance.value = hypercareAcceptance
-    reportActionError.value = ''
+    setReportOperationError('')
     otdEvidenceRecords.value = await readOtdEvidenceChainRecordsBackendFirst()
   } catch (error: unknown) {
-    reportActionError.value = `POC Hypercare 验收包生成失败：${errorMessage(error, '请稍后重试')}`
+    setReportOperationError(`POC Hypercare 验收包生成失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -2075,7 +2139,8 @@ const demoPocTemplate: PocEvaluationTemplate = {
 .report-board { height: 100%; overflow-y: auto; padding: 16px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin: 0; }
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.export-boundary-note { color: #64748b; font-size: 12px; font-weight: 700; }
 .report-pro-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(460px, 0.9fr);
@@ -2140,6 +2205,13 @@ const demoPocTemplate: PocEvaluationTemplate = {
 .mrb-report-metrics span, .mrb-report-metrics em { color: #6b7280; font-size: 12px; font-style: normal; }
 .mrb-report-metrics strong { color: #c2410c; font-size: 18px; }
 .mrb-report-metrics code { color: #1d4ed8; font-size: 12px; overflow-wrap: anywhere; }
+.risk-sla-report { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr); gap: 12px; margin-bottom: 14px; padding: 12px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb; }
+.risk-sla-report h4 { margin: 0 0 6px; color: #111827; font-size: 14px; }
+.risk-sla-report p { margin: 0; color: #4b5563; font-size: 13px; line-height: 1.45; }
+.risk-sla-report-metrics { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 6px; background: #fff; border: 1px solid #fde68a; }
+.risk-sla-report-metrics span, .risk-sla-report-metrics em { color: #6b7280; font-size: 12px; font-style: normal; }
+.risk-sla-report-metrics strong { color: #92400e; font-size: 16px; }
+.risk-sla-report-metrics code { color: #1d4ed8; font-size: 12px; overflow-wrap: anywhere; }
 .quality-learning-report { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 6px; background: #f0fdf4; }
 .quality-learning-report h4 { margin: 0; color: #111827; font-size: 14px; }
 .learning-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr); gap: 10px; padding: 10px; border: 1px solid #bbf7d0; border-radius: 6px; background: #fff; }

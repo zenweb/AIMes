@@ -303,8 +303,9 @@ import { readShortageRiskResolutionBackendFirst, type ShortageRiskResolution } f
 import { readOtdEvidenceChainRecords, upsertOtdEvidenceChainRecord, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
 import { readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { getLocalAccessToken } from '../../utils/auth-token'
-import { appAssetPath, isOfflineDemoMode } from '../../utils/offline-demo-mode'
+import { appAssetPath, isOfflineDemoError, shouldSkipBackendForOfflineDemo } from '../../utils/offline-demo-mode'
 import { errorMessage } from '../../utils/error-message'
+import { resolveSignalRHubUrl } from '../../utils/signalr-url'
 
 const kpi = reactive<KpiCard>({ scheduleAdherence: 0, qualityPassRate: 0, equipmentUtilization: 0, activeOrders: 0 })
 const statusCounts = reactive({ running: 0, idle: 0, down: 0, maintenance: 0 })
@@ -533,10 +534,10 @@ function alertIcon(level: string) {
 }
 
 function connectSignalR() {
-  if (isOfflineDemoMode()) return
+  if (shouldSkipBackendForOfflineDemo(getLocalAccessToken())) return
 
   connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/monitoring', {
+    .withUrl(resolveSignalRHubUrl('/hubs/monitoring'), {
       accessTokenFactory: () => getLocalAccessToken() ?? '',
     })
     .withAutomaticReconnect([0, 2000, 5000, 10000])
@@ -567,6 +568,16 @@ onMounted(async () => {
     await applyDashboardData(data)
     dashboardDataError.value = ''
   } catch (error) {
+    if (isOfflineDemoError(error)) {
+      dashboardDataError.value = ''
+      try {
+        await applyShortageRiskResolution()
+      } catch {
+        shortageResolution.value = null
+      }
+      connectSignalR()
+      return
+    }
     dashboardDataError.value = `KPI、设备状态、今日排产与物料预警暂未加载：${errorMessage(error, '请稍后重试')}`
     try {
       await applyShortageRiskResolution()

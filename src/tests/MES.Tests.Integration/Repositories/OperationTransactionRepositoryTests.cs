@@ -109,6 +109,16 @@ public class OperationTransactionRepositoryTests
             return _inner.GetExecutionByCodeAsync(operationCode, ct);
         }
 
+        public Task<OperationExecution?> GetFirstExecutionByWorkOrderIdAsync(string workOrderId, CancellationToken ct = default)
+        {
+            return _inner.GetFirstExecutionByWorkOrderIdAsync(workOrderId, ct);
+        }
+
+        public Task<IReadOnlyList<OperationExecution>> GetExecutionsByWorkOrderIdAsync(string workOrderId, CancellationToken ct = default)
+        {
+            return _inner.GetExecutionsByWorkOrderIdAsync(workOrderId, ct);
+        }
+
         public Task<OperationExecution> AddExecutionAsync(OperationExecution execution, CancellationToken ct = default)
         {
             return _inner.AddExecutionAsync(execution, ct);

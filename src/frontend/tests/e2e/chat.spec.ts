@@ -37,7 +37,28 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+    })
+    await page.route('**/api/v1/**', async route => {
+      const url = route.request().url()
+      if (url.includes('/api/v1/auth/refresh')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            token: 'mock-e2e-token',
+            refreshToken: 'mock-e2e-refresh',
+            expiresAt: '2026-12-31T23:59:59Z',
+          }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chat e2e default backend unavailable' }),
+      })
     })
     await page.goto('dashboard', { waitUntil: 'commit' })
     await page.waitForSelector('.chat-fab', { timeout: 30000 })
@@ -122,6 +143,95 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     expect(queryRequests).toBeGreaterThan(0)
   })
 
+  test('启动上下文多源同步失败时真实浏览器只展示一条聚合 fail-loud 告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      const brokenKeys = new Set([
+        'aimes_anomaly_dispatch_records',
+        'aimes_monitoring_situation_escalations',
+        'aimes_risk_sla_review',
+      ])
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItem(key: string) {
+        if (brokenKeys.has(key)) throw new Error(`startup context local read unavailable: ${key}`)
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItem(key: string) {
+        if (brokenKeys.has(key)) throw new Error(`startup context cleanup unavailable: ${key}`)
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.goto('dashboard', { waitUntil: 'commit' })
+    await page.waitForSelector('.chat-fab', { timeout: 30000 })
+    await page.locator('.chat-fab').click()
+
+    const startupAlerts = page.locator('.message.assistant[role="alert"]').filter({
+      hasText: '助手上下文同步失败',
+    })
+    await expect(startupAlerts).toHaveCount(1, { timeout: 10000 })
+    await expect(startupAlerts.first()).toContainText('aimes_anomaly_dispatch_records')
+    await expect(startupAlerts.first()).toContainText('aimes_monitoring_situation_escalations')
+    await expect(startupAlerts.first()).toContainText('aimes_risk_sla_review')
+    await expect(page.locator('.chat-input')).toBeEnabled()
+  })
+
+  test('真实浏览器转义后端返回的 unsafe HTML 且只渲染受限 markdown', async ({ page }) => {
+    await page.route('**/api/v1/knowledge/query', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          answer: '**安全摘要**\n<script>window.__aimesXss = true</script><img src=x onerror="window.__aimesXss = true">',
+          sources: [],
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.locator('.chat-fab').click()
+
+    await page.locator('.chat-input').fill('渲染安全复核')
+    await page.locator('.send-btn').click()
+
+    const assistantContent = page.locator('.message.assistant .msg-content').last()
+    await expect(assistantContent.locator('strong')).toHaveText('安全摘要', { timeout: 10000 })
+    await expect(assistantContent).toContainText('<script>window.__aimesXss = true</script>')
+    await expect(assistantContent).toContainText('<img src=x onerror="window.__aimesXss = true">')
+    await expect(assistantContent.locator('script')).toHaveCount(0)
+    await expect(assistantContent.locator('img')).toHaveCount(0)
+    await expect.poll(() => page.evaluate(() => Boolean((window as Window & { __aimesXss?: boolean }).__aimesXss))).toBe(false)
+  })
+
+  test('真实浏览器归一化稀疏知识来源，避免证据分数显示 NaN', async ({ page }) => {
+    await page.route('**/api/v1/knowledge/query', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          answer: '当前产能稳定，CNC 产线负荷 82%。',
+          sources: [
+            {
+              sourceId: 'SRC-SPARSE',
+              sourceName: '生产日报缺少相似度',
+              content: '',
+            },
+          ],
+        }),
+      })
+    })
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.locator('.chat-fab').click()
+
+    await page.locator('.chat-input').fill('当前产能如何？')
+    await page.locator('.send-btn').click()
+
+    const chat = page.locator('.chat-panel')
+    await expect(chat.getByRole('button', { name: '参考来源 (1)' })).toBeVisible({ timeout: 10000 })
+    await chat.getByRole('button', { name: '参考来源 (1)' }).click()
+
+    await expect(chat.locator('.source-item').filter({ hasText: '生产日报缺少相似度' })).toContainText('0%')
+    await expect(chat).not.toContainText('NaN%')
+  })
+
   test('参考来源折叠展开', async ({ page }) => {
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('设备状态')
@@ -143,6 +253,28 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
   })
 
   test('空状态显示', async ({ page }) => {
+    await page.route('**/api/v1/llm/status', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          provider: 'OpenAI',
+          model: 'mock-chat-e2e',
+          reachable: true,
+        }),
+      })
+    })
+    await page.route('**/api/v1/knowledge/chat-history/**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionId: 'chat-empty-e2e',
+          messages: [],
+          totalCount: 0,
+        }),
+      })
+    })
     await page.locator('.chat-fab').click()
     await expect(page.locator('.empty-chat')).toBeVisible()
     await expect(page.getByText('有什么生产相关的问题？')).toBeVisible()
@@ -215,6 +347,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     const anomalyPackage = chat.locator('.action-package-card').filter({ hasText: 'CNC-001 主轴温升异常处置卡' })
     await expect(anomalyPackage).toBeVisible()
     await expect(anomalyPackage.locator('code').getByText('TRACE-CHAT-ANOMALY-CNC001-TEMP-20260522', { exact: true }).first()).toBeVisible()
+    await expect(chat.getByRole('button', { name: '创建异常处置卡' })).toBeDisabled()
 
     const anomalyCard = page.locator('.anomaly-card').filter({ hasText: 'CNC-001 主轴温升异常处置卡' }).first()
     await expect(anomalyCard).toBeVisible()
@@ -257,6 +390,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(chat.getByText('审计编号：AUD-CHAT-RECOVERY-PACKAGE-20260521-001')).toBeVisible()
     await expect(chat.locator('.action-package-card').filter({ hasText: 'WO-RUSH-9001 交期恢复执行包' })).toBeVisible()
     await expect(chat.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521')).toBeVisible()
+    await expect(chat.getByRole('button', { name: '生成交期恢复执行包' })).toBeDisabled()
     await chat.getByRole('button', { name: '关闭聊天' }).click()
     await expect(page.locator('.chat-panel')).not.toBeVisible()
 
@@ -371,6 +505,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(packageCard).toBeVisible()
     await expect(packageCard.getByText('待工程约束复核')).toBeVisible()
     await expect(packageCard.getByText('WO-RUSH-9001 / WO-DEMO-1002 / WO-DEMO-1007')).toBeVisible()
+    await expect(chat.getByRole('button', { name: '生成工程约束复核包' })).toBeDisabled()
 
     const eventPanel = page.locator('.event-queue-panel')
     await expect(eventPanel).toBeVisible({ timeout: 60000 })
@@ -413,6 +548,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     const packageCard = chat.locator('.action-package-card').filter({ hasText: '华东新能源 交付恢复承诺包' })
     await expect(packageCard).toBeVisible()
     await expect(packageCard.getByText('+18% / 延期减少 3 单')).toBeVisible()
+    await expect(chat.getByRole('button', { name: '生成客户交付恢复承诺包' })).toBeDisabled()
 
     await page.waitForSelector('.report-board', { timeout: 20000 })
     const reportBoard = page.locator('.otd-evidence-chain')
@@ -455,6 +591,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     const packageCard = chat.locator('.action-package-card').filter({ hasText: 'BOM-A100 WO-RUSH-9001 展开齐套检查包' })
     await expect(packageCard).toBeVisible()
     await expect(packageCard.getByText('缺口 19 件 / 待齐套')).toBeVisible()
+    await expect(chat.getByRole('button', { name: '生成 BOM 展开齐套检查包' })).toBeDisabled()
 
     await page.goto('inventory', { waitUntil: 'commit' })
     await page.waitForSelector('.inv-board', { timeout: 20000 })
@@ -496,6 +633,7 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
     await expect(packageCard).toBeVisible()
     await expect(packageCard.getByText('停机 4h / +1 单延期风险')).toBeVisible()
     await expect(packageCard.getByText('影响工单：WO-2026-0042 / WO-RUSH-9001 / WO-DEMO-1001')).toBeVisible()
+    await expect(chat.getByRole('button', { name: '生成设备停机复核包' })).toBeDisabled()
 
     await page.goto('scheduling', { waitUntil: 'commit' })
     await expect(page.locator('.event-queue-panel')).toBeVisible({ timeout: 60000 })
@@ -763,6 +901,47 @@ test.describe('AI 生产助手 (ChatPanel)', () => {
   })
 
   test('业务问答：生产完工后解释 OTD 复核影响', async ({ page }) => {
+    await page.route('**/api/v1/production/scan', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          operationId: 'OP-002',
+          workOrderId: 'WO-001',
+          workOrderNumber: 'WO-001',
+          productCode: 'PRD-001',
+          productName: '精密转接座',
+          operationCode: 'OP-20',
+          operationName: 'CNC 精加工',
+          plannedQuantity: 100,
+          completedQuantity: 48,
+          status: 'in_progress',
+          nextOperation: {
+            operationId: 'OP-003',
+            workOrderId: 'WO-001',
+            workOrderNumber: 'WO-001',
+            productCode: 'PRD-001',
+            productName: '精密转接座',
+            operationCode: 'OP-30',
+            operationName: '去毛刺',
+            plannedQuantity: 100,
+            completedQuantity: 0,
+            status: 'pending',
+          },
+        }),
+      })
+    })
+    await page.route('**/api/v1/production/operations/OP-002/complete', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          operationId: 'OP-002',
+          status: 'completed',
+          message: '完工已提交',
+        }),
+      })
+    })
     await page.goto('production', { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 30000 })
     await page.locator('.wo-card').first().click()

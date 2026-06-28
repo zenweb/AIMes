@@ -571,8 +571,7 @@ namespace MES.Infrastructure.Data.Migrations
                         .HasColumnName("evidence_key");
 
                     b.Property<string>("EvidenceSummary")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
+                        .HasColumnType("text")
                         .HasColumnName("evidence_summary");
 
                     b.Property<string>("EvidenceType")
@@ -1207,7 +1206,8 @@ namespace MES.Infrastructure.Data.Migrations
                             Status = "Available",
                             UtilizationRate = 0.0,
                             WorkshopId = "ws-001",
-                            WorkshopName = "精密加工车间"
+                            WorkshopName = "精密加工车间",
+                            version = 0u
                         },
                         new
                         {
@@ -1221,7 +1221,8 @@ namespace MES.Infrastructure.Data.Migrations
                             Status = "Available",
                             UtilizationRate = 0.0,
                             WorkshopId = "ws-001",
-                            WorkshopName = "精密加工车间"
+                            WorkshopName = "精密加工车间",
+                            version = 0u
                         });
                 });
 
@@ -1400,9 +1401,9 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("MaterialCode");
 
-                    b.HasIndex("MaterialCode", "CreatedAt");
-
                     b.HasIndex("TransactionType");
+
+                    b.HasIndex("MaterialCode", "CreatedAt");
 
                     b.ToTable("stock_transactions", (string)null);
                 });
@@ -1813,11 +1814,11 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("Status");
 
-                    b.HasIndex("Status", "WorkshopId", "ProductCode", "PlannedStartDate", "PlannedEndDate");
-
                     b.HasIndex("WorkshopId");
 
                     b.HasIndex("WorkshopId", "Priority", "PlannedStartDate");
+
+                    b.HasIndex("Status", "WorkshopId", "ProductCode", "PlannedStartDate", "PlannedEndDate");
 
                     b.ToTable("work_orders", (string)null);
                 });
@@ -2017,9 +2018,9 @@ namespace MES.Infrastructure.Data.Migrations
 
                     b.HasIndex("ProductCode");
 
-                    b.HasIndex("ProductCode", "InspectedAt");
-
                     b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("ProductCode", "InspectedAt");
 
                     b.HasIndex("WorkOrderId", "InspectedAt");
 

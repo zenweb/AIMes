@@ -77,7 +77,16 @@ describe('poc evidence governance', () => {
         batchId: fault?.batchId,
       }),
     ])
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-order-import/latest')
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-equipment-fault/latest')
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-order-import/latest', { suppressErrorToast: true })
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-equipment-fault/latest', { suppressErrorToast: true })
+  })
+
+  it('treats optional missing backend POC latest records as an empty governance state', async () => {
+    const notFound = { response: { status: 404 } }
+    httpGet.mockRejectedValue(notFound)
+
+    await expect(readPocEvidenceGovernanceRecordsBackendFirst()).resolves.toEqual([])
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-order-import/latest', { suppressErrorToast: true })
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/customer-equipment-fault/latest', { suppressErrorToast: true })
   })
 })

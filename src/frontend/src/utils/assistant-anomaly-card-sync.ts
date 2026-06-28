@@ -107,12 +107,31 @@ export function readAssistantAnomalyDispositionPackages(): AssistantAnomalyDispo
   return readRawAssistantAnomalyPackages()
 }
 
-export async function readAssistantAnomalyDispositionPackagesBackendFirst(): Promise<AssistantAnomalyDispositionPackage[]> {
+function mergeAssistantAnomalyDispositionPackages(
+  remoteRecords: AssistantAnomalyDispositionPackage[],
+  localRecords: AssistantAnomalyDispositionPackage[],
+): AssistantAnomalyDispositionPackage[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<AssistantAnomalyDispositionPackage[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_PACKAGES)
+}
+
+export async function readAssistantAnomalyDispositionPackagesBackendFirst(options?: { failLoud?: boolean }): Promise<AssistantAnomalyDispositionPackage[]> {
   try {
     const { queryAssistantAnomalyPackages } = await import('../api/assistantEvidence')
-    const records = await queryAssistantAnomalyPackages(MAX_PACKAGES)
-    return records.length > 0 ? records : readAssistantAnomalyDispositionPackages()
-  } catch {
+    const records = await queryAssistantAnomalyPackages(MAX_PACKAGES, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组异常处置包审计载荷')
+    }
+    const validRecords = records.filter(isAssistantAnomalyPackage)
+    return mergeAssistantAnomalyDispositionPackages(validRecords, readAssistantAnomalyDispositionPackages())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readAssistantAnomalyDispositionPackages()
   }
 }

@@ -84,6 +84,20 @@ describe('quality CAPA sync', () => {
     await expect(readQualityCapaClosureBackendFirst()).resolves.toEqual(localClosure)
   })
 
+  it('ignores incomplete backend CAPA closures so ownership and audit action stay auditable', async () => {
+    const localClosure = closure()
+    writeQualityCapaClosure(localClosure)
+    getLatestQualityCapaClosure.mockResolvedValueOnce({
+      inspectionId: 'QI-001',
+      workOrderId: 'WO-001',
+      traceId: 'TRACE-QA-CAPA-001',
+      evidenceStrength: 92,
+      verifiedAt: '2026-06-01T08:00:00.000Z',
+    })
+
+    await expect(readQualityCapaClosureBackendFirst()).resolves.toEqual(localClosure)
+  })
+
   it('removes corrupt closure JSON so quality boards do not render stale evidence', () => {
     localStorage.setItem('aimes_quality_capa_closure', '{bad json')
 

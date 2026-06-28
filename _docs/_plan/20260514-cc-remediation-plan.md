@@ -10,6 +10,7 @@
 - v1.0.0 scope: 阶段一 `Sprint 0-3` + 首次灰度 + 14 天无 P0/P1。
 - v1.1 scope: 阶段二 `Sprint 4-6 + E1`。
 - Scope rule: 范围保留；带宽不足时按 cut line 顺延阶段二，不删除任务。
+- Current release-gate mode: owner explicitly deferred the 14-day gray observation wait for current follow-up work; strict final v1.0.0 release PASS still requires the original gray observation evidence.
 
 ## Authoritative Sources
 
@@ -20,20 +21,29 @@
 
 ## Sprint 0 Baseline Evidence
 
-- `_docs/_changelog/20260605-sprint0-baseline-refresh.md` records the current Sprint 0 / 0.0 baseline refresh.
-- `_docs/_review/20260605-sprint0-baseline-refresh.md` records the baseline review boundary.
-- `_docs/_todo/20260605-backend-baseline-next-actions.md` records remaining baseline next actions.
+- `_docs/_review/20260622-sprint0-current-baseline-index.md` is the current Sprint 0 / task 0.0 repo-local baseline index.
+- Backend Unit baseline: `_docs/_review/20260620-unit-tests-full-baseline.md` records 444 passed / 0 failed / 0 skipped.
+- Backend Integration baseline: `_docs/_review/20260620-integration-tests-full-baseline.md` records 203 passed / 0 failed / 0 skipped.
+- Architecture baseline: `_docs/_review/20260620-architecture-tests-full-baseline.md` records 118 passed / 0 failed / 0 skipped.
+- Frontend Unit baseline: `_docs/_review/20260620-frontend-unit-tests-full-baseline.md` records 113 files / 1211 tests passed.
+- Frontend Unit Coverage baseline: `_docs/_review/20260620-frontend-unit-coverage-full-baseline.md` records 92.99% overall line coverage.
+- Frontend E2E evidence is split by focused browser packs, including `_docs/_review/20260611-sprint0-frontend-e2e-evidence-recovery.md`, `_docs/_review/20260621-frontend-e2e-employee-pass.md`, `_docs/_review/20260621-frontend-e2e-modules-offline-demo-pass.md`, and `_docs/_review/20260621-frontend-e2e-production-pass.md`.
+- Employee live-backend recovery evidence: `_docs/_reports/employee-live-backend-evidence-20260622-current.md` records backend health on port 5003, focused auth/offline-demo/employee unit regressions, and Chromium `[employee-live-backend]` recovery from stale offline-demo state to authenticated `/api/v1/employee` read.
+- Current staged labor retry candidate evidence is indexed by `_docs/_review/20260622-labor-retry-staged-commit-package-index.md`; it is not a full baseline replacement.
 
 ## Current B-Track Release Gate Evidence
 
-- Hosted CI: `_docs/_reports/hosted-ci-20260607.md` is `Result: PASS`; latest verified remote main is `3ac45a0b001981f528db359aedf115ad341addc0`, with GitHub Actions CI run `27089650107` and Agent Evaluation run `27089650108` completed successfully.
-- PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260607-engine-unavailable.md` is `Result: FAIL`; local Docker Desktop Linux engine is currently unavailable, so real PostgreSQL/staging rehearsal cannot run yet.
-- Security self-assessment: `_docs/_reports/security-self-assessment-20260607-current.md` is `Result: PASS`.
-- Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260607-current.md` is `Result: PASS`.
-- Attack Chain manual verification: `_docs/_reports/attack-chain-verification-20260607-manual-pending.md` is `Result: FAIL`; verifier/evidence are missing.
-- Security signoff: `_docs/_review/20260607-security-signoff.md` is `UNSIGNED`; latest evidence references were refreshed in `_docs/_reports/security-signoff-refresh-20260607.md`.
-- Gray observation: `_docs/_reports/gray-observation-20260607-not-started.md` is `Result: FAIL`; first gray release has not started, and `_docs/_reports/gray-observation-start-readiness-packet-20260607.md` is prepared-only.
-- Aggregate release gate: `_docs/_reports/release-gate-audit-20260607-after-security-signoff-refresh.md` is `Result: FAIL`; Hosted CI is closed, while staging, Attack Chain A/B/C, security signoff, and gray observation remain open.
+- Hosted CI: `_docs/_reports/hosted-ci-20260621-v1-head-pass.md` is `Result: PASS`; GitHub `V1` is at `47d65547557a8a6cf035327ae94455a1a1285daf`, CI run `27848757617` passed, and Agent Evaluation run `27848757651` passed on the same branch/head.
+- PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260621-5003-ef-tools-aligned-pass.md` is `Result: PASS`; Docker Desktop Linux engine is available, PostgreSQL/Redis/RabbitMQ/Qdrant/API containers are healthy, EF migrations are up to date with no EF tools/runtime version-skew warning, API uses `http://localhost:5003`, `/live` + `/ready` returned HTTP 200, and reschedule plus commitment PostgreSQL persistence probes passed.
+- Security self-assessment: `_docs/_reports/security-self-assessment-20260611-current.md` is `Result: PASS`.
+- Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260611-current.md` is `Result: PASS`.
+- Real Chrome frontend evidence: `_docs/_reports/frontend-real-browser-evidence-20260611.md` is `Result: PASS`; 78 Chrome e2e tests covered login/auth guard, audit replay, monitoring escalation, quality evidence flows, and fail-loud no-forged-evidence paths. Visual screenshots are indexed at `output/playwright/20260611-real-browser/manifest.md`.
+- Attack Chain manual verification: `_docs/_reports/attack-chain-verification-20260611-manual-verified.md` is `Result: PASS`; Attack Chain A/B/C are `VERIFIED` with human verifier and non-placeholder evidence references.
+- Security signoff: `_docs/_review/20260607-security-signoff.md` is `Result: PASS`; human signer and signed decision are present.
+- Gray observation: `_docs/_reports/gray-observation-latest.md` is still `OBSERVING` and strict `Result: FAIL`; owner deferred the 14-day wait for current follow-up work, but this remains required for strict final v1.0.0 release PASS.
+- Phase-one acceptance matrix: `_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md` maps Sprint 0-3 acceptance criteria to current evidence and explicitly marks remaining human/wall-clock gates.
+- Aggregate release gate: `_docs/_reports/release-gate-audit-20260621-v1-head-staging-ef-tools-aligned-deferred-gray.md` is the latest committed-head + current-staging recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260621-v1-head-staging-current-deferred-gray.md` and `_docs/_reports/release-gate-audit-20260621-v1-head-deferred-gray-recheck.md` are earlier matching packets. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
+- Worktree inventory: `_docs/_reports/worktree-inventory-20260621-current.md` records the local dirty review surface for release-candidate slicing. It explicitly states that hosted CI evidence covers committed heads only and does not prove the dirty worktree.
 
 ## Execution Rule
 

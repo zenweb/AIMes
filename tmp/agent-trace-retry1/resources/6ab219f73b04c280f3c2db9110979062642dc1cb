@@ -1,0 +1,597 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: scheduling.spec.ts >> Scheduling 排产甘特图 >> 调度员 Agent 工作台通过后端 API 生成并采纳推荐
+- Location: tests\e2e\scheduling.spec.ts:108:3
+
+# Error details
+
+```
+TimeoutError: page.waitForSelector: Timeout 45000ms exceeded.
+Call log:
+  - waiting for locator('.agent-workbench-panel') to be visible
+    - locator resolved to visible <section data-v-591e6a30="" data-v-89777773="" aria-label="调度员 Agent 工作台" class="agent-workbench-panel">…</section>
+    2 × waiting for" http://localhost:4174/scheduling/login" navigation to finish...
+      - navigated to "http://localhost:4174/scheduling/dashboard"
+      - waiting for" http://localhost:4174/scheduling/login" navigation to finish...
+      - navigated to "http://localhost:4174/scheduling/login"
+    - waiting for navigation to finish...
+    3 × waiting for" http://localhost:4174/scheduling/login" navigation to finish...
+      - navigated to "http://localhost:4174/scheduling/dashboard"
+      - waiting for" http://localhost:4174/scheduling/login" navigation to finish...
+      - navigated to "http://localhost:4174/scheduling/login"
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "MES AIMes Professional Manufacturing OS" [ref=e5] [cursor=pointer]:
+      - /url: /scheduling/dashboard
+      - generic [ref=e6]: MES
+      - generic [ref=e7]:
+        - generic [ref=e8]: AIMes
+        - generic [ref=e9]: Professional Manufacturing OS
+    - generic [ref=e10]:
+      - generic [ref=e11]: 当前工厂
+      - strong [ref=e12]: 华东智能装配工厂
+      - emphasis [ref=e13]: Line A03 · 离散装配 · V1.5 Pro
+    - navigation [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: 指挥中心
+        - link "生产概览" [ref=e17] [cursor=pointer]:
+          - /url: /scheduling/dashboard
+          - generic [ref=e18]: 
+          - generic [ref=e19]: 生产概览
+        - link "实时监控" [ref=e20] [cursor=pointer]:
+          - /url: /scheduling/monitoring
+          - generic [ref=e21]: 
+          - generic [ref=e22]: 实时监控
+        - link "报表中心" [ref=e23] [cursor=pointer]:
+          - /url: /scheduling/report
+          - generic [ref=e24]: 
+          - generic [ref=e25]: 报表中心
+      - generic [ref=e26]:
+        - generic [ref=e27]: 计划执行
+        - link "AI 排产" [ref=e28] [cursor=pointer]:
+          - /url: /scheduling/scheduling
+          - generic [ref=e29]: 
+          - generic [ref=e30]: AI 排产
+        - link "生产报工" [ref=e31] [cursor=pointer]:
+          - /url: /scheduling/production
+          - generic [ref=e32]: 
+          - generic [ref=e33]: 生产报工
+        - link "风险预警" [ref=e34] [cursor=pointer]:
+          - /url: /scheduling/risk
+          - generic [ref=e35]: 
+          - generic [ref=e36]: 风险预警
+      - generic [ref=e37]:
+        - generic [ref=e38]: 工程数据
+        - link "BOM 管理" [ref=e39] [cursor=pointer]:
+          - /url: /scheduling/bom
+          - generic [ref=e40]: 
+          - generic [ref=e41]: BOM 管理
+        - link "工艺路线" [ref=e42] [cursor=pointer]:
+          - /url: /scheduling/routing
+          - generic [ref=e43]: 
+          - generic [ref=e44]: 工艺路线
+      - generic [ref=e45]:
+        - generic [ref=e46]: 质量异常
+        - link "质量闭环" [ref=e47] [cursor=pointer]:
+          - /url: /scheduling/quality
+          - generic [ref=e48]: 
+          - generic [ref=e49]: 质量闭环
+        - link "异常管理" [ref=e50] [cursor=pointer]:
+          - /url: /scheduling/anomaly
+          - generic [ref=e51]: 
+          - generic [ref=e52]: 异常管理
+      - generic [ref=e53]:
+        - generic [ref=e54]: 资源协同
+        - link "设备维护" [ref=e55] [cursor=pointer]:
+          - /url: /scheduling/equipment
+          - generic [ref=e56]: 
+          - generic [ref=e57]: 设备维护
+        - link "库存齐套" [ref=e58] [cursor=pointer]:
+          - /url: /scheduling/inventory
+          - generic [ref=e59]: 
+          - generic [ref=e60]: 库存齐套
+        - link "采购协同" [ref=e61] [cursor=pointer]:
+          - /url: /scheduling/purchase
+          - generic [ref=e62]: 
+          - generic [ref=e63]: 采购协同
+      - generic [ref=e64]:
+        - generic [ref=e65]: 系统运营
+        - link "人员管理" [ref=e66] [cursor=pointer]:
+          - /url: /scheduling/employee
+          - generic [ref=e67]: 
+          - generic [ref=e68]: 人员管理
+        - link "条码打印" [ref=e69] [cursor=pointer]:
+          - /url: /scheduling/barcode
+          - generic [ref=e70]: 
+          - generic [ref=e71]: 条码打印
+        - link "条码扫描" [ref=e72] [cursor=pointer]:
+          - /url: /scheduling/scanner
+          - generic [ref=e73]: 
+          - generic [ref=e74]: 条码扫描
+        - link "文档上传" [ref=e75] [cursor=pointer]:
+          - /url: /scheduling/knowledge/documents
+          - generic [ref=e76]: 
+          - generic [ref=e77]: 文档上传
+        - link "系统管理" [ref=e78] [cursor=pointer]:
+          - /url: /scheduling/admin
+          - generic [ref=e79]: 
+          - generic [ref=e80]: 系统管理
+        - link "审计日志" [ref=e81] [cursor=pointer]:
+          - /url: /scheduling/audit-logs
+          - generic [ref=e82]: 
+          - generic [ref=e83]: 审计日志
+    - generic [ref=e84]:
+      - generic [ref=e85]: AI Agent Control
+      - generic [ref=e87]: 18 个工单监控中，7 个约束冲突，3 个异常闭环等待复核。
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - strong [ref=e90]: 99.9%
+          - text: 审计留痕
+        - generic [ref=e91]:
+          - strong [ref=e92]: "4"
+          - text: 动作待批
+  - generic [ref=e93]:
+    - banner [ref=e94]:
+      - text: 
+      - generic [ref=e95]:
+        - generic [ref=e96]: 
+        - textbox "搜索工单、设备、物料、异常、AI 决策记录" [ref=e97]
+      - generic "当前模块" [ref=e98]:
+        - generic [ref=e99]: 指挥中心
+        - strong [ref=e100]: 生产概览
+        - emphasis [ref=e101]: OTD / OEE / 现场总览
+      - generic [ref=e102]:
+        - generic [ref=e104]: 离线
+        - generic [ref=e105]: 早班 08:00-20:00
+        - generic [ref=e106]:
+          - generic [ref=e107]: 
+          - text: 证据链开启
+        - button "" [ref=e108] [cursor=pointer]:
+          - generic [ref=e109]: 
+        - generic [ref=e110]: 管理员
+        - button "退出" [ref=e111] [cursor=pointer]:
+          - generic [ref=e112]: 退出
+    - region "生产运行状态" [ref=e113]:
+      - generic [ref=e114]:
+        - generic [ref=e115]: 现场节拍
+        - strong [ref=e116]: 42s
+        - emphasis [ref=e117]: 目标 45s
+      - generic [ref=e118]:
+        - generic [ref=e119]: OTD 预测
+        - strong [ref=e120]: 30.00%
+        - emphasis [ref=e121]: 当前 runner
+      - generic [ref=e122]:
+        - generic [ref=e123]: 风险队列
+        - strong [ref=e124]: "7"
+        - emphasis [ref=e125]: 2 个高优先级
+      - generic [ref=e126]:
+        - generic [ref=e127]: 动作落库
+        - strong [ref=e128]: 100%
+        - emphasis [ref=e129]: Agent + AuditLog
+    - region "当前模块关联证据与帮助" [ref=e130]:
+      - generic [ref=e131]:
+        - generic [ref=e132]: 模块操作提示
+        - strong [ref=e133]: 先核对当前模块证据、关联记录和审计留痕，再执行复杂动作。
+        - emphasis [ref=e134]: Review module evidence, related records, and audit trail before complex actions.
+      - navigation "当前模块关联入口" [ref=e135]:
+        - link "生产概览" [ref=e136] [cursor=pointer]:
+          - /url: /scheduling/dashboard
+        - link "报表中心" [ref=e137] [cursor=pointer]:
+          - /url: /scheduling/report
+        - link "审计日志" [ref=e138] [cursor=pointer]:
+          - /url: /scheduling/audit-logs
+        - link "帮助：当前模块操作支持" [ref=e139] [cursor=pointer]:
+          - /url: "#module-help"
+    - region "当前模块操作支持" [ref=e140]:
+      - generic [ref=e141]: 复杂模块操作支持
+      - strong [ref=e142]: 复杂动作前确认来源证据、责任人、目标页面和审计留痕。
+      - emphasis [ref=e143]: Complex operations should preserve source evidence, owner, target module, and audit trail.
+    - main [ref=e144]:
+      - generic [ref=e145]:
+        - region "生产运营控制塔" [ref=e146]:
+          - generic [ref=e147]:
+            - generic [ref=e148]: AIMes Pro Control Tower
+            - heading "生产运营控制塔" [level=1] [ref=e149]
+            - paragraph [ref=e150]: 以 OTD 承诺为主线，串联风险识别、AI 排产、执行回写、审计回放和经营复盘。
+            - generic [ref=e151]:
+              - link "进入调度台" [ref=e152] [cursor=pointer]:
+                - /url: /scheduling/scheduling
+              - link "回放证据链" [ref=e153] [cursor=pointer]:
+                - /url: /scheduling/audit-logs
+          - generic [ref=e154]:
+            - generic [ref=e155]:
+              - generic [ref=e156]: 今日主承诺
+              - strong [ref=e157]: 26.7% -> 30.0%
+              - emphasis [ref=e158]: +3.3pt
+            - generic [ref=e159]:
+              - generic [ref=e160]: 风险闭环
+              - strong [ref=e161]: 3/0
+              - emphasis [ref=e162]: 阻塞项进入责任动作
+            - generic [ref=e163]:
+              - generic [ref=e164]: 运行状态
+              - strong [ref=e165]: "0"
+              - emphasis [ref=e166]: 设备在线 / 0 停机
+        - generic [ref=e167]:
+          - generic [ref=e168]:
+            - generic [ref=e169]: 📊
+            - generic [ref=e170]:
+              - generic [ref=e171]: 0%
+              - generic [ref=e172]: 排产达成率
+          - generic [ref=e173]:
+            - generic [ref=e174]: ✅
+            - generic [ref=e175]:
+              - generic [ref=e176]: 0%
+              - generic [ref=e177]: 质检合格率
+          - generic [ref=e178]:
+            - generic [ref=e179]: ⚡
+            - generic [ref=e180]:
+              - generic [ref=e181]: 0%
+              - generic [ref=e182]: 设备利用率
+          - generic [ref=e183]:
+            - generic [ref=e184]: 📦
+            - generic [ref=e185]:
+              - generic [ref=e186]: "0"
+              - generic [ref=e187]: 进行中工单
+        - region "AI MES 指挥中心" [ref=e188]:
+          - generic [ref=e189]:
+            - generic [ref=e190]:
+              - generic [ref=e191]: 今日主线
+              - heading "AI MES 指挥中心" [level=2] [ref=e192]
+              - paragraph [ref=e193]: 从风险识别到 OTD 复盘，按 5 分钟演示路径推进现场闭环。
+            - generic [ref=e194]:
+              - generic [ref=e195]: OTD 改善
+              - strong [ref=e196]: 26.7% -> 30.0%
+              - emphasis [ref=e197]: +3.3pt
+          - list "AI MES 指挥中心主线" [ref=e198]:
+            - listitem [ref=e199]:
+              - link "01 风险识别 急单、缺料、设备故障进入风险处置队列。 查看风险" [ref=e200] [cursor=pointer]:
+                - /url: /scheduling/risk
+                - generic [ref=e201]: "01"
+                - generic [ref=e202]:
+                  - strong [ref=e203]: 风险识别
+                  - paragraph [ref=e204]: 急单、缺料、设备故障进入风险处置队列。
+                - generic [ref=e205]: 查看风险
+            - listitem [ref=e206]:
+              - link "02 Agent 重排 生成基线与 Agent 方案，解释 OTD 改善来源。 生成方案" [ref=e207] [cursor=pointer]:
+                - /url: /scheduling/scheduling
+                - generic [ref=e208]: "02"
+                - generic [ref=e209]:
+                  - strong [ref=e210]: Agent 重排
+                  - paragraph [ref=e211]: 生成基线与 Agent 方案，解释 OTD 改善来源。
+                - generic [ref=e212]: 生成方案
+            - listitem [ref=e213]:
+              - link "03 采购协同 缺料生成加急采购，收货后风险下降。 处理缺料" [ref=e214] [cursor=pointer]:
+                - /url: /scheduling/purchase
+                - generic [ref=e215]: "03"
+                - generic [ref=e216]:
+                  - strong [ref=e217]: 采购协同
+                  - paragraph [ref=e218]: 缺料生成加急采购，收货后风险下降。
+                - generic [ref=e219]: 处理缺料
+            - listitem [ref=e220]:
+              - link "04 生产执行 开工校验 SOP、人员、设备、物料并回写排产。 进入报工" [ref=e221] [cursor=pointer]:
+                - /url: /scheduling/production
+                - generic [ref=e222]: "04"
+                - generic [ref=e223]:
+                  - strong [ref=e224]: 生产执行
+                  - paragraph [ref=e225]: 开工校验 SOP、人员、设备、物料并回写排产。
+                - generic [ref=e226]: 进入报工
+            - listitem [ref=e227]:
+              - link "05 OTD 复盘 输出 30 单演示数据和 POC 验收证据。 查看报告" [ref=e228] [cursor=pointer]:
+                - /url: /scheduling/report
+                - generic [ref=e229]: "05"
+                - generic [ref=e230]:
+                  - strong [ref=e231]: OTD 复盘
+                  - paragraph [ref=e232]: 输出 30 单演示数据和 POC 验收证据。
+                - generic [ref=e233]: 查看报告
+          - generic [ref=e234]:
+            - generic [ref=e235]:
+              - heading "当前阻塞" [level=3] [ref=e236]
+              - generic [ref=e237]:
+                - generic [ref=e238]: 缺料
+                - strong [ref=e239]: M-AL-6061 缺 12 件
+                - emphasis [ref=e240]: 采购 · 今日 16:00
+              - generic [ref=e241]:
+                - generic [ref=e242]: 设备
+                - strong [ref=e243]: CNC-001 夜班维护窗口
+                - emphasis [ref=e244]: 设备主管 · 22:00 前确认
+              - generic [ref=e245]:
+                - generic [ref=e246]: 急单
+                - strong [ref=e247]: WO-RUSH-9001 加班插入
+                - emphasis [ref=e248]: 调度员 · 锁定期后
+            - generic [ref=e249]:
+              - generic [ref=e250]: 下一步建议
+              - strong [ref=e251]: 先处理 M-AL-6061 缺料，再采纳急单加班插入方案。
+              - link "进入 AI 排产" [ref=e252] [cursor=pointer]:
+                - /url: /scheduling/scheduling
+        - region "5 分钟 Demo 录制运行手册" [ref=e253]:
+          - generic [ref=e254]:
+            - generic [ref=e255]:
+              - generic [ref=e256]: 售前录制
+              - heading "5 分钟 Demo 录制运行手册" [level=2] [ref=e257]
+              - paragraph [ref=e258]: 从首页到报表，每一步都绑定镜头、证据和讲解话术，录制后可直接进入 POC 复盘。
+            - generic [ref=e259]:
+              - generic [ref=e260]: 总时长
+              - strong [ref=e261]: 05:00
+              - emphasis [ref=e262]: 5 个镜头 · 7 个验收证据
+          - generic [ref=e263]:
+            - link "00:00-00:45 开场：老板问题 先展示 A/B 报告 OTD 26.7% -> 30.0%，说明今天只讲“为什么交期会提高”和“当前样本尚未显著”。 OTD +3.3pt 当前阻塞 主线入口 录制首页指挥中心" [ref=e264] [cursor=pointer]:
+              - /url: /scheduling/dashboard
+              - generic [ref=e265]: 00:00-00:45
+              - generic [ref=e266]:
+                - strong [ref=e267]: 开场：老板问题
+                - paragraph [ref=e268]: 先展示 A/B 报告 OTD 26.7% -> 30.0%，说明今天只讲“为什么交期会提高”和“当前样本尚未显著”。
+                - generic [ref=e269]:
+                  - generic [ref=e270]: OTD +3.3pt
+                  - generic [ref=e271]: 当前阻塞
+                  - generic [ref=e272]: 主线入口
+              - emphasis [ref=e273]: 录制首页指挥中心
+            - link "00:45-01:35 风险：三类事件进入队列 点进风险预警，展示急单、缺料、设备故障已经变成有负责人和截止时间的处置卡。 风险处置队列 负责人 截止时间 录制风险卡与留痕" [ref=e274] [cursor=pointer]:
+              - /url: /scheduling/risk
+              - generic [ref=e275]: 00:45-01:35
+              - generic [ref=e276]:
+                - strong [ref=e277]: 风险：三类事件进入队列
+                - paragraph [ref=e278]: 点进风险预警，展示急单、缺料、设备故障已经变成有负责人和截止时间的处置卡。
+                - generic [ref=e279]:
+                  - generic [ref=e280]: 风险处置队列
+                  - generic [ref=e281]: 负责人
+                  - generic [ref=e282]: 截止时间
+              - emphasis [ref=e283]: 录制风险卡与留痕
+            - link "01:35-02:45 Agent：生成重排建议 进入 AI 排产，展示调度员工作台、事件队列、推荐解释和采纳反馈。 基线 vs Agent 三类事件 采纳原因 录制重排建议和解释" [ref=e284] [cursor=pointer]:
+              - /url: /scheduling/scheduling
+              - generic [ref=e285]: 01:35-02:45
+              - generic [ref=e286]:
+                - strong [ref=e287]: Agent：生成重排建议
+                - paragraph [ref=e288]: 进入 AI 排产，展示调度员工作台、事件队列、推荐解释和采纳反馈。
+                - generic [ref=e289]:
+                  - generic [ref=e290]: 基线 vs Agent
+                  - generic [ref=e291]: 三类事件
+                  - generic [ref=e292]: 采纳原因
+              - emphasis [ref=e293]: 录制重排建议和解释
+            - link "02:45-03:45 执行：采购与生产回写 展示采购加急收货后风险下降，再回到生产报工说明开工校验和异常回写。 采购收货 风险下降 开工校验 录制采购与生产联动" [ref=e294] [cursor=pointer]:
+              - /url: /scheduling/purchase
+              - generic [ref=e295]: 02:45-03:45
+              - generic [ref=e296]:
+                - strong [ref=e297]: 执行：采购与生产回写
+                - paragraph [ref=e298]: 展示采购加急收货后风险下降，再回到生产报工说明开工校验和异常回写。
+                - generic [ref=e299]:
+                  - generic [ref=e300]: 采购收货
+                  - generic [ref=e301]: 风险下降
+                  - generic [ref=e302]: 开工校验
+              - emphasis [ref=e303]: 录制采购与生产联动
+            - link "03:45-05:00 复盘：POC 评分和缺口 打开报表中心，导出 OTD 改善报告，最后展示 POC 97/100 和仍需客户补齐的数据。 30 单样本 POC 97/100 补齐缺口 录制报表与 CSV 导出" [ref=e304] [cursor=pointer]:
+              - /url: /scheduling/report
+              - generic [ref=e305]: 03:45-05:00
+              - generic [ref=e306]:
+                - strong [ref=e307]: 复盘：POC 评分和缺口
+                - paragraph [ref=e308]: 打开报表中心，导出 OTD 改善报告，最后展示 POC 97/100 和仍需客户补齐的数据。
+                - generic [ref=e309]:
+                  - generic [ref=e310]: 30 单样本
+                  - generic [ref=e311]: POC 97/100
+                  - generic [ref=e312]: 补齐缺口
+              - emphasis [ref=e313]: 录制报表与 CSV 导出
+          - generic [ref=e314]:
+            - generic [ref=e315]:
+              - generic [ref=e316]: 彩排证据
+              - strong [ref=e317]: 确认 5 分钟 Demo 彩排
+              - paragraph [ref=e318]: 完成一次从生产概览到报表中心的售前演示彩排，并把镜头、证据、POC 口径写入 OTD 复盘证据链。
+            - button "确认彩排并写入证据链" [ref=e319] [cursor=pointer]
+        - generic [ref=e320]:
+          - generic [ref=e321]:
+            - generic [ref=e322]:
+              - heading "设备状态" [level=3] [ref=e323]
+              - link "查看排产 →" [ref=e324] [cursor=pointer]:
+                - /url: /scheduling/scheduling
+            - generic [ref=e326]:
+              - text: 运行 0
+              - text: 空闲 0
+              - text: 停机 0
+          - generic [ref=e330]:
+            - generic [ref=e331]:
+              - heading "今日排产" [level=3] [ref=e332]
+              - link "全部 →" [ref=e333] [cursor=pointer]:
+                - /url: /scheduling/scheduling
+            - generic [ref=e336]: 今日暂无排产任务
+          - generic [ref=e337]:
+            - heading "物料预警" [level=3] [ref=e339]
+            - generic [ref=e341]: 所有物料库存充足
+          - generic [ref=e342]:
+            - heading "质量概览" [level=3] [ref=e344]
+            - generic [ref=e345]:
+              - img [ref=e347]:
+                - generic [ref=e350]: 0%
+                - generic [ref=e351]: 合格率
+              - generic [ref=e352]:
+                - generic [ref=e353]:
+                  - generic [ref=e354]: 检验批次
+                  - generic [ref=e355]: "0"
+                - generic [ref=e356]:
+                  - generic [ref=e357]: 合格批次
+                  - generic [ref=e358]: "0"
+                - generic [ref=e359]:
+                  - generic [ref=e360]: 缺陷数
+                  - generic [ref=e361]: "0"
+                - generic [ref=e362]:
+                  - generic [ref=e363]: 待处理异常
+                  - generic [ref=e364]: "0"
+  - button "打开AI助手" [ref=e365] [cursor=pointer]:
+    - generic [ref=e366]: AI
+```
+
+# Test source
+
+```ts
+  1   | import { test, expect } from '@playwright/test'
+  2   | import type { Locator, Page } from '@playwright/test'
+  3   | import { mkdirSync, writeFileSync } from 'node:fs'
+  4   | import { resolve } from 'node:path'
+  5   | 
+  6   | const RUSH_WRITEBACK_EVIDENCE_DIR = resolve(process.cwd(), '..', '..', 'output', 'playwright', '20260612-schedule-rush-formal-writeback')
+  7   | const LABOR_EVIDENCE_RETRY_TITLE = '人员证据启动读取失败后可重试'
+  8   | const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
+  9   |   '人员替班证据释放排产人员约束',
+  10  |   '人员无有效替班候选时排产保持停工复核事件',
+  11  | ]
+  12  | const AGENT_BACKEND_EVIDENCE_TITLES = [
+  13  |   '调度员 Agent 工作台通过后端 API',
+  14  |   '调度员 Agent 工作台后端 403',
+  15  |   '调度员 Agent 工作台 API 不可用',
+  16  | ]
+  17  | 
+  18  | const laborEvidenceRetryReads = {
+  19  |   blocks: 0,
+  20  |   reassignments: 0,
+  21  | }
+  22  | 
+  23  | test.describe.configure({ timeout: 90000 })
+  24  | 
+  25  | test.describe('Scheduling 排产甘特图', () => {
+  26  |   test.beforeAll(async () => {
+  27  |     mkdirSync(RUSH_WRITEBACK_EVIDENCE_DIR, { recursive: true })
+  28  |   })
+  29  | 
+  30  |   test.beforeEach(async ({ page }, testInfo) => {
+  31  |     const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+  32  |     const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+  33  |     const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE) || testInfo.title.includes('真实 dhtmlx')
+  34  |     await page.addInitScript((offlineDemoSession) => {
+  35  |       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
+  36  |       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
+  37  |       localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+  38  |       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+  39  |     }, !usesLiveBackendMock)
+  40  |     if (testInfo.title.includes('真实 dhtmlx')) {
+  41  |       await page.addInitScript(() => localStorage.setItem('aimes_offline_demo', 'false'))
+  42  |       await mockSchedulingPlanApis(page)
+  43  |     }
+  44  |     if (usesAgentBackendMock) {
+  45  |       await mockSchedulingPlanApis(page)
+  46  |     }
+  47  |     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
+  48  |       await page.addInitScript(() => {
+  49  |         localStorage.setItem('aimes_offline_demo', 'false')
+  50  |         localStorage.removeItem('aimes_labor_qualification_block')
+  51  |         localStorage.removeItem('aimes_labor_reassignment')
+  52  |       })
+  53  |       await mockLaborRetrySchedulingPlanApis(page)
+  54  |       await mockLaborEvidenceRetryApis(page)
+  55  |     }
+  56  |     const entry = usesLiveBackendMock
+  57  |       ? 'scheduling?offlineDemo=0'
+  58  |       : 'scheduling?offlineDemo=1'
+  59  |     if (!usesLegacyPersonnelOfflineDemo) {
+  60  |       await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
+> 61  |       await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+      |                  ^ TimeoutError: page.waitForSelector: Timeout 45000ms exceeded.
+  62  |     }
+  63  |   })
+  64  | 
+  65  |   test('页面加载 — 指标卡片', async ({ page }) => {
+  66  |     const cards = page.locator('.metric-card')
+  67  |     await expect(cards).toHaveCount(4)
+  68  |     const labels = await cards.locator('.metric-label').allTextContents()
+  69  |     expect(labels).toContain('设备利用率')
+  70  |     expect(labels).toContain('准时交付率')
+  71  |     expect(labels).toContain('换线时间')
+  72  |     expect(labels).toContain('批次组数')
+  73  |   })
+  74  | 
+  75  |   test('展示基线与 Agent 的 OTD 改善', async ({ page }) => {
+  76  |     const panel = page.locator('.impact-panel')
+  77  |     await expect(panel).toBeVisible()
+  78  |     await expect(panel.getByText('基线 vs Agent 方案')).toBeVisible()
+  79  |     await expect(panel.getByText(/OTD \+\d+%/)).toBeVisible()
+  80  |     await expect(panel.getByText('人工基线')).toBeVisible()
+  81  |     await expect(panel.getByText('Agent 推荐')).toBeVisible()
+  82  |     await expect(panel.getByText('优先保护临近交期工单')).toBeVisible()
+  83  |   })
+  84  | 
+  85  |   test('展示调度员 Agent 工作台', async ({ page }) => {
+  86  |     const panel = page.locator('.agent-workbench-panel')
+  87  |     await expect(panel).toBeVisible()
+  88  |     await expect(panel.getByText('工单池、方案、解释与执行追踪')).toBeVisible()
+  89  |     await expect(panel.getByText('待排')).toBeVisible()
+  90  |     await expect(panel.getByText('已排')).toBeVisible()
+  91  |     await expect(panel.getByText('风险')).toBeVisible()
+  92  |     await expect(panel.getByText('插单')).toBeVisible()
+  93  |     await expect(panel.getByText('人工基线')).toBeVisible()
+  94  |     await expect(panel.getByText('Agent 推荐')).toBeVisible()
+  95  |     await expect(panel.getByText('人工调整')).toBeVisible()
+  96  |     await expect(panel.getByText('锁定期后的第一个 CNC 空窗')).toBeVisible()
+  97  |     await expect(panel.getByText('等待调度员决策')).toBeVisible()
+  98  |   })
+  99  | 
+  100 |   test('调度员 Agent 工作台提供后端建议采纳拒绝入口', async ({ page }) => {
+  101 |     const panel = page.locator('.agent-workbench-panel')
+  102 |     await expect(panel.getByRole('button', { name: '生成后端建议' })).toBeVisible()
+  103 |     await expect(panel.getByRole('button', { name: '采纳推荐' })).toBeVisible()
+  104 |     await expect(panel.getByRole('button', { name: '拒绝建议' })).toBeVisible()
+  105 |     await expect(panel.getByText(/demo fallback/)).toBeVisible()
+  106 |   })
+  107 | 
+  108 |   test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+  109 |     await mockAgentApi(page, { adoptStatus: 200 })
+  110 |     await page.evaluate(() => {
+  111 |       localStorage.setItem('aimes_offline_demo', 'false')
+  112 |       localStorage.setItem('aimes_token', 'mock-e2e-token')
+  113 |       localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+  114 |     })
+  115 | 
+  116 |     const panel = page.locator('.agent-workbench-panel')
+  117 |     await panel.getByRole('button', { name: '生成后端建议' }).click()
+  118 |     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+  119 |     await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
+  120 | 
+  121 |     await panel.getByRole('button', { name: '采纳推荐' }).click()
+  122 |     await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
+  123 |     await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
+  124 |   })
+  125 | 
+  126 |   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+  127 |     await mockAgentApi(page, { adoptStatus: 403 })
+  128 |     await page.evaluate(() => {
+  129 |       localStorage.setItem('aimes_offline_demo', 'false')
+  130 |       localStorage.setItem('aimes_token', 'mock-e2e-token')
+  131 |       localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+  132 |     })
+  133 | 
+  134 |     const panel = page.locator('.agent-workbench-panel')
+  135 |     await panel.getByRole('button', { name: '生成后端建议' }).click()
+  136 |     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+  137 | 
+  138 |     await panel.getByRole('button', { name: '采纳推荐' }).click()
+  139 |     await expect(panel.getByText('采纳失败，请确认当前用户具有 Admin 或 Planner 权限。')).toBeVisible()
+  140 |   })
+  141 | 
+  142 |   test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+  143 |     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+  144 |     await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+  145 |     await page.reload({ waitUntil: 'commit' })
+  146 |     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+  147 | 
+  148 |     const panel = page.locator('.agent-workbench-panel')
+  149 |     await panel.getByRole('button', { name: '生成后端建议' }).click()
+  150 |     await expect(panel.getByText('后端建议生成失败，已保留 demo fallback。')).toBeVisible()
+  151 |     await expect(panel.getByText(/API 不可用 \/ demo fallback/)).toBeVisible()
+  152 |   })
+  153 | 
+  154 |   test('后端返回空排产计划时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+  155 |     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+  156 |     await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+  157 |       status: 200,
+  158 |       contentType: 'application/json',
+  159 |       body: JSON.stringify({
+  160 |         id: 'empty-plan-e2e',
+  161 |         planName: '空排产计划',
+```

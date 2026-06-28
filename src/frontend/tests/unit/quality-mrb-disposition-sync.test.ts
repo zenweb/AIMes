@@ -59,7 +59,27 @@ describe('quality mrb disposition sync', () => {
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readQualityMrbDispositionRecordBackendFirst()).resolves.toEqual(localRecord)
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/quality-mrb-disposition/latest')
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/quality-mrb-disposition/latest', { suppressErrorToast: true })
+  })
+
+  it('falls back to local auditable MRB disposition when backend returns an incomplete latest record', async () => {
+    const localRecord = record()
+    writeQualityMrbDispositionRecord(localRecord)
+    httpGet.mockResolvedValueOnce({
+      data: {
+        id: 'quality-mrb-disposition-backend-partial',
+        traceId: 'TRACE-QA-MRB-PARTIAL',
+      },
+    })
+
+    await expect(readQualityMrbDispositionRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for MRB disposition refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('quality mrb backend unavailable'))
+
+    await expect(readQualityMrbDispositionRecordBackendFirst({ failLoud: true }))
+      .rejects.toThrow('quality mrb backend unavailable')
   })
 
   it('closes MRB disposition with action results and closed OTD evidence', async () => {

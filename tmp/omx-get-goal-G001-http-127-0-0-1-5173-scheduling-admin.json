@@ -1,0 +1,14 @@
+{
+  "goal": {
+    "threadId": "019e77ca-7c9f-7460-be28-629bf68dbfe7",
+    "objectiveSummary": "CC plan aggregate implementation and audit until no audit issues remain",
+    "status": "active",
+    "tokensUsed": 411740728,
+    "timeUsedSeconds": 993139,
+    "createdAt": 1780126304,
+    "updatedAt": 1782111831
+  },
+  "remainingTokens": null,
+  "completionBudgetReport": null,
+  "reconciliationNote": "get_goal returned active aggregate CC goal, not a completed task-scoped objective for G001-http-127-0-0-1-5173-scheduling-admin; do not mark OMX goal complete from this thread state."
+}

@@ -1,4 +1,5 @@
 import { getLatestCustomerOrderImport, upsertCustomerOrderImport } from '../api/pocEvidence'
+import { isOfflineDemoError } from './offline-demo-mode'
 
 const STORAGE_KEY = 'aimes_customer_order_import'
 
@@ -48,10 +49,11 @@ export function readCustomerOrderImportEvidence(): CustomerOrderImportEvidence |
 export async function readCustomerOrderImportEvidenceBackendFirst(): Promise<CustomerOrderImportEvidence | null> {
   try {
     const record = await getLatestCustomerOrderImport()
-    return record ?? readCustomerOrderImportEvidence()
+    return isCustomerOrderImportEvidence(record) ? record : readCustomerOrderImportEvidence()
   } catch (error: unknown) {
     const localRecord = readCustomerOrderImportEvidence()
     if (localRecord) return localRecord
+    if (isOfflineDemoError(error)) return null
     throw error
   }
 }

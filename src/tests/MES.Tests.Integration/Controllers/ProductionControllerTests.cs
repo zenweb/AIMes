@@ -134,6 +134,42 @@ public class ProductionControllerTests : IClassFixture<TestWebApplicationFactory
         report.MaterialConsumed.Should().ContainSingle().Which.MaterialCode.Should().Be("MAT-FLOW");
     }
 
+    [Fact]
+    public async Task DemoSeed_ShouldKeepWo013HeatTreatmentScannableWhenOtherWorkOrdersAlreadyExist()
+    {
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+            var staleWorkOrderIds = await db.WorkOrders
+                .Where(w => w.OrderNumber == "WO-013")
+                .Select(w => w.Id)
+                .ToListAsync();
+            db.OperationExecutions.RemoveRange(db.OperationExecutions
+                .Where(e => e.OperationCode == "OP-10" || staleWorkOrderIds.Contains(e.WorkOrderId)));
+            db.WorkOrders.RemoveRange(db.WorkOrders.Where(w => w.OrderNumber == "WO-013"));
+            await db.SaveChangesAsync();
+
+            await DemoDataSeeder.SeedAsync(db);
+        }
+
+        var scanResponse = await _client.PostAsJsonAsync("/api/v1/production/scan", new
+        {
+            Code = "WO-013",
+            OperatorId = "admin",
+            StationId = "ST-HT-01"
+        });
+
+        scanResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var scan = await scanResponse.Content.ReadFromJsonAsync<OperationInfoDto>();
+        scan.Should().NotBeNull();
+        scan!.WorkOrderNumber.Should().Be("WO-013");
+        scan.OperationCode.Should().Be("OP-10");
+        scan.OperationName.Should().Be("淬火");
+        scan.NextOperation.Should().NotBeNull("WO-013 barcode completion must know the downstream heat-treatment operation");
+        scan.NextOperation?.OperationCode.Should().Be("OP-20");
+        scan.NextOperation?.OperationName.Should().Be("回火");
+    }
+
     private string SeedWorkOrder(string orderNumber)
     {
         string workOrderId = string.Empty;

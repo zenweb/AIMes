@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getLocalAccessToken } from '../utils/auth-token'
 import { getLocalUser, getLocalUserRole } from '../utils/local-user'
+import { setOfflineDemoMode } from '../utils/offline-demo-mode'
+import { clearAuthSession } from '../stores/auth'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -153,23 +155,53 @@ const router = createRouter({
   ],
 })
 
+function demoEntryQuery(query: Record<string, unknown>) {
+  const result: Record<string, string> = {}
+  for (const key of ['offlineDemo', 'demoMode']) {
+    const value = query[key]
+    if (typeof value === 'string') result[key] = value
+  }
+  return result
+}
+
+function protectedEntryQuery(to: { path: string; fullPath?: string; query?: Record<string, unknown> }) {
+  return {
+    ...demoEntryQuery(to.query ?? {}),
+    redirect: to.fullPath || to.path,
+  }
+}
+
+function isExplicitDemoEntry(query: Record<string, unknown>) {
+  const value = query.offlineDemo ?? query.demoMode
+  return value === '1' || value === 'true' || value === 'offline'
+}
+
+function clearCachedAuth() {
+  clearAuthSession()
+}
+
 router.beforeEach((to, _from, next) => {
   const token = getLocalAccessToken()
   const cachedUser = getLocalUser()
+  const userRole = getLocalUserRole()
+  const isAuthenticated = !!token && !!cachedUser && !!userRole
   const mustChangePassword = cachedUser?.mustChangePassword === true
 
-  if (to.meta.requiresAuth && !token) {
-    next('/login')
+  if (token?.startsWith('demo-token-') && !isExplicitDemoEntry(to.query) && (to.path === '/login' || to.meta.requiresAuth)) {
+    clearCachedAuth()
+    setOfflineDemoMode(false)
+    next(to.path === '/login' ? undefined : { path: '/login' })
+  } else if (to.meta.requiresAuth && !isAuthenticated) {
+    next({ path: '/login', query: protectedEntryQuery(to) })
   } else if (mustChangePassword && to.path !== '/change-password' && to.path !== '/login') {
     next('/change-password')
-  } else if (to.path === '/login' && token) {
+  } else if (to.path === '/login' && isAuthenticated) {
     next(mustChangePassword ? '/change-password' : '/dashboard')
   } else {
     // Role-based access check
     const routeRoles = to.meta.roles as string[] | undefined
     if (routeRoles && routeRoles.length > 0) {
-      const userRole = getLocalUserRole()
-      if (!userRole || !routeRoles.includes(userRole)) {
+      if (!routeRoles.includes(userRole)) {
         next('/dashboard')
         return
       }

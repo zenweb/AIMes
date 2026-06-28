@@ -72,7 +72,30 @@ describe('risk SLA review sync', () => {
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readRiskSlaReviewRecordBackendFirst()).resolves.toEqual(localRecord)
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/risk-sla-review/latest')
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/risk-sla-review/latest', { suppressErrorToast: true })
+  })
+
+  it('ignores incomplete backend review packages so affected orders and actions stay auditable', async () => {
+    const localRecord = writeRiskSlaReviewRecord({ risks: [inputRisk] })
+    httpGet.mockResolvedValueOnce({
+      data: {
+        id: 'risk-sla-review-20260521',
+        title: '风险 SLA 逾期晨会复核包',
+        status: 'escalated',
+        statusLabel: '已升级晨会复核',
+        traceId: 'TRACE-RISK-SLA-DAILY-REVIEW-20260521',
+        createdAt: '2026-06-01T08:00:00.000Z',
+      },
+    })
+
+    await expect(readRiskSlaReviewRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for risk SLA review refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('risk sla backend unavailable'))
+
+    await expect(readRiskSlaReviewRecordBackendFirst({ failLoud: true }))
+      .rejects.toThrow('risk sla backend unavailable')
   })
 
   it('closes the review package, records action results, and mirrors closed OTD evidence', async () => {

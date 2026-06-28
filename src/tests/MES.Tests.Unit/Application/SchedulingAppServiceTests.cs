@@ -224,6 +224,70 @@ public class SchedulingAppServiceTests
     }
 
     [Fact]
+    public async Task BatchOptimizeAsync_ShouldExposeAuditableRecommendationScoreBreakdown()
+    {
+        var now = new DateTime(2026, 6, 14, 8, 0, 0, DateTimeKind.Utc);
+        var workOrder = WorkOrder.Create("WO-010", "PROD-X1", "Product X", 20,
+            now, now.AddDays(2), "WS-001", 8, "R010");
+        var equipment = Equipment.Create("CNC-010", "CNC Machine 10", "CNC", "WS-001", "Workshop A", 100);
+        var request = new BatchOptimizeRequest
+        {
+            WorkshopId = "WS-001",
+            WorkOrderIds = [workOrder.Id],
+            Objectives = ["due_date", "utilization"],
+            ConsiderHistoricalData = false,
+        };
+
+        _workOrderRepoMock.Setup(r => r.GetByIdAsync(workOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workOrder);
+        _equipmentRepoMock.Setup(r => r.GetByWorkshopAsync("WS-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([equipment]);
+        _bomRepoMock.Setup(r => r.GetByProductCodeAsync(It.IsAny<MES.Domain.ValueObjects.ProductCode>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BillOfMaterial>());
+        _optimizationMock
+            .Setup(a => a.OptimizeAsync(It.IsAny<ScheduleOptimizationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ScheduleOptimizationRequest optimizationRequest, CancellationToken _) =>
+            {
+                var (utilization, onTimeDelivery, changeoverMinutes) = optimizationRequest.OptimizationObjective switch
+                {
+                    "due_date" => (0.5, 0.75, 250.0),
+                    "utilization" => (0.9, 0.4, 1000.0),
+                    _ => (0.0, 0.0, 1000.0),
+                };
+
+                return new ScheduleOptimizationResult(
+                    [new ScheduleAssignmentData(workOrder.Id, equipment.Id, now, now.AddHours(4), [], null, 0, false)],
+                    now.AddHours(4),
+                    utilization,
+                    onTimeDelivery,
+                    changeoverMinutes,
+                    1,
+                    null,
+                    $"目标 {optimizationRequest.OptimizationObjective} 排产结果",
+                    [],
+                    []);
+            });
+
+        var result = await _sut.BatchOptimizeAsync(request);
+
+        result.Items.Should().HaveCount(2);
+        result.RecommendationScoreFormula.Version.Should().Be("v1-weighted-kpi-40-40-20");
+        result.RecommendationScoreFormula.UtilizationWeight.Should().Be(0.4);
+        result.RecommendationScoreFormula.OnTimeDeliveryWeight.Should().Be(0.4);
+        result.RecommendationScoreFormula.ChangeoverWeight.Should().Be(0.2);
+        result.RecommendationScoreFormula.ChangeoverNormalizationMinutes.Should().Be(1000);
+        result.RecommendationScoreFormula.Description.Should().Contain("利用率 40%");
+        result.RecommendationScoreFormula.Description.Should().Contain("准时率 40%");
+        result.RecommendationScoreFormula.Description.Should().Contain("换线效率 20%");
+        var dueDateItem = result.Items.Single(i => i.Objective == "due_date");
+        dueDateItem.RecommendationScoreBreakdown.UtilizationContribution.Should().BeApproximately(0.20, 0.0001);
+        dueDateItem.RecommendationScoreBreakdown.OnTimeDeliveryContribution.Should().BeApproximately(0.30, 0.0001);
+        dueDateItem.RecommendationScoreBreakdown.ChangeoverContribution.Should().BeApproximately(0.15, 0.0001);
+        dueDateItem.RecommendationScore.Should().BeApproximately(0.65, 0.0001);
+        result.BestOverallObjective.Should().Be("due_date");
+    }
+
+    [Fact]
     public async Task CreateWorkOrderAsync_ShouldCreateWorkOrderWithCorrectProperties()
     {
         var request = new CreateWorkOrderRequest
@@ -394,5 +458,129 @@ public class SchedulingAppServiceTests
 
         result.Should().HaveCount(2);
         result[0].PlanName.Should().Be("Plan 1");
+    }
+
+    [Fact]
+    public async Task GetPlanByIdAsync_ShouldPopulateItemWorkOrderNumberAndEquipmentName()
+    {
+        var now = new DateTime(2026, 6, 12, 8, 0, 0, DateTimeKind.Utc);
+        var workOrder = WorkOrder.Create(
+            "WO-LIVE-READMODEL-001",
+            "PROD-LIVE",
+            "Live Read Model Product",
+            10,
+            now,
+            now.AddDays(1),
+            "WS-001");
+        var equipment = Equipment.Create(
+            "EQ-LIVE-001",
+            "Live Read Model CNC",
+            "CNC",
+            "WS-001",
+            "Workshop A",
+            100);
+        var plan = SchedulePlan.Create("Live read model plan", now, now.AddHours(8));
+        plan.AddItem(ScheduleItem.Create(
+            workOrder.Id,
+            equipment.Id,
+            now.AddHours(1),
+            now.AddHours(3),
+            1,
+            "20 分钟"));
+
+        _scheduleRepoMock
+            .Setup(r => r.GetByIdAsync(plan.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(plan);
+        _workOrderRepoMock
+            .Setup(r => r.GetByIdAsync(workOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workOrder);
+        _equipmentRepoMock
+            .Setup(r => r.GetByIdAsync(equipment.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(equipment);
+
+        var result = await _sut.GetPlanByIdAsync(plan.Id);
+
+        result.Should().NotBeNull();
+        var item = result!.Items.Should().ContainSingle().Subject;
+        item.WorkOrderNumber.Should().Be("WO-LIVE-READMODEL-001");
+        item.EquipmentName.Should().Be("Live Read Model CNC");
+    }
+
+    [Fact]
+    public async Task GetLatestAdoptionFeedbackAsync_WhenFeedbackExists_ShouldReturnAuditableSnapshot()
+    {
+        var createdAt = new DateTime(2026, 6, 14, 10, 0, 0, DateTimeKind.Utc);
+        var feedback = new ScheduleAdoptionFeedback
+        {
+            SchedulePlanId = "plan-audit-snapshot",
+            WorkshopId = "WS-001",
+            OptimizationObjective = "balanced",
+            ReasonCategory = OverrideReasonCategory.UrgentInsertion,
+            ReasonDetail = "急单插入后采纳综合平衡方案",
+            OperatorUser = "planner",
+            AiTraceId = "trace-audit-snapshot",
+            CreatedAt = createdAt,
+        };
+        _scheduleRepoMock
+            .Setup(r => r.GetLatestFeedbackAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(feedback);
+
+        var result = await _sut.GetLatestAdoptionFeedbackAsync();
+
+        result.Should().NotBeNull();
+        result!.Decision.Should().Be("rejected");
+        result.DecisionLabel.Should().Be("已记录人工排产调整");
+        result.ReasonCategory.Should().Be(nameof(OverrideReasonCategory.UrgentInsertion));
+        result.CategoryLabel.Should().Be("紧急插单");
+        result.ReasonDetail.Should().Be("急单插入后采纳综合平衡方案");
+        result.ObjectiveLabel.Should().Be("综合平衡");
+        result.CreatedAt.Should().Be(createdAt);
+        result.TraceId.Should().Be("trace-audit-snapshot");
+        result.Source.Should().Be("backend");
+    }
+
+    [Fact]
+    public async Task RecordAdoptionFeedbackAsync_WithBlankReasonDetail_ShouldRejectBeforePersistence()
+    {
+        var request = new AdoptionFeedbackRequest
+        {
+            SchedulePlanId = "plan-blank-reason",
+            WorkshopId = "WS-001",
+            ReasonCategory = nameof(OverrideReasonCategory.UrgentInsertion),
+            ReasonDetail = "   ",
+        };
+
+        var act = async () => await _sut.RecordAdoptionFeedbackAsync(request, "planner");
+
+        await act.Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("修改原因说明不能为空*");
+        _feedbackMock.Verify(
+            r => r.RecordOverride(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<OverrideReasonCategory>(),
+                It.IsAny<string?>(),
+                It.IsAny<List<string>?>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _scheduleRepoMock.Verify(r => r.SaveFeedbackAsync(It.IsAny<ScheduleAdoptionFeedback>(), It.IsAny<CancellationToken>()), Times.Never);
+        _agentDecisionRepoMock.Verify(r => r.UpsertEvidenceLinkAsync(It.IsAny<MES.Domain.Entities.Agent.AgentEvidenceLink>(), It.IsAny<CancellationToken>()), Times.Never);
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.IsAny<MES.Domain.Entities.AuditLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void AdoptionFeedbackDtos_ShouldDeclareReasonDetailAsRequiredContract()
+    {
+        var nullability = new System.Reflection.NullabilityInfoContext();
+        var requestReason = typeof(AdoptionFeedbackRequest).GetProperty(nameof(AdoptionFeedbackRequest.ReasonDetail));
+        var snapshotReason = typeof(AdoptionFeedbackSnapshotDto).GetProperty(nameof(AdoptionFeedbackSnapshotDto.ReasonDetail));
+
+        requestReason.Should().NotBeNull();
+        snapshotReason.Should().NotBeNull();
+        nullability.Create(requestReason!).WriteState.Should().Be(System.Reflection.NullabilityState.NotNull);
+        nullability.Create(snapshotReason!).ReadState.Should().Be(System.Reflection.NullabilityState.NotNull);
     }
 }

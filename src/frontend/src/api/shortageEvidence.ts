@@ -1,4 +1,4 @@
-import http from './http'
+import http, { type AimesRequestConfig } from './http'
 import type {
   BomKittingPackage,
   ShortageKittingEvent,
@@ -7,11 +7,14 @@ import type {
   SupplyRiskEscalation,
 } from '../utils/shortage-risk-sync'
 
-export async function getLatestShortageKitting(): Promise<ShortageKittingEvent | null> {
+export async function getLatestShortageKitting(options?: { failLoud?: boolean }): Promise<ShortageKittingEvent | null> {
   try {
-    const { data } = await http.get<ShortageKittingEvent>('/scheduling/shortage-kitting/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<ShortageKittingEvent>('/scheduling/shortage-kitting/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -21,11 +24,14 @@ export async function upsertShortageKitting(item: ShortageKittingEvent): Promise
   return data
 }
 
-export async function getLatestShortageRiskResolution(): Promise<ShortageRiskResolution | null> {
+export async function getLatestShortageRiskResolution(options?: { failLoud?: boolean }): Promise<ShortageRiskResolution | null> {
   try {
-    const { data } = await http.get<ShortageRiskResolution>('/scheduling/shortage-risk-resolution/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<ShortageRiskResolution>('/scheduling/shortage-risk-resolution/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -35,11 +41,14 @@ export async function upsertShortageRiskResolution(item: ShortageRiskResolution)
   return data
 }
 
-export async function getLatestBomKittingPackage(): Promise<BomKittingPackage | null> {
+export async function getLatestBomKittingPackage(options?: { failLoud?: boolean }): Promise<BomKittingPackage | null> {
   try {
-    const { data } = await http.get<BomKittingPackage>('/scheduling/bom-kitting-package/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<BomKittingPackage>('/scheduling/bom-kitting-package/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -49,11 +58,14 @@ export async function upsertBomKittingPackage(item: BomKittingPackage): Promise<
   return data
 }
 
-export async function getLatestSupplyRiskEscalation(): Promise<SupplyRiskEscalation | null> {
+export async function getLatestSupplyRiskEscalation(options?: { failLoud?: boolean }): Promise<SupplyRiskEscalation | null> {
   try {
-    const { data } = await http.get<SupplyRiskEscalation>('/scheduling/supply-risk-escalation/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<SupplyRiskEscalation>('/scheduling/supply-risk-escalation/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -63,11 +75,14 @@ export async function upsertSupplyRiskEscalation(item: SupplyRiskEscalation): Pr
   return data
 }
 
-export async function getLatestSupplierNetworkDecision(): Promise<SupplierNetworkDecision | null> {
+export async function getLatestSupplierNetworkDecision(options?: { failLoud?: boolean }): Promise<SupplierNetworkDecision | null> {
   try {
-    const { data } = await http.get<SupplierNetworkDecision>('/scheduling/supplier-network-decision/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<SupplierNetworkDecision>('/scheduling/supplier-network-decision/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -75,4 +90,10 @@ export async function getLatestSupplierNetworkDecision(): Promise<SupplierNetwor
 export async function upsertSupplierNetworkDecision(item: SupplierNetworkDecision): Promise<SupplierNetworkDecision> {
   const { data } = await http.post<SupplierNetworkDecision>('/scheduling/supplier-network-decision', item)
   return data
+}
+
+function isNotFoundResponse(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { response?: { status?: unknown } }
+  return candidate.response?.status === 404
 }

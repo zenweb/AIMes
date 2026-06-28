@@ -1,0 +1,1022 @@
+diff --git a/_docs/_changelog/20260622-agent-e2e-current-worktree-verification.md b/_docs/_changelog/20260622-agent-e2e-current-worktree-verification.md
+new file mode 100644
+index 0000000..b26bee1
+--- /dev/null
++++ b/_docs/_changelog/20260622-agent-e2e-current-worktree-verification.md
+@@ -0,0 +1,20 @@
++# 2026-06-22 Agent E2E Current Worktree Verification
++
++## Changed
++
++- Added current-state verification evidence for the Agent E2E slice.
++- Recorded that the old exported patch should not be directly applied because the worktree already contains its useful behavior.
++- Re-verified the previously unproven backend-unavailable Agent fallback path against the current worktree.
++- Rechecked all 3 focused Agent E2E Chromium commands sequentially; all passed. Parallel E2E execution is not valid evidence here because the shared Playwright webServer port `127.0.0.1:4174` can collide with `EADDRINUSE`.
++- Added a 03:24 sequential recheck record with the exact three focused commands and PASS result for each Agent backend path.
++
++## Validation
++
++- Focused Agent E2E Chromium tests: 3 PASS
++- `git diff --cached --check`: PASS
++
++## Next
++
++- Resolve package boundaries:
++  - current staged package is Agent E2E verification
++  - keep labor retry evidence separate unless intentionally rebuilding that package
+diff --git a/_docs/_changelog/20260622-formal-writeback-focused-patch-draft.md b/_docs/_changelog/20260622-formal-writeback-focused-patch-draft.md
+new file mode 100644
+index 0000000..0fc0333
+--- /dev/null
++++ b/_docs/_changelog/20260622-formal-writeback-focused-patch-draft.md
+@@ -0,0 +1,13 @@
++# Changelog - Formal Writeback Focused Patch Draft
++
++## Changed
++
++- Exported zero-context diffs for formal-writeback candidate files into `tmp/`.
++- Ran keyword hunk scan to estimate whether an automated focused patch would be safe.
++- Recorded the decision not to auto-generate or apply the patch because the selected hunks remain too broad.
++
++## Validation
++
++- Keyword scan completed.
++- No business source files were edited by this attempt.
++- No formal-writeback code was staged.
+diff --git a/_docs/_changelog/20260622-formal-writeback-hunk-map.md b/_docs/_changelog/20260622-formal-writeback-hunk-map.md
+new file mode 100644
+index 0000000..391ab9f
+--- /dev/null
++++ b/_docs/_changelog/20260622-formal-writeback-hunk-map.md
+@@ -0,0 +1,21 @@
++# Changelog - Formal Writeback Hunk Map
++
++## Changed
++
++- Added a focused hunk map for the unstaged formal schedule writeback trace work.
++- Marked direct keep hunks for pending/saved writeback state in the workbench, board, unit tests, and scheduling E2E.
++- Marked unrelated ScheduleBoard hardening hunks for deferral into separate packages.
++
++## Validation
++
++- Read-only diff inspection with `rg` and `git diff` context.
++- Current dirty worktree behavior recheck:
++  - `npm run test:unit -- tests/unit/schedule-agent-workbench-panel.test.ts tests/unit/schedule-board.test.ts`
++    - PASS: 2 files, 82 tests.
++  - `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "急单 Agent 采纳后区分反馈与正式排产回写" --project=chromium`
++    - PASS: 1 Chromium test.
++- No business code was staged or changed by this mapping step.
++
++## Boundary
++
++The staged Agent E2E package remains separate. Formal writeback is still unstaged and requires hunk-level packaging before release review.
+diff --git a/_docs/_changelog/20260622-package-boundary-index-agent-plus-formal-docs.md b/_docs/_changelog/20260622-package-boundary-index-agent-plus-formal-docs.md
+new file mode 100644
+index 0000000..59de6e8
+--- /dev/null
++++ b/_docs/_changelog/20260622-package-boundary-index-agent-plus-formal-docs.md
+@@ -0,0 +1,10 @@
++# Changelog - Package Boundary Index Agent Plus Formal Docs
++
++## Changed
++
++- Documented the current staged boundary after adding formal-writeback hunk-map and patch-draft documents.
++- Clarified that formal-writeback business code remains unstaged.
++
++## Validation
++
++- `git diff --cached --check`: PASS before this boundary note.
+diff --git a/_docs/_issue/20260622-agent-e2e-current-worktree-verification.md b/_docs/_issue/20260622-agent-e2e-current-worktree-verification.md
+new file mode 100644
+index 0000000..b497424
+--- /dev/null
++++ b/_docs/_issue/20260622-agent-e2e-current-worktree-verification.md
+@@ -0,0 +1,20 @@
++# Issue - Agent E2E Patch Application Drift
++
++## Symptom
++
++`git apply --check tmp/agent-e2e-slice-20260622.patch` fails on:
++
++- `src/frontend/scripts/e2e.mjs`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++## Cause
++
++The current worktree already contains later edits in the same files, including Agent backend-mock E2E setup and labor evidence retry setup.
++
++## Resolution
++
++Do not apply the stale patch directly. Verify the current worktree behavior instead.
++
++## Status
++
++Resolved for the bounded current-worktree verification slice. Current Agent E2E verification passed all three focused Agent backend scenarios, including `调度员 Agent 工作台 API 不可用时保留 demo fallback`.
+diff --git a/_docs/_issue/20260622-package-boundary-index-labor-then-agent.md b/_docs/_issue/20260622-package-boundary-index-labor-then-agent.md
+new file mode 100644
+index 0000000..c40652f
+--- /dev/null
++++ b/_docs/_issue/20260622-package-boundary-index-labor-then-agent.md
+@@ -0,0 +1,15 @@
++# Issue - Package Boundary Risk
++
++## Risk
++
++The current worktree contains multiple verified slices touching `src/frontend/tests/e2e/scheduling.spec.ts`.
++
++If stale boundary text is trusted, the current index can be mislabeled. The current staged package is Agent E2E, not the older labor retry package.
++
++## Resolution
++
++Use `_docs/_review/20260622-package-boundary-index-labor-then-agent.md` as the staging guide.
++
++## Status
++
++Open until the current Agent E2E staged package is committed, reset, or intentionally replaced by a regenerated labor package.
+diff --git a/_docs/_plan/20260622-agent-e2e-current-worktree-verification.md b/_docs/_plan/20260622-agent-e2e-current-worktree-verification.md
+new file mode 100644
+index 0000000..0d1f034
+--- /dev/null
++++ b/_docs/_plan/20260622-agent-e2e-current-worktree-verification.md
+@@ -0,0 +1,17 @@
++# Plan - Agent E2E Current Worktree Verification
++
++## Success Criteria
++
++- Inspect exported Agent E2E patch.
++- Confirm whether it applies cleanly.
++- If it does not apply, compare its intent with current worktree state.
++- Run focused Agent E2E tests against the current worktree.
++- Record evidence without mixing package boundaries.
++
++## Status
++
++Complete.
++
++## Outcome
++
++The patch is stale for direct application, but the current worktree satisfies and verifies the intended Agent E2E coverage across success, permission-denied, and backend-unavailable fallback paths.
+diff --git a/_docs/_plan/20260622-formal-writeback-hunk-map.md b/_docs/_plan/20260622-formal-writeback-hunk-map.md
+new file mode 100644
+index 0000000..beaf45e
+--- /dev/null
++++ b/_docs/_plan/20260622-formal-writeback-hunk-map.md
+@@ -0,0 +1,16 @@
++# Plan - Formal Writeback Hunk Map
++
++## Success Criteria
++
++- Identify direct formal-writeback hunks.
++- Identify unrelated hunks that must be deferred.
++- Preserve current staged Agent E2E package.
++- Provide validation commands for the eventual clean package.
++
++## Status
++
++Complete for mapping only.
++
++## Next
++
++Use this map to perform hunk-level staging or clean patch extraction. Do not stage whole files.
+diff --git a/_docs/_reports/agent-e2e-current-worktree-verification-20260622.md b/_docs/_reports/agent-e2e-current-worktree-verification-20260622.md
+new file mode 100644
+index 0000000..ca357be
+--- /dev/null
++++ b/_docs/_reports/agent-e2e-current-worktree-verification-20260622.md
+@@ -0,0 +1,76 @@
++# Agent E2E Current Worktree Verification - 2026-06-22
++
++## Scope
++
++Verified the Agent E2E slice represented by `tmp/agent-e2e-slice-20260622.patch` against the current dirty worktree.
++
++## Patch Application Result
++
++Direct `git apply --check tmp/agent-e2e-slice-20260622.patch` failed because the current worktree already has later edits in the same files:
++
++- `src/frontend/scripts/e2e.mjs`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++The patch was not applied.
++
++## Current-State Audit
++
++The current worktree already contains the Agent E2E intent from the patch:
++
++- E2E runner disables offline demo for Agent backend-mock tests.
++- Scheduling E2E setup identifies Agent backend evidence titles.
++- Agent backend tests enter `scheduling?offlineDemo=0`.
++- Shared scheduling-plan API mocks exist for live-backend-mock scenarios.
++- Agent backend success, 403, and unavailable fallback paths are covered.
++
++## Validation Commands
++
++```powershell
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台通过后端 API" --project=chromium
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台后端 403" --project=chromium
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台 API 不可用" --project=chromium
++```
++
++## Result
++
++PASS.
++
++- `调度员 Agent 工作台通过后端 API 生成并采纳推荐`: PASS.
++- `调度员 Agent 工作台后端 403 时保留 fallback 并提示权限`: PASS.
++- `调度员 Agent 工作台 API 不可用时保留 demo fallback`: PASS.
++
++Total focused Agent E2E evidence:
++
++- 3 Chromium tests passed.
++- Each test was run as a separate focused command against the current worktree to avoid Playwright `-g` regex ambiguity.
++- 2026-06-22 recheck: the same 3 focused Chromium commands passed when run sequentially. Parallel execution is not valid evidence for this slice because the current Playwright webServer binds `127.0.0.1:4174`, causing `EADDRINUSE` when multiple focused E2E commands are launched at once.
++
++## 2026-06-22 03:24 Sequential Recheck
++
++PASS.
++
++The staged Agent E2E package was rechecked again with the same three focused Chromium commands:
++
++```powershell
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台通过后端 API" --project=chromium
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台后端 403" --project=chromium
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "调度员 Agent 工作台 API 不可用" --project=chromium
++```
++
++Observed result:
++
++- `调度员 Agent 工作台通过后端 API 生成并采纳推荐`: PASS, 1 Chromium test.
++- `调度员 Agent 工作台后端 403 时保留 fallback 并提示权限`: PASS, 1 Chromium test.
++- `调度员 Agent 工作台 API 不可用时保留 demo fallback`: PASS, 1 Chromium test.
++
++Each command rebuilt its own temporary Nuxt output and ran with one Playwright worker.
++
++## Decision
++
++Do not apply `tmp/agent-e2e-slice-20260622.patch` directly. Its useful behavior is represented in the current worktree, and the Agent backend success, permission-denied, and unavailable-backend fallback scenarios are now verified.
++
++## Non-Claims
++
++- This report does not resolve the staged `schedule-labor-evidence-retry` package.
++- This report does not claim all Scheduling E2E tests pass.
++- This report does not claim full CC plan completion.
+diff --git a/_docs/_reports/formal-writeback-focused-patch-draft-20260622.md b/_docs/_reports/formal-writeback-focused-patch-draft-20260622.md
+new file mode 100644
+index 0000000..36eb18a
+--- /dev/null
++++ b/_docs/_reports/formal-writeback-focused-patch-draft-20260622.md
+@@ -0,0 +1,49 @@
++# Formal Writeback Focused Patch Draft - 2026-06-22
++
++## Scope
++
++Attempted to derive a focused formal-writeback patch from the current unstaged diff without touching the staged Agent E2E package.
++
++## Generated Intermediate Diff Files
++
++The following zero-context diffs were exported for analysis:
++
++- `tmp/formal-writeback-workbench-u0.diff`
++- `tmp/formal-writeback-board-u0.diff`
++- `tmp/formal-writeback-workbench-test-u0.diff`
++- `tmp/formal-writeback-board-test-u0.diff`
++- `tmp/formal-writeback-e2e-u0.diff`
++
++## Keyword Hunk Scan
++
++Keyword scan result:
++
++| File | Total hunks | Keyword-selected hunks |
++| --- | ---: | ---: |
++| `tmp/formal-writeback-workbench-u0.diff` | 3 | 2 |
++| `tmp/formal-writeback-board-u0.diff` | 65 | 15 |
++| `tmp/formal-writeback-workbench-test-u0.diff` | 6 | 3 |
++| `tmp/formal-writeback-board-test-u0.diff` | 92 | 7 |
++| `tmp/formal-writeback-e2e-u0.diff` | 6 | 6 |
++
++## Decision
++
++Do not auto-generate or apply a focused formal-writeback patch from keyword-selected hunks.
++
++Reason: the keyword-selected set is still too broad for `ScheduleBoard.vue` and `schedule-board.test.ts`. Some selected hunks are directly formal-writeback-related, but adjacent selected hunks still include broad fixture/mock refactors and unrelated ScheduleBoard behavior. A keyword-only patch would look plausible while still mixing scopes.
++
++## Safe Next Step
++
++Use manual hunk staging or a clean temporary worktree to reconstruct only the hunk-map-approved changes:
++
++- `ScheduleAgentWorkbenchPanel.vue`: formal writeback prop and execution trace.
++- `ScheduleBoard.vue`: minimal pending/saved state transitions.
++- `schedule-agent-workbench-panel.test.ts`: two direct formal writeback tests.
++- `schedule-board.test.ts`: only direct pending/saved tests.
++- `scheduling.spec.ts`: the focused formal-writeback E2E hunk while preserving staged Agent E2E hunks.
++
++## Non-Claims
++
++- No formal-writeback code was staged by this attempt.
++- No focused patch was produced for application.
++- The current staged Agent E2E package remains the only staged code package.
+diff --git a/_docs/_reports/formal-writeback-hunk-map-20260622.md b/_docs/_reports/formal-writeback-hunk-map-20260622.md
+new file mode 100644
+index 0000000..f32fc4f
+--- /dev/null
++++ b/_docs/_reports/formal-writeback-hunk-map-20260622.md
+@@ -0,0 +1,151 @@
++# Formal Writeback Hunk Map - 2026-06-22
++
++## Scope
++
++Hunk map for splitting the unstaged `schedule-agent-formal-writeback-trace` work into a clean package without mixing unrelated ScheduleBoard hardening.
++
++## Current Boundary
++
++The current staged package remains `scheduling-agent-e2e-current-worktree-verification`.
++
++Formal writeback is currently unstaged and mixed into wider files:
++
++- `src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue`
++- `src/frontend/src/components/schedule/ScheduleBoard.vue`
++- `src/frontend/tests/unit/schedule-agent-workbench-panel.test.ts`
++- `src/frontend/tests/unit/schedule-board.test.ts`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++`src/frontend/tests/e2e/scheduling.spec.ts` is `MM`; hunk staging must preserve the staged Agent E2E package.
++
++## Keep Hunks
++
++### `ScheduleAgentWorkbenchPanel.vue`
++
++Keep:
++
++- prop addition:
++  - `formalScheduleWriteback: 'pending' | 'saved'`
++- execution step change:
++  - `执行回写` uses `executionWritebackDetail`
++  - state is `current` while event adoption feedback exists but formal plan save is still pending
++  - state becomes `done` after `formalScheduleWriteback === 'saved'`
++- computed helpers:
++  - `requiresFormalScheduleSave`
++  - `executionWritebackDetail`
++
++Rationale: this is the user-visible distinction between Agent adoption feedback and formal schedule writeback.
++
++### `ScheduleBoard.vue`
++
++Keep only formal-writeback related hunks:
++
++- template prop:
++  - `:formal-schedule-writeback="formalScheduleWriteback"`
++- status text:
++  - `scheduleSaveStatus` paragraph only if included with drag-save proof
++- state refs:
++  - `formalScheduleWriteback = ref<'pending' | 'saved'>('pending')`
++  - `scheduleSaveStatus = ref('')` if drag-save proof is included
++- `handleOptimize`:
++  - returns boolean success
++  - sets `formalScheduleWriteback.value = 'saved'` after successful optimization
++  - caller awaits success before recording adoption if this hunk is needed for formal-writeback proof
++- drag-save:
++  - clears `scheduleSaveStatus` before save
++  - sets `formalScheduleWriteback.value = 'saved'` after successful `rescheduleItem`
++  - sets `scheduleSaveStatus` with saved window
++  - `formatScheduleSaveDate`
++- adoption feedback:
++  - `needsFormalScheduleWritebackNotice`
++  - accepted `rush_event_agent` sets `formalScheduleWriteback.value = 'pending'`
++  - feedback sync note explicitly says feedback is recorded but formal plan is not yet written
++
++### `schedule-agent-workbench-panel.test.ts`
++
++Keep:
++
++- mount helper prop support for `formalScheduleWriteback`
++- test: `keeps event adoption feedback separate from formal schedule execution`
++- test: `marks formal schedule execution done after the plan is saved`
++
++Optional only if already in package scope:
++
++- backend pending/adopt/reject Agent decision tests are not formal-writeback-specific and should stay out unless packaging a broader Agent workbench coverage slice.
++
++### `schedule-board.test.ts`
++
++Keep only direct formal-writeback tests:
++
++- `keeps rush-order adoption separate from formal schedule execution`
++- `marks rush-order adoption as formally saved after a successful optimization`
++- `marks rush-order adoption as formally saved after a successful drag reschedule`
++- `announces successful drag reschedule writeback with the saved window` only if `scheduleSaveStatus` UI is included
++
++Do not keep the wider unrelated startup, guidance, outsourcing, engineering, feedback snapshot, or scenario tradeoff tests in this package.
++
++### `scheduling.spec.ts`
++
++Keep:
++
++- `FORMAL_WRITEBACK_EVIDENCE_TITLE`
++- `usesFormalWritebackMock`
++- using `mockSchedulingPlanApis(page)` for the formal writeback test
++- E2E test:
++  - `急单 Agent 采纳后区分反馈与正式排产回写`
++- `mockSchedulingPlanApis` additions needed by the test:
++  - `optimizedPlan`
++  - `/api/v1/scheduling/optimize` response with `plan: optimizedPlan`
++
++Do not disturb already staged Agent backend evidence title handling.
++
++## Defer Hunks
++
++Defer these unrelated changes into separate auditable packages:
++
++- schedule workbench bilingual guidance link UI.
++- startup engineering constraint fail-loud aggregation.
++- scenario fit/tradeoff details.
++- feedback snapshot backend-first restore and invalid payload fallback.
++- outsourcing commitment preservation/release handling.
++- assistant recovery handoff closure behavior.
++- route/engineering/material/labor backend-first fail-loud reads.
++- broad `schedule-board.test.ts` fixture and mock refactors not directly required by the formal-writeback tests.
++
++## Suggested Split Order
++
++1. Isolate `ScheduleAgentWorkbenchPanel.vue` and its two direct unit tests.
++2. Isolate `ScheduleBoard.vue` minimal state/notice/save transitions and the three direct unit tests.
++3. Isolate `scheduling.spec.ts` formal-writeback E2E hunk while preserving the staged Agent E2E hunks.
++4. Run validation:
++
++```powershell
++npm run test:unit -- tests/unit/schedule-agent-workbench-panel.test.ts tests/unit/schedule-board.test.ts
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "急单 Agent 采纳后区分反馈与正式排产回写" --project=chromium
++git diff --check -- src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue src/frontend/src/components/schedule/ScheduleBoard.vue src/frontend/tests/unit/schedule-agent-workbench-panel.test.ts src/frontend/tests/unit/schedule-board.test.ts src/frontend/tests/e2e/scheduling.spec.ts
++git diff --cached --check
++```
++
++## Current Worktree Behavior Verification
++
++2026-06-22 03:34 recheck: PASS.
++
++Commands:
++
++```powershell
++npm run test:unit -- tests/unit/schedule-agent-workbench-panel.test.ts tests/unit/schedule-board.test.ts
++npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "急单 Agent 采纳后区分反馈与正式排产回写" --project=chromium
++```
++
++Observed result:
++
++- Unit: 2 files passed, 82 tests passed.
++- E2E: 1 Chromium test passed.
++
++This proves the current dirty worktree behavior for pending/saved formal writeback, but it does not prove the eventual release package is clean. Hunk-level packaging is still required.
++
++## Non-Claims
++
++- This hunk map does not stage formal writeback.
++- This hunk map does not claim the formal-writeback package is clean yet.
++- This hunk map does not complete the global CC plan.
+diff --git a/_docs/_review/20260622-agent-e2e-current-worktree-verification.md b/_docs/_review/20260622-agent-e2e-current-worktree-verification.md
+new file mode 100644
+index 0000000..f4fd51e
+--- /dev/null
++++ b/_docs/_review/20260622-agent-e2e-current-worktree-verification.md
+@@ -0,0 +1,26 @@
++# Review - Agent E2E Current Worktree Verification
++
++## Finding
++
++Agent E2E is ready for the bounded current-worktree verification slice.
++
++The exported patch `tmp/agent-e2e-slice-20260622.patch` no longer applies cleanly because the current worktree has evolved. It should remain historical reference only. The current worktree now directly verifies the Agent backend E2E intent.
++
++## Validation
++
++- Agent backend success path: PASS
++- Agent backend 403 fallback path: PASS
++- Agent backend unavailable demo fallback path: PASS
++- Sequential 2026-06-22 focused Chromium recheck: PASS for all 3 commands
++- 2026-06-22 03:24 sequential focused Chromium recheck: PASS for all 3 commands
++- `git diff --cached --check`: PASS
++
++## Evidence
++
++- `_docs/_reports/agent-e2e-current-worktree-verification-20260622.md`
++
++## Decision
++
++Keep Agent E2E separate from the completed labor retry package. If committing this slice, stage only the Agent-specific E2E runner, scheduling spec hunks, and this verification packet.
++
++Do not treat parallel focused E2E command failures as Agent behavior evidence unless the Playwright webServer port strategy changes; current parallel runs can collide on `127.0.0.1:4174`.
+diff --git a/_docs/_review/20260622-formal-writeback-focused-patch-draft.md b/_docs/_review/20260622-formal-writeback-focused-patch-draft.md
+new file mode 100644
+index 0000000..b658ece
+--- /dev/null
++++ b/_docs/_review/20260622-formal-writeback-focused-patch-draft.md
+@@ -0,0 +1,17 @@
++# Review - Formal Writeback Focused Patch Draft
++
++## Finding
++
++Automatic keyword-based patch extraction is not safe for this slice.
++
++The behavior is verified in the current dirty worktree, but the diff remains too interleaved to produce a trustworthy release patch without manual hunk selection.
++
++## Evidence
++
++- `ScheduleBoard.vue`: 65 hunks total, 15 keyword-selected hunks.
++- `schedule-board.test.ts`: 92 hunks total, 7 keyword-selected hunks.
++- The selected hunks still sit near broad fixture/mock and unrelated ScheduleBoard changes.
++
++## Decision
++
++Do not apply or stage an auto-generated patch. Continue with manual hunk-level packaging only.
+diff --git a/_docs/_review/20260622-formal-writeback-hunk-map.md b/_docs/_review/20260622-formal-writeback-hunk-map.md
+new file mode 100644
+index 0000000..f858e2a
+--- /dev/null
++++ b/_docs/_review/20260622-formal-writeback-hunk-map.md
+@@ -0,0 +1,21 @@
++# Review - Formal Writeback Hunk Map
++
++## Finding
++
++Formal writeback can be split into a clean package, but only with hunk-level staging.
++
++The current unstaged diff contains direct formal-writeback behavior plus unrelated ScheduleBoard hardening. Whole-file staging would mix scopes and weaken review evidence.
++
++## Evidence
++
++- `ScheduleAgentWorkbenchPanel.vue` has a small, direct prop and execution trace change.
++- `ScheduleBoard.vue` has direct writeback state transitions, but the same file also contains guidance, startup fail-loud, backend-first evidence, outsourcing, and assistant recovery changes.
++- `schedule-board.test.ts` contains direct formal-writeback tests plus a much broader set of unrelated tests and mock refactors.
++- `scheduling.spec.ts` is `MM`, so hunk staging must preserve staged Agent E2E evidence.
++- Current dirty worktree behavior recheck passed:
++  - unit: 2 files, 82 tests.
++  - E2E: focused formal-writeback Chromium test.
++
++## Decision
++
++Do not stage formal writeback until the hunk map is applied. Package only direct pending/saved formal writeback behavior and its direct tests.
+diff --git a/_docs/_review/20260622-package-boundary-index-agent-plus-formal-docs.md b/_docs/_review/20260622-package-boundary-index-agent-plus-formal-docs.md
+new file mode 100644
+index 0000000..409e4f3
+--- /dev/null
++++ b/_docs/_review/20260622-package-boundary-index-agent-plus-formal-docs.md
+@@ -0,0 +1,27 @@
++# Review - Package Boundary Index Agent Plus Formal Docs
++
++## Current Index Boundary
++
++The current index contains:
++
++- Agent E2E code and verification packet.
++- Formal writeback hunk-map and patch-draft documentation.
++
++The current index does not contain formal-writeback business code.
++
++## Why This Boundary Exists
++
++The formal-writeback behavior is verified in the dirty worktree, but its source/test diff remains mixed with broader ScheduleBoard changes. The documentation is staged so the audit trail is preserved, while the code remains unstaged until manual hunk-level packaging is performed.
++
++## Explicit Non-Claims
++
++- The staged package does not implement formal writeback as a clean release slice.
++- `ScheduleAgentWorkbenchPanel.vue`, `ScheduleBoard.vue`, `schedule-agent-workbench-panel.test.ts`, and `schedule-board.test.ts` formal-writeback hunks are still unstaged.
++- `src/frontend/tests/e2e/scheduling.spec.ts` remains `MM`; staged Agent E2E hunks must be preserved while formal-writeback hunks stay unstaged until split.
++
++## Required Next Step
++
++Either:
++
++1. Commit or otherwise seal the current Agent E2E package plus formal split-planning docs, then rebuild the index for formal-writeback code, or
++2. Manually hunk-stage formal-writeback code and re-audit the enlarged package boundary before claiming it as a combined package.
+diff --git a/_docs/_review/20260622-package-boundary-index-labor-then-agent.md b/_docs/_review/20260622-package-boundary-index-labor-then-agent.md
+new file mode 100644
+index 0000000..525835e
+--- /dev/null
++++ b/_docs/_review/20260622-package-boundary-index-labor-then-agent.md
+@@ -0,0 +1,71 @@
++# Package Boundary Index - Current Staged Agent Package - 2026-06-22
++
++## Purpose
++
++Preserve clean package boundaries in the current dirty worktree while continuing the CC plan.
++
++## Current Staged Package
++
++Package name: `scheduling-agent-e2e-current-worktree-verification`
++
++Current staged files:
++
++- `_docs/_changelog/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_issue/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_plan/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_reports/agent-e2e-current-worktree-verification-20260622.md`
++- `_docs/_review/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_todo/20260622-agent-e2e-current-worktree-verification-next-actions.md`
++- `src/frontend/scripts/e2e.mjs`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++Current staged validation:
++
++- `git diff --cached --check`: PASS
++- Focused Agent Chromium E2E:
++  - `调度员 Agent 工作台通过后端 API 生成并采纳推荐`: PASS
++  - `调度员 Agent 工作台后端 403 时保留 fallback 并提示权限`: PASS
++  - `调度员 Agent 工作台 API 不可用时保留 demo fallback`: PASS
++
++## Agent E2E Current-State Evidence
++
++The old `tmp/agent-e2e-slice-20260622.patch` is stale for direct apply, but its useful behavior is already present in the current worktree.
++
++Agent-related staged code changes:
++
++- `src/frontend/scripts/e2e.mjs`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++Agent verification docs staged:
++
++- `_docs/_reports/agent-e2e-current-worktree-verification-20260622.md`
++- `_docs/_review/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_changelog/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_issue/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_plan/20260622-agent-e2e-current-worktree-verification.md`
++- `_docs/_todo/20260622-agent-e2e-current-worktree-verification-next-actions.md`
++
++Agent focused E2E validation:
++
++- `调度员 Agent 工作台通过后端 API 生成并采纳推荐`: PASS
++- `调度员 Agent 工作台后端 403 时保留 fallback 并提示权限`: PASS
++- `调度员 Agent 工作台 API 不可用时保留 demo fallback`: PASS
++
++## Labor Retry Package Status
++
++The previous labor retry staged package is no longer the current index boundary. Labor evidence remains available in the worktree reports, but the current `git diff --cached --name-status` shows the staged package is Agent E2E.
++
++Do not rely on older labor-first boundary text unless the index is intentionally rebuilt for labor.
++
++## Required Order
++
++1. Treat the current index as an Agent E2E package.
++2. If switching back to labor retry, first unstage/rebuild the index intentionally and regenerate this boundary report.
++3. Do not mix Employee preview-refresh docs or broad unrelated dirty files into this Agent package.
++
++## Do Not Do
++
++- Do not run broad `git add .`.
++- Do not directly apply `tmp/agent-e2e-slice-20260622.patch`.
++- Do not claim the staged package is labor retry while the index contains Agent E2E.
++- Do not claim full CC plan completion from these slices.
+diff --git a/_docs/_todo/20260622-agent-e2e-current-worktree-verification-next-actions.md b/_docs/_todo/20260622-agent-e2e-current-worktree-verification-next-actions.md
+new file mode 100644
+index 0000000..f5e594e
+--- /dev/null
++++ b/_docs/_todo/20260622-agent-e2e-current-worktree-verification-next-actions.md
+@@ -0,0 +1,8 @@
++# Todo - Agent E2E Current Worktree Verification Next Actions
++
++- [ ] Keep `tmp/agent-e2e-slice-20260622.patch` as historical reference only.
++- [x] Re-verify `调度员 Agent 工作台 API 不可用时保留 demo fallback` against the current worktree.
++- [x] Recheck all 3 focused Agent E2E Chromium commands sequentially.
++- [x] If packaging Agent E2E separately, stage only the Agent-specific hunks and corrected verification evidence.
++- [x] Run focused E2E commands sequentially unless the Playwright webServer port strategy is changed.
++- [ ] Continue full CC plan audit after package boundaries are clean.
+diff --git a/_docs/_todo/20260622-formal-writeback-focused-patch-draft-next-actions.md b/_docs/_todo/20260622-formal-writeback-focused-patch-draft-next-actions.md
+new file mode 100644
+index 0000000..e2f7a2c
+--- /dev/null
++++ b/_docs/_todo/20260622-formal-writeback-focused-patch-draft-next-actions.md
+@@ -0,0 +1,6 @@
++# Todo - Formal Writeback Focused Patch Draft Next Actions
++
++- [ ] Manually stage hunk-map-approved formal-writeback hunks.
++- [ ] Avoid keyword-only patch extraction for `ScheduleBoard.vue` and `schedule-board.test.ts`.
++- [ ] Rerun formal-writeback unit and E2E tests after manual staging.
++- [ ] Verify `src/frontend/tests/e2e/scheduling.spec.ts` staged content preserves the existing Agent E2E package.
+diff --git a/_docs/_todo/20260622-formal-writeback-hunk-map-next-actions.md b/_docs/_todo/20260622-formal-writeback-hunk-map-next-actions.md
+new file mode 100644
+index 0000000..0b7ec32
+--- /dev/null
++++ b/_docs/_todo/20260622-formal-writeback-hunk-map-next-actions.md
+@@ -0,0 +1,7 @@
++# Todo - Formal Writeback Hunk Map Next Actions
++
++- [ ] Apply the hunk map to extract a clean formal-writeback package.
++- [ ] Preserve the currently staged Agent E2E package while staging formal-writeback hunks.
++- [x] Run formal-writeback unit and focused E2E validation against the current dirty worktree.
++- [ ] Run formal-writeback unit and focused E2E validation again after hunk staging.
++- [ ] Defer unrelated ScheduleBoard hardening hunks into separate packages.
+diff --git a/_docs/_todo/20260622-package-boundary-index-agent-plus-formal-docs-next-actions.md b/_docs/_todo/20260622-package-boundary-index-agent-plus-formal-docs-next-actions.md
+new file mode 100644
+index 0000000..ebf49a1
+--- /dev/null
++++ b/_docs/_todo/20260622-package-boundary-index-agent-plus-formal-docs-next-actions.md
+@@ -0,0 +1,5 @@
++# Todo - Package Boundary Index Agent Plus Formal Docs Next Actions
++
++- [ ] Do not claim staged formal-writeback implementation until code hunks are manually staged and verified.
++- [ ] Preserve staged Agent E2E hunks in `src/frontend/tests/e2e/scheduling.spec.ts`.
++- [ ] Decide whether to seal the current index before formal-writeback code packaging.
+diff --git a/_docs/_todo/20260622-package-boundary-index-labor-then-agent-next-actions.md b/_docs/_todo/20260622-package-boundary-index-labor-then-agent-next-actions.md
+new file mode 100644
+index 0000000..18e715a
+--- /dev/null
++++ b/_docs/_todo/20260622-package-boundary-index-labor-then-agent-next-actions.md
+@@ -0,0 +1,7 @@
++# Todo - Package Boundary Index Next Actions
++
++- [x] Sync Agent E2E staged docs with the current 3/3 PASS verification.
++- [x] Stage the current Agent `scheduling.spec.ts` fix so staged code matches staged PASS evidence.
++- [ ] If committing now, treat the index as the Agent E2E package.
++- [ ] If switching back to labor retry, rebuild the index intentionally and regenerate the boundary report.
++- [ ] Keep full CC plan active after both slices.
+diff --git a/src/frontend/scripts/e2e.mjs b/src/frontend/scripts/e2e.mjs
+index e861331..ec72699 100644
+--- a/src/frontend/scripts/e2e.mjs
++++ b/src/frontend/scripts/e2e.mjs
+@@ -5,7 +5,12 @@ import { runCommand } from '@nuxt/cli'
+ 
+ const e2eBuildId = process.env.AIMES_E2E_BUILD_ID ?? process.pid.toString()
+ const e2ePort = process.env.AIMES_E2E_PORT ?? await findAvailablePort(4173)
+-const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' ? 'false' : 'true'
++const targetsLiveBackendMock = process.argv.slice(2).some(arg =>
++  arg.includes('调度员 Agent 工作台通过后端 API') ||
++  arg.includes('调度员 Agent 工作台后端 403') ||
++  arg.includes('调度员 Agent 工作台 API 不可用')
++)
++const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' || targetsLiveBackendMock ? 'false' : 'true'
+ 
+ const testEnv = {
+   ...process.env,
+diff --git a/src/frontend/tests/e2e/scheduling.spec.ts b/src/frontend/tests/e2e/scheduling.spec.ts
+index d65b185..9b0026f 100644
+--- a/src/frontend/tests/e2e/scheduling.spec.ts
++++ b/src/frontend/tests/e2e/scheduling.spec.ts
+@@ -5,6 +5,11 @@ const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
+   '人员替班证据释放排产人员约束',
+   '人员无有效替班候选时排产保持停工复核事件',
+ ]
++const AGENT_BACKEND_EVIDENCE_TITLES = [
++  '调度员 Agent 工作台通过后端 API',
++  '调度员 Agent 工作台后端 403',
++  '调度员 Agent 工作台 API 不可用',
++]
+ 
+ const laborEvidenceRetryReads = {
+   blocks: 0,
+@@ -16,12 +21,20 @@ test.describe.configure({ timeout: 90000 })
+ test.describe('Scheduling 排产甘特图', () => {
+   test.beforeEach(async ({ page }, testInfo) => {
+     const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+     await page.addInitScript((offlineDemoSession) => {
+       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
+       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
+       localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+-    }, usesLegacyPersonnelOfflineDemo)
++    }, !usesLiveBackendMock)
++    if (usesAgentBackendMock) {
++      await mockSchedulingPlanApis(page, {
++        agentApiUnavailable: testInfo.title.includes('调度员 Agent 工作台 API 不可用'),
++        agentAdoptStatus: testInfo.title.includes('调度员 Agent 工作台后端 403') ? 403 : 200,
++      })
++    }
+     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
+       await page.addInitScript(() => {
+         localStorage.setItem('aimes_offline_demo', 'false')
+@@ -31,12 +44,14 @@ test.describe('Scheduling 排产甘特图', () => {
+       await mockLaborRetrySchedulingPlanApis(page)
+       await mockLaborEvidenceRetryApis(page)
+     }
+-    const entry = testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+-      ? 'scheduling?offlineDemo=0'
+-      : 'scheduling'
++    const entry = usesLiveBackendMock
++      ? '/scheduling/scheduling?offlineDemo=0'
++      : '/scheduling/scheduling?offlineDemo=1'
+     if (!usesLegacyPersonnelOfflineDemo) {
+       await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
+-      await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
++      await page.waitForURL('**/scheduling/scheduling**', { timeout: 45000 })
++      await expect(page.locator('.schedule-board')).toBeVisible({ timeout: 45000 })
++      await expect(page.getByRole('heading', { name: 'AI 调度员专业台' })).toBeVisible({ timeout: 45000 })
+     }
+   })
+ 
+@@ -84,41 +99,28 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ 
+   test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+-    await mockAgentApi(page, { adoptStatus: 200 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+-
+     const panel = page.locator('.agent-workbench-panel')
+-    await panel.getByRole('button', { name: '生成后端建议' }).click()
++    await clickAgentWorkbenchButton(page, '生成后端建议')
+     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+     await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
+ 
+-    await panel.getByRole('button', { name: '采纳推荐' }).click()
++    await clickAgentWorkbenchButton(page, '采纳推荐')
+     await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
+     await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
+   })
+ 
+   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+-    await mockAgentApi(page, { adoptStatus: 403 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+-
+     const panel = page.locator('.agent-workbench-panel')
+-    await panel.getByRole('button', { name: '生成后端建议' }).click()
++    await clickAgentWorkbenchButton(page, '生成后端建议')
+     await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+ 
+-    await panel.getByRole('button', { name: '采纳推荐' }).click()
++    await clickAgentWorkbenchButton(page, '采纳推荐')
+     await expect(panel.getByText('采纳失败，请确认当前用户具有 Admin 或 Planner 权限。')).toBeVisible()
+   })
+ 
+   test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+-    await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+-
+     const panel = page.locator('.agent-workbench-panel')
+-    await panel.getByRole('button', { name: '生成后端建议' }).click()
++    await clickAgentWorkbenchButton(page, '生成后端建议')
+     await expect(panel.getByText('后端建议生成失败，已保留 demo fallback。')).toBeVisible()
+     await expect(panel.getByText(/API 不可用 \/ demo fallback/)).toBeVisible()
+   })
+@@ -857,9 +859,48 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ })
+ 
+-async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+-  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+ 
++async function clickAgentWorkbenchButton(page: import('@playwright/test').Page, label: string) {
++  const clicked = await page.evaluate((buttonLabel) => {
++    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.agent-workbench-panel button'))
++    const button = buttons.find(candidate => candidate.textContent?.trim() === buttonLabel)
++    if (!button || button.disabled) return false
++    button.scrollIntoView({ block: 'center', inline: 'center' })
++    button.click()
++    return true
++  }, label)
++  expect(clicked, `Agent workbench button is missing or disabled: ${label}`).toBe(true)
++}
++
++async function mockSchedulingPlanApis(
++  page: import('@playwright/test').Page,
++  options: { agentApiUnavailable?: boolean; agentAdoptStatus?: 200 | 403 } = {},
++) {
++  const plan = {
++    id: 'plan-agent-e2e',
++    planName: 'Agent E2E 排产计划',
++    planStartDate: '2026-05-20T08:00:00.000Z',
++    planEndDate: '2026-05-20T20:00:00.000Z',
++    overallUtilizationRate: 0.82,
++    onTimeDeliveryRate: 0.91,
++    totalChangeoverMinutes: 35,
++    groupCount: 1,
++    createdAt: '2026-05-20T08:00:00.000Z',
++    items: [
++      {
++        id: 'agent-e2e-item-001',
++        workOrderId: 'wo-agent-e2e-001',
++        workOrderNumber: 'WO-AGENT-E2E-001',
++        equipmentId: 'eq-agent-e2e-001',
++        equipmentName: 'CNC Agent E2E',
++        plannedStartTime: '2026-05-20T08:00:00.000Z',
++        plannedEndTime: '2026-05-20T10:00:00.000Z',
++        sequence: 1,
++        setupTime: '20 分钟',
++        dependentItems: [],
++      },
++    ],
++  }
+   const pendingDecision = {
+     id: 'agent-decision-e2e-001',
+     triggerEventId: 'trigger-e2e-001',
+@@ -902,35 +943,104 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
+     ],
+   }
+ 
+-  await page.route('**/api/v1/scheduling/agent/decisions**', route => route.fulfill({
++  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
+     status: 200,
+     contentType: 'application/json',
+-    body: JSON.stringify([]),
++    body: JSON.stringify({
++      token: 'mock-e2e-token',
++      refreshToken: 'mock-e2e-refresh',
++      expiresAt: '2026-12-31T23:59:59Z',
++    }),
+   }))
+-  await page.route('**/api/v1/scheduling/agent/recommend', route => route.fulfill({
+-    status: 201,
++  await page.route('**/api/v1/llm/status', route => route.fulfill({
++    status: 200,
+     contentType: 'application/json',
+-    body: JSON.stringify(pendingDecision),
++    body: JSON.stringify({ available: false, provider: 'mock-e2e' }),
+   }))
+-  await page.route('**/api/v1/scheduling/agent/agent-decision-e2e-001/adopt', route => {
+-    if (options.adoptStatus === 403) {
++  await page.route('**/api/v1/dashboard', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      equipmentStatus: [],
++      todaySchedules: [],
++      materialAlerts: [],
++      qualityStats: { passRate: 0, totalInspections: 0, passedInspections: 0, defects: 0 },
++    }),
++  }))
++  await page.route('**/api/v1/risk/dashboard', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++  }))
++  await page.route('**/api/v1/**', route => {
++    const url = route.request().url()
++    if (url.includes('/api/v1/auth/refresh')) {
+       return route.fulfill({
+-        status: 403,
++        status: 200,
+         contentType: 'application/json',
+-        body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
++        body: JSON.stringify({
++          token: 'mock-e2e-token',
++          refreshToken: 'mock-e2e-refresh',
++          expiresAt: '2026-12-31T23:59:59Z',
++        }),
++      })
++    }
++    if (options.agentApiUnavailable && url.includes('/api/v1/scheduling/agent/')) {
++      return route.abort()
++    }
++    if (url.includes('/api/v1/scheduling/agent/recommend')) {
++      return route.fulfill({
++        status: 201,
++        contentType: 'application/json',
++        body: JSON.stringify(pendingDecision),
++      })
++    }
++    if (url.includes('/api/v1/scheduling/agent/agent-decision-e2e-001/adopt')) {
++      if (options.agentAdoptStatus === 403) {
++        return route.fulfill({
++          status: 403,
++          contentType: 'application/json',
++          body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
++        })
++      }
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: JSON.stringify({
++          ...pendingDecision,
++          status: 'Adopted',
++          adoptedScenarioId: 'scenario-weighted',
++        }),
++      })
++    }
++    if (url.includes('/api/v1/scheduling/agent/decisions')) {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: JSON.stringify([]),
+       })
+     }
+-
+     return route.fulfill({
+       status: 200,
+       contentType: 'application/json',
+-      body: JSON.stringify({
+-        ...pendingDecision,
+-        status: 'Adopted',
+-        adoptedScenarioId: 'scenario-weighted',
+-      }),
++      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+     })
+   })
++  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(plan),
++  }))
++  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify([]),
++  }))
++  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++  }))
+ }
+ 
+ async function mockLaborRetrySchedulingPlanApis(page: import('@playwright/test').Page) {

@@ -1,20 +1,26 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import KnowledgeGovernancePanel from '../../src/components/knowledge/KnowledgeGovernancePanel.vue'
 import type {
+  QualityKnowledgeGrayReleaseDecisionRecord,
   QualityKnowledgeAssetGovernanceRecord,
   QualityKnowledgeRetrainingVersionRecord,
 } from '../../src/utils/quality-knowledge-sample-sync'
 
-vi.mock('../../src/utils/knowledge-citations', () => ({
+const knowledgeGovernancePanelMocks = vi.hoisted(() => ({
   readAssistantCitationTraces: vi.fn(() => []),
+  isQualityKnowledgeGrayRepublishEvidence: vi.fn(() => false),
+}))
+
+vi.mock('../../src/utils/knowledge-citations', () => ({
+  readAssistantCitationTraces: knowledgeGovernancePanelMocks.readAssistantCitationTraces,
 }))
 
 vi.mock('../../src/utils/quality-knowledge-sample-sync', async importOriginal => {
   const actual = await importOriginal<typeof import('../../src/utils/quality-knowledge-sample-sync')>()
   return {
     ...actual,
-    isQualityKnowledgeGrayRepublishEvidence: vi.fn(() => false),
+    isQualityKnowledgeGrayRepublishEvidence: knowledgeGovernancePanelMocks.isQualityKnowledgeGrayRepublishEvidence,
   }
 })
 
@@ -157,6 +163,11 @@ function makeLifecycleVersion(
 }
 
 describe('KnowledgeGovernancePanel', () => {
+  beforeEach(() => {
+    knowledgeGovernancePanelMocks.readAssistantCitationTraces.mockReturnValue([])
+    knowledgeGovernancePanelMocks.isQualityKnowledgeGrayRepublishEvidence.mockReturnValue(false)
+  })
+
   it('labels stale document review actions with the document title', async () => {
     const wrapper = mountKnowledgeGovernancePanel()
 
@@ -188,6 +199,61 @@ describe('KnowledgeGovernancePanel', () => {
     await button.trigger('click')
 
     expect(wrapper.emitted('quality-next-training-merged')?.[0]).toEqual(['feedback-r3-001'])
+  })
+
+  it('labels next-training lifecycle actions with the asset title and emits traceable version ids', async () => {
+    const mergedAsset = {
+      ...nextTrainingAsset,
+      id: 'quality-asset-next-training-feedback-r3-merged',
+      title: 'QK-TRAIN-20260521-R3 已合并训练集',
+    }
+    const approvedAsset = {
+      ...nextTrainingAsset,
+      id: 'quality-asset-next-training-feedback-r3-approved',
+      title: 'QK-TRAIN-20260521-R3 已审批训练集',
+    }
+    const passedAsset = {
+      ...nextTrainingAsset,
+      id: 'quality-asset-next-training-feedback-r3-passed',
+      title: 'QK-TRAIN-20260521-R3 已校验训练集',
+    }
+    const mergedVersion = makeLifecycleVersion(
+      'quality-next-version-merged',
+      'recommendation-feedback-feedback-r3-merged',
+      'merged',
+      'QK-TRAIN-20260521-R3'
+    )
+    const approvedVersion = makeLifecycleVersion(
+      'quality-next-version-approved',
+      'recommendation-feedback-feedback-r3-approved',
+      'approved',
+      'QK-TRAIN-20260521-R3'
+    )
+    const passedVersion = makeLifecycleVersion(
+      'quality-next-version-passed',
+      'recommendation-feedback-feedback-r3-passed',
+      'validation_passed',
+      'QK-TRAIN-20260521-R3'
+    )
+    const wrapper = mount(KnowledgeGovernancePanel, {
+      props: {
+        documents: [],
+        qualityAssets: [mergedAsset, approvedAsset, passedAsset],
+        qualityRetrainingVersions: [mergedVersion, approvedVersion, passedVersion],
+      },
+    })
+
+    const approveButton = wrapper.get('button[aria-label="批准 R3 训练集：QK-TRAIN-20260521-R3 已合并训练集"]')
+    const validateButton = wrapper.get('button[aria-label="运行灰度前校验：QK-TRAIN-20260521-R3 已审批训练集"]')
+    const grayPublishButton = wrapper.get('button[aria-label="灰度发布 R3：QK-TRAIN-20260521-R3 已校验训练集"]')
+
+    await approveButton.trigger('click')
+    await validateButton.trigger('click')
+    await grayPublishButton.trigger('click')
+
+    expect(wrapper.emitted('quality-next-training-approved')?.[0]).toEqual([mergedVersion.id])
+    expect(wrapper.emitted('quality-next-training-validated')?.[0]).toEqual([approvedVersion.id])
+    expect(wrapper.emitted('quality-next-training-gray-published')?.[0]).toEqual([passedVersion.id])
   })
 
   it('labels experiment candidate actions and emits traceable candidate ids', async () => {
@@ -286,4 +352,153 @@ describe('KnowledgeGovernancePanel', () => {
     expect(wrapper.emitted('quality-retraining-rolled-back')?.[0]).toEqual([approvedVersion.id])
     expect(publishedNote.text()).toContain('已发布到 AI 推荐链路')
   })
+
+  it('renders assistant citation traces with blocked-source governance evidence', () => {
+    knowledgeGovernancePanelMocks.readAssistantCitationTraces.mockReturnValue([
+      {
+        id: 'trace-quality-reuse',
+        question: '扫码返工同类质量问题如何复用 CAPA 推荐？',
+        status: '需复核',
+        answerIntent: '把现场扫码不合格、批次隔离、返工成本和复验释放沉淀为 CAPA 推荐样本',
+        sources: [
+          {
+            sourceId: 'QK-REWORK-001',
+            sourceName: '扫码返工知识样本',
+          },
+        ],
+        blockedSource: 'AUD-QK-REUSE-001 / TRACE-QK-REUSE-001 需质量工程师复核后才能正式引用。',
+      },
+    ])
+
+    const wrapper = mount(KnowledgeGovernancePanel, {
+      props: {
+        documents: [],
+      },
+    })
+
+    const traceCard = wrapper.get('.trace-card')
+    expect(traceCard.text()).toContain('扫码返工同类质量问题如何复用 CAPA 推荐？')
+    expect(traceCard.text()).toContain('扫码返工知识样本')
+    expect(traceCard.text()).toContain('AUD-QK-REUSE-001 / TRACE-QK-REUSE-001')
+    expect(traceCard.get('.trace-topline span').classes()).toContain('review')
+  })
+
+  it('labels rolled-back retraining versions as waiting for corrected reapproval', () => {
+    const rolledBackAsset = makeRetrainingAsset(
+      'quality-asset-retraining-review-r2-rolled-back',
+      'QK-TRAIN-20260521-R2 已回滚候选'
+    )
+    const rolledBackVersion = makeLifecycleVersion(
+      'quality-version-rolled-back',
+      'review-r2-rolled-back',
+      'rolled_back'
+    )
+
+    const wrapper = mount(KnowledgeGovernancePanel, {
+      props: {
+        documents: [],
+        qualityAssets: [rolledBackAsset],
+        qualityRetrainingVersions: [rolledBackVersion],
+      },
+    })
+
+    expect(wrapper.get('.rollback-note').text()).toBe('已回滚，等待字段补齐后重新审批。')
+    expect(wrapper.find('button[aria-label="回滚训练集版本：QK-TRAIN-20260521-R2 已回滚候选"]').exists()).toBe(false)
+  })
+
+  it('routes reopened R3 gray decisions through revalidation before republish evidence exists', async () => {
+    const reopenedAsset = {
+      ...nextTrainingAsset,
+      id: 'quality-asset-next-training-feedback-r3-reopened-pending',
+      title: 'QK-TRAIN-20260521-R3 已重开训练集',
+    }
+    const grayPublishedVersion = makeLifecycleVersion(
+      'quality-next-version-r3-gray-published',
+      'recommendation-feedback-feedback-r3-reopened-pending',
+      'gray_published',
+      'QK-TRAIN-20260521-R3'
+    )
+    const reopenedDecision = makeReopenedGrayDecision(grayPublishedVersion)
+    const wrapper = mount(KnowledgeGovernancePanel, {
+      props: {
+        documents: [],
+        qualityAssets: [reopenedAsset],
+        qualityRetrainingVersions: [grayPublishedVersion],
+        qualityGrayReleaseDecisions: [reopenedDecision],
+      },
+    })
+
+    const revalidateButton = wrapper.get('button[aria-label="重新运行灰度前校验：QK-TRAIN-20260521-R3 已重开训练集"]')
+    await revalidateButton.trigger('click')
+
+    expect(wrapper.emitted('quality-next-training-validated')?.[0]).toEqual([grayPublishedVersion.id])
+    expect(wrapper.find('button[aria-label="重新灰度发布 R3：QK-TRAIN-20260521-R3 已重开训练集"]').exists()).toBe(false)
+  })
+
+  it('labels reopened R3 gray publish after republish evidence exists', async () => {
+    knowledgeGovernancePanelMocks.isQualityKnowledgeGrayRepublishEvidence.mockReturnValue(true)
+    const reopenedAsset = {
+      ...nextTrainingAsset,
+      id: 'quality-asset-next-training-feedback-r3-reopened-ready',
+      title: 'QK-TRAIN-20260521-R3 已复验训练集',
+    }
+    const validationPassedVersion = makeLifecycleVersion(
+      'quality-next-version-r3-validation-passed',
+      'recommendation-feedback-feedback-r3-reopened-ready',
+      'validation_passed',
+      'QK-TRAIN-20260521-R3'
+    )
+    const reopenedDecision = makeReopenedGrayDecision(validationPassedVersion)
+    const wrapper = mount(KnowledgeGovernancePanel, {
+      props: {
+        documents: [],
+        qualityAssets: [reopenedAsset],
+        qualityRetrainingVersions: [validationPassedVersion],
+        qualityGrayReleaseDecisions: [reopenedDecision],
+      },
+    })
+
+    const republishButton = wrapper.get('button[aria-label="重新灰度发布 R3：QK-TRAIN-20260521-R3 已复验训练集"]')
+    await republishButton.trigger('click')
+
+    expect(wrapper.emitted('quality-next-training-gray-published')?.[0]).toEqual([validationPassedVersion.id])
+    expect(wrapper.find('button[aria-label="重新运行灰度前校验：QK-TRAIN-20260521-R3 已复验训练集"]').exists()).toBe(false)
+  })
 })
+
+function makeReopenedGrayDecision(
+  version: QualityKnowledgeRetrainingVersionRecord
+): QualityKnowledgeGrayReleaseDecisionRecord {
+  return {
+    id: `gray-decision-${version.id}`,
+    monitorId: `gray-monitor-${version.id}`,
+    trainingSetVersion: version.trainingSetVersion,
+    targetWorkOrderId: version.targetWorkOrderId,
+    operationCode: version.operationCode,
+    releaseCycleLabel: '重新灰度发布',
+    releaseAuditId: `AUD-${version.id}-RELEASE`,
+    releaseTraceId: `TRACE-${version.id}-RELEASE`,
+    releaseScopeLabel: '扫码返工推荐灰度范围',
+    decision: 'rolled_back',
+    decisionLabel: '重开灰度前校验',
+    statusClass: 'guarded',
+    decidedBy: '质量主管',
+    decidedAt: '2026-06-03T00:00:00.000Z',
+    auditId: `AUD-${version.id}-REOPENED`,
+    traceId: `TRACE-${version.id}-REOPENED`,
+    reason: 'R3 灰度问题单重开后必须先完成灰度前校验，再允许重新灰度发布。',
+    approvalStatus: 'approved',
+    approvalLabel: '已批准',
+    reviewIssueId: `ISSUE-${version.id}`,
+    reviewIssueTraceId: `TRACE-${version.id}-ISSUE`,
+    reviewIssueStatus: 'prevalidation_reopened',
+    reviewIssueLabel: '已重开灰度前校验',
+    metricSnapshot: [
+      {
+        label: '误召回',
+        value: '0',
+      },
+    ],
+    actions: ['重新运行灰度前校验', '重新灰度发布'],
+  }
+}

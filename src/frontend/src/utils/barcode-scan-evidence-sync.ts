@@ -80,8 +80,10 @@ export function readBarcodeScanEvidenceRecords(): BarcodeScanEvidenceRecord[] {
   return readRawRecords()
 }
 
-export async function readBarcodeScanEvidenceRecordsBackendFirst(): Promise<BarcodeScanEvidenceRecord[]> {
-  const records = await queryBarcodeScanEvidence()
+export async function readBarcodeScanEvidenceRecordsBackendFirst(
+  options?: { failLoud?: boolean },
+): Promise<BarcodeScanEvidenceRecord[]> {
+  const records = await queryBarcodeScanEvidence(20, options)
   return records.length > 0 ? records : readBarcodeScanEvidenceRecords()
 }
 
@@ -144,10 +146,29 @@ export function createBarcodeScanEvidenceRecord(input: BarcodeScanEvidenceInput)
 }
 
 export function writeBarcodeScanEvidenceRecord(record: BarcodeScanEvidenceRecord) {
+  persistBarcodeScanEvidenceRecord(record)
+  void upsertBarcodeScanEvidence(record).catch(() => undefined)
+  return record
+}
+
+export async function writeBarcodeScanEvidenceRecordAndReadBack(
+  record: BarcodeScanEvidenceRecord,
+): Promise<BarcodeScanEvidenceRecord> {
+  persistBarcodeScanEvidenceRecord(record)
+  await upsertBarcodeScanEvidence(record)
+  const backendRecords = await queryBarcodeScanEvidence(20, { failLoud: true })
+  const readbackRecord = backendRecords.find(item => item.id === record.id)
+  if (!readbackRecord) {
+    throw new Error(`barcode scan evidence readback missing: ${record.id}`)
+  }
+  persistBarcodeScanEvidenceRecord(readbackRecord)
+  return readbackRecord
+}
+
+function persistBarcodeScanEvidenceRecord(record: BarcodeScanEvidenceRecord) {
   if (!canUseStorage()) return record
   const next = [record, ...readRawRecords().filter(item => item.id !== record.id)].slice(0, 20)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-  void upsertBarcodeScanEvidence(record).catch(() => undefined)
   upsertOtdEvidenceChainRecord({
     id: `barcode-${record.id}`,
     stage: '扫码执行',

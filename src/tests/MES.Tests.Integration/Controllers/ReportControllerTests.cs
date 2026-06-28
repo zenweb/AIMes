@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using ClosedXML.Excel;
 using FluentAssertions;
 using MES.Domain.Entities.Production;
+using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Infrastructure.Data;
 using Microsoft.Extensions.DependencyInjection;
@@ -107,6 +109,40 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetDashboard_ShouldExposeLatestAuditableScheduleFeedbackEvidence()
+    {
+        _factory.SeedData(db =>
+        {
+            db.ScheduleAdoptionFeedbacks.RemoveRange(db.ScheduleAdoptionFeedbacks);
+            db.ScheduleAdoptionFeedbacks.Add(new ScheduleAdoptionFeedback
+            {
+                SchedulePlanId = "plan-report-evidence",
+                WorkshopId = "WS-001",
+                OptimizationObjective = "balanced",
+                ReasonCategory = OverrideReasonCategory.UrgentInsertion,
+                ReasonDetail = "急单插入后采纳综合平衡方案",
+                OperatorUser = "planner.li",
+                AiTraceId = "TRACE-SCH-FEEDBACK-REPORT",
+                AgentDecisionId = "decision-report-balanced-001",
+                InitiatedByAgent = true,
+                CreatedAt = new DateTime(2026, 6, 14, 10, 30, 0, DateTimeKind.Utc),
+            });
+        });
+
+        var response = await _client.GetFromJsonAsync<ReportDashboardResponse>("/api/v1/report/dashboard");
+
+        response.Should().NotBeNull();
+        response!.ScheduleFeedback.Should().NotBeNull();
+        response.ScheduleFeedback!.Decision.Should().Be("accepted");
+        response.ScheduleFeedback.DecisionLabel.Should().Be("已采纳 Agent 排产建议");
+        response.ScheduleFeedback.CategoryLabel.Should().Be("紧急插单");
+        response.ScheduleFeedback.ReasonDetail.Should().Be("急单插入后采纳综合平衡方案");
+        response.ScheduleFeedback.ObjectiveLabel.Should().Be("综合平衡");
+        response.ScheduleFeedback.TraceId.Should().Be("TRACE-SCH-FEEDBACK-REPORT");
+        response.ScheduleFeedback.AgentDecisionId.Should().Be("decision-report-balanced-001");
+    }
+
+    [Fact]
     public async Task ExportExcel_ShouldReturnFile()
     {
         var response = await _client.GetAsync("/api/v1/report/export/excel");
@@ -115,6 +151,43 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         var bytes = await response.Content.ReadAsByteArrayAsync();
         bytes.Length.Should().BeGreaterThan(100);
+    }
+
+    [Fact]
+    public async Task ExportExcel_ShouldIncludeAuditableScheduleFeedbackEvidence()
+    {
+        _factory.SeedData(db =>
+        {
+            db.ScheduleAdoptionFeedbacks.RemoveRange(db.ScheduleAdoptionFeedbacks);
+            db.ScheduleAdoptionFeedbacks.Add(new ScheduleAdoptionFeedback
+            {
+                SchedulePlanId = "plan-report-export-evidence",
+                WorkshopId = "WS-001",
+                OptimizationObjective = "balanced",
+                ReasonCategory = OverrideReasonCategory.UrgentInsertion,
+                ReasonDetail = "急单插入后采纳综合平衡导出方案",
+                OperatorUser = "planner.li",
+                AiTraceId = "TRACE-SCH-FEEDBACK-EXPORT",
+                AgentDecisionId = "decision-export-balanced-001",
+                InitiatedByAgent = true,
+                CreatedAt = new DateTime(2026, 6, 14, 11, 0, 0, DateTimeKind.Utc),
+            });
+        });
+
+        var response = await _client.GetAsync("/api/v1/report/export/excel");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var workbook = new XLWorkbook(stream);
+        var worksheet = workbook.Worksheet("排产采纳反馈");
+
+        worksheet.Cell(2, 1).GetString().Should().Be("采纳结果");
+        worksheet.Cell(2, 2).GetString().Should().Be("已采纳 Agent 排产建议");
+        worksheet.Cell(3, 2).GetString().Should().Be("紧急插单");
+        worksheet.Cell(4, 2).GetString().Should().Be("急单插入后采纳综合平衡导出方案");
+        worksheet.Cell(5, 2).GetString().Should().Be("综合平衡");
+        worksheet.Cell(6, 2).GetString().Should().Be("TRACE-SCH-FEEDBACK-EXPORT");
+        worksheet.Cell(7, 2).GetString().Should().Be("decision-export-balanced-001");
     }
 
     [Fact]
@@ -134,6 +207,7 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
         public QualitySummaryResponse? Quality { get; set; }
         public EquipmentSummaryResponse? Equipment { get; set; }
         public AnomalySummaryResponse? Anomaly { get; set; }
+        public ScheduleFeedbackResponse? ScheduleFeedback { get; set; }
     }
 
     private class ProductionSummaryResponse
@@ -167,6 +241,20 @@ public class ReportControllerTests : IClassFixture<TestWebApplicationFactory>
         public int ResolvedCount { get; set; }
         public double AvgResolveHours { get; set; }
         public List<ChartDataPointResponse> AnomalyByType { get; set; } = new();
+    }
+
+    private class ScheduleFeedbackResponse
+    {
+        public string Decision { get; set; } = string.Empty;
+        public string DecisionLabel { get; set; } = string.Empty;
+        public string ReasonCategory { get; set; } = string.Empty;
+        public string CategoryLabel { get; set; } = string.Empty;
+        public string ReasonDetail { get; set; } = string.Empty;
+        public string ObjectiveLabel { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public string? TraceId { get; set; }
+        public string Source { get; set; } = string.Empty;
+        public string? AgentDecisionId { get; set; }
     }
 
     private class ChartDataPointResponse

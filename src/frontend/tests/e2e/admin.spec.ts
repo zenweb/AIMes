@@ -341,12 +341,58 @@ async function seedR3R4R5QualityRecommendationExperiments(page: Page) {
 }
 
 test.describe('Admin Agent 治理', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    if (testInfo.title.includes('启动系统配置与通知配置读取失败')) {
+      await page.addInitScript(() => {
+        localStorage.setItem('aimes_offline_demo', 'false')
+        localStorage.setItem('aimes_token', 'backend-access-token-admin-e2e')
+        localStorage.setItem('aimes_refresh_token', 'backend-refresh-token-admin-e2e')
+        localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+      })
+      await page.route('**/api/v1/**', async route => {
+        const url = route.request().url()
+        if (url.includes('/api/v1/admin/configs')) {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ title: 'admin config startup unavailable from chromium' }),
+          })
+          return
+        }
+        if (url.includes('/api/v1/admin/notifications')) {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ title: 'admin notification startup unavailable from chromium' }),
+          })
+          return
+        }
+        if (url.includes('/api/v1/admin/users')) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20 }),
+          })
+          return
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([]),
+        })
+      })
+      await page.goto('admin?offlineDemo=0', { waitUntil: 'commit' })
+      await page.waitForSelector('.admin-board', { timeout: 30000 })
+      return
+    }
+
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
   })
 
@@ -370,11 +416,25 @@ test.describe('Admin Agent 治理', () => {
     await expect(panel.getByText('Scheduling.LockWindowHours 8h -> 10h')).toBeVisible()
   })
 
+  test('启动系统配置与通知配置读取失败时真实浏览器聚合 fail-loud 并保留兜底数据', async ({ page }) => {
+    const alert = page.locator('.admin-alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('部分管理数据刷新失败')
+    await expect(alert).toContainText('系统配置：admin config startup unavailable from chromium')
+    await expect(alert).toContainText('通知配置：admin notification startup unavailable from chromium')
+    await expect(alert).not.toContainText('Offline demo mode skipped backend request')
+
+    await page.getByRole('tab', { name: '系统配置' }).click()
+    await expect(page.getByText('site.name')).toBeVisible()
+    await page.getByRole('tab', { name: '通知配置' }).click()
+    await expect(page.getByText('设备状态')).toBeVisible()
+  })
+
   test('从 Agent 治理跳转到审计决策回放', async ({ page }) => {
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await page.getByRole('button', { name: '查看审计回放' }).click()
 
-    await expect(page).toHaveURL(/\/scheduling\/audit-logs$/)
+    await expect(page).toHaveURL(/\/scheduling\/audit-logs(?:\\?.*)?$/)
     await expect(page.locator('.audit-board')).toBeVisible()
     await expect(page.locator('.audit-replay-panel')).toBeVisible()
   })
@@ -482,12 +542,12 @@ test.describe('Admin Agent 治理', () => {
     await expect(outsourcingCard.getByText('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001')).toBeVisible()
     await expect(outsourcingCard.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
     await outsourcingCard.getByRole('button', { name: '查看采购协同' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/purchase$/)
+    await expect(page).toHaveURL(/\/scheduling\/purchase(?:\\?.*)?$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await outsourcingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
+    await expect(page).toHaveURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
   })
 
   test('交期恢复执行包进入 Agent 治理并可跳转到排产风险采购与质量', async ({ page }) => {
@@ -584,22 +644,22 @@ test.describe('Admin Agent 治理', () => {
     await expect(recoveryCard.getByText('采购责任动作')).toBeVisible()
     await expect(recoveryCard.getByText('质量责任动作')).toBeVisible()
     await recoveryCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/scheduling$/)
+    await expect(page).toHaveURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看风险预警' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/risk$/)
+    await expect(page).toHaveURL(/\/scheduling\/risk(?:\\?.*)?$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看采购协同' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/purchase$/)
+    await expect(page).toHaveURL(/\/scheduling\/purchase(?:\\?.*)?$/)
     await page.goBack()
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     await recoveryCard.getByRole('button', { name: '查看质量闭环' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/quality$/)
+    await expect(page).toHaveURL(/\/scheduling\/quality(?:\\?.*)?$/)
   })
 
   test('客户 POC 证据进入 Agent 治理批次与审计编号', async ({ page }) => {
@@ -695,13 +755,13 @@ test.describe('Admin Agent 治理', () => {
   })
 
   test('异常分流进入 Agent 治理并可跳转异常风险排产和质量', async ({ page }) => {
-    await page.goto('anomaly', { waitUntil: 'commit' })
+    await page.goto('anomaly?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.anomaly-board', { timeout: 30000 })
     const qualityLane = page.locator('.event-center .event-lane').filter({ hasText: '装配间隙超差' })
     await qualityLane.getByRole('button', { name: '确认分流' }).click()
     await expect(page.locator('.dispatch-trace').getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -718,36 +778,36 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText('TRACE-ANOMALY-DISPATCH-QUALITY-GAP-20260521')).toBeVisible()
 
     await card.getByRole('button', { name: '查看异常中心' }).click()
-    await page.waitForURL(/\/scheduling\/anomaly$/)
+    await page.waitForURL(/\/scheduling\/anomaly(?:\\?.*)?$/)
     await expect(page.locator('.anomaly-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const riskCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await riskCard.getByRole('button', { name: '查看风险预警' }).click()
-    await page.waitForURL(/\/scheduling\/risk$/)
+    await page.waitForURL(/\/scheduling\/risk(?:\\?.*)?$/)
     await expect(page.locator('.risk-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const qualityCard = page.locator('.anomaly-dispatch-card').filter({ hasText: '装配间隙超差已分流到质量返工与排产复核' })
     await qualityCard.getByRole('button', { name: '查看质量闭环' }).click()
-    await page.waitForURL(/\/scheduling\/quality$/)
+    await page.waitForURL(/\/scheduling\/quality(?:\\?.*)?$/)
     await expect(page.locator('.quality-board')).toBeVisible()
   })
 
   test('工程变更 ECN 进入 Agent 治理并可跳转 BOM 排产报表和审计', async ({ page }) => {
-    await page.goto('bom', { waitUntil: 'commit' })
+    await page.goto('bom?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.bom-board', { timeout: 30000 })
     await page.locator('.list-item').filter({ hasText: 'BOM-A100' }).click()
     const impact = page.locator('.change-impact')
@@ -755,7 +815,7 @@ test.describe('Admin Agent 治理', () => {
     await impact.getByRole('button', { name: '批准 ECN 放行' }).click()
     await expect(impact.getByText('AUD-ENG-ECN-20260521-APPROVE')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -775,36 +835,36 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText('TRACE-ENG-ECN-BOM-A100-6061B')).toBeVisible()
 
     await card.getByRole('button', { name: '查看 BOM 约束' }).click()
-    await page.waitForURL(/\/scheduling\/bom$/)
+    await page.waitForURL(/\/scheduling\/bom(?:\\?.*)?$/)
     await expect(page.locator('.bom-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
-    await page.waitForURL(/\/scheduling\/report$/)
+    await page.waitForURL(/\/scheduling\/report(?:\\?.*)?$/)
     await expect(page.locator('.report-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.engineering-change-card').filter({ hasText: 'ECN-BOM-A100-6061B-20260521' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
-    await page.waitForURL(/\/scheduling\/audit-logs$/)
+    await page.waitForURL(/\/scheduling\/audit-logs(?:\\?.*)?$/)
     await expect(page.locator('.audit-board')).toBeVisible()
   })
 
   test('工艺能力校验进入 Agent 治理并可跳转工艺排产报表和审计', async ({ page }) => {
-    await page.goto('routing', { waitUntil: 'commit' })
+    await page.goto('routing?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.routing-board', { timeout: 30000 })
     await page.locator('.list-item').filter({ hasText: 'R-B200' }).click()
     const validation = page.locator('.capability-validation')
@@ -812,7 +872,7 @@ test.describe('Admin Agent 治理', () => {
     await validation.getByRole('button', { name: '确认分流/合批方案' }).click()
     await expect(validation.getByText('TRACE-ROUTE-CAP-R-B200-OP-090')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -832,36 +892,36 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '审计追踪' }).getByText(/AUD-ROUTE-CAP-20260521-001 \/ TRACE-ROUTE-CAP-R-B200-OP-090/)).toBeVisible()
 
     await card.getByRole('button', { name: '查看工艺路线' }).click()
-    await page.waitForURL(/\/scheduling\/routing$/)
+    await page.waitForURL(/\/scheduling\/routing(?:\\?.*)?$/)
     await expect(page.locator('.routing-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
-    await page.waitForURL(/\/scheduling\/report$/)
+    await page.waitForURL(/\/scheduling\/report(?:\\?.*)?$/)
     await expect(page.locator('.report-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.route-capability-card').filter({ hasText: 'R-B200 OP-090' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
-    await page.waitForURL(/\/scheduling\/audit-logs$/)
+    await page.waitForURL(/\/scheduling\/audit-logs(?:\\?.*)?$/)
     await expect(page.locator('.audit-board')).toBeVisible()
   })
 
   test('人员替班和停工复核进入 Agent 治理并可跳转人员生产排产和审计', async ({ page }) => {
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 30000 })
     const skillPanel = page.locator('.skill-matrix-panel')
     await skillPanel.getByRole('button', { name: '同步人员证据' }).click()
@@ -869,7 +929,7 @@ test.describe('Admin Agent 治理', () => {
     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
     await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -887,42 +947,42 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '审计追踪' }).getByText(/AUD-LABOR-REASSIGN-20260520-001 \/ TRACE-LABOR-REASSIGN-WO-013-OP-10/)).toBeVisible()
 
     await card.getByRole('button', { name: '查看人员管理' }).click()
-    await page.waitForURL(/\/scheduling\/employee$/)
+    await page.waitForURL(/\/scheduling\/employee(?:\\?.*)?$/)
     await expect(page.locator('.emp-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const productionCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await productionCard.getByRole('button', { name: '查看生产报工' }).click()
-    await page.waitForURL(/\/scheduling\/production$/)
+    await page.waitForURL(/\/scheduling\/production(?:\\?.*)?$/)
     await expect(page.locator('.production-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const auditCard = page.locator('.labor-governance-card').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
     await auditCard.getByRole('button', { name: '查看审计回放' }).click()
-    await page.waitForURL(/\/scheduling\/audit-logs$/)
+    await page.waitForURL(/\/scheduling\/audit-logs(?:\\?.*)?$/)
     await expect(page.locator('.audit-replay-panel').getByText('人员替班回放')).toBeVisible()
   })
 
   test('缺料齐套证据进入 Agent 治理并可跳转库存排产采购和 BOM', async ({ page }) => {
-    await page.goto('inventory', { waitUntil: 'commit' })
+    await page.goto('inventory?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.inv-board', { timeout: 30000 })
     const kittingPanel = page.locator('.kitting-panel')
     await kittingPanel.locator('.order-card').filter({ hasText: 'WO-RUSH-9001' }).getByRole('button', { name: '生成缺料排产事件' }).click()
     await expect(kittingPanel.getByText('缺料事件已同步 AI 排产')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -938,42 +998,42 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '追踪编号' }).getByText('TRACE-KIT-WO-RUSH-9001-M-AL-6061', { exact: true })).toBeVisible()
 
     await card.getByRole('button', { name: '查看库存齐套' }).click()
-    await page.waitForURL(/\/scheduling\/inventory$/)
+    await page.waitForURL(/\/scheduling\/inventory(?:\\?.*)?$/)
     await expect(page.locator('.kitting-panel')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const purchaseCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await purchaseCard.getByRole('button', { name: '查看采购协同' }).click()
-    await page.waitForURL(/\/scheduling\/purchase$/)
+    await page.waitForURL(/\/scheduling\/purchase(?:\\?.*)?$/)
     await expect(page.locator('.po-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const bomCard = page.locator('.kitting-governance-card').filter({ hasText: 'M-AL-6061 工单齐套缺口已进入排产复核' })
     await bomCard.getByRole('button', { name: '查看 BOM 约束' }).click()
-    await page.waitForURL(/\/scheduling\/bom$/)
+    await page.waitForURL(/\/scheduling\/bom(?:\\?.*)?$/)
     await expect(page.locator('.bom-board')).toBeVisible()
   })
 
   test('质量返工事件进入 Agent 治理并可跳转质量排产和报表', async ({ page }) => {
-    await page.goto('quality', { waitUntil: 'commit' })
+    await page.goto('quality?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.quality-board', { timeout: 30000 })
     const qualityPanel = page.locator('.quality-rework-panel')
     await qualityPanel.getByRole('button', { name: '生成返工排产事件' }).click()
     await expect(qualityPanel.getByText(/返工排产事件已生成/)).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -991,29 +1051,29 @@ test.describe('Admin Agent 治理', () => {
     await expect(card.locator('.policy-row').filter({ hasText: '根因证据' }).getByText('硬度不足 / 热处理参数漂移')).toBeVisible()
 
     await card.getByRole('button', { name: '查看质量闭环' }).click()
-    await page.waitForURL(/\/scheduling\/quality$/)
+    await page.waitForURL(/\/scheduling\/quality(?:\\?.*)?$/)
     await expect(page.locator('.quality-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.quality-rework-governance-card').filter({ hasText: 'INS-003 / WO-003' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
-    await page.waitForURL(/\/scheduling\/report$/)
+    await page.waitForURL(/\/scheduling\/report(?:\\?.*)?$/)
     await expect(page.locator('.report-board')).toBeVisible()
     await expect(page.locator('.quality-rework-report').getByText('WO-003 返工对 OTD 的影响')).toBeVisible()
   })
 
   test('生产完工执行证据进入 Agent 治理并可跳转生产排产和报表', async ({ page }) => {
-    await page.goto('production', { waitUntil: 'commit' })
+    await page.goto('production?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 30000 })
     await page.locator('.wo-card').first().click()
     await page.locator('.op-btn.complete').first().click()
@@ -1022,7 +1082,7 @@ test.describe('Admin Agent 治理', () => {
     await page.locator('.dialog-confirm').click()
     await expect(page.locator('.execution-trace-panel').getByText(/完工复核已提交/)).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
 
@@ -1041,23 +1101,23 @@ test.describe('Admin Agent 治理', () => {
     await expect(reviewCard.getByText('OTD 风险待复核')).toBeVisible()
 
     await completionCard.getByRole('button', { name: '查看生产报工' }).click()
-    await page.waitForURL(/\/scheduling\/production$/)
+    await page.waitForURL(/\/scheduling\/production(?:\\?.*)?$/)
     await expect(page.locator('.production-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const schedulingCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
     await schedulingCard.getByRole('button', { name: '查看 AI 排产' }).click()
-    await page.waitForURL(/\/scheduling\/scheduling$/)
+    await page.waitForURL(/\/scheduling\/scheduling(?:\\?.*)?$/)
     await expect(page.locator('.schedule-board')).toBeVisible()
 
-    await page.goto('admin', { waitUntil: 'commit' })
+    await page.goto('admin?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.admin-board', { timeout: 30000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const reportCard = page.locator('.production-execution-card').filter({ hasText: '完工回写' })
     await reportCard.getByRole('button', { name: '查看 OTD 报告' }).click()
-    await page.waitForURL(/\/scheduling\/report$/)
+    await page.waitForURL(/\/scheduling\/report(?:\\?.*)?$/)
     const reportEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '完工回写' })
     await expect(reportEvidence.locator('.evidence-topline span').getByText('生产完工', { exact: true })).toBeVisible()
     await expect(reportEvidence.getByText(/TRACE-PROD-COMPLETE-/)).toBeVisible()
@@ -1146,7 +1206,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(torqueCard.getByText(/到期前复核检验窗口和复验规则/)).toBeVisible()
 
     await governanceLane.getByRole('button', { name: '打开文档治理' }).click()
-    await page.waitForURL(/\/scheduling\/knowledge\/documents$/)
+    await page.waitForURL(/\/scheduling\/knowledge\/documents(?:\\?.*)?$/)
     await expect(page.locator('.upload-page')).toBeVisible()
     await expect(page.locator('.knowledge-governance-panel')).toBeVisible()
     await expect(page.locator('.knowledge-governance-panel').getByRole('heading', { name: 'CNC-01 主轴维护手册' })).toBeVisible()
@@ -1801,7 +1861,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(monitorCard.getByText('AUD-KG-QA-RETRAINING-R3-GRAY-ROLLBACK-20260521-001')).toBeVisible()
     await expect(panel.locator('.agent-metric').filter({ hasText: '灰度决策' }).getByText('1')).toBeVisible()
 
-    await page.goto('quality', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('quality?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.quality-board', { timeout: 60000 })
     const qualityPanel = page.locator('.quality-capa-panel')
     await expect(qualityPanel.locator('.gray-release-decision-banner').getByText('QK-TRAIN-20260521-R3 / 回滚到 R2 正式版')).toBeVisible()
@@ -1811,7 +1871,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(rankingCard.locator('.ranking-training-release').getByText('QK-TRAIN-20260521-R2', { exact: true })).toBeVisible()
     await expect(rankingCard.getByText('AUD-KG-QA-RETRAINING-PUBLISH-20260521-001')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.audit-board', { timeout: 60000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.getByText('质量灰度回放')).toBeVisible()
@@ -1824,7 +1884,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(detail.getByText(/推荐链路回到 QK-TRAIN-20260521-R2/)).toBeVisible()
     await expect(detail.getByText(/R3-REVIEW-ISSUE-20260521-001 待复核问题单已打开/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const reportPanel = page.locator('.quality-gray-decision-report')
     await expect(reportPanel.getByRole('heading', { name: '扩大、回滚和待复核问题单' })).toBeVisible()
@@ -1891,7 +1951,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(monitorCard.getByText('AUD-KG-QA-RETRAINING-R3-REVIEW-CLOSE-20260521-001')).toBeVisible()
     await expect(panel.locator('.agent-metric').filter({ hasText: '灰度复核' }).getByText('0')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.audit-board', { timeout: 60000 })
     const auditPanel = page.locator('.audit-replay-panel')
     const grayReplayCard = auditPanel.locator('.decision-card').filter({ hasText: 'QK-TRAIN-20260521-R3 回滚到 R2 正式版回放' })
@@ -1901,7 +1961,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(detail.getByText('补充 R3 负样本：跨工序扫码返工 CAPA 不再进入 OP-20 装配扭矩 Top-3 推荐。', { exact: true })).toBeVisible()
     await expect(detail.getByText(/AUD-KG-QA-RETRAINING-R3-REVIEW-CLOSE-20260521-001/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const reportPanel = page.locator('.quality-gray-decision-report')
     await expect(reportPanel.getByText('问题单已关闭')).toBeVisible()
@@ -1930,7 +1990,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(monitorCard.getByText('AUD-KG-QA-RETRAINING-R3-SCOPE-REVALIDATION-20260521-001')).toBeVisible()
     await expect(panel.locator('.agent-metric').filter({ hasText: '灰度复核' }).getByText('0')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('audit-logs?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.audit-board', { timeout: 60000 })
     const auditPanel = page.locator('.audit-replay-panel')
     const grayReplayCard = auditPanel.locator('.decision-card').filter({ hasText: 'QK-TRAIN-20260521-R3 回滚到 R2 正式版回放' })
@@ -1940,7 +2000,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(detail.getByText(/缩小 R3 灰度范围到 WO-DEMO-1018 OP-20/)).toBeVisible()
     await expect(detail.getByText(/TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-SCOPE-REVALIDATION/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit', timeout: 45000 })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const reportPanel = page.locator('.quality-gray-decision-report')
     await expect(reportPanel.getByText('已重开灰度前校验')).toBeVisible()
@@ -1965,7 +2025,7 @@ test.describe('Admin Agent 治理', () => {
     await expect(approvalRow.getByText('已通过')).toBeVisible()
 
     await page.getByRole('button', { name: '查看审计回放' }).click()
-    await expect(page).toHaveURL(/\/scheduling\/audit-logs$/)
+    await expect(page).toHaveURL(/\/scheduling\/audit-logs(?:\\?.*)?$/)
     const auditPanel = page.locator('.audit-replay-panel')
     await auditPanel.locator('.decision-card').filter({ hasText: '配置审批：锁定期保护从 8 小时调整为 10 小时' }).getByRole('button', { name: '回放决策链' }).click()
 

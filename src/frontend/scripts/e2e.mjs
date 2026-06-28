@@ -5,7 +5,12 @@ import { runCommand } from '@nuxt/cli'
 
 const e2eBuildId = process.env.AIMES_E2E_BUILD_ID ?? process.pid.toString()
 const e2ePort = process.env.AIMES_E2E_PORT ?? await findAvailablePort(4173)
-const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' ? 'false' : 'true'
+const targetsLiveBackendMock = process.argv.slice(2).some(arg =>
+  arg.includes('调度员 Agent 工作台通过后端 API') ||
+  arg.includes('调度员 Agent 工作台后端 403') ||
+  arg.includes('调度员 Agent 工作台 API 不可用')
+)
+const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' || targetsLiveBackendMock ? 'false' : 'true'
 
 const testEnv = {
   ...process.env,

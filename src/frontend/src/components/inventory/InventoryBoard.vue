@@ -178,6 +178,7 @@ import type { InventoryItem, StockTransaction, InventoryDashboard } from '../../
 import { getInventoryDashboard, getInventoryList, getStockTransactions, stockIn, stockOut, transferStock, adjustStock } from '../../api/inventory'
 import { exportToCsv } from '../../utils/export'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import KittingClosurePanel from './KittingClosurePanel.vue'
 
 const dashboard = ref<InventoryDashboard | null>(null)
@@ -331,6 +332,10 @@ async function loadData() {
     items.value = await getInventoryList()
   } catch (error: unknown) {
     items.value = demoItems
+    if (isOfflineDemoError(error)) {
+      notification.value = ''
+      return
+    }
     notification.value = `库存列表加载失败，已显示本地演示物料：${errorMessage(error, '请稍后重试')}`
   }
 }

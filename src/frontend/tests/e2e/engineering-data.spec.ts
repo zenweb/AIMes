@@ -13,7 +13,56 @@ test.describe('Engineering data 工程数据约束', () => {
         sessionStorage.setItem('aimes_e2e_storage_reset', '1')
       }
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+    })
+    await page.route('**/api/v1/**', async route => {
+      const url = route.request().url()
+      if (url.includes('/api/v1/auth/refresh')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            token: 'mock-e2e-token',
+            refreshToken: 'mock-e2e-refresh',
+            expiresAt: '2026-12-31T23:59:59Z',
+          }),
+        })
+        return
+      }
+      if (url.includes('/latest')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+        return
+      }
+      if (url.includes('/api/v1/bom') || url.includes('/api/v1/routing')) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'engineering data e2e uses local fallback fixtures' }),
+        })
+        return
+      }
+      if (url.includes('/api/v1/scheduling/')) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'engineering data e2e uses local evidence fallback' }),
+        })
+        return
+      }
+      if (url.includes('/api/v1/report/dashboard')) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'engineering data e2e uses report fallback fixtures' }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 }),
+      })
     })
   })
 
@@ -35,6 +84,208 @@ test.describe('Engineering data 工程数据约束', () => {
     const listbox = page.getByRole('listbox', { name: 'BOM 列表' })
     await expect(listbox.getByRole('option', { name: /产品A 物料清单/ })).toBeVisible()
     await expect(listbox.getByRole('option', { name: /BOM-A100/ })).toBeVisible()
+  })
+
+  test('BOM 启动工程证据同步失败时真实浏览器仍可操作列表', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithEngineeringEvidenceFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium engineering evidence storage unavailable')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithEngineeringEvidenceFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium engineering evidence storage unavailable')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.route('**/api/v1/scheduling/engineering-change-impact/latest', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium engineering evidence API unavailable' }),
+    }))
+    await page.route('**/api/v1/bom?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'bom-1',
+          bomCode: 'BOM-A100',
+          bomName: '产品A 物料清单',
+          productCode: 'PROD-A1',
+          productName: '精密轴承组件 A',
+          bomType: 'Manufacturing',
+          version: 'V1.0',
+          status: 'Released',
+          effectiveDate: '2026-01-01',
+          expireDate: null,
+          itemCount: 5,
+          createdAt: '2026-01-01',
+        }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 10,
+      }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 工程证据加载失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('ECN 影响分析')
+    await expect(alert).toContainText('chromium engineering evidence storage unavailable')
+    const listbox = page.getByRole('listbox', { name: 'BOM 列表' })
+    await expect(listbox.getByRole('option', { name: /产品A 物料清单/ })).toBeVisible()
+    await expect(listbox.getByRole('option', { name: /BOM-A100/ })).toBeVisible()
+  })
+
+  test('BOM 启动工程证据和列表加载同时失败时真实浏览器保留全部告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithEngineeringEvidenceFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium engineering evidence storage unavailable')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithEngineeringEvidenceFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium engineering evidence cleanup unavailable')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.route('**/api/v1/scheduling/engineering-change-impact/latest', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium engineering evidence API unavailable' }),
+    }))
+    await page.route('**/api/v1/bom?**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium bom list API unavailable' }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+
+    const alert = page.locator('.bom-error[role="alert"]')
+    await expect(alert).toContainText('BOM 工程证据加载失败')
+    await expect(alert).toContainText('chromium engineering evidence')
+    await expect(alert).toContainText('unavailable')
+    await expect(alert).toContainText('BOM 列表加载失败')
+    await expect(alert).toContainText('Request failed with status code 503')
+    const listbox = page.getByRole('listbox', { name: 'BOM 列表' })
+    await expect(listbox.getByRole('option', { name: /产品A 物料清单/ })).toBeVisible()
+    await expect(listbox.getByRole('option', { name: /BOM-A100/ })).toBeVisible()
+  })
+
+  test('BOM 选择时工程证据刷新失败仍打开详情并 fail-loud', async ({ page }) => {
+    let impactRequests = 0
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      let impactStorageReads = 0
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithImpactRefreshFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          impactStorageReads += 1
+          if (impactStorageReads > 1) {
+            throw new Error('chromium impact refresh storage unavailable')
+          }
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithImpactRefreshFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis' && impactStorageReads > 1) {
+          throw new Error('chromium impact refresh storage cleanup unavailable')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.route('**/api/v1/scheduling/engineering-change-impact/latest', route => {
+      impactRequests += 1
+      return route.fulfill({
+        status: impactRequests === 1 ? 200 : 503,
+        contentType: 'application/json',
+        body: impactRequests === 1
+          ? 'null'
+          : JSON.stringify({ message: 'chromium impact refresh unavailable' }),
+      })
+    })
+    await page.route('**/api/v1/bom?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'bom-1',
+          bomCode: 'BOM-A100',
+          bomName: '产品A 物料清单',
+          productCode: 'PROD-A1',
+          productName: '精密轴承组件 A',
+          bomType: 'Manufacturing',
+          version: 'V1.0',
+          status: 'Released',
+          effectiveDate: '2026-01-01',
+          expireDate: null,
+          itemCount: 5,
+          createdAt: '2026-01-01',
+        }, {
+          id: 'bom-2',
+          bomCode: 'BOM-B200',
+          bomName: '产品B 物料清单',
+          productCode: 'PROD-B1',
+          productName: '传动轴总成 B',
+          bomType: 'Manufacturing',
+          version: 'V2.1',
+          status: 'Released',
+          effectiveDate: '2026-03-15',
+          expireDate: null,
+          itemCount: 8,
+          createdAt: '2026-03-10',
+        }],
+        totalCount: 2,
+        page: 1,
+        pageSize: 10,
+      }),
+    }))
+    await page.route('**/api/v1/bom/bom-2', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'bom-2',
+        bomCode: 'BOM-B200',
+        bomName: '产品B 物料清单',
+        productCode: 'PROD-B1',
+        productName: '传动轴总成 B',
+        bomType: 'Manufacturing',
+        version: 'V2.1',
+        status: 'Released',
+        effectiveDate: '2026-03-15',
+        expireDate: null,
+        items: [],
+        changeHistory: [],
+        createdAt: '2026-03-10',
+        updatedAt: null,
+      }),
+    }))
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('option', { name: /产品B 物料清单/ }).click()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 工程证据刷新失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('ECN 影响分析')
+    await expect(alert).toContainText('Request failed with status code 503')
+    await expect(alert).toContainText('已继续加载 BOM 详情')
+    await expect(page.locator('.detail-header h3')).toHaveText('产品B 物料清单')
+    await expect(page.getByText('BOM 排产约束源')).toBeVisible()
   })
 
   test('BOM 详情加载失败时真实浏览器展示 fail-loud fallback', async ({ page }) => {
@@ -190,8 +441,8 @@ test.describe('Engineering data 工程数据约束', () => {
     await page.goto('report', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'M-AL-6061B 替代 M-AL-6061 已工程确认' })
-    await expect(evidence.getByText('工程放行')).toBeVisible()
-    await expect(evidence.getByText('TRACE-ENG-ALT-BOM-A100-M-AL-6061B')).toBeVisible()
+    await expect(evidence.getByText('工程放行')).toBeVisible({ timeout: 15000 })
+    await expect(evidence.getByText('TRACE-ENG-ALT-BOM-A100-M-AL-6061B')).toBeVisible({ timeout: 15000 })
 
     await page.goto('audit-logs', { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 30000 })
@@ -220,6 +471,7 @@ test.describe('Engineering data 工程数据约束', () => {
     await expect(kitting.getByText('BOM 展开齐套包已进入库存与排产')).toBeVisible()
     await expect(kitting.getByText('AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
     await expect(kitting.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+    await expect(kitting.getByRole('button', { name: 'BOM 齐套检查包已发布' })).toBeDisabled()
 
     await page.goto('inventory', { waitUntil: 'commit' })
     await page.waitForSelector('.inv-board', { timeout: 30000 })
@@ -256,6 +508,40 @@ test.describe('Engineering data 工程数据约束', () => {
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(auditPanel.locator('.replay-detail').getByText(/BOM 管理 \/ BOM-A100 V1.0/)).toBeVisible()
     await expect(auditPanel.locator('.replay-detail').getByText(/调拨、替代料、采购加急和排产顺序调整是否闭环/)).toBeVisible()
+  })
+
+  test('BOM 齐套检查包 OTD 证据链同步失败后真实浏览器锁定发布动作', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalSetItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function setItemWithOtdEvidenceFailure(key: string, value: string) {
+        if (key === 'aimes_otd_evidence_chain') {
+          throw new Error('chromium OTD evidence storage unavailable')
+        }
+        return originalSetItem.call(this, key, value)
+      }
+    })
+
+    await page.goto('bom', { waitUntil: 'domcontentloaded' })
+    await page.locator('.list-item').filter({ hasText: 'BOM-A100' }).click()
+
+    const panel = page.locator('.constraint-section')
+    const kitting = panel.locator('.bom-kitting-source')
+    await expect(kitting.getByText('把 BOM 展开结果送入库存齐套')).toBeVisible()
+    await kitting.getByRole('button', { name: '生成 BOM 齐套检查包' }).click()
+
+    await expect(kitting.getByText('BOM 展开齐套包已进入库存与排产')).toBeVisible()
+    await expect(kitting.getByText('AUD-BOM-KIT-BOM-A100-WO-RUSH-9001-20260522')).toBeVisible()
+    await expect(kitting.getByText('TRACE-BOM-KIT-BOM-A100-WO-RUSH-9001')).toBeVisible()
+    await expect(kitting.getByRole('button', { name: 'BOM 齐套检查包已发布' })).toBeDisabled()
+
+    const alert = page.locator('[role="alert"]').filter({ hasText: 'BOM 齐套检查包已发布，但 OTD 证据链同步失败' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('chromium OTD evidence storage unavailable')
+
+    const storedPackage = await page.evaluate(() => localStorage.getItem('aimes_bom_kitting_package'))
+    expect(storedPackage).toContain('bom-kitting-package-bom-a100-wo-rush-9001')
+    const otdEvidence = await page.evaluate(() => localStorage.getItem('aimes_otd_evidence_chain'))
+    expect(otdEvidence).toBeNull()
   })
 
   test('BOM 工程变更影响分析进入排产模拟和 OTD 审计', async ({ page }) => {

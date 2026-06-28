@@ -3,6 +3,23 @@
     <h2 class="page-title">系统管理</h2>
     <div v-if="notification" class="admin-alert" role="alert">{{ notification }}</div>
 
+    <section class="admin-guidance" aria-labelledby="admin-guidance-title">
+      <div class="admin-guidance-main">
+        <span class="eyebrow">系统治理提示</span>
+        <h3 id="admin-guidance-title">系统管理操作前请确认角色、审计编号和回滚路径</h3>
+        <p>Before admin changes, confirm role scope, audit ID, and rollback path.</p>
+      </div>
+      <nav class="admin-guidance-links" aria-label="系统治理关联入口">
+        <a :href="relatedRouteHref('/audit-logs')">审计回放</a>
+        <a :href="relatedRouteHref('/knowledge/documents')">文档治理</a>
+        <a href="#admin-governance-help">帮助：系统治理支持</a>
+      </nav>
+      <div id="admin-governance-help" class="admin-governance-help" aria-label="系统治理帮助">
+        <span>先确认影响范围，再保存配置或调整权限。</span>
+        <span>Confirm impact scope before saving configuration or changing access.</span>
+      </div>
+    </section>
+
     <div class="tabs" role="tablist" aria-label="系统管理分区">
       <button role="tab" class="tab" :class="{ active: tab === 'users' }" :aria-selected="tab === 'users'" @click="tab = 'users'">用户管理</button>
       <button role="tab" class="tab" :class="{ active: tab === 'roles' }" :aria-selected="tab === 'roles'" @click="tab = 'roles'">角色权限</button>
@@ -16,7 +33,7 @@
     <div v-if="tab === 'users'" class="tab-content">
       <div class="toolbar">
         <input v-model="userSearch" class="search-input" placeholder="搜索用户名..." />
-        <button class="btn btn-add" @click="showUserCreate = true">+ 新增用户</button>
+        <button class="btn btn-add" @click="openUserCreateDialog">+ 新增用户</button>
       </div>
       <table class="data-table">
         <thead>
@@ -1373,9 +1390,14 @@
     </div>
 
     <!-- 新建用户对话框 -->
-    <div v-if="showUserCreate" class="modal-overlay" @click.self="showUserCreate = false">
+    <div v-if="showUserCreate" class="modal-overlay" @click.self="closeUserCreateDialog">
       <div class="modal-content">
         <h3>新增用户</h3>
+        <div class="modal-guidance">
+          <span>创建账号前请确认角色范围、初始密码交付方式和审计留痕。</span>
+          <span>Before creating an account, confirm role scope, password handoff, and audit trail.</span>
+          <a href="#admin-governance-help">帮助：系统治理支持</a>
+        </div>
         <div class="form-group"><label>用户名</label><input v-model="createForm.username" class="form-input" /></div>
         <div class="form-group"><label>显示名</label><input v-model="createForm.displayName" class="form-input" /></div>
         <div class="form-group"><label>初始密码</label><input v-model="createForm.password" type="password" class="form-input" placeholder="请输入初始密码" /></div>
@@ -1389,7 +1411,7 @@
           </select>
         </div>
         <div class="modal-actions">
-          <button class="btn btn-cancel" @click="showUserCreate = false">取消</button>
+          <button class="btn btn-cancel" @click="closeUserCreateDialog">取消</button>
           <button class="btn btn-ok" :disabled="!createForm.username || !createForm.displayName || !createForm.password" @click="handleUserCreate">创建</button>
         </div>
       </div>
@@ -1471,6 +1493,11 @@
     <div v-if="editUserTarget" class="modal-overlay" @click.self="editUserTarget = null">
       <div class="modal-content">
         <h3>编辑用户</h3>
+        <div class="modal-guidance">
+          <span>保存用户变更前请确认权限影响、责任人和回滚路径。</span>
+          <span>Before saving user changes, confirm access impact, owner, and rollback path.</span>
+          <a href="#admin-governance-help">帮助：系统治理支持</a>
+        </div>
         <div class="form-group"><label>用户名</label><input :value="editUserTarget.username" class="form-input" disabled /></div>
         <div class="form-group"><label>显示名</label><input v-model="editUserForm.displayName" class="form-input" /></div>
         <div class="form-group"><label>角色</label>
@@ -1493,12 +1520,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { SystemUser, SystemConfig, CreateUserRequest, UpdateUserRequest, NotificationConfig } from '../../types/admin'
 import { getUsers, createUser, updateUser, getConfigs, updateConfig, getNotificationConfigs, updateNotificationConfig } from '../../api/admin'
 import { getLlmStatus, getLlmConfig } from '../../api/llm'
 import type { LlmStatus, LlmConfig } from '../../api/llm'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import { readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
 import { readAssistantRecoveryPackagesBackendFirst, type AssistantRecoveryPackage } from '../../utils/assistant-action-package-sync'
 import { readPocEvidenceGovernanceRecordsBackendFirst, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
@@ -1564,6 +1592,7 @@ import {
 } from '../../utils/quality-knowledge-sample-sync'
 
 const router = useRouter()
+const route = useRoute()
 const tab = ref('users')
 const users = ref<SystemUser[]>([])
 const notification = ref('')
@@ -1602,7 +1631,8 @@ const llmLoading = ref(false)
 const showUserCreate = ref(false)
 const editUserTarget = ref<SystemUser | null>(null)
 const editUserForm = ref<UpdateUserRequest>({})
-const createForm = ref<CreateUserRequest>({ username: '', displayName: '', password: '', role: 'Operator' })
+const defaultCreateUserForm = (): CreateUserRequest => ({ username: '', displayName: '', password: '', role: 'Operator' })
+const createForm = ref<CreateUserRequest>(defaultCreateUserForm())
 const agentActions = [
   {
     scope: 'AI 排产',
@@ -1896,7 +1926,10 @@ const productionExecutionCards = computed(() => productionExecutionEvidenceRecor
 const filteredUsers = computed(() => {
   if (!userSearch.value) return users.value
   const s = userSearch.value.toLowerCase()
-  return users.value.filter(u => u.username.includes(s) || u.displayName.includes(s))
+  return users.value.filter(u =>
+    u.username.toLowerCase().includes(s)
+    || u.displayName.toLowerCase().includes(s)
+  )
 })
 
 const totalCount = computed(() => filteredUsers.value.length)
@@ -1947,6 +1980,7 @@ function demoSystemUsers(): SystemUser[] {
 async function refreshUsers(fallbackToDemo = false) {
   try {
     users.value = (await getUsers()).items
+    if (currentPage.value > totalPages.value) currentPage.value = totalPages.value
     return true
   } catch (error: unknown) {
     if (fallbackToDemo) {
@@ -1958,6 +1992,16 @@ async function refreshUsers(fallbackToDemo = false) {
   }
 }
 
+function openUserCreateDialog() {
+  createForm.value = defaultCreateUserForm()
+  showUserCreate.value = true
+}
+
+function closeUserCreateDialog() {
+  showUserCreate.value = false
+  createForm.value = defaultCreateUserForm()
+}
+
 async function handleUserCreate() {
   try { await createUser(createForm.value) }
   catch (error: unknown) {
@@ -1966,8 +2010,7 @@ async function handleUserCreate() {
   }
   const refreshed = await refreshUsers()
   if (refreshed) notification.value = ''
-  showUserCreate.value = false
-  createForm.value = { username: '', displayName: '', password: '', role: 'Operator' }
+  closeUserCreateDialog()
 }
 
 async function handleUserUpdate() {
@@ -2017,68 +2060,87 @@ async function loadLlmStatus() {
   try {
     llmStatus.value = await getLlmStatus()
     llmConfig.value = await getLlmConfig()
-  } catch {
+  } catch (error: unknown) {
     llmStatus.value = { provider: '-', model: '-', reachable: false }
     llmConfig.value = null
+    notification.value = `LLM 状态加载失败，当前模型连通性不可确认：${errorMessage(error, '请稍后重试')}`
   } finally {
     llmLoading.value = false
   }
 }
 
 function openAuditLogs() {
-  router.push('/audit-logs')
+  openRelatedRoute('/audit-logs')
 }
 
 function openKnowledgeGovernance() {
-  router.push('/knowledge/documents')
+  openRelatedRoute('/knowledge/documents')
 }
 
 function openAnomalyBoard() {
-  router.push('/anomaly')
+  openRelatedRoute('/anomaly')
 }
 
 function openEquipmentBoard() {
-  router.push('/equipment')
+  openRelatedRoute('/equipment')
 }
 
 function openPurchaseBoard() {
-  router.push('/purchase')
+  openRelatedRoute('/purchase')
 }
 
 function openInventoryBoard() {
-  router.push('/inventory')
+  openRelatedRoute('/inventory')
 }
 
 function openBomBoard() {
-  router.push('/bom')
+  openRelatedRoute('/bom')
 }
 
 function openRoutingBoard() {
-  router.push('/routing')
+  openRelatedRoute('/routing')
 }
 
 function openSchedulingBoard() {
-  router.push('/scheduling')
+  openRelatedRoute('/scheduling')
 }
 
 function openRiskBoard() {
-  router.push('/risk')
+  openRelatedRoute('/risk')
 }
 
 function openQualityBoard() {
-  router.push('/quality')
+  openRelatedRoute('/quality')
 }
 
 function openProductionBoard() {
-  router.push('/production')
+  openRelatedRoute('/production')
 }
 
 function openEmployeeBoard() {
-  router.push('/employee')
+  openRelatedRoute('/employee')
 }
 
 function openReportBoard() {
-  router.push('/report')
+  openRelatedRoute('/report')
+}
+
+function openRelatedRoute(path: string) {
+  const offlineDemo = route.query.offlineDemo ?? route.query.demoMode
+  if (offlineDemo === '1' || offlineDemo === 'true' || offlineDemo === 'offline') {
+    router.push({ path, query: { offlineDemo: String(offlineDemo) } })
+    return
+  }
+  router.push(path)
+}
+
+function relatedRouteHref(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const offlineDemo = route.query.offlineDemo ?? route.query.demoMode
+  const query = offlineDemo === '1' || offlineDemo === 'true' || offlineDemo === 'offline'
+    ? `?offlineDemo=${encodeURIComponent(String(offlineDemo))}`
+    : ''
+  return `/scheduling${normalizedPath}${query}`
 }
 
 function knowledgeIndexStatusLabel(status: KnowledgeIndexStatus) {
@@ -2244,45 +2306,50 @@ async function loadAdminEvidenceItem(
   try {
     await load()
   } catch (error: unknown) {
+    if (isOfflineDemoError(error)) return
     errors.push(`${label}：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
+function ensureAdminEvidenceArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  throw new Error('后端返回非数组审计载荷')
+}
+
 onMounted(async () => {
-  const evidenceLoadErrors: string[] = []
+  const startupLoadErrors: string[] = []
   await Promise.all([
-    loadAdminEvidenceItem('POC 证据治理', async () => { pocEvidenceRecords.value = await readPocEvidenceGovernanceRecordsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('Agent 配置审批', async () => { agentApprovals.value = await readAgentConfigApprovalsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('AI 助手动作审计', async () => { assistantActionAudits.value = await readAssistantActionAuditsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('交期恢复包', async () => { assistantRecoveryPackages.value = await readAssistantRecoveryPackagesBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('POC 复盘签署', async () => { pocReviewSignoff.value = await readPocReviewSignoffRecordBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('POC 上线交付', async () => { pocRolloutPackage.value = await readPocRolloutPackageRecordBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('POC 试点运行', async () => { pocPilotRun.value = await readPocPilotRunRecordBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('POC Hypercare', async () => { pocHypercareAcceptance.value = await readPocHypercareAcceptanceRecordBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('风险 SLA 复核', async () => { riskSlaReview.value = await readRiskSlaReviewRecordBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量返工治理', () => { qualityReworkImpact.value = readQualityReworkImpact() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量 MRB 处置', () => { qualityMrbDisposition.value = readQualityMrbDispositionRecord() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('外协承诺包', () => { outsourcingCommitmentPackages.value = readOutsourcingCommitmentPackages() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('异常分流治理', async () => { anomalyDispatchRecords.value = await readAnomalyDispatchRecordsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('人员替班治理', async () => { laborReassignmentRecords.value = await readLaborReassignmentsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('人员资质阻断', async () => { laborQualificationBlockRecords.value = await readLaborQualificationBlocksBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('工程变更治理', () => { engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('工艺能力治理', () => { routeCapabilityValidation.value = readRouteCapabilityValidation() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('OTD 证据链', () => { otdEvidenceRecords.value = readOtdEvidenceChainRecords() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('知识治理复核', async () => { knowledgeReviewRecords.value = await readKnowledgeGovernanceReviewsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('知识待治理文档', () => { knowledgePendingDocuments.value = readKnowledgeGovernancePendingDocuments() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量知识复核队列', async () => { qualityKnowledgeReviewRecords.value = await readQualityKnowledgeReviewQueueRecordsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量再训练版本', async () => { qualityRetrainingVersionRecords.value = await readQualityKnowledgeRetrainingVersionRecordsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量推荐采纳反馈', async () => { qualityRecommendationFeedbackRecords.value = await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst() }, evidenceLoadErrors),
-    loadAdminEvidenceItem('质量灰度决策', async () => { qualityGrayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst() }, evidenceLoadErrors),
+    loadAdminEvidenceItem('POC 证据治理', async () => { pocEvidenceRecords.value = ensureAdminEvidenceArray<PocEvidenceGovernanceRecord>(await readPocEvidenceGovernanceRecordsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('Agent 配置审批', async () => { agentApprovals.value = ensureAdminEvidenceArray<AgentConfigApprovalRecord>(await readAgentConfigApprovalsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('AI 助手动作审计', async () => { assistantActionAudits.value = ensureAdminEvidenceArray<AssistantActionAuditRecord>(await readAssistantActionAuditsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('交期恢复包', async () => { assistantRecoveryPackages.value = ensureAdminEvidenceArray<AssistantRecoveryPackage>(await readAssistantRecoveryPackagesBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('POC 复盘签署', async () => { pocReviewSignoff.value = await readPocReviewSignoffRecordBackendFirst() }, startupLoadErrors),
+    loadAdminEvidenceItem('POC 上线交付', async () => { pocRolloutPackage.value = await readPocRolloutPackageRecordBackendFirst() }, startupLoadErrors),
+    loadAdminEvidenceItem('POC 试点运行', async () => { pocPilotRun.value = await readPocPilotRunRecordBackendFirst() }, startupLoadErrors),
+    loadAdminEvidenceItem('POC Hypercare', async () => { pocHypercareAcceptance.value = await readPocHypercareAcceptanceRecordBackendFirst() }, startupLoadErrors),
+    loadAdminEvidenceItem('风险 SLA 复核', async () => { riskSlaReview.value = await readRiskSlaReviewRecordBackendFirst() }, startupLoadErrors),
+    loadAdminEvidenceItem('质量返工治理', () => { qualityReworkImpact.value = readQualityReworkImpact() }, startupLoadErrors),
+    loadAdminEvidenceItem('质量 MRB 处置', () => { qualityMrbDisposition.value = readQualityMrbDispositionRecord() }, startupLoadErrors),
+    loadAdminEvidenceItem('外协承诺包', () => { outsourcingCommitmentPackages.value = ensureAdminEvidenceArray<OutsourcingCommitmentPackage>(readOutsourcingCommitmentPackages()) }, startupLoadErrors),
+    loadAdminEvidenceItem('异常分流治理', async () => { anomalyDispatchRecords.value = ensureAdminEvidenceArray<AnomalyDispatchRecord>(await readAnomalyDispatchRecordsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('人员替班治理', async () => { laborReassignmentRecords.value = ensureAdminEvidenceArray<LaborReassignmentRecord>(await readLaborReassignmentsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('人员资质阻断', async () => { laborQualificationBlockRecords.value = ensureAdminEvidenceArray<LaborQualificationBlockRecord>(await readLaborQualificationBlocksBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('工程变更治理', () => { engineeringChangeImpact.value = readEngineeringChangeImpactAnalysis() }, startupLoadErrors),
+    loadAdminEvidenceItem('工艺能力治理', () => { routeCapabilityValidation.value = readRouteCapabilityValidation() }, startupLoadErrors),
+    loadAdminEvidenceItem('OTD 证据链', () => { otdEvidenceRecords.value = ensureAdminEvidenceArray<OtdEvidenceChainItem>(readOtdEvidenceChainRecords()) }, startupLoadErrors),
+    loadAdminEvidenceItem('知识治理复核', async () => { knowledgeReviewRecords.value = ensureAdminEvidenceArray<KnowledgeGovernanceReviewRecord>(await readKnowledgeGovernanceReviewsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('知识待治理文档', () => { knowledgePendingDocuments.value = ensureAdminEvidenceArray<KnowledgeGovernanceSourceDocument>(readKnowledgeGovernancePendingDocuments()) }, startupLoadErrors),
+    loadAdminEvidenceItem('质量知识复核队列', async () => { qualityKnowledgeReviewRecords.value = ensureAdminEvidenceArray<QualityKnowledgeReviewQueueRecord>(await readQualityKnowledgeReviewQueueRecordsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('质量再训练版本', async () => { qualityRetrainingVersionRecords.value = ensureAdminEvidenceArray<QualityKnowledgeRetrainingVersionRecord>(await readQualityKnowledgeRetrainingVersionRecordsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('质量推荐采纳反馈', async () => { qualityRecommendationFeedbackRecords.value = ensureAdminEvidenceArray<QualityKnowledgeRecommendationFeedbackRecord>(await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst()) }, startupLoadErrors),
+    loadAdminEvidenceItem('质量灰度决策', async () => { qualityGrayReleaseDecisionRecords.value = ensureAdminEvidenceArray<QualityKnowledgeGrayReleaseDecisionRecord>(await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()) }, startupLoadErrors),
   ])
-  if (evidenceLoadErrors.length) {
-    const suffix = evidenceLoadErrors.length > 3 ? `；另有 ${evidenceLoadErrors.length - 3} 项` : ''
-    notification.value = `部分治理证据刷新失败，已保留其它可用证据：${evidenceLoadErrors.slice(0, 3).join('；')}${suffix}`
-  }
   await refreshUsers(true)
   try { configs.value = await getConfigs() }
-  catch {
+  catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      startupLoadErrors.unshift(`系统配置：${errorMessage(error, '请稍后重试', 'title')}`)
+    }
     configs.value = [
       { id: 'c1', configKey: 'site.name', configValue: 'AIMes 智能工厂', category: 'general', description: '站点名称', updatedAt: '2026-05-01T00:00:00', updatedBy: 'admin' },
       { id: 'c2', configKey: 'production.shift.start', configValue: '08:00', category: 'production', description: '早班开始时间', updatedAt: '2026-01-01T00:00:00', updatedBy: 'admin' },
@@ -2291,7 +2358,10 @@ onMounted(async () => {
     ]
   }
   try { notificationConfigs.value = await getNotificationConfigs() }
-  catch {
+  catch (error: unknown) {
+    if (!isOfflineDemoError(error)) {
+      startupLoadErrors.unshift(`通知配置：${errorMessage(error, '请稍后重试', 'title')}`)
+    }
     notificationConfigs.value = [
       { id: 'nc1', category: 'equipment', label: '设备状态', enabled: true, description: '设备运行/故障/离线状态变更通知' },
       { id: 'nc2', category: 'quality', label: '质量预警', enabled: true, description: '质量检验不合格/SPC 超限预警' },
@@ -2301,6 +2371,10 @@ onMounted(async () => {
       { id: 'nc6', category: 'purchase', label: '采购状态', enabled: true, description: '采购单提交/确认/收货/取消通知' },
     ]
   }
+  if (startupLoadErrors.length) {
+    const suffix = startupLoadErrors.length > 5 ? `；另有 ${startupLoadErrors.length - 5} 项` : ''
+    notification.value = `部分管理数据刷新失败，已保留其它可用数据与本地演示兜底：${startupLoadErrors.slice(0, 5).join('；')}${suffix}`
+  }
 })
 </script>
 
@@ -2308,6 +2382,13 @@ onMounted(async () => {
 .admin-board { height: 100%; display: flex; flex-direction: column; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 .admin-alert { margin-bottom: 10px; padding: 8px 10px; border: 1px solid #ffccc7; border-radius: 4px; background: #fff2f0; color: #a8071a; font-size: 13px; }
+.admin-guidance { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: start; margin-bottom: 12px; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
+.admin-guidance-main h3 { margin: 3px 0 4px; color: #0f172a; font-size: 14px; }
+.admin-guidance-main p { margin: 0; color: #64748b; font-size: 12px; }
+.admin-guidance-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.admin-guidance-links a { color: #1890ff; font-size: 12px; font-weight: 700; text-decoration: none; }
+.admin-guidance-links a:hover { text-decoration: underline; }
+.admin-governance-help { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 8px; border-top: 1px solid #dbeafe; color: #475569; font-size: 12px; }
 .tabs { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 2px solid #f0f0f0; }
 .tab { padding: 8px 20px; border: none; background: none; cursor: pointer; font-size: 14px; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .tab.active { color: #1890ff; border-bottom-color: #1890ff; font-weight: 600; }
@@ -2343,6 +2424,9 @@ onMounted(async () => {
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 1100; display: flex; align-items: center; justify-content: center; }
 .modal-content { background: #fff; border-radius: 8px; padding: 24px; width: 420px; max-width: 90vw; }
 .modal-content h3 { font-size: 16px; margin: 0 0 16px; }
+.modal-guidance { display: grid; gap: 4px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 6px; background: #f8fbff; color: #475569; font-size: 12px; line-height: 1.45; }
+.modal-guidance a { width: max-content; color: #1890ff; font-weight: 700; text-decoration: none; }
+.modal-guidance a:hover { text-decoration: underline; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
 .form-input { width: 100%; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }

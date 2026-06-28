@@ -4,6 +4,7 @@ import LoginPage from '../../src/components/auth/LoginPage.vue'
 
 const login = vi.hoisted(() => vi.fn())
 const routerPush = vi.hoisted(() => vi.fn())
+const routeQuery = vi.hoisted(() => ({} as Record<string, string>))
 
 vi.mock('../../src/stores/auth', () => ({
   useAuth: () => ({ login }),
@@ -11,13 +12,14 @@ vi.mock('../../src/stores/auth', () => ({
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush }),
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({ query: routeQuery }),
 }))
 
 describe('LoginPage', () => {
   beforeEach(() => {
     login.mockReset()
     routerPush.mockReset()
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
   })
 
   it('does not submit whitespace-only credentials to the auth store', async () => {
@@ -50,6 +52,30 @@ describe('LoginPage', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(login).toHaveBeenCalledWith('admin', 'admin123')
+    expect(routerPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('returns to the protected page after login when the route guard provided a local redirect', async () => {
+    routeQuery.redirect = '/employee?offlineDemo=1'
+    login.mockResolvedValueOnce(undefined)
+    const wrapper = mount(LoginPage)
+
+    await wrapper.get('#username').setValue('admin')
+    await wrapper.get('#password').setValue('admin123')
+    await wrapper.get('form').trigger('submit')
+
+    expect(routerPush).toHaveBeenCalledWith('/employee?offlineDemo=1')
+  })
+
+  it('ignores non-local redirects after login', async () => {
+    routeQuery.redirect = '//example.com'
+    login.mockResolvedValueOnce(undefined)
+    const wrapper = mount(LoginPage)
+
+    await wrapper.get('#username').setValue('admin')
+    await wrapper.get('#password').setValue('admin123')
+    await wrapper.get('form').trigger('submit')
+
     expect(routerPush).toHaveBeenCalledWith('/dashboard')
   })
 
@@ -215,5 +241,22 @@ describe('LoginPage', () => {
     expect(wrapper.get('#username').attributes('aria-describedby')).toBeUndefined()
     expect(wrapper.get('#password').attributes('aria-invalid')).toBe('true')
     expect(wrapper.get('#password').attributes('aria-describedby')).toBe('login-error')
+  })
+
+  it('shows bilingual demo account guidance and help link when offline demo mode is explicit', () => {
+    routeQuery.offlineDemo = '1'
+
+    const wrapper = mount(LoginPage)
+    const hints = wrapper.get('.login-hints')
+
+    expect(hints.text()).toContain('演示账号')
+    expect(hints.text()).toContain('Demo accounts')
+    expect(hints.text()).toContain('admin')
+    expect(hints.text()).toContain('admin123')
+    expect(hints.text()).toContain('离线演示入口不连接后端认证')
+    expect(hints.text()).toContain('Offline demo login skips live backend authentication.')
+    expect(wrapper.get('.login-help-link').attributes('href')).toBe('#login-demo-help')
+    expect(wrapper.get('#login-demo-help').text()).toContain('真实后端登录')
+    expect(wrapper.get('#login-demo-help').text()).toContain('Live backend login')
   })
 })

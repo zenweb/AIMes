@@ -77,7 +77,17 @@
             <span>Agent 建议</span>
             <strong>锁定 CNC-001 当前任务，把 WO-RUSH-9001 插入锁定期后第一个 CNC 空窗。</strong>
           </div>
-          <div class="situation-actions">
+          <div id="shopfloor-situation-help" class="situation-guidance">
+            <strong>现场态势操作提示 / Shopfloor situation guidance</strong>
+            <p>同步或升级现场态势前，请核对事件来源、影响工单、责任人和审计追踪。</p>
+            <p>Before syncing or escalating a shopfloor situation, verify event source, impacted work orders, owner, and audit trace.</p>
+            <nav aria-label="现场态势相关入口">
+              <router-link to="/scheduling">重排建议 / Scheduling</router-link>
+              <router-link to="/risk">风险预警 / Risk queue</router-link>
+              <a href="#shopfloor-situation-help">帮助 / Help</a>
+            </nav>
+          </div>
+          <div class="situation-actions" aria-describedby="shopfloor-situation-help">
             <button type="button" @click="syncSituationEvidence">同步态势证据</button>
             <button type="button" class="escalate-btn" @click="escalateSituationResponse">升级为跨模块处置包</button>
             <router-link to="/scheduling">查看重排建议</router-link>
@@ -244,10 +254,11 @@ import {
   writeMonitoringSituationEscalation,
   type MonitoringSituationEscalation,
 } from '../../utils/monitoring-situation-escalation-sync'
-import { readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
+import { readPocHypercareAcceptanceRecord, readPocHypercareAcceptanceRecordBackendFirst, type PocHypercareAcceptanceRecord } from '../../utils/poc-hypercare-sync'
 import { getLocalAccessToken } from '../../utils/auth-token'
-import { isOfflineDemoMode } from '../../utils/offline-demo-mode'
+import { isOfflineDemoError, shouldSkipBackendForOfflineDemo } from '../../utils/offline-demo-mode'
 import { errorMessage } from '../../utils/error-message'
+import { resolveSignalRHubUrl } from '../../utils/signalr-url'
 
 interface EquipmentMetric {
   id: string
@@ -302,7 +313,7 @@ const selectedEq = ref<EquipmentMetric | null>(null)
 const eventFilter = ref('all')
 let connection: signalR.HubConnection | null = null
 let demoInterval: ReturnType<typeof setInterval> | null = null
-const useDemoMonitoring = isOfflineDemoMode()
+const useDemoMonitoring = shouldSkipBackendForOfflineDemo(getLocalAccessToken())
 const situationSyncTitle = ref('等待同步')
 const situationSyncMessage = ref('同步后，现场事件会进入 OTD 复盘证据链，并可在审计回放中核对来源、对象和追踪编号。')
 const activeSituationEscalation = ref<MonitoringSituationEscalation | null>(null)
@@ -451,7 +462,7 @@ function connectSignalR() {
   }
 
   connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/monitoring', {
+    .withUrl(resolveSignalRHubUrl('/hubs/monitoring'), {
       accessTokenFactory: () => getLocalAccessToken() ?? '',
     })
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
@@ -551,8 +562,11 @@ onMounted(async () => {
         : `${latestEscalation.auditId} 已写入风险队列、AI 排产和统一 OTD 证据链。`
     }
   } catch (error) {
-    situationSyncTitle.value = '现场态势初始化读取失败'
-    situationSyncMessage.value = `Hypercare 与现场处置包记录暂未加载：${errorMessage(error, '请稍后重试')}`
+    pocHypercareAcceptance.value = readPocHypercareAcceptanceRecord()
+    if (!isOfflineDemoError(error)) {
+      situationSyncTitle.value = '现场态势初始化读取失败'
+      situationSyncMessage.value = `Hypercare 与现场处置包记录暂未加载：${errorMessage(error, '请稍后重试')}`
+    }
   }
   connectSignalR()
 })

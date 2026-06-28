@@ -88,8 +88,11 @@ public class AgentDecisionRepository : IAgentDecisionRepository
 
     public async Task UpsertEvidenceLinkAsync(AgentEvidenceLink link, CancellationToken ct = default)
     {
-        var existing = await _context.AgentEvidenceLinks.FirstOrDefaultAsync(e =>
-            e.EvidenceType == link.EvidenceType && e.EvidenceKey == link.EvidenceKey, ct);
+        var existingLinks = await _context.AgentEvidenceLinks
+            .Where(e => e.EvidenceType == link.EvidenceType && e.EvidenceKey == link.EvidenceKey)
+            .OrderByDescending(e => e.CreatedAt)
+            .ToListAsync(ct);
+        var existing = existingLinks.FirstOrDefault();
 
         if (existing is null)
         {
@@ -100,6 +103,10 @@ public class AgentDecisionRepository : IAgentDecisionRepository
             existing.AgentDecisionId = link.AgentDecisionId;
             existing.EvidenceSummary = link.EvidenceSummary;
             existing.CreatedAt = link.CreatedAt;
+            if (existingLinks.Count > 1)
+            {
+                _context.AgentEvidenceLinks.RemoveRange(existingLinks.Skip(1));
+            }
         }
 
         await _context.SaveChangesAsync(ct);

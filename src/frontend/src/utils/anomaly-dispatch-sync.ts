@@ -81,12 +81,30 @@ export function readAnomalyDispatchRecords(): AnomalyDispatchRecord[] {
   return readRawRecords()
 }
 
-export async function readAnomalyDispatchRecordsBackendFirst(): Promise<AnomalyDispatchRecord[]> {
+function mergeAnomalyDispatchRecords(
+  remoteRecords: AnomalyDispatchRecord[],
+  localRecords: AnomalyDispatchRecord[],
+): AnomalyDispatchRecord[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<AnomalyDispatchRecord[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 12)
+}
+
+export async function readAnomalyDispatchRecordsBackendFirst(options?: { failLoud?: boolean }): Promise<AnomalyDispatchRecord[]> {
   try {
     const { queryAnomalyDispatchRecords } = await import('../api/riskEvidence')
-    const records = await queryAnomalyDispatchRecords(12)
-    return records.length > 0 ? records : readAnomalyDispatchRecords()
-  } catch {
+    const records = await queryAnomalyDispatchRecords(12, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组异常分流审计载荷')
+    }
+    return mergeAnomalyDispatchRecords(records.filter(isRecord), readAnomalyDispatchRecords())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readAnomalyDispatchRecords()
   }
 }

@@ -42,6 +42,13 @@ public class OperationService : IOperationService
                     throw new InvalidOperationException("Operation or work order was not found.");
 
                 relatedWorkOrder = workOrder;
+                var existingExecution = (await GetOrderedExecutionsByWorkOrderIdAsync(workOrder.Id, innerCt))
+                    .FirstOrDefault();
+                if (existingExecution != null)
+                {
+                    return existingExecution;
+                }
+
                 var createdExecution = new OperationExecution(workOrder.Id, workOrder.RouteCode, string.IsNullOrWhiteSpace(workOrder.RouteCode) ? "Default Operation" : workOrder.RouteCode);
                 if (!string.IsNullOrWhiteSpace(request.OperatorId) && !string.IsNullOrWhiteSpace(request.StationId))
                 {
@@ -62,7 +69,9 @@ public class OperationService : IOperationService
             await _unitOfWork.ExecuteAsync(innerCt => _operationRepository.UpdateExecutionAsync(execution, innerCt), ct);
         }
 
-        return ToInfoDto(execution, relatedWorkOrder);
+        var nextExecution = await GetNextExecutionAsync(execution, ct);
+
+        return ToInfoDto(execution, relatedWorkOrder, nextExecution);
     }
 
     public async Task<OperationResultDto> StartAsync(string operationId, StartOperationRequest request, CancellationToken ct = default)
@@ -130,7 +139,30 @@ public class OperationService : IOperationService
             ?? throw new InvalidOperationException("Operation execution was not found.");
     }
 
-    private static OperationInfoDto ToInfoDto(OperationExecution execution, WorkOrder workOrder)
+    private async Task<OperationExecution?> GetNextExecutionAsync(OperationExecution execution, CancellationToken ct)
+    {
+        var executions = await GetOrderedExecutionsByWorkOrderIdAsync(execution.WorkOrderId, ct);
+        var currentIndex = executions
+            .Select((item, index) => new { item, index })
+            .FirstOrDefault(pair => pair.item.Id == execution.Id)
+            ?.index;
+
+        return currentIndex.HasValue && currentIndex.Value + 1 < executions.Count
+            ? executions[currentIndex.Value + 1]
+            : null;
+    }
+
+    private async Task<IReadOnlyList<OperationExecution>> GetOrderedExecutionsByWorkOrderIdAsync(string workOrderId, CancellationToken ct)
+    {
+        var executions = await _operationRepository.GetExecutionsByWorkOrderIdAsync(workOrderId, ct);
+        return executions
+            .OrderBy(execution => new OperationCode(execution.OperationCode).NumericSequence)
+            .ThenBy(execution => execution.OperationCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(execution => execution.CreatedAt)
+            .ToList();
+    }
+
+    private static OperationInfoDto ToInfoDto(OperationExecution execution, WorkOrder workOrder, OperationExecution? nextExecution = null)
     {
         return new OperationInfoDto
         {
@@ -143,7 +175,22 @@ public class OperationService : IOperationService
             OperationName = execution.OperationName,
             PlannedQuantity = workOrder.PlannedQuantity,
             CompletedQuantity = workOrder.CompletedQuantity,
-            Status = execution.Status.ToString()
+            Status = execution.Status.ToString(),
+            NextOperation = nextExecution == null
+                ? null
+                : new OperationInfoDto
+                {
+                    OperationId = nextExecution.Id,
+                    WorkOrderId = workOrder.Id,
+                    WorkOrderNumber = workOrder.OrderNumber,
+                    ProductCode = workOrder.ProductCode,
+                    ProductName = workOrder.ProductName,
+                    OperationCode = nextExecution.OperationCode,
+                    OperationName = nextExecution.OperationName,
+                    PlannedQuantity = workOrder.PlannedQuantity,
+                    CompletedQuantity = workOrder.CompletedQuantity,
+                    Status = nextExecution.Status.ToString()
+                }
         };
     }
 }

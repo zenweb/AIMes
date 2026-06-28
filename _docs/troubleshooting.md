@@ -22,7 +22,13 @@ postgresql:
 
 **修复方案 B**：停掉本机 PostgreSQL（`brew services stop postgresql` / `sudo systemctl stop postgresql` / Windows Services）。
 
-同样思路适用于 6379 (Redis) / 5672 (RabbitMQ) / 15672 (RabbitMQ UI) / 6333 (Qdrant) / 5000 (API)。
+同样思路适用于 6379 (Redis) / 5672 (RabbitMQ) / 15672 (RabbitMQ UI) / 6333 (Qdrant)。API 宿主机端口默认是 5003，推荐用环境变量覆盖，不要回退到 5000：
+
+```powershell
+$env:AIMES_API_HOST_PORT = "5004"
+docker compose up -d api
+$env:VITE_API_TARGET = "http://localhost:5004"
+```
 
 ### 2. `aimes-pg` 容器一直 unhealthy / 重启循环
 
@@ -71,7 +77,7 @@ docker compose logs rabbitmq --tail=20
 
 ## 起来了但访问不了
 
-### 5. 浏览器打开 `http://localhost:5000` 报"无法访问此网站"
+### 5. 浏览器打开 `http://localhost:5003` 报"无法访问此网站"
 
 **最常见原因**：HTTPS 重定向。0.1.0 之前的版本会无条件 307 跳到 https，docker compose 没暴露 HTTPS → 浏览器报错。
 

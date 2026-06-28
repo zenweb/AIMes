@@ -4,6 +4,7 @@ using MES.Domain.Entities.Knowledge;
 using MES.Domain.Entities.Production;
 using MES.Domain.Entities.Quality;
 using MES.Domain.Entities.Scheduling;
+using MES.Domain.Exceptions;
 using Xunit;
 
 namespace MES.Tests.Unit.Domain;
@@ -80,5 +81,28 @@ public class MaterialTests
 
         // Assert
         material.ExpiryDate.Should().BeNull();
+    }
+
+    [Fact]
+    public void Reserve_WhenQuantityExceedsNetAvailable_ShouldThrowDomainRuleViolation()
+    {
+        var material = Material.Create("MAT-003", "Reserved Material", "PCS", availableQuantity: 100);
+        material.Reserve(80);
+
+        var act = () => material.Reserve(30);
+
+        act.Should().Throw<DomainRuleViolationException>()
+            .WithMessage("可用库存不足：需要 30，可用 20");
+    }
+
+    [Fact]
+    public void Consume_WhenQuantityExceedsAvailable_ShouldThrowDomainRuleViolation()
+    {
+        var material = Material.Create("MAT-004", "Consumable Material", "PCS", availableQuantity: 10);
+
+        var act = () => material.Consume(11);
+
+        act.Should().Throw<DomainRuleViolationException>()
+            .WithMessage("库存不足：需要消耗 11，可用 10");
     }
 }

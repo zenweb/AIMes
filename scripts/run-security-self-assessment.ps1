@@ -69,13 +69,13 @@ $script:reportLines = @(
 
 try {
     Invoke-AndCapture "MES.Tests.Unit security tests" {
-        dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Security|FullyQualifiedName~Authorization"
+        dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter "FullyQualifiedName~Security|FullyQualifiedName~Authorization"
     }
     Invoke-AndCapture "MES.Tests.Integration security tests" {
-        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore --filter "FullyQualifiedName~Security"
+        dotnet test src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter "FullyQualifiedName~Security"
     }
     Invoke-AndCapture "MES.ArchitectureTests security gates" {
-        dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore --filter "FullyQualifiedName~Security|FullyQualifiedName~Authorization|FullyQualifiedName~Audit|FullyQualifiedName~H20GitHubActions"
+        dotnet test src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj --no-restore /p:SkipFrontendBuildCopy=true --filter "FullyQualifiedName~Security|FullyQualifiedName~Authorization|FullyQualifiedName~Audit|FullyQualifiedName~H20GitHubActions"
     }
     Invoke-AndCapture "NuGet vulnerability audit" {
         $auditOutput = dotnet list src/backend/AIMes.slnx package --vulnerable --include-transitive

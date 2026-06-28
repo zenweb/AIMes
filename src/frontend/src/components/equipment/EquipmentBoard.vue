@@ -41,7 +41,9 @@
         <code>{{ auditFocus.objectType }}</code>
       </section>
 
-      <EquipmentScheduleImpactPanel />
+      <div id="equipment-schedule-impact">
+        <EquipmentScheduleImpactPanel />
+      </div>
       <div v-if="equipmentError" class="equipment-error" role="alert" aria-live="assertive">{{ equipmentError }}</div>
 
       <!-- 设备列表 -->
@@ -132,6 +134,7 @@
                 <div class="info-item"><label>状态</label><span class="status-text" :class="selectedEq.status">{{ statusLabel(selectedEq.status) }}</span></div>
                 <div class="info-item"><label>产能</label><span>{{ selectedEq.capacity }}</span></div>
                 <div class="info-item"><label>利用率</label><span :class="utilClass(selectedEq.utilizationRate)">{{ selectedEq.utilizationRate }}%</span></div>
+                <div class="info-item"><label>当前工单</label><span>{{ selectedEq.currentWorkOrderId || '—' }}</span></div>
                 <div class="info-item"><label>上次保养</label><span>{{ selectedEq.lastMaintenanceDate ? formatDate(selectedEq.lastMaintenanceDate) : '—' }}</span></div>
                 <div class="info-item"><label>下次保养</label><span>{{ selectedEq.nextMaintenanceDate ? formatDate(selectedEq.nextMaintenanceDate) : '—' }}</span></div>
               </div>
@@ -168,7 +171,7 @@
             </div>
 
             <!-- 维护记录 -->
-            <div v-if="activeTab === 'maintenance'" class="tab-content">
+            <div v-if="activeTab === 'maintenance'" id="equipment-maintenance-history" class="tab-content">
               <div v-if="maintLoading" class="loading-state">加载中...</div>
               <div v-else-if="maintenanceRecords.length">
                 <div v-for="m in maintenanceRecords" :key="m.id" class="maint-item">
@@ -192,7 +195,17 @@
 
             <!-- 故障诊断 -->
             <div v-if="activeTab === 'diagnose'" class="tab-content">
-              <div class="diagnose-form">
+              <div id="equipment-diagnosis-help" class="diagnosis-guidance">
+                <strong>设备诊断操作提示 / Equipment diagnosis guidance</strong>
+                <p>诊断前请核对当前工单、健康异常、维护记录和停机影响。</p>
+                <p>Before diagnosis, verify current work order, health anomalies, maintenance history, and downtime impact.</p>
+                <nav aria-label="设备诊断相关证据">
+                  <a href="#equipment-schedule-impact">排产影响 / Schedule impact</a>
+                  <a href="#equipment-maintenance-history">维护记录 / Maintenance history</a>
+                  <a href="#equipment-diagnosis-help">帮助 / Help</a>
+                </nav>
+              </div>
+              <div class="diagnose-form" aria-describedby="equipment-diagnosis-help">
                 <input v-model="errorCode" class="diag-input" placeholder="输入故障代码（可选）" @keydown.enter="runDiagnose" />
                 <button class="diag-btn" @click="runDiagnose" :disabled="diagLoading">开始诊断</button>
               </div>
@@ -231,6 +244,7 @@ import { getEquipmentList, getEquipmentStatistics, getHealthReport, getMaintenan
 import type { EquipmentDto, EquipmentStatisticsDto, EquipmentHealthDto, DiagnosticReportDto, MaintenanceRecordDto } from '../../types/equipment'
 import { formatDate } from '../../utils/date'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import EquipmentScheduleImpactPanel from './EquipmentScheduleImpactPanel.vue'
 
 const stats = reactive<EquipmentStatisticsDto>({
@@ -324,7 +338,9 @@ async function loadEquipment() {
     equipmentListError.value = null
     syncSelectedEquipmentWithVisibleList()
   } catch (error) {
-    equipmentListError.value = `设备列表加载失败：${errorMessage(error, '后端设备列表不可用，已显示演示兜底数据')}`
+    if (!isOfflineDemoError(error)) {
+      equipmentListError.value = `设备列表加载失败：${errorMessage(error, '后端设备列表不可用，已显示演示兜底数据')}`
+    }
     // fallback demo data
     equipment.value = [
       { id: 'EQ-001', equipmentCode: 'CNC-001', equipmentName: 'CNC-001 加工中心', equipmentType: 'CNC', workshopId: 'WS-001', workshopName: '机加工车间', status: 'running', capacity: 100, utilizationRate: 85, currentWorkOrderId: 'WO-001', createdAt: '2025-01-01T00:00:00' },
@@ -488,7 +504,9 @@ onMounted(async () => {
     equipmentStatisticsError.value = null
   } catch (error) {
     Object.assign(stats, { totalCount: 8, runningCount: 4, idleCount: 3, maintenanceCount: 0, faultCount: 1, offlineCount: 0, utilizationRate: 72, availabilityRate: 95 })
-    equipmentStatisticsError.value = `设备统计加载失败：${errorMessage(error, '后端设备统计不可用，已显示演示兜底数据')}`
+    if (!isOfflineDemoError(error)) {
+      equipmentStatisticsError.value = `设备统计加载失败：${errorMessage(error, '后端设备统计不可用，已显示演示兜底数据')}`
+    }
   }
   await loadEquipment()
   applyAuditFocus()

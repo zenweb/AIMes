@@ -123,8 +123,13 @@ export function readPocHypercareAcceptanceRecord(): PocHypercareAcceptanceRecord
 }
 
 export async function readPocHypercareAcceptanceRecordBackendFirst(options?: { failLoud?: boolean }): Promise<PocHypercareAcceptanceRecord | null> {
+  const localRecord = readPocHypercareAcceptanceRecord()
   const record = await getLatestPocHypercareAcceptance(options)
-  return record ?? readPocHypercareAcceptanceRecord()
+  if (!isPocHypercareAcceptanceRecord(record)) return localRecord
+  if (!localRecord) return record
+  return new Date(localRecord.createdAt).getTime() >= new Date(record.createdAt).getTime()
+    ? localRecord
+    : record
 }
 
 export function writePocHypercareAcceptanceRecord(pilotRun: PocPilotRunRecord) {

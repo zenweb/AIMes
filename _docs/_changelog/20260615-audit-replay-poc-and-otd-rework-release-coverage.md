@@ -1,0 +1,23 @@
+# 2026-06-15 Audit Replay POC and OTD Rework Release Coverage
+
+- Expanded `src/frontend/tests/unit/audit-decision-replay-panel.test.ts` to pin the remaining user-critical replay branches in `AuditDecisionReplayPanel.vue`.
+- Added fail-loud coverage for:
+  - POC evidence governance loader failure.
+  - assistant action audit backend throw fallback.
+  - quality CAPA closure loader failure and non-object payload.
+  - local OTD evidence chain non-array payload.
+  - production anomaly OTD replay.
+  - outsourcing commitment and outsourcing receipt replay.
+  - barcode quality rework release, handoff release, schedule release, and label release replay.
+  - POC evidence governance success replay.
+- Preserved the existing production behavior; no UI logic change was needed for this slice.
+- Latest evidence after verification:
+  - targeted replay unit test: `56 passed`
+  - related regression: `4 files / 102 tests passed`
+  - full frontend coverage: `111 files / 1026 tests passed`
+  - `AuditDecisionReplayPanel.vue` coverage: statements `95.14%`, branches `55.39%`, functions `99.07%`, lines `96.39%`
+- Regression refresh on 2026-06-19:
+  - `npx vitest run tests/unit/audit-decision-replay-panel.test.ts --coverage.enabled=false`: `56 passed`
+  - `npm run test:unit:coverage`: `111 files / 1083 tests passed`
+  - `npm run lint`: passed
+  - Current `AuditDecisionReplayPanel.vue` coverage remains statements `95.14%`, branches `55.39%`, functions `99.07%`, lines `96.39%`

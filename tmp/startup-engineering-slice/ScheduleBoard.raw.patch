@@ -1,0 +1,79 @@
+diff --git "a/tmp\\startup-engineering-slice\\a\\src\\frontend\\src\\components\\schedule\\ScheduleBoard.vue" "b/tmp\\startup-engineering-slice\\b\\src\\frontend\\src\\components\\schedule\\ScheduleBoard.vue"
+index 156eed0..f5f006b 100644
+--- "a/tmp\\startup-engineering-slice\\a\\src\\frontend\\src\\components\\schedule\\ScheduleBoard.vue"
++++ "b/tmp\\startup-engineering-slice\\b\\src\\frontend\\src\\components\\schedule\\ScheduleBoard.vue"
+@@ -479,8 +479,10 @@ const rushOrderImpact = reactive<RushOrderImpact>({
+ })
+ const warnings = ref<string[]>([])
+ const abReportWarning = ref('')
++const startupEngineeringConstraintWarnings = ref<string[]>([])
+ const laborEvidenceStartupWarnings = ref<string[]>([])
+ const displayWarnings = computed(() => [
++  ...startupEngineeringConstraintWarnings.value,
+   ...laborEvidenceStartupWarnings.value,
+   ...warnings.value,
+   ...(abReportWarning.value ? [abReportWarning.value] : []),
+@@ -1610,9 +1612,10 @@ function readBarcodeScheduleReleaseRecord() {
+ }
+ 
+ async function applyEngineeringChangeApprovals() {
+-  const approval = await readAlternateMaterialApprovalBackendFirst()
++  const readbackOptions = { failLoud: true }
++  const approval = await readAlternateMaterialApprovalBackendFirst(readbackOptions)
+   alternateMaterialApproval.value = approval
+-  const impact = await readEngineeringChangeImpactAnalysisBackendFirst()
++  const impact = await readEngineeringChangeImpactAnalysisBackendFirst(readbackOptions)
+   engineeringChangeImpact.value = impact
+   const bomKittingPackage = readBomKittingPackage()
+ 
+@@ -1695,7 +1698,7 @@ async function applyEngineeringChangeApprovals() {
+ }
+ 
+ async function applyRouteCapabilityValidation() {
+-  const validation = await readRouteCapabilityValidationBackendFirst()
++  const validation = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
+   routeCapabilityValidation.value = validation
+   if (!validation) return
+ 
+@@ -1722,6 +1725,26 @@ async function applyRouteCapabilityValidation() {
+   }
+ }
+ 
++async function loadStartupEngineeringConstraints() {
++  const failures: string[] = []
++  try {
++    await applyEngineeringChangeApprovals()
++  } catch (error: unknown) {
++    if (!isOfflineDemoError(error)) {
++      failures.push(`工程变更/替代料约束：${errorMessage(error, '未知错误')}`)
++    }
++  }
++  try {
++    await applyRouteCapabilityValidation()
++  } catch (error: unknown) {
++    if (!isOfflineDemoError(error)) {
++      failures.push(`工艺能力约束：${errorMessage(error, '未知错误')}`)
++    }
++  }
++  if (failures.length) {
++    startupEngineeringConstraintWarnings.value = [`工程约束启动证据加载失败，已继续加载排产主数据：${failures.join('；')}`]
++  }
++}
+ async function loadStartupLaborEvidence() {
+   try {
+     const [backendBlocks, backendReassignments] = await Promise.all([
+@@ -2769,8 +2792,7 @@ function onApplyObjective(objective: string) {
+ }
+ 
+ onMounted(async () => {
+-  await applyEngineeringChangeApprovals()
+-  await applyRouteCapabilityValidation()
++  await loadStartupEngineeringConstraints()
+   await loadStartupLaborEvidence()
+   applyLaborReassignmentClosure()
+   applyLaborQualificationBlockClosure()
+@@ -3077,3 +3099,4 @@ onMounted(async () => {
+   }
+ }
+ </style>
++

@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { getLocalAccessToken } from '../utils/auth-token'
-import { appAssetPath, isOfflineDemoMode } from '../utils/offline-demo-mode'
+import { appAssetPath, shouldSkipBackendForOfflineDemo } from '../utils/offline-demo-mode'
+import { resolveSignalRHubUrl } from '../utils/signalr-url'
 
 export interface Toast {
   id: string
@@ -64,6 +65,7 @@ interface PurchaseOrderStatusEvent {
 const toasts = ref<Toast[]>([])
 let connection: signalR.HubConnection | null = null
 const connected = ref(false)
+let connectionGeneration = 0
 
 export function addToast(type: Toast['type'], title: string, message: string) {
   const toast: Toast = {
@@ -89,15 +91,18 @@ export function addToast(type: Toast['type'], title: string, message: string) {
 
 export function useNotifications() {
   function connect() {
-    if (isOfflineDemoMode()) {
+    if (shouldSkipBackendForOfflineDemo(getLocalAccessToken())) {
+      connectionGeneration += 1
+      connection = null
       connected.value = false
       return
     }
 
     if (connection?.state === signalR.HubConnectionState.Connected) return
 
+    const generation = ++connectionGeneration
     connection = new signalR.HubConnectionBuilder()
-      .withUrl('/hubs/notifications', {
+      .withUrl(resolveSignalRHubUrl('/hubs/notifications'), {
         accessTokenFactory: () => getLocalAccessToken() ?? '',
       })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
@@ -143,15 +148,34 @@ export function useNotifications() {
       addToast('success', `采购单 ${data.orderNumber}`, `状态更新: ${data.status}`)
     })
 
-    connection.onreconnecting(() => { connected.value = false })
-    connection.onreconnected(() => { connected.value = true })
-    connection.onclose(() => { connected.value = false })
+    connection.onreconnecting(() => {
+      if (generation === connectionGeneration) {
+        connected.value = false
+      }
+    })
+    connection.onreconnected(() => {
+      if (generation === connectionGeneration) {
+        connected.value = true
+      }
+    })
+    connection.onclose(() => {
+      if (generation === connectionGeneration) {
+        connected.value = false
+      }
+    })
 
-    connection.start().then(() => { connected.value = true }).catch(() => {})
+    connection.start().then(() => {
+      if (generation === connectionGeneration) {
+        connected.value = true
+      }
+    }).catch(() => {})
   }
 
   function disconnect() {
-    connection?.stop()
+    connectionGeneration += 1
+    const currentConnection = connection
+    connection = null
+    currentConnection?.stop()
     connected.value = false
   }
 

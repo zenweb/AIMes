@@ -1,6 +1,7 @@
 using FluentAssertions;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 using Xunit;
 
 namespace MES.Tests.Unit.Domain;
@@ -72,7 +73,7 @@ public class EquipmentTests
 
         var act = () => eq.StartWork("WO-002");
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public class EquipmentTests
 
         var act = () => eq.CompleteWork();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -115,7 +116,7 @@ public class EquipmentTests
 
         var act = () => eq.SetIdle();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -136,7 +137,7 @@ public class EquipmentTests
 
         var act = () => eq.SetFault();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -158,7 +159,7 @@ public class EquipmentTests
 
         var act = () => eq.SetMaintenance();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -180,7 +181,7 @@ public class EquipmentTests
 
         var act = () => eq.CompleteMaintenance();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -291,7 +292,7 @@ public class EquipmentTests
 
         var act = () => eq.TransitionTo((EquipmentStatus)99);
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     private static Equipment CreateDefaultEquipment()

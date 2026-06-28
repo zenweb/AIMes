@@ -83,7 +83,48 @@ describe('quality rework sync', () => {
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readQualityReworkImpactBackendFirst()).resolves.toEqual(localRecord)
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/quality-rework-impact/latest')
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/quality-rework-impact/latest', { suppressErrorToast: true })
+  })
+
+  it('falls back to local auditable rework impact when backend returns an incomplete latest record', async () => {
+    const localRecord = impact()
+    writeQualityReworkImpact(localRecord)
+    httpGet.mockResolvedValueOnce({
+      data: {
+        inspectionId: 'INS-BACKEND-PARTIAL',
+        createdAt: '2026-06-01T08:00:00.000Z',
+      },
+    })
+
+    await expect(readQualityReworkImpactBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for quality rework impact refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('quality rework backend unavailable'))
+
+    await expect(readQualityReworkImpactBackendFirst({ failLoud: true }))
+      .rejects.toThrow('quality rework backend unavailable')
+  })
+
+  it('keeps the newest auditable rework impact between backend and local records', async () => {
+    const localRecord = impact({ createdAt: '2026-05-31T08:00:00.000Z' })
+    const backendRecord = impact({
+      inspectionId: 'INS-BACKEND-FRESH',
+      createdAt: '2026-06-01T08:00:00.000Z',
+    })
+    writeQualityReworkImpact(localRecord)
+    httpGet.mockResolvedValueOnce({ data: backendRecord })
+
+    await expect(readQualityReworkImpactBackendFirst()).resolves.toEqual(backendRecord)
+
+    const fresherLocalRecord = impact({
+      inspectionId: 'INS-LOCAL-FRESH',
+      createdAt: '2026-06-02T08:00:00.000Z',
+    })
+    writeQualityReworkImpact(fresherLocalRecord)
+    httpGet.mockResolvedValueOnce({ data: backendRecord })
+
+    await expect(readQualityReworkImpactBackendFirst()).resolves.toEqual(fresherLocalRecord)
   })
 
   it('builds rework impact from the selected rework inspection before fail inspections', () => {
@@ -98,6 +139,36 @@ describe('quality rework sync', () => {
       defectQuantity: 2,
       reworkHours: 6,
     }))
+  })
+
+  it('builds hard-fail rework impact with frozen-process evidence when no rework inspection exists', () => {
+    const fail = inspection({
+      id: 'INS-FAIL',
+      productCode: 'PRD-001',
+      processName: '装配',
+      inspectionPoint: '最终 功能 测试',
+      result: 'fail',
+      defectQuantity: 0,
+    })
+
+    expect(selectQualityReworkInspection([fail])).toEqual(fail)
+    expect(buildQualityReworkImpact(fail)).toEqual(expect.objectContaining({
+      inspectionId: 'INS-FAIL',
+      equipmentCode: 'ASM-01',
+      materialBatchCode: 'MAT-STEEL-A12',
+      batchCode: 'WO-003-最终功能测试',
+      defectQuantity: 1,
+      reworkHours: 8,
+      otdImpact: 'WO-003 延期 +2 单风险',
+      rootCause: '尺寸超差 / 工序控制失稳',
+    }))
+    expect(buildQualityReworkImpact(fail).recommendedAction).toContain('冻结当前工序')
+  })
+
+  it('returns no quality rework inspection when all inspections pass', () => {
+    expect(selectQualityReworkInspection([
+      inspection({ result: 'pass' }),
+    ])).toBeNull()
   })
 
   it('removes corrupt rework JSON so boards do not render stale quality impact', () => {

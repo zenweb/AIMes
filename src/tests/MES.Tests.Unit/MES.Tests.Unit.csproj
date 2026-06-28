@@ -26,7 +26,9 @@
     <ProjectReference Include="..\..\backend\MES.AI\MES.AI.csproj" />
     <ProjectReference Include="..\..\backend\MES.Application\MES.Application.csproj" />
     <ProjectReference Include="..\..\backend\MES.Infrastructure\MES.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\backend\MES.Api\MES.Api.csproj" />
+    <ProjectReference Include="..\..\backend\MES.Api\MES.Api.csproj">
+      <SkipFrontendBuildCopy>true</SkipFrontendBuildCopy>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

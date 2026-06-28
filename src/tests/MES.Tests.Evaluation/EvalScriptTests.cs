@@ -41,6 +41,19 @@ public sealed class EvalScriptTests : IDisposable
         result.Output.Should().Contain("contains no testCases");
     }
 
+    [Fact]
+    public async Task EvalScript_WhenGoldenDatasetIsMalformed_ShouldFailClosed()
+    {
+        var evalDir = CopyEvaluationDirectory();
+        var goldenPath = Path.Combine(evalDir, "Data", "golden_quality.json");
+        await File.WriteAllTextAsync(goldenPath, "{ this is not valid json }");
+
+        var result = await RunEvalScriptAsync(evalDir);
+
+        result.ExitCode.Should().NotBe(0);
+        result.Output.Should().Contain("Could not parse golden dataset");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))

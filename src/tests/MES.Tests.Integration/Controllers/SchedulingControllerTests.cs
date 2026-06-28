@@ -3,10 +3,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using MES.Application.Services;
+using MES.Domain.Entities.Agent;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Production;
 using MES.Domain.Entities.Purchase;
 using MES.Domain.Entities.Quality;
+using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -116,16 +118,14 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
     }
 
     [Fact]
-    public async Task GetCurrentPlan_ShouldReturnOkOrNotFound()
+    public async Task GetCurrentPlan_ShouldReturnSeededCurrentPlan()
     {
         var response = await _client.GetAsync("/api/v1/scheduling/current");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var result = await response.Content.ReadFromJsonAsync<SchedulePlanResponse>();
-            result.Should().NotBeNull();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<SchedulePlanResponse>();
+        result.Should().NotBeNull();
+        result!.Items.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -147,9 +147,22 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         var result = await response.Content.ReadFromJsonAsync<BatchOptimizeResponse>();
         result.Should().NotBeNull();
         result!.Items.Should().NotBeEmpty();
+        result.RecommendationScoreFormula.Should().NotBeNull();
+        result.RecommendationScoreFormula!.Version.Should().Be("v1-weighted-kpi-40-40-20");
+        result.RecommendationScoreFormula.UtilizationWeight.Should().Be(0.4);
+        result.RecommendationScoreFormula.OnTimeDeliveryWeight.Should().Be(0.4);
+        result.RecommendationScoreFormula.ChangeoverWeight.Should().Be(0.2);
+        result.RecommendationScoreFormula.ChangeoverNormalizationMinutes.Should().Be(1000);
+        result.RecommendationScoreFormula.Description.Should().Contain("利用率 40%");
         result.Items.Should().HaveCount(2);
         result.Items.Should().Contain(i => i.Objective == "due_date");
         result.Items.Should().Contain(i => i.Objective == "utilization");
+        result.Items.Should().OnlyContain(i => i.RecommendationScore >= 0.0001 && i.RecommendationScore <= 1);
+        result.Items.Should().OnlyContain(i => i.RecommendationScoreBreakdown != null);
+        result.Items.Should().OnlyContain(i =>
+            i.RecommendationScoreBreakdown!.UtilizationContribution >= 0
+            && i.RecommendationScoreBreakdown.OnTimeDeliveryContribution >= 0
+            && i.RecommendationScoreBreakdown.ChangeoverContribution >= 0);
     }
 
     [Fact]
@@ -195,6 +208,107 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
     }
 
     [Fact]
+    public async Task RescheduleItem_WhenSaved_ShouldPersistDraggedWindowToDatabaseAndPlanReadModel()
+    {
+        var planStart = new DateTime(2026, 6, 1, 8, 0, 0, DateTimeKind.Utc);
+        var planEnd = planStart.AddHours(12);
+        var originalStart = planStart.AddHours(1);
+        var originalEnd = originalStart.AddHours(4);
+        var draggedStart = planStart.AddHours(3);
+        var draggedEnd = draggedStart.AddHours(4);
+        var plan = SchedulePlan.Create("真实拖拽持久化计划", planStart, planEnd);
+        var item = ScheduleItem.Create(
+            "wo-real-drag-persist",
+            "eq-real-drag-persist",
+            originalStart,
+            originalEnd,
+            1,
+            "20 分钟");
+        plan.AddItem(item);
+
+        _factory.SeedData(db =>
+        {
+            db.SchedulePlans.Add(plan);
+        });
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/v1/scheduling/plans/{plan.Id}/items/{item.Id}",
+            new
+            {
+                PlannedStartTime = draggedStart,
+                PlannedEndTime = draggedEnd
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+            var persisted = await db.SchedulePlans
+                .AsNoTracking()
+                .Include(p => p.Items)
+                .SingleAsync(p => p.Id == plan.Id);
+            var persistedItem = persisted.Items.Single(i => i.Id == item.Id);
+            persistedItem.PlannedStartTime.Should().Be(draggedStart);
+            persistedItem.PlannedEndTime.Should().Be(draggedEnd);
+        }
+
+        var getResponse = await _client.GetAsync($"/api/v1/scheduling/plans/{plan.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readModel = await getResponse.Content.ReadFromJsonAsync<SchedulePlanResponse>();
+        readModel.Should().NotBeNull();
+        var readItem = readModel!.Items.Single(i => i.Id == item.Id);
+        readItem.PlannedStartTime.Should().Be(draggedStart);
+        readItem.PlannedEndTime.Should().Be(draggedEnd);
+    }
+
+    [Fact]
+    public async Task GetPlanById_ShouldReturnItemDisplayNamesForRealGantt()
+    {
+        var now = new DateTime(2026, 6, 12, 8, 0, 0, DateTimeKind.Utc);
+        var workOrder = WorkOrder.Create(
+            "WO-LIVE-GANTT-001",
+            "PROD-LIVE",
+            "Live Gantt Product",
+            10,
+            now,
+            now.AddDays(1),
+            "WS-001");
+        var equipment = Equipment.Create(
+            "EQ-LIVE-GANTT-001",
+            "Live Gantt CNC",
+            "CNC",
+            "WS-001",
+            "Workshop A",
+            100);
+        var plan = SchedulePlan.Create("真实甘特展示计划", now, now.AddHours(8));
+        var item = ScheduleItem.Create(
+            workOrder.Id,
+            equipment.Id,
+            now.AddHours(1),
+            now.AddHours(3),
+            1,
+            "20 分钟");
+        plan.AddItem(item);
+
+        _factory.SeedData(db =>
+        {
+            db.WorkOrders.Add(workOrder);
+            db.Equipment.Add(equipment);
+            db.SchedulePlans.Add(plan);
+        });
+
+        var response = await _client.GetAsync($"/api/v1/scheduling/plans/{plan.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var readModel = await response.Content.ReadFromJsonAsync<SchedulePlanResponse>();
+        readModel.Should().NotBeNull();
+        var readItem = readModel!.Items.Single(i => i.Id == item.Id);
+        readItem.WorkOrderNumber.Should().Be("WO-LIVE-GANTT-001");
+        readItem.EquipmentName.Should().Be("Live Gantt CNC");
+    }
+
+    [Fact]
     public async Task AdoptionFeedback_WithEmptyPlanId_ShouldReturnValidationError()
     {
         var request = new
@@ -207,6 +321,127 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         var response = await _client.PostAsJsonAsync("/api/v1/scheduling/adoption-feedback", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task AdoptionFeedback_WithBlankReasonDetail_ShouldReturnValidationError()
+    {
+        var request = new
+        {
+            SchedulePlanId = "plan-audit-contract",
+            WorkshopId = "WS-001",
+            ReasonCategory = "UrgentInsertion",
+            ReasonDetail = "   "
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/scheduling/adoption-feedback", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("修改原因说明不能为空");
+    }
+
+    [Fact]
+    public async Task GetLatestAdoptionFeedback_WhenLatestRecordHasBlankReasonDetail_ShouldSkipUnauditableRecord()
+    {
+        var olderAuditableFeedback = new ScheduleAdoptionFeedback
+        {
+            SchedulePlanId = "plan-auditable",
+            WorkshopId = "WS-001",
+            OptimizationObjective = "balanced",
+            ReasonCategory = OverrideReasonCategory.UrgentInsertion,
+            ReasonDetail = "急单插入后选择综合平衡方案",
+            OperatorUser = "planner",
+            CreatedAt = new DateTime(2026, 6, 14, 8, 0, 0, DateTimeKind.Utc),
+        };
+        var latestUnauditableFeedback = new ScheduleAdoptionFeedback
+        {
+            SchedulePlanId = "plan-unauditable",
+            WorkshopId = "WS-001",
+            OptimizationObjective = "due_date",
+            ReasonCategory = OverrideReasonCategory.Other,
+            ReasonDetail = " ",
+            OperatorUser = "planner",
+            CreatedAt = new DateTime(2026, 6, 14, 9, 0, 0, DateTimeKind.Utc),
+        };
+
+        _factory.SeedData(db =>
+        {
+            db.ScheduleAdoptionFeedbacks.RemoveRange(db.ScheduleAdoptionFeedbacks);
+            db.ScheduleAdoptionFeedbacks.AddRange(olderAuditableFeedback, latestUnauditableFeedback);
+        });
+
+        var response = await _client.GetAsync("/api/v1/scheduling/adoption-feedback/latest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var latestFeedback = await response.Content.ReadFromJsonAsync<AdoptionFeedbackSnapshotResponse>();
+        latestFeedback.Should().NotBeNull();
+        latestFeedback!.ReasonDetail.Should().Be("急单插入后选择综合平衡方案");
+        latestFeedback.ReasonCategory.Should().Be(nameof(OverrideReasonCategory.UrgentInsertion));
+        latestFeedback.CategoryLabel.Should().Be("紧急插单");
+        latestFeedback.ObjectiveLabel.Should().Be("综合平衡");
+        latestFeedback.CreatedAt.Should().NotBe(default);
+        latestFeedback.Source.Should().Be("backend");
+    }
+
+    [Fact]
+    public async Task GetLatestAdoptionFeedback_ShouldReturnSeededAuditableCurrentPlanFeedback()
+    {
+        _factory.SeedData(db =>
+        {
+            var currentPlan = db.SchedulePlans
+                .OrderByDescending(p => p.CreatedAt)
+                .First(p => p.PlanStartDate <= DateTime.UtcNow
+                    && p.PlanEndDate >= DateTime.UtcNow
+                    && p.Items.Count > 0);
+            db.ScheduleAdoptionFeedbacks.RemoveRange(db.ScheduleAdoptionFeedbacks);
+            db.ScheduleAdoptionFeedbacks.Add(new ScheduleAdoptionFeedback
+            {
+                SchedulePlanId = currentPlan.Id,
+                WorkshopId = "ws-001",
+                OptimizationObjective = "balanced",
+                ReasonCategory = OverrideReasonCategory.UrgentInsertion,
+                ReasonDetail = "当前排产计划已按交付、设备负载和换型风险完成复核。",
+                OperatorUser = "integration-seed",
+                AiTraceId = "TRACE-INTEGRATION-SCHEDULE-CURRENT",
+                InitiatedByAgent = true,
+                AgentDecisionId = "agent-decision-integration-current-plan",
+                AgentVersion = "integration-seed",
+                CreatedAt = DateTime.UtcNow
+            });
+        });
+
+        var response = await _client.GetAsync("/api/v1/scheduling/adoption-feedback/latest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var latestFeedback = await response.Content.ReadFromJsonAsync<AdoptionFeedbackSnapshotResponse>();
+        latestFeedback.Should().NotBeNull();
+        latestFeedback!.Decision.Should().Be("accepted");
+        latestFeedback.DecisionLabel.Should().Contain("Agent");
+        latestFeedback.ReasonCategory.Should().Be(nameof(OverrideReasonCategory.UrgentInsertion));
+        latestFeedback.CategoryLabel.Should().Be("紧急插单");
+        latestFeedback.ReasonDetail.Should().Contain("当前排产计划");
+        latestFeedback.ObjectiveLabel.Should().Be("综合平衡");
+        latestFeedback.TraceId.Should().Be("TRACE-INTEGRATION-SCHEDULE-CURRENT");
+        latestFeedback.AgentDecisionId.Should().Be("agent-decision-integration-current-plan");
+        latestFeedback.Source.Should().Be("backend");
+    }
+
+    [Fact]
+    public async Task GetLatestRiskSlaReview_ShouldReturnSeededAuditableReview()
+    {
+        var response = await _client.GetAsync("/api/v1/scheduling/risk-sla-review/latest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var review = await response.Content.ReadFromJsonAsync<RiskSlaReviewResponse>();
+        review.Should().NotBeNull();
+        review!.Id.Should().Be("risk-sla-review-integration-current");
+        review.Status.Should().Be("escalated");
+        review.StatusLabel.Should().Contain("晨会");
+        review.ReviewMeetingId.Should().Be("RISK-DAILY-INTEGRATION-CURRENT");
+        review.TraceId.Should().Be("TRACE-RISK-SLA-INTEGRATION-CURRENT");
+        review.Risks.Should().NotBeEmpty();
+        review.Actions.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -364,6 +599,12 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         latestFeedbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var latestFeedback = await latestFeedbackResponse.Content.ReadFromJsonAsync<AdoptionFeedbackSnapshotResponse>();
         latestFeedback!.Decision.Should().Be("accepted");
+        latestFeedback.DecisionLabel.Should().NotBeNullOrWhiteSpace();
+        latestFeedback.ReasonCategory.Should().NotBeNullOrWhiteSpace();
+        latestFeedback.CategoryLabel.Should().NotBeNullOrWhiteSpace();
+        latestFeedback.ReasonDetail.Should().NotBeNullOrWhiteSpace();
+        latestFeedback.ObjectiveLabel.Should().NotBeNullOrWhiteSpace();
+        latestFeedback.CreatedAt.Should().NotBe(default);
         latestFeedback.Source.Should().Be("backend");
         latestFeedback.AgentDecisionId.Should().Be(decision.Id);
         latestFeedback.TraceId.Should().NotBeNullOrWhiteSpace();
@@ -2321,6 +2562,231 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
     }
 
     [Fact]
+    public async Task PocLatestEvidence_ShouldReturnSeededAuditableChain()
+    {
+        var endpoints = new[]
+        {
+            (Path: "/api/v1/scheduling/poc-review-signoff/latest", EvidenceType: "PocReviewSignoff", SeedKey: "poc-review-signoff-integration-current"),
+            (Path: "/api/v1/scheduling/poc-rollout-package/latest", EvidenceType: "PocRolloutPackage", SeedKey: "poc-rollout-package-integration-current"),
+            (Path: "/api/v1/scheduling/poc-pilot-run/latest", EvidenceType: "PocPilotRun", SeedKey: "poc-pilot-run-integration-current"),
+            (Path: "/api/v1/scheduling/poc-hypercare-acceptance/latest", EvidenceType: "PocHypercareAcceptance", SeedKey: "poc-hypercare-acceptance-integration-current"),
+        };
+
+        foreach (var endpoint in endpoints)
+        {
+            var response = await _client.GetAsync(endpoint.Path);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+            var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+            payload.GetProperty("id").GetString().Should().NotBeNullOrWhiteSpace();
+            payload.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
+            payload.GetProperty("summary").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        foreach (var endpoint in endpoints)
+        {
+            db.AgentEvidenceLinks.Should().Contain(e =>
+                e.EvidenceType == endpoint.EvidenceType
+                && e.EvidenceKey == endpoint.SeedKey);
+        }
+    }
+
+    [Fact]
+    public async Task CustomerPocLatestEvidence_ShouldReturnSeededImportAndEquipmentFault()
+    {
+        var importResponse = await _client.GetAsync("/api/v1/scheduling/customer-order-import/latest");
+        importResponse.StatusCode.Should().Be(HttpStatusCode.OK, await importResponse.Content.ReadAsStringAsync());
+        var importEvidence = await importResponse.Content.ReadFromJsonAsync<CustomerOrderImportEvidenceResponse>();
+        importEvidence.Should().NotBeNull();
+        importEvidence!.BatchId.Should().NotBeNullOrWhiteSpace();
+        importEvidence.ImportedOrders.Should().BeGreaterThan(0);
+        importEvidence.MappedFields.Should().NotBeEmpty();
+
+        var faultResponse = await _client.GetAsync("/api/v1/scheduling/customer-equipment-fault/latest");
+        faultResponse.StatusCode.Should().Be(HttpStatusCode.OK, await faultResponse.Content.ReadAsStringAsync());
+        var faultEvidence = await faultResponse.Content.ReadFromJsonAsync<CustomerEquipmentFaultEvidenceResponse>();
+        faultEvidence.Should().NotBeNull();
+        faultEvidence!.BatchId.Should().NotBeNullOrWhiteSpace();
+        faultEvidence.EquipmentCode.Should().NotBeNullOrWhiteSpace();
+        faultEvidence.CapturedSignals.Should().NotBeEmpty();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "CustomerOrderImportEvidence"
+            && e.EvidenceKey == "IMP-POC-INTEGRATION-CURRENT");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "CustomerEquipmentFaultEvidence"
+            && e.EvidenceKey == "IMP-POC-EQ-FAULT-INTEGRATION-CURRENT");
+    }
+
+    [Fact]
+    public async Task QualityLatestEvidence_ShouldReturnSeededAuditableRecords()
+    {
+        var reworkResponse = await _client.GetAsync("/api/v1/scheduling/quality-rework-impact/latest");
+        reworkResponse.StatusCode.Should().Be(HttpStatusCode.OK, await reworkResponse.Content.ReadAsStringAsync());
+        var rework = await reworkResponse.Content.ReadFromJsonAsync<QualityReworkImpactResponse>();
+        rework.Should().NotBeNull();
+        rework!.InspectionId.Should().Be("quality-rework-impact-integration-current");
+        rework.WorkOrderId.Should().NotBeNullOrWhiteSpace();
+        rework.Evidence.Should().NotBeEmpty();
+
+        var mrbResponse = await _client.GetAsync("/api/v1/scheduling/quality-mrb-disposition/latest");
+        mrbResponse.StatusCode.Should().Be(HttpStatusCode.OK, await mrbResponse.Content.ReadAsStringAsync());
+        var mrb = await mrbResponse.Content.ReadFromJsonAsync<QualityMrbDispositionResponse>();
+        mrb.Should().NotBeNull();
+        mrb!.Id.Should().Be("quality-mrb-disposition-integration-current");
+        mrb.AuditId.Should().NotBeNullOrWhiteSpace();
+        mrb.TraceId.Should().NotBeNullOrWhiteSpace();
+        mrb.Actions.Should().NotBeEmpty();
+
+        var capaResponse = await _client.GetAsync("/api/v1/scheduling/quality-capa-closure/latest");
+        capaResponse.StatusCode.Should().Be(HttpStatusCode.OK, await capaResponse.Content.ReadAsStringAsync());
+        var capa = await capaResponse.Content.ReadFromJsonAsync<QualityCapaClosureResponse>();
+        capa.Should().NotBeNull();
+        capa!.InspectionId.Should().Be("quality-capa-closure-integration-current");
+        capa.TraceId.Should().NotBeNullOrWhiteSpace();
+        capa.RootCause.Should().NotBeNullOrWhiteSpace();
+        capa.ReviewAction.Should().NotBeNullOrWhiteSpace();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "QualityReworkImpact"
+            && e.EvidenceKey == "quality-rework-impact-integration-current");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "QualityMrbDisposition"
+            && e.EvidenceKey == "quality-mrb-disposition-integration-current");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "QualityCapaClosure"
+            && e.EvidenceKey == "quality-capa-closure-integration-current");
+    }
+
+    [Fact]
+    public async Task ShortageSupplyLatestEvidence_ShouldReturnSeededAuditableRecords()
+    {
+        var kittingResponse = await _client.GetAsync("/api/v1/scheduling/shortage-kitting/latest");
+        kittingResponse.StatusCode.Should().Be(HttpStatusCode.OK, await kittingResponse.Content.ReadAsStringAsync());
+        var kitting = await kittingResponse.Content.ReadFromJsonAsync<ShortageKittingEventResponse>();
+        kitting.Should().NotBeNull();
+        kitting!.MaterialCode.Should().NotBeNullOrWhiteSpace();
+        kitting.WorkOrderNumber.Should().NotBeNullOrWhiteSpace();
+        kitting.ShortageQuantity.Should().BeGreaterThan(0);
+
+        var resolutionResponse = await _client.GetAsync("/api/v1/scheduling/shortage-risk-resolution/latest");
+        resolutionResponse.StatusCode.Should().Be(HttpStatusCode.OK, await resolutionResponse.Content.ReadAsStringAsync());
+        var resolution = await resolutionResponse.Content.ReadFromJsonAsync<ShortageRiskResolutionResponse>();
+        resolution.Should().NotBeNull();
+        resolution!.MaterialCode.Should().NotBeNullOrWhiteSpace();
+        resolution.SourceOrderNumber.Should().NotBeNullOrWhiteSpace();
+        resolution.Message.Should().NotBeNullOrWhiteSpace();
+
+        var supplyResponse = await _client.GetAsync("/api/v1/scheduling/supply-risk-escalation/latest");
+        supplyResponse.StatusCode.Should().Be(HttpStatusCode.OK, await supplyResponse.Content.ReadAsStringAsync());
+        var supply = await supplyResponse.Content.ReadFromJsonAsync<SupplyRiskEscalationResponse>();
+        supply.Should().NotBeNull();
+        supply!.PurchaseOrderNumber.Should().NotBeNullOrWhiteSpace();
+        supply.MaterialCode.Should().NotBeNullOrWhiteSpace();
+        supply.TraceId.Should().NotBeNullOrWhiteSpace();
+
+        var supplierResponse = await _client.GetAsync("/api/v1/scheduling/supplier-network-decision/latest");
+        supplierResponse.StatusCode.Should().Be(HttpStatusCode.OK, await supplierResponse.Content.ReadAsStringAsync());
+        var supplier = await supplierResponse.Content.ReadFromJsonAsync<SupplierNetworkDecisionResponse>();
+        supplier.Should().NotBeNull();
+        supplier!.MaterialCode.Should().NotBeNullOrWhiteSpace();
+        supplier.SelectedSupplierName.Should().NotBeNullOrWhiteSpace();
+        supplier.Candidates.Should().NotBeEmpty();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "ShortageKittingEvent"
+            && e.EvidenceKey == "WO-SHORTAGE-INTEGRATION-001:MAT-SHORTAGE-INTEGRATION");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "ShortageRiskResolution"
+            && e.EvidenceKey == "PO-SHORTAGE-INTEGRATION-001:MAT-SHORTAGE-INTEGRATION");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "SupplyRiskEscalation"
+            && e.EvidenceKey == "PO-SUPPLY-INTEGRATION-001:MAT-SUPPLY-INTEGRATION");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "SupplierNetworkDecision"
+            && e.EvidenceKey == "MAT-SUPPLY-INTEGRATION:华东快供二厂");
+    }
+
+    [Fact]
+    public async Task EngineeringBomLatestEvidence_ShouldReturnSeededAuditableRecords()
+    {
+        var bomResponse = await _client.GetAsync("/api/v1/scheduling/bom-kitting-package/latest");
+        bomResponse.StatusCode.Should().Be(HttpStatusCode.OK, await bomResponse.Content.ReadAsStringAsync());
+        var bom = await bomResponse.Content.ReadFromJsonAsync<BomKittingPackageResponse>();
+        bom.Should().NotBeNull();
+        bom!.Id.Should().NotBeNullOrWhiteSpace();
+        bom.TraceId.Should().NotBeNullOrWhiteSpace();
+        bom.Items.Should().NotBeEmpty();
+
+        var approvalResponse = await _client.GetAsync("/api/v1/scheduling/alternate-material-approval/latest");
+        approvalResponse.StatusCode.Should().Be(HttpStatusCode.OK, await approvalResponse.Content.ReadAsStringAsync());
+        var approval = await approvalResponse.Content.ReadFromJsonAsync<AlternateMaterialApprovalResponse>();
+        approval.Should().NotBeNull();
+        approval!.Id.Should().NotBeNullOrWhiteSpace();
+        approval.TraceId.Should().NotBeNullOrWhiteSpace();
+        approval.Summary.Should().NotBeNullOrWhiteSpace();
+
+        var changeResponse = await _client.GetAsync("/api/v1/scheduling/engineering-change-impact/latest");
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.OK, await changeResponse.Content.ReadAsStringAsync());
+        var change = await changeResponse.Content.ReadFromJsonAsync<EngineeringChangeImpactResponse>();
+        change.Should().NotBeNull();
+        change!.Id.Should().NotBeNullOrWhiteSpace();
+        change.TraceId.Should().NotBeNullOrWhiteSpace();
+        change.Summary.Should().NotBeNullOrWhiteSpace();
+
+        var routeResponse = await _client.GetAsync("/api/v1/scheduling/route-capability-validation/latest");
+        routeResponse.StatusCode.Should().Be(HttpStatusCode.OK, await routeResponse.Content.ReadAsStringAsync());
+        var route = await routeResponse.Content.ReadFromJsonAsync<RouteCapabilityValidationResponse>();
+        route.Should().NotBeNull();
+        route!.Id.Should().NotBeNullOrWhiteSpace();
+        route.TraceId.Should().NotBeNullOrWhiteSpace();
+        route.Summary.Should().NotBeNullOrWhiteSpace();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "BomKittingPackage"
+            && e.EvidenceKey == "bom-kitting-package-integration-current");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "AlternateMaterialApproval"
+            && e.EvidenceKey == "alternate-material-approval-integration-current");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "EngineeringChangeImpact"
+            && e.EvidenceKey == "engineering-change-impact-integration-current");
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "RouteCapabilityValidation"
+            && e.EvidenceKey == "route-capability-validation-integration-current");
+    }
+
+    [Fact]
+    public async Task ProductionAnomalyLatestEvidence_ShouldReturnSeededAuditableEvent()
+    {
+        var response = await _client.GetAsync("/api/v1/scheduling/production-anomaly-event/latest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var anomaly = await response.Content.ReadFromJsonAsync<JsonElement>();
+        anomaly.GetProperty("id").GetString().Should().NotBeNullOrWhiteSpace();
+        anomaly.GetProperty("workOrderNumber").GetString().Should().NotBeNullOrWhiteSpace();
+        anomaly.GetProperty("operationCode").GetString().Should().NotBeNullOrWhiteSpace();
+        anomaly.GetProperty("severity").GetString().Should().NotBeNullOrWhiteSpace();
+        anomaly.GetProperty("suggestedAction").GetString().Should().NotBeNullOrWhiteSpace();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        db.AgentEvidenceLinks.Should().Contain(e =>
+            e.EvidenceType == "ProductionAnomalyEvent"
+            && e.EvidenceKey == "production-anomaly-event-integration-current");
+    }
+
+    [Fact]
     public async Task KnowledgeGovernanceEvidenceApi_ShouldUpsertQueryAndAuditReviews()
     {
         var reviewId = $"knowledge-governance-review-{Guid.NewGuid():N}";
@@ -2434,10 +2900,33 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         var blockUpsert = await _client.PostAsJsonAsync("/api/v1/scheduling/labor-qualification-blocks", blockRequest);
         blockUpsert.StatusCode.Should().Be(HttpStatusCode.OK, await blockUpsert.Content.ReadAsStringAsync());
 
+        await using (var duplicateScope = _factory.Services.CreateAsyncScope())
+        {
+            var duplicateDb = duplicateScope.ServiceProvider.GetRequiredService<MesDbContext>();
+            duplicateDb.AgentEvidenceLinks.Add(new AgentEvidenceLink
+            {
+                AgentDecisionId = $"labor-qualification-block-{blockId}-duplicate",
+                EvidenceType = "LaborQualificationBlock",
+                EvidenceKey = blockId,
+                EvidenceSummary = JsonSerializer.Serialize(blockRequest),
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            });
+            await duplicateDb.SaveChangesAsync();
+        }
+
+        var reviewingBlockRequest = blockRequest with
+        {
+            Status = "reviewing",
+            ReviewedAt = DateTime.UtcNow.ToString("O"),
+        };
+        var reviewingBlockUpsert = await _client.PostAsJsonAsync("/api/v1/scheduling/labor-qualification-blocks", reviewingBlockRequest);
+        reviewingBlockUpsert.StatusCode.Should().Be(HttpStatusCode.OK, await reviewingBlockUpsert.Content.ReadAsStringAsync());
+
         var blockQuery = await _client.GetAsync("/api/v1/scheduling/labor-qualification-blocks?take=5");
         blockQuery.StatusCode.Should().Be(HttpStatusCode.OK);
         var blocks = await blockQuery.Content.ReadFromJsonAsync<List<JsonElement>>();
-        blocks.Should().Contain(item => item.GetProperty("id").GetString() == blockId);
+        blocks.Should().ContainSingle(item => item.GetProperty("id").GetString() == blockId)
+            .Which.GetProperty("status").GetString().Should().Be("reviewing");
 
         var barcodeRequest = new
         {
@@ -2736,6 +3225,7 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
     {
         public List<ObjectiveCompareItemResponse> Items { get; set; } = new();
         public string? BestOverallObjective { get; set; }
+        public RecommendationScoreFormulaResponse? RecommendationScoreFormula { get; set; }
     }
 
     private class ObjectiveCompareItemResponse
@@ -2747,6 +3237,25 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         public double TotalChangeoverMinutes { get; set; }
         public int GroupCount { get; set; }
         public int TotalWorkOrders { get; set; }
+        public double RecommendationScore { get; set; }
+        public RecommendationScoreBreakdownResponse? RecommendationScoreBreakdown { get; set; }
+    }
+
+    private class RecommendationScoreBreakdownResponse
+    {
+        public double UtilizationContribution { get; set; }
+        public double OnTimeDeliveryContribution { get; set; }
+        public double ChangeoverContribution { get; set; }
+    }
+
+    private class RecommendationScoreFormulaResponse
+    {
+        public string Version { get; set; } = string.Empty;
+        public double UtilizationWeight { get; set; }
+        public double OnTimeDeliveryWeight { get; set; }
+        public double ChangeoverWeight { get; set; }
+        public double ChangeoverNormalizationMinutes { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 
     private class SchedulingResultResponse
@@ -2789,6 +3298,16 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         public DateTime PlanStartDate { get; set; }
         public DateTime PlanEndDate { get; set; }
         public int GroupCount { get; set; }
+        public List<ScheduleItemResponse> Items { get; set; } = new();
+    }
+
+    private class ScheduleItemResponse
+    {
+        public string Id { get; set; } = string.Empty;
+        public string WorkOrderNumber { get; set; } = string.Empty;
+        public string EquipmentName { get; set; } = string.Empty;
+        public DateTime PlannedStartTime { get; set; }
+        public DateTime PlannedEndTime { get; set; }
     }
 
     private class AgentDecisionResponse
@@ -2821,6 +3340,17 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         public string? AgentDecisionId { get; set; }
     }
 
+    private class RiskSlaReviewResponse
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string StatusLabel { get; set; } = string.Empty;
+        public string ReviewMeetingId { get; set; } = string.Empty;
+        public string TraceId { get; set; } = string.Empty;
+        public List<object> Risks { get; set; } = new();
+        public List<object> Actions { get; set; } = new();
+    }
+
     private class OtdEvidenceChainItemResponse
     {
         public string Id { get; set; } = string.Empty;
@@ -2846,6 +3376,17 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         public string MaintenanceWindow { get; set; } = string.Empty;
         public string ProtectionStrategy { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+    }
+
+    private class CustomerOrderImportEvidenceResponse
+    {
+        public string BatchId { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string Source { get; set; } = string.Empty;
+        public int ImportedOrders { get; set; }
+        public int HighRiskOrders { get; set; }
+        public List<string> MappedFields { get; set; } = new();
+        public DateTime PreparedAt { get; set; }
     }
 
     private class CustomerEquipmentFaultEvidenceResponse
@@ -3083,6 +3624,24 @@ public class SchedulingControllerTests : IClassFixture<TestWebApplicationFactory
         public string DueAt { get; set; } = string.Empty;
         public string Evidence { get; set; } = string.Empty;
         public string? Result { get; set; }
+    }
+
+    private class QualityCapaClosureResponse
+    {
+        public string InspectionId { get; set; } = string.Empty;
+        public string WorkOrderId { get; set; } = string.Empty;
+        public string TraceId { get; set; } = string.Empty;
+        public string RootCause { get; set; } = string.Empty;
+        public decimal EvidenceStrength { get; set; }
+        public string TaskTitle { get; set; } = string.Empty;
+        public string TaskKind { get; set; } = string.Empty;
+        public string Owner { get; set; } = string.Empty;
+        public string DueAt { get; set; } = string.Empty;
+        public string Verification { get; set; } = string.Empty;
+        public string VerifiedAt { get; set; } = string.Empty;
+        public string AuditState { get; set; } = string.Empty;
+        public string OtdImpact { get; set; } = string.Empty;
+        public string ReviewAction { get; set; } = string.Empty;
     }
 
     private class AlternateMaterialApprovalResponse

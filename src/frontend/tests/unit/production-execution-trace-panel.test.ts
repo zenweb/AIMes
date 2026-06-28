@@ -26,6 +26,24 @@ const traces: ProductionExecutionTrace[] = [
 ]
 
 describe('ProductionExecutionTracePanel', () => {
+  it('announces the waiting state before any execution trace exists', () => {
+    const wrapper = mount(ProductionExecutionTracePanel, {
+      props: {
+        traces: [],
+      },
+    })
+
+    const panel = wrapper.get('.execution-trace-panel')
+    expect(panel.attributes('role')).toBe('status')
+    expect(panel.attributes('aria-live')).toBe('polite')
+    expect(panel.attributes('aria-label')).toBe('生产执行闭环：0 条记录')
+    expect(wrapper.get('.trace-count').text()).toBe('0 条记录')
+    expect(wrapper.find('.trace-list').exists()).toBe(false)
+    expect(wrapper.findAll('.trace-card')).toHaveLength(0)
+    expect(wrapper.get('.trace-empty strong').text()).toBe('等待执行回写')
+    expect(wrapper.get('.trace-empty span').text()).toContain('开工、完工或异常上报后会生成排产、质量、风险的联动记录')
+  })
+
   it('exposes execution trace records as a live audit list', () => {
     const wrapper = mount(ProductionExecutionTracePanel, {
       props: {

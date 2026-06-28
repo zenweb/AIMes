@@ -1,0 +1,139 @@
+{
+  "compilerOptions": {
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "jsx": "preserve",
+    "allowSyntheticDefaultImports": true,
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+    "paths": {
+      "#imports": [
+        "./types/nitro-imports"
+      ],
+      "~/*": [
+        "../../src/frontend/*"
+      ],
+      "@/*": [
+        "../../../../../..//src/*"
+      ],
+      "~~/*": [
+        "../../src/frontend/*"
+      ],
+      "@@/*": [
+        "../../src/frontend/*"
+      ],
+      "nuxt": [
+        "../../src/frontend/node_modules/nuxt"
+      ],
+      "@unhead/vue": [
+        "../../src/frontend/node_modules/@unhead/vue"
+      ],
+      "@nuxt/devtools": [
+        "../../src/frontend/node_modules/nuxt/node_modules/@nuxt/devtools"
+      ],
+      "@vue/runtime-core": [
+        "../../src/frontend/node_modules/@vue/runtime-core"
+      ],
+      "@vue/compiler-sfc": [
+        "../../src/frontend/node_modules/@vue/compiler-sfc"
+      ],
+      "@nuxt/schema": [
+        "../../src/frontend/node_modules/@nuxt/schema"
+      ],
+      "defu": [
+        "../../src/frontend/node_modules/defu"
+      ],
+      "h3": [
+        "../../src/frontend/node_modules/h3"
+      ],
+      "consola": [
+        "../../src/frontend/node_modules/consola"
+      ],
+      "ofetch": [
+        "../../src/frontend/node_modules/ofetch"
+      ],
+      "crossws": [
+        "../../src/frontend/node_modules/crossws"
+      ],
+      "unplugin-vue-router/client": [
+        "../../src/frontend/node_modules/unplugin-vue-router/client"
+      ],
+      "nitropack": [
+        "../../src/frontend/node_modules/nitropack"
+      ],
+      "nitropack/types": [
+        "../../src/frontend/node_modules/nitropack/types"
+      ],
+      "nitropack/runtime": [
+        "../../src/frontend/node_modules/nitropack/runtime"
+      ],
+      "#shared": [
+        "../../src/frontend/shared"
+      ],
+      "#shared/*": [
+        "../../src/frontend/shared/*"
+      ],
+      "assets": [
+        "../../src/frontend/assets"
+      ],
+      "assets/*": [
+        "../../src/frontend/assets/*"
+      ],
+      "public": [
+        "../../src/frontend/public"
+      ],
+      "public/*": [
+        "../../src/frontend/public/*"
+      ],
+      "#server": [
+        "../../src/frontend/server"
+      ],
+      "#server/*": [
+        "../../src/frontend/server/*"
+      ],
+      "#build": [
+        "./"
+      ],
+      "#build/*": [
+        "./*"
+      ],
+      "#internal/nuxt/paths": [
+        "../../src/frontend/node_modules/@nuxt/nitro-server/dist/runtime/utils/paths"
+      ],
+      "#unhead/composables": [
+        "../../src/frontend/node_modules/nuxt/dist/head/runtime/composables/v3"
+      ]
+    },
+    "lib": [
+      "esnext",
+      "webworker",
+      "dom.iterable"
+    ],
+    "noUncheckedIndexedAccess": true,
+    "allowArbitraryExtensions": true
+  },
+  "include": [
+    "./types/nitro-nuxt.d.ts",
+    "../../src/frontend/node_modules/runtime/server",
+    "../../src/frontend/node_modules/dist/runtime/server",
+    "../../src/frontend/server/**/*",
+    "../../src/frontend/shared/**/*.d.ts",
+    "./types/nitro.d.ts",
+    "../../src/frontend/**/*"
+  ],
+  "exclude": [
+    "../../src/frontend/node_modules",
+    "../../node_modules",
+    "../../src/frontend/node_modules/nuxt/node_modules",
+    "../../src/frontend/node_modules/@nuxtjs/tailwindcss/node_modules",
+    "../../src/frontend/node_modules/@nuxt/telemetry/node_modules",
+    "../../src/frontend/dist"
+  ]
+}

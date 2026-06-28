@@ -21,7 +21,7 @@ test.describe('Quality 质量闭环', () => {
     await expect(qualityPanel.getByText('WO-003 · 热处理')).toBeVisible()
     await expect(qualityPanel.getByText(/检验结果 返工 已自动生成返工排产事件/)).toBeVisible()
 
-    await qualityPanel.getByRole('button', { name: '生成 WO-003 INS-003 返工排产事件' }).click()
+    await qualityPanel.getByRole('button', { name: '生成返工排产事件' }).click()
     await expect(qualityPanel.getByRole('status').getByText(/返工排产事件已生成/)).toBeVisible()
 
     await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })

@@ -21,6 +21,7 @@ public class SystemUser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(username);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
         if (role is not ("Admin" or "Engineer" or "Lead" or "Operator" or "QC"))
             throw new ArgumentException($"不支持的角色: {role}", nameof(role));
 

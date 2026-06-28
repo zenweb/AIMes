@@ -1,0 +1,4 @@
+- [ ] Keep `AuditDecisionReplayPanel.vue` as the next resumption target if more replay depth is needed.
+- [ ] Revisit the remaining uncovered low-value outer catch paths only if a real user-visible bug appears there.
+- [ ] On resume, re-run the replay panel baseline before making any new code changes.
+- [ ] Keep backend/staging work on port `5003` if it becomes necessary again.

@@ -73,6 +73,7 @@ public class ScheduleRepository : IScheduleRepository
             .AsNoTracking()
             .Include(p => p.Items)
             .Where(p => p.PlanStartDate <= now && p.PlanEndDate >= now)
+            .Where(p => p.Items.Any())
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }

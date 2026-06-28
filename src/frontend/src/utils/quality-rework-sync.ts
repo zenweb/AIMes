@@ -71,11 +71,18 @@ export function readQualityReworkImpact(): QualityReworkImpact | null {
   }
 }
 
-export async function readQualityReworkImpactBackendFirst(): Promise<QualityReworkImpact | null> {
+export async function readQualityReworkImpactBackendFirst(options?: { failLoud?: boolean }): Promise<QualityReworkImpact | null> {
   try {
     const { getLatestQualityReworkImpact } = await import('../api/qualityEvidence')
-    return await getLatestQualityReworkImpact() ?? readQualityReworkImpact()
-  } catch {
+    const localRecord = readQualityReworkImpact()
+    const record = await getLatestQualityReworkImpact(options)
+    if (!isQualityReworkImpact(record)) return localRecord
+    if (!localRecord) return record
+    return new Date(localRecord.createdAt).getTime() >= new Date(record.createdAt).getTime()
+      ? localRecord
+      : record
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readQualityReworkImpact()
   }
 }

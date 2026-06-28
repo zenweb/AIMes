@@ -2,16 +2,22 @@ import { test, expect } from '@playwright/test'
 
 test.describe.configure({ timeout: 180000 })
 
+function offlineDemoPath(path: string) {
+  return `${path}?offlineDemo=1`
+}
+
 test.describe('Production 生产看板', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
       if (!location.pathname.includes('/anomaly') && !location.pathname.includes('/risk')) {
         localStorage.removeItem('aimes_production_anomaly_event')
       }
     })
-    await page.goto('production')
+    await page.goto(offlineDemoPath('production'))
     await page.waitForSelector('.production-board', { timeout: 20000 })
   })
 
@@ -214,13 +220,13 @@ test.describe('Production 生产看板', () => {
   })
 
   test('热处理开工读取人员替班建议并写回 OTD 证据', async ({ page }) => {
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('employee'), { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 20000 })
     const skillPanel = page.locator('.skill-matrix-panel')
     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
     await expect(skillPanel.locator('p').getByText('AUD-LABOR-REASSIGN-20260520-001 / TRACE-LABOR-REASSIGN-WO-013-OP-10')).toBeVisible({ timeout: 10000 })
 
-    await page.goto('production', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('production'), { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 20000 })
     const heatOrder = page.locator('.wo-card').filter({ hasText: 'WO-013' })
     await expect(heatOrder).toBeVisible()
@@ -246,7 +252,7 @@ test.describe('Production 生产看板', () => {
     await expect(tracePanel.locator('.trace-tags').getByText('人员替班')).toBeVisible()
     await expect(tracePanel.getByText(/AUD-LABOR-REASSIGN-20260520-001 已执行 孙八 替班复核/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const startEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: 'WO-013 淬火 替班后开工' })
@@ -256,13 +262,13 @@ test.describe('Production 生产看板', () => {
   })
 
   test('人员替班开工证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
-    await page.goto('employee', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('employee'), { waitUntil: 'commit' })
     await page.waitForSelector('.emp-board', { timeout: 20000 })
     const skillPanel = page.locator('.skill-matrix-panel')
     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
     await expect(skillPanel.locator('p').getByText('AUD-LABOR-REASSIGN-20260520-001 / TRACE-LABOR-REASSIGN-WO-013-OP-10')).toBeVisible({ timeout: 10000 })
 
-    await page.goto('production', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('production'), { waitUntil: 'commit' })
     await page.waitForSelector('.production-board', { timeout: 20000 })
     const heatOrder = page.locator('.wo-card').filter({ hasText: 'WO-013' })
     await expect(heatOrder).toBeVisible()
@@ -415,8 +421,11 @@ test.describe('Production 生产看板', () => {
       await expect(tracePanel.getByText(/完工复核已提交/)).toBeVisible()
       await expect(tracePanel.locator('.trace-type').getByText('质量联动', { exact: true })).toBeVisible()
       await expect(tracePanel.getByText(/质检放行/)).toBeVisible()
+      const completedOperation = page.locator('.op-card').filter({ hasText: 'OP-20' }).filter({ hasText: 'CNC 精加工' })
+      await expect(completedOperation).toHaveClass(/completed/)
+      await expect(completedOperation.getByRole('button', { name: '完工' })).toHaveCount(0)
 
-      await page.goto('scheduling', { waitUntil: 'commit' })
+      await page.goto(offlineDemoPath('scheduling'), { waitUntil: 'commit' })
       await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
       const eventPanel = page.locator('.event-queue-panel')
       const productionEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-001 CNC 精加工 完工复核' }).first()
@@ -427,13 +436,13 @@ test.describe('Production 生产看板', () => {
       await expect(eventPanel.getByText('生产完工复核建议')).toBeVisible()
       await expect(eventPanel.getByText(/复核后续工序窗口、质量门和 OTD 证据链/)).toBeVisible()
 
-      await page.goto('report', { waitUntil: 'commit' })
+      await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
       await page.waitForSelector('.report-board', { timeout: 60000 })
       const completionEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '完工回写' })
       await expect(completionEvidence.getByText('生产完工')).toBeVisible()
       await expect(completionEvidence.getByText(/TRACE-PROD-COMPLETE/)).toBeVisible()
 
-      await page.goto('audit-logs', { waitUntil: 'commit' })
+      await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
       await page.waitForSelector('.audit-board', { timeout: 60000 })
       const auditPanel = page.locator('.audit-replay-panel')
       await expect(auditPanel.locator('.metric-chip').filter({ hasText: '生产完工回放' }).getByText('1')).toBeVisible()
@@ -507,14 +516,14 @@ test.describe('Production 生产看板', () => {
     await expect(riskTrace.getByText(/主轴温升异常/)).toBeVisible()
     await expect(riskTrace.locator('.trace-tags').getByText('排产风险')).toBeVisible()
 
-    await page.goto('report')
+    await page.goto(offlineDemoPath('report'))
     await page.waitForSelector('.report-board', { timeout: 20000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'WO-001 CNC 精加工 异常上报进入风险联动' })
     await expect(evidence.locator('.evidence-topline span').getByText('生产异常', { exact: true })).toBeVisible()
     await expect(evidence.getByText('异常待分流')).toBeVisible()
     await expect(evidence.getByText('TRACE-PROD-ANOMALY-WO-001-OP-20')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'))
     await page.waitForSelector('.schedule-board', { timeout: 20000 })
     const eventCard = page.locator('.event-queue-panel .event-card').filter({ hasText: 'WO-001 CNC 精加工 异常上报进入风险联动' })
     await expect(eventCard.locator('.event-type').getByText('生产异常', { exact: true })).toBeVisible()
@@ -523,7 +532,7 @@ test.describe('Production 生产看板', () => {
     await expect(page.locator('.agent-suggestion').getByText('生产异常上报后的排产冻结复核')).toBeVisible()
     await expect(page.locator('.agent-suggestion').getByText(/冻结当前工序和受影响设备窗口/)).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto(offlineDemoPath('audit-logs'))
     await page.waitForSelector('.audit-replay-panel', { timeout: 20000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '生产异常回放' }).getByText('1')).toBeVisible()
@@ -534,7 +543,7 @@ test.describe('Production 生产看板', () => {
     await expect(detail.getByText(/生产报工读取 生产报工 \/ admin 的异常上报、异常管理事件、风险处置队列和 AI 排产影响/)).toBeVisible()
     await expect(detail.getByText(/风险处置队列 \/ AI 排产 \/ 异常中心/)).toBeVisible()
 
-    await page.goto('dashboard')
+    await page.goto(offlineDemoPath('dashboard'))
     await page.waitForSelector('.chat-fab', { timeout: 20000 })
     await page.locator('.chat-fab').click()
     await page.locator('.chat-input').fill('生产异常上报对排产和 OTD 有什么影响？')
@@ -544,7 +553,7 @@ test.describe('Production 生产看板', () => {
     await expect(chat.getByText(/TRACE-PROD-ANOMALY-WO-001-OP-20/)).toBeVisible()
     await expect(chat.getByText(/冻结当前工序和受影响设备窗口/)).toBeVisible()
 
-    await page.goto('admin')
+    await page.goto(offlineDemoPath('admin'))
     await page.waitForSelector('.admin-board', { timeout: 20000 })
     await page.getByRole('tab', { name: 'Agent 治理' }).click()
     const governance = page.locator('.agent-governance-panel .production-execution-governance')
@@ -610,7 +619,7 @@ test.describe('Production 生产看板', () => {
         localStorage.getItem('aimes_production_anomaly_event')?.includes('夹具定位偏移，首件尺寸超差')
       )
 
-      await page.goto('anomaly')
+      await page.goto(offlineDemoPath('anomaly'))
       await page.waitForSelector('.anomaly-board', { timeout: 20000 })
       const anomalyCard = page.locator('.anomaly-card').filter({ hasText: '现场异常' }).first()
       await expect(anomalyCard).toBeVisible()
@@ -637,7 +646,7 @@ test.describe('Production 生产看板', () => {
       await page.locator('.dialog-card textarea').fill('刀具磨损导致表面粗糙度超差')
       await page.locator('.dialog-confirm').click()
 
-      await page.goto('risk')
+      await page.goto(offlineDemoPath('risk'))
       await page.waitForSelector('.risk-action-panel', { timeout: 20000 })
       const panel = page.locator('.risk-action-panel')
       const riskCard = panel.locator('.action-card').filter({ hasText: '现场异常' }).first()
@@ -653,17 +662,7 @@ test.describe('Production 生产看板', () => {
   })
 
   test('空状态下显示暂无工单', async ({ page }) => {
-    // 拦截工单列表 API 返回空
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
-    await page.route('**/api/v1/scheduling/workorders*', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 1 }),
-      })
-    })
-    await page.reload()
-    await page.waitForSelector('.production-board', { timeout: 10000 })
+    await page.locator('.filter-select').selectOption('paused')
 
     await expect(page.getByText('暂无工单')).toBeVisible()
   })

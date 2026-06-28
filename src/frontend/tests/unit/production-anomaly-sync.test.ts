@@ -61,7 +61,38 @@ describe('production anomaly sync', () => {
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readProductionAnomalyEventBackendFirst()).resolves.toEqual(localEvent)
-    expect(httpGet).toHaveBeenCalledWith('/scheduling/production-anomaly-event/latest')
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/production-anomaly-event/latest', { suppressErrorToast: true })
+  })
+
+  it('falls back to the local anomaly event when backend returns a partial anomaly payload', async () => {
+    const localEvent = anomalyEvent({ id: 'PA-LOCAL-COMPLETE' })
+    writeProductionAnomalyEvent(localEvent)
+    httpGet.mockResolvedValueOnce({
+      data: {
+        id: 'PA-PARTIAL',
+        workOrderNumber: 'WO-2026-0042',
+        title: 'CNC-001 主轴温升异常',
+      },
+    })
+
+    await expect(readProductionAnomalyEventBackendFirst()).resolves.toEqual(localEvent)
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/production-anomaly-event/latest', { suppressErrorToast: true })
+  })
+
+  it('falls back to the local anomaly event when backend read fails', async () => {
+    const localEvent = anomalyEvent({ id: 'PA-LOCAL-FALLBACK' })
+    writeProductionAnomalyEvent(localEvent)
+    httpGet.mockRejectedValueOnce(new Error('production anomaly backend unavailable'))
+
+    await expect(readProductionAnomalyEventBackendFirst()).resolves.toEqual(localEvent)
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/production-anomaly-event/latest', { suppressErrorToast: true })
+  })
+
+  it('fails loud for production anomaly refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('production anomaly backend unavailable'))
+
+    await expect(readProductionAnomalyEventBackendFirst({ failLoud: true }))
+      .rejects.toThrow('production anomaly backend unavailable')
   })
 
   it('maps production anomaly events into list and detail view contracts', () => {

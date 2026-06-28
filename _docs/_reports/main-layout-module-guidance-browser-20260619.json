@@ -1,0 +1,25 @@
+{
+  "url": "http://127.0.0.1:4174/scheduling/scheduling",
+  "moduleContext": "计划执行AI 排产约束排产与方案采纳",
+  "guidanceText": "模块操作提示先核对排产约束、审计回放和交付报告，再采纳复杂动作。Review scheduling constraints, audit replay, and delivery evidence before complex actions.AI 排产报表中心审计日志帮助：当前模块操作支持",
+  "helpText": "复杂模块操作支持复杂动作前确认来源证据、责任人、目标页面和审计留痕。Complex operations should preserve source evidence, owner, target module, and audit trail.",
+  "links": [
+    {
+      "text": "AI 排产",
+      "href": "/scheduling/scheduling"
+    },
+    {
+      "text": "报表中心",
+      "href": "/scheduling/report"
+    },
+    {
+      "text": "审计日志",
+      "href": "/scheduling/audit-logs"
+    },
+    {
+      "text": "帮助：当前模块操作支持",
+      "href": "#module-help"
+    }
+  ],
+  "visible": true
+}

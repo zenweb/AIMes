@@ -5,6 +5,13 @@
       <button class="btn btn-export" @click="handleExport" v-if="employees.length">导出 CSV</button>
     </div>
     <div v-if="notification" class="emp-alert" role="alert">{{ notification }}</div>
+    <div v-if="showLiveRecovery" class="emp-live-recovery" data-employee-live-recovery>
+      <div>
+        <strong>当前展示本地示例数据</strong>
+        <span>Current view is using local demo data</span>
+      </div>
+      <a class="btn btn-live" :href="liveBackendRecoveryHref">切换在线后端</a>
+    </div>
 
     <div class="toolbar">
       <input v-model="search" class="search-input" placeholder="搜索姓名/工号..." />
@@ -82,6 +89,22 @@
         @keydown.escape="closeEditDialog"
       >
         <h3 :id="editTarget.isActive ? 'employee-edit-dialog-title' : 'employee-detail-dialog-title'">{{ editTarget.isActive ? '编辑员工' : '员工详情' }}</h3>
+        <div
+          id="employee-edit-help"
+          class="modal-guidance"
+          data-employee-edit-guidance
+        >
+          <div>
+            <span>保存员工变更前请确认班组、班次、资质影响和审计留痕。</span>
+            <span>Before saving employee changes, confirm team, shift, certification impact, and audit trail.</span>
+          </div>
+          <nav aria-label="员工编辑关联入口">
+            <a :href="productionHref">生产开工 / Production</a>
+            <a :href="schedulingHref">AI 排产 / Scheduling</a>
+            <a :href="auditLogsHref">审计回放 / Audit trail</a>
+            <a href="#employee-edit-help">帮助 / Help</a>
+          </nav>
+        </div>
         <div class="form-group"><label>工号</label><input :value="editTarget.employeeNumber" class="form-input" disabled /></div>
         <div class="form-group"><label>姓名</label><input v-model="editForm.name" class="form-input" :disabled="!editTarget.isActive" /></div>
         <div class="form-row">
@@ -106,10 +129,31 @@
           </div>
           <div class="form-group"><label>电话</label><input v-model="editForm.phone" class="form-input" :disabled="!editTarget.isActive" /></div>
         </div>
+        <div
+          v-if="showDeactivateConfirmation"
+          id="employee-deactivate-help"
+          class="deactivate-confirmation"
+          data-employee-deactivate-confirmation
+        >
+          <div>
+            <strong>离职前请确认未完工派工、替班证据和审计留痕。</strong>
+            <span>Before deactivating this employee, confirm open work assignments, reassignment evidence, and audit trail.</span>
+          </div>
+          <nav aria-label="员工离职关联入口">
+            <a :href="productionHref">生产开工 / Production</a>
+            <a :href="schedulingHref">AI 排产 / Scheduling</a>
+            <a :href="auditLogsHref">审计回放 / Audit trail</a>
+            <a href="#employee-deactivate-help">帮助 / Help</a>
+          </nav>
+          <div class="deactivate-actions">
+            <button class="btn btn-cancel" data-employee-deactivate-cancel @click="cancelDeactivate">取消离职</button>
+            <button class="btn btn-deact" data-employee-deactivate-confirm @click="handleDeactivate">确认离职</button>
+          </div>
+        </div>
         <div class="modal-actions">
           <button class="btn btn-cancel" :aria-label="editTarget.isActive ? '关闭员工编辑' : '关闭员工详情'" @click="closeEditDialog">关闭</button>
           <button v-if="editTarget.isActive" class="btn btn-save" @click="handleUpdate">保存</button>
-          <button v-if="editTarget.isActive" class="btn btn-deact" @click="handleDeactivate">离职</button>
+          <button v-if="editTarget.isActive" class="btn btn-deact" @click="requestDeactivate">离职</button>
         </div>
       </div>
     </div>
@@ -126,6 +170,18 @@
         @keydown.escape="closeCreateDialog"
       >
         <h3 id="employee-create-dialog-title">新增员工</h3>
+        <div id="employee-create-help" class="modal-guidance" data-employee-create-guidance>
+          <div>
+            <span>创建员工前请确认工号唯一、角色范围、班组班次和审计留痕。</span>
+            <span>Before creating an employee, confirm employee number uniqueness, role scope, team shift, and audit trail.</span>
+          </div>
+          <nav aria-label="员工新增关联入口">
+            <a :href="productionHref">生产开工 / Production</a>
+            <a :href="schedulingHref">AI 排产 / Scheduling</a>
+            <a :href="auditLogsHref">审计回放 / Audit trail</a>
+            <a href="#employee-create-help">帮助 / Help</a>
+          </nav>
+        </div>
         <div class="form-row">
           <div class="form-group"><label>工号</label><input v-model="createForm.employeeNumber" class="form-input" /></div>
           <div class="form-group"><label>姓名</label><input v-model="createForm.name" class="form-input" /></div>
@@ -167,6 +223,7 @@ import type { Employee, CreateEmployeeRequest, UpdateEmployeeRequest } from '../
 import { getEmployeeList, createEmployee, updateEmployee, deactivateEmployee } from '../../api/employee'
 import { exportToCsv } from '../../utils/export'
 import { errorMessage } from '../../utils/error-message'
+import { appAssetPath, isOfflineDemoError } from '../../utils/offline-demo-mode'
 import SkillMatrixPanel from './SkillMatrixPanel.vue'
 
 const employees = ref<Employee[]>([])
@@ -176,8 +233,14 @@ const teamFilter = ref('')
 const showInactive = ref(false)
 const showCreate = ref(false)
 const editTarget = ref<Employee | null>(null)
+const showDeactivateConfirmation = ref(false)
 const notification = ref('')
+const showLiveRecovery = ref(false)
 const lastEditTriggerEmployeeId = ref<string | null>(null)
+const liveBackendRecoveryHref = appAssetPath('login?offlineDemo=0&redirect=/employee?offlineDemo=0')
+const productionHref = appAssetPath('production')
+const schedulingHref = appAssetPath('scheduling')
+const auditLogsHref = appAssetPath('audit-logs')
 
 const editForm = ref<UpdateEmployeeRequest>({})
 const createForm = ref<CreateEmployeeRequest>({ employeeNumber: '', name: '', role: 'Operator', team: '', shift: 'Day', phone: '' })
@@ -237,6 +300,7 @@ function employeeCardLabel(e: Employee) {
 async function openEdit(e: Employee) {
   lastEditTriggerEmployeeId.value = e.id
   editTarget.value = e
+  showDeactivateConfirmation.value = false
   editForm.value = { name: e.name, phone: e.phone || '', email: e.email || '', role: e.role, team: e.team || '', shift: e.shift || '' }
   await nextTick()
   document.querySelector<HTMLElement>('[data-employee-edit-dialog]')?.focus()
@@ -245,6 +309,7 @@ async function openEdit(e: Employee) {
 async function closeEditDialog() {
   const employeeId = lastEditTriggerEmployeeId.value
   editTarget.value = null
+  showDeactivateConfirmation.value = false
   await nextTick()
   if (!employeeId) return
   document.querySelector<HTMLElement>(`[data-employee-id="${employeeId}"]`)?.focus()
@@ -287,6 +352,15 @@ async function handleUpdate() {
   employees.value = employees.value.map(employee => employee.id === updated.id ? updated : employee)
   notification.value = ''
   editTarget.value = null
+  showDeactivateConfirmation.value = false
+}
+
+function requestDeactivate() {
+  showDeactivateConfirmation.value = true
+}
+
+function cancelDeactivate() {
+  showDeactivateConfirmation.value = false
 }
 
 async function handleDeactivate() {
@@ -302,12 +376,20 @@ async function handleDeactivate() {
   )
   notification.value = ''
   editTarget.value = null
+  showDeactivateConfirmation.value = false
 }
 
 onMounted(async () => {
-  try { employees.value = (await getEmployeeList()).items }
+  try {
+    employees.value = (await getEmployeeList()).items
+    showLiveRecovery.value = false
+  }
   catch (error: unknown) {
-    notification.value = `员工列表加载失败，当前展示本地示例数据：${errorMessage(error, '请检查后端服务')}`
+    const offlineDemo = isOfflineDemoError(error)
+    showLiveRecovery.value = offlineDemo
+    notification.value = offlineDemo
+      ? ''
+      : `员工列表加载失败，当前展示本地示例数据：${errorMessage(error, '请检查后端服务')}`
     employees.value = [
       { id: 'emp1', employeeNumber: 'EMP-001', name: '张三', role: 'Operator', team: '甲班', shift: 'Day', phone: '13800138001', email: null, skills: ['CNC 精加工', '首件自检'], certifications: [{ name: 'CNC-2 级', expiresAt: '2026-12-31', status: 'valid' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '白班排班', window: '2026-05-20 08:00-17:00', capacityHours: 8, source: '班组排班 SCH-LABOR-20260520-D' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
       { id: 'emp2', employeeNumber: 'EMP-002', name: '李四', role: 'Operator', team: '甲班', shift: 'Day', phone: null, email: null, skills: ['装配', '扭矩复检'], certifications: [{ name: '装配资质', expiresAt: '2026-11-30', status: 'valid' }], availability: { date: '2026-05-20', status: 'available', statusLabel: '白班排班', window: '2026-05-20 08:00-17:00', capacityHours: 8, source: '班组排班 SCH-LABOR-20260520-D' }, isActive: true, createdAt: '2026-01-01T00:00:00' },
@@ -327,12 +409,16 @@ onMounted(async () => {
 .emp-board { height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 16px; }
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 .emp-alert { margin-bottom: 10px; padding: 8px 10px; border: 1px solid #ffccc7; border-radius: 4px; background: #fff2f0; color: #a8071a; font-size: 13px; }
+.emp-live-recovery { margin-bottom: 10px; padding: 10px 12px; border: 1px solid #91caff; border-radius: 6px; background: #e6f4ff; color: #0958d9; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.emp-live-recovery strong { display: block; margin-bottom: 2px; color: #003eb3; }
+.emp-live-recovery span { display: block; color: #0958d9; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
 .search-input { width: 200px; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
 .filter-select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
 .chk { font-size: 13px; color: #666; display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .btn { padding: 6px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; }
 .btn-add { margin-left: auto; background: #1890ff; color: #fff; border-color: #1890ff; }
+.btn-live { flex: 0 0 auto; background: #0958d9; color: #fff; border-color: #0958d9; }
 .emp-grid { flex: 0 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .emp-card { display: flex; gap: 12px; padding: 14px; background: #fff; border-radius: 8px; cursor: pointer; transition: box-shadow 0.15s; }
 .emp-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
@@ -351,6 +437,19 @@ onMounted(async () => {
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 1100; display: flex; align-items: center; justify-content: center; }
 .modal-content { background: #fff; border-radius: 8px; padding: 24px; width: 460px; max-width: 90vw; }
 .modal-content h3 { font-size: 16px; margin: 0 0 16px; }
+.modal-guidance { display: grid; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 6px; background: #f8fbff; color: #475569; font-size: 12px; line-height: 1.45; }
+.modal-guidance span { display: block; }
+.modal-guidance nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.modal-guidance a { min-height: 28px; padding: 5px 8px; border: 1px solid #bfdbfe; border-radius: 4px; background: #eff6ff; color: #1d4ed8; font-weight: 700; text-decoration: none; }
+.modal-guidance a:hover { text-decoration: underline; }
+.deactivate-confirmation { display: grid; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; color: #7f1d1d; font-size: 12px; line-height: 1.45; }
+.deactivate-confirmation strong,
+.deactivate-confirmation span { display: block; }
+.deactivate-confirmation span { margin-top: 3px; color: #991b1b; }
+.deactivate-confirmation nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.deactivate-confirmation a { min-height: 28px; padding: 5px 8px; border: 1px solid #fecaca; border-radius: 4px; background: #fff1f2; color: #b91c1c; font-weight: 700; text-decoration: none; }
+.deactivate-confirmation a:hover { text-decoration: underline; }
+.deactivate-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .form-row { display: flex; gap: 12px; }
 .form-group { flex: 1; margin-bottom: 12px; }
 .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }

@@ -93,6 +93,18 @@ describe('poc pilot run sync', () => {
     await expect(readPocPilotRunRecordBackendFirst()).resolves.toEqual(localRecord)
   })
 
+  it('ignores incomplete backend pilot runs so work orders and checkpoints stay auditable', async () => {
+    const localRecord = writePocPilotRunRecord(rollout())
+    getLatestPocPilotRun.mockResolvedValueOnce({
+      id: 'poc-pilot-run-20260521',
+      title: 'POC 首批真实工单试点运行确认',
+      status: 'closed',
+      createdAt: '2099-01-01T00:00:00.000Z',
+    })
+
+    await expect(readPocPilotRunRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
   it('removes corrupt pilot run JSON so boards do not render stale trial state', () => {
     localStorage.setItem('aimes_poc_pilot_run', '{bad json')
 

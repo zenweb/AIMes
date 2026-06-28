@@ -19,6 +19,8 @@ public static class DemoDataSeeder
         await db.SaveChangesAsync(ct);
         await SeedWorkOrdersAsync(db, ct);
         await db.SaveChangesAsync(ct);
+        await SeedLaborQualificationDemoProductionAsync(db, ct);
+        await db.SaveChangesAsync(ct);
         await SeedQualityAsync(db, ct);
         await db.SaveChangesAsync(ct);
         await SeedBomAsync(db, ct);
@@ -73,6 +75,48 @@ public static class DemoDataSeeder
             Domain.Entities.Production.WorkOrder.Create("WO-20260518-003", "PROD-C1", "液压阀体 C", 60, today.AddHours(10), today.AddDays(1).AddHours(18), "ws-001", 3, "R-C300"),
             Domain.Entities.Production.WorkOrder.Create("WO-20260518-004", "PROD-A1", "精密轴承组件 A", 150, today.AddDays(1).AddHours(8), today.AddDays(2).AddHours(16), "ws-001", 2, "R-A100")
         );
+    }
+
+    private static async Task SeedLaborQualificationDemoProductionAsync(MesDbContext db, CancellationToken ct)
+    {
+        var today = DateTime.UtcNow.Date;
+        var workOrder = await db.WorkOrders
+            .FirstOrDefaultAsync(w => w.OrderNumber == "WO-013", ct);
+
+        if (workOrder == null)
+        {
+            workOrder = Domain.Entities.Production.WorkOrder.Create(
+                "WO-013",
+                "PRD-003",
+                "淬火热处理",
+                200,
+                today.AddHours(10),
+                today.AddHours(14),
+                "ws-001",
+                priority: 3,
+                routeCode: "OP-10");
+            db.WorkOrders.Add(workOrder);
+        }
+
+        var hasHeatTreatmentExecution = await db.OperationExecutions
+            .AnyAsync(e => e.WorkOrderId == workOrder.Id && e.OperationCode == "OP-10", ct);
+        if (!hasHeatTreatmentExecution)
+        {
+            db.OperationExecutions.Add(new Domain.Entities.Production.OperationExecution(
+                workOrder.Id,
+                "OP-10",
+                "淬火"));
+        }
+
+        var hasTemperingExecution = await db.OperationExecutions
+            .AnyAsync(e => e.WorkOrderId == workOrder.Id && e.OperationCode == "OP-20", ct);
+        if (!hasTemperingExecution)
+        {
+            db.OperationExecutions.Add(new Domain.Entities.Production.OperationExecution(
+                workOrder.Id,
+                "OP-20",
+                "回火"));
+        }
     }
 
     private static async Task SeedQualityAsync(MesDbContext db, CancellationToken ct)
@@ -274,13 +318,18 @@ public static class DemoDataSeeder
 
     private static async Task SeedScheduleAsync(MesDbContext db, CancellationToken ct)
     {
-        if (await db.SchedulePlans.AnyAsync(ct)) return;
+        var now = DateTime.UtcNow;
+        var hasCurrentPlan = await db.SchedulePlans
+            .AnyAsync(p => p.PlanStartDate <= now
+                && p.PlanEndDate >= now
+                && p.Items.Any(), ct);
+        if (hasCurrentPlan) return;
 
         var orders = await db.WorkOrders.OrderBy(w => w.OrderNumber).Take(3).ToListAsync(ct);
         var equipment = await db.Equipment.OrderBy(e => e.EquipmentCode).Take(2).ToListAsync(ct);
         if (orders.Count == 0 || equipment.Count == 0) return;
 
-        var start = DateTime.UtcNow.Date.AddHours(8);
+        var start = now.AddHours(-1);
         var plan = SchedulePlan.Create("演示排产计划", start, start.AddHours(10));
         for (var i = 0; i < orders.Count; i++)
         {

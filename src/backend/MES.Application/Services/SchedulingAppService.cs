@@ -133,19 +133,24 @@ public class SchedulingAppService : ISchedulingAppService
     public async Task<SchedulePlanDto?> GetCurrentPlanAsync(CancellationToken ct = default)
     {
         var plan = await _scheduleRepo.GetCurrentPlanAsync(ct);
-        return plan != null ? MapToSchedulePlanDto(plan) : null;
+        return plan != null ? await MapToSchedulePlanDtoAsync(plan, ct) : null;
     }
 
     public async Task<SchedulePlanDto?> GetPlanByIdAsync(string id, CancellationToken ct = default)
     {
         var plan = await _scheduleRepo.GetByIdAsync(id, ct);
-        return plan != null ? MapToSchedulePlanDto(plan) : null;
+        return plan != null ? await MapToSchedulePlanDtoAsync(plan, ct) : null;
     }
 
     public async Task<List<SchedulePlanDto>> GetAllPlansAsync(CancellationToken ct = default)
     {
         var plans = await _scheduleRepo.GetAllAsync(ct: ct);
-        return plans.Select(MapToSchedulePlanDto).ToList();
+        var result = new List<SchedulePlanDto>(plans.Count);
+        foreach (var plan in plans)
+        {
+            result.Add(await MapToSchedulePlanDtoAsync(plan, ct));
+        }
+        return result;
     }
 
     public async Task<WorkOrderDto> CreateWorkOrderAsync(CreateWorkOrderRequest request, CancellationToken ct = default)
@@ -287,14 +292,13 @@ public class SchedulingAppService : ISchedulingAppService
                 EstimatedCompletionRate = completionRate,
                 TotalWorkOrders = result.Assignments.Count,
             };
+            item.RecommendationScoreBreakdown = CalculateRecommendationScoreBreakdown(item);
+            item.RecommendationScore = CalculateRecommendationScore(item.RecommendationScoreBreakdown);
             items.Add(item);
 
-            // 加权评分：利用率40% + 准时率40% + 换线效率20%
-            var score = item.UtilizationRate * 0.4 + item.OnTimeDeliveryRate * 0.4
-                        + Math.Max(0, 1 - item.TotalChangeoverMinutes / 1000) * 0.2;
-            if (score > bestScore)
+            if (item.RecommendationScore > bestScore)
             {
-                bestScore = score;
+                bestScore = item.RecommendationScore;
                 bestObjective = objective;
             }
         }
@@ -303,11 +307,15 @@ public class SchedulingAppService : ISchedulingAppService
         {
             Items = items,
             BestOverallObjective = bestObjective,
+            RecommendationScoreFormula = GetRecommendationScoreFormula(),
         };
     }
 
     public async Task RecordAdoptionFeedbackAsync(AdoptionFeedbackRequest request, string operatorUser, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(request.ReasonDetail))
+            throw new ArgumentException("修改原因说明不能为空", nameof(request));
+
         var reasonCategory = Enum.TryParse<OverrideReasonCategory>(request.ReasonCategory, out var category)
             ? category
             : OverrideReasonCategory.Other;
@@ -330,6 +338,7 @@ public class SchedulingAppService : ISchedulingAppService
     {
         var feedback = await _scheduleRepo.GetLatestFeedbackAsync(ct);
         if (feedback is null) return null;
+        if (string.IsNullOrWhiteSpace(feedback.ReasonDetail)) return null;
 
         var accepted = feedback.InitiatedByAgent || !string.IsNullOrWhiteSpace(feedback.AgentDecisionId);
         return new AdoptionFeedbackSnapshotDto(
@@ -368,6 +377,29 @@ public class SchedulingAppService : ISchedulingAppService
         "balanced" => "综合平衡",
         _ => "综合平衡",
     };
+
+    private static RecommendationScoreBreakdownDto CalculateRecommendationScoreBreakdown(ObjectiveCompareItemDto item) => new()
+    {
+        // 加权评分：利用率 40% + 准时率 40% + 换线效率 20%。
+        UtilizationContribution = item.UtilizationRate * 0.4,
+        OnTimeDeliveryContribution = item.OnTimeDeliveryRate * 0.4,
+        ChangeoverContribution = Math.Max(0, 1 - item.TotalChangeoverMinutes / 1000) * 0.2,
+    };
+
+    private static RecommendationScoreFormulaDto GetRecommendationScoreFormula() => new()
+    {
+        Version = "v1-weighted-kpi-40-40-20",
+        UtilizationWeight = 0.4,
+        OnTimeDeliveryWeight = 0.4,
+        ChangeoverWeight = 0.2,
+        ChangeoverNormalizationMinutes = 1000,
+        Description = "综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。",
+    };
+
+    private static double CalculateRecommendationScore(RecommendationScoreBreakdownDto breakdown) =>
+        breakdown.UtilizationContribution
+            + breakdown.OnTimeDeliveryContribution
+            + breakdown.ChangeoverContribution;
 
     private async Task WriteAdoptionFeedbackEvidenceAsync(
         ScheduleAdoptionFeedback feedback,
@@ -525,6 +557,48 @@ public class SchedulingAppService : ISchedulingAppService
             DependentItems = i.DependentItems
         }).ToList()
     };
+
+    private async Task<SchedulePlanDto> MapToSchedulePlanDtoAsync(SchedulePlan plan, CancellationToken ct)
+    {
+        var workOrderIds = plan.Items.Select(i => i.WorkOrderId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct();
+        var equipmentIds = plan.Items.Select(i => i.EquipmentId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct();
+
+        var workOrders = new Dictionary<string, WorkOrder>();
+        foreach (var workOrderId in workOrderIds)
+        {
+            var workOrder = await _workOrderRepo.GetByIdAsync(workOrderId, ct);
+            if (workOrder is not null)
+            {
+                workOrders[workOrderId] = workOrder;
+            }
+        }
+
+        var equipmentById = new Dictionary<string, Equipment>();
+        foreach (var equipmentId in equipmentIds)
+        {
+            var equipment = await _equipmentRepo.GetByIdAsync(equipmentId, ct);
+            if (equipment is not null)
+            {
+                equipmentById[equipmentId] = equipment;
+            }
+        }
+
+        var dto = MapToSchedulePlanDto(plan);
+        foreach (var item in dto.Items)
+        {
+            if (workOrders.TryGetValue(item.WorkOrderId, out var workOrder))
+            {
+                item.WorkOrderNumber = workOrder.OrderNumber;
+            }
+
+            if (equipmentById.TryGetValue(item.EquipmentId, out var equipment))
+            {
+                item.EquipmentName = equipment.EquipmentName;
+            }
+        }
+
+        return dto;
+    }
 
     private WorkOrderDto MapToWorkOrderDto(WorkOrder w) => new()
     {

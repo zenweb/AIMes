@@ -1,4 +1,4 @@
-import http from './http'
+import http, { type AimesRequestConfig } from './http'
 import type { PagedResult } from '../types/common'
 import type {
   SchedulePlanDto,
@@ -10,7 +10,8 @@ import type {
 
 // 获取当前排产计划
 export async function getCurrentPlan(): Promise<SchedulePlanDto> {
-  const { data } = await http.get<SchedulePlanDto>('/scheduling/current')
+  const config: AimesRequestConfig = { suppressErrorToast: true }
+  const { data } = await http.get<SchedulePlanDto>('/scheduling/current', config)
   return data
 }
 
@@ -73,11 +74,29 @@ export interface ObjectiveCompareItem {
   groupCount: number
   estimatedCompletionRate: number
   totalWorkOrders: number
+  recommendationScore: number
+  recommendationScoreBreakdown: RecommendationScoreBreakdown
+}
+
+export interface RecommendationScoreBreakdown {
+  utilizationContribution: number
+  onTimeDeliveryContribution: number
+  changeoverContribution: number
+}
+
+export interface RecommendationScoreFormula {
+  version: string
+  utilizationWeight: number
+  onTimeDeliveryWeight: number
+  changeoverWeight: number
+  changeoverNormalizationMinutes: number
+  description: string
 }
 
 export interface BatchOptimizeResult {
   items: ObjectiveCompareItem[]
   bestOverallObjective?: string
+  recommendationScoreFormula: RecommendationScoreFormula
 }
 
 // 批量优化对比
@@ -233,9 +252,17 @@ export async function rejectAgentDecision(
 
 export async function getLatestAdoptionFeedback(): Promise<AdoptionFeedbackSnapshot | null> {
   try {
-    const { data } = await http.get<AdoptionFeedbackSnapshot>('/scheduling/adoption-feedback/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<AdoptionFeedbackSnapshot>('/scheduling/adoption-feedback/latest', config)
     return data
-  } catch {
-    return null
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    throw error
   }
+}
+
+function isNotFoundResponse(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { response?: { status?: unknown } }
+  return candidate.response?.status === 404
 }

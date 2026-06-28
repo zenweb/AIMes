@@ -134,12 +134,31 @@ export function readAssistantRecoveryPackages(): AssistantRecoveryPackage[] {
   return readRawAssistantRecoveryPackages()
 }
 
-export async function readAssistantRecoveryPackagesBackendFirst(): Promise<AssistantRecoveryPackage[]> {
+function mergeAssistantRecoveryPackages(
+  remoteRecords: AssistantRecoveryPackage[],
+  localRecords: AssistantRecoveryPackage[],
+): AssistantRecoveryPackage[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<AssistantRecoveryPackage[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_PACKAGES)
+}
+
+export async function readAssistantRecoveryPackagesBackendFirst(options?: { failLoud?: boolean }): Promise<AssistantRecoveryPackage[]> {
   try {
     const { queryAssistantRecoveryPackages } = await import('../api/assistantEvidence')
-    const records = await queryAssistantRecoveryPackages(MAX_PACKAGES)
-    return records.length > 0 ? records : readAssistantRecoveryPackages()
-  } catch {
+    const records = await queryAssistantRecoveryPackages(MAX_PACKAGES, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组执行包审计载荷')
+    }
+    const validRecords = records.filter(isAssistantRecoveryPackage)
+    return mergeAssistantRecoveryPackages(validRecords, readAssistantRecoveryPackages())
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readAssistantRecoveryPackages()
   }
 }

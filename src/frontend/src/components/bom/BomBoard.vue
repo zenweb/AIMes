@@ -129,11 +129,22 @@
                   <h4>{{ bomKittingPackage ? 'BOM 展开齐套包已进入库存与排产' : '把 BOM 展开结果送入库存齐套' }}</h4>
                   <p>{{ bomKittingPackage ? bomKittingPackage.summary : '按 WO-RUSH-9001 的排产窗口展开 BOM-A100，核对 M-AL-6061、M-SEAL-20 与关键替代料，把缺口直接生成库存齐套和排产事件。' }}</p>
                 </div>
-                <div class="kitting-source-actions">
-                  <button type="button" @click="publishBomKittingPackage">生成 BOM 齐套检查包</button>
-                  <em v-if="bomKittingPackage">{{ bomKittingPackage.auditId }}</em>
-                </div>
+              <div class="kitting-source-actions">
+                <button v-if="!bomKittingPackage" type="button" @click="publishBomKittingPackage">生成 BOM 齐套检查包</button>
+                <button v-else type="button" disabled>BOM 齐套检查包已发布</button>
+                <em v-if="bomKittingPackage">{{ bomKittingPackage.auditId }}</em>
               </div>
+            </div>
+              <div id="bom-kitting-help" class="kitting-source-guidance">
+                <strong>生成齐套检查包前，请确认 BOM 版本、缺料口径、替代料状态和 OTD 证据链。</strong>
+                <p>Before generating the kitting package, confirm BOM version, shortage basis, alternate material status, and OTD evidence trail.</p>
+              </div>
+              <nav class="kitting-source-links" aria-label="BOM 齐套关联证据">
+                <a href="/scheduling">AI 排产复核 / Scheduling</a>
+                <a href="/inventory">库存齐套 / Inventory</a>
+                <a href="/audit-logs">审计回放 / Audit trail</a>
+                <a href="#bom-kitting-help">帮助 / Help</a>
+              </nav>
               <div class="kitting-source-grid">
                 <div v-for="item in bomKittingItems" :key="item.materialCode" class="kitting-source-card" :class="{ shortage: item.shortageQuantity > 0 }">
                   <span>{{ item.materialCode }}</span>
@@ -213,7 +224,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { BomSummary, BomDetail, BomExplosionResult, BomItem } from '../../types/bom'
+import type { BomSummary, BomDetail, BomExplosionResult, BomItem, BomExplosionItem } from '../../types/bom'
 import { getBomList, getBomById, explodeBom } from '../../api/bom'
 import {
   approveEngineeringChangeImpactAnalysis,
@@ -227,6 +238,7 @@ import {
 } from '../../utils/engineering-change-sync'
 import { readBomKittingPackageBackendFirst, writeBomKittingPackage, type BomKittingPackage, type BomKittingPackageItem } from '../../utils/shortage-risk-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 
 const loading = ref(false)
 const boms = ref<BomSummary[]>([])
@@ -249,6 +261,8 @@ function goToPage(p: number | string) {
   if (typeof p === "string") return
   if (p < 1 || p > totalPages.value) return
   currentPage.value = p
+  selected.value = null
+  explosion.value = null
   loadBoms()
 }
 const selected = ref<BomDetail | null>(null)
@@ -257,6 +271,9 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
 const bomKittingPackage = ref<BomKittingPackage | null>(null)
 const explosion = ref<BomExplosionResult | null>(null)
 const bomError = ref('')
+const startupBomError = ref('')
+const listBomError = ref('')
+const operationBomError = ref('')
 const explodeQty = ref(1)
 const collapsed = ref<Record<string, boolean>>({})
 
@@ -372,6 +389,43 @@ function toggleTree(key: string) {
   collapsed.value[key] = !collapsed.value[key]
 }
 
+function syncBomError() {
+  bomError.value = [
+    startupBomError.value,
+    listBomError.value,
+    operationBomError.value,
+  ].filter(Boolean).join('；')
+}
+
+function setStartupBomError(message: string) {
+  startupBomError.value = message
+  syncBomError()
+}
+
+function clearStartupBomError(prefix: string) {
+  if (startupBomError.value.startsWith(prefix)) {
+    startupBomError.value = ''
+    syncBomError()
+  }
+}
+
+function setListBomError(message: string) {
+  listBomError.value = message
+  syncBomError()
+}
+
+function setOperationBomError(message: string) {
+  operationBomError.value = message
+  syncBomError()
+}
+
+function clearOperationBomError(prefix: string) {
+  if (operationBomError.value.startsWith(prefix)) {
+    operationBomError.value = ''
+    syncBomError()
+  }
+}
+
 const demoBoms: BomSummary[] = [
   { id: 'bom-1', bomCode: 'BOM-A100', bomName: '产品A 物料清单', productCode: 'PROD-A1', productName: '精密轴承组件 A', bomType: 'Manufacturing', version: 'V1.0', status: 'Released', effectiveDate: '2026-01-01', expireDate: null, itemCount: 5, createdAt: '2026-01-01' },
   { id: 'bom-2', bomCode: 'BOM-B200', bomName: '产品B 物料清单', productCode: 'PROD-B1', productName: '传动轴总成 B', bomType: 'Manufacturing', version: 'V2.1', status: 'Released', effectiveDate: '2026-03-15', expireDate: null, itemCount: 8, createdAt: '2026-03-10' },
@@ -404,14 +458,12 @@ function flatItems(items: BomItem[]): BomItem[] {
 }
 
 async function selectBom(b: BomSummary) {
-  alternateApproval.value = await readAlternateMaterialApprovalBackendFirst()
-  engineeringChangeImpact.value = await readEngineeringChangeImpactAnalysisBackendFirst()
-  bomKittingPackage.value = await readBomKittingPackageBackendFirst()
+  await refreshEngineeringEvidenceForSelection()
   try {
     selected.value = await getBomById(b.id)
-    if (bomError.value.startsWith('BOM 详情加载失败')) bomError.value = ''
+    clearOperationBomError('BOM 详情加载失败')
   } catch (error: unknown) {
-    bomError.value = `BOM 详情加载失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`BOM 详情加载失败：${error instanceof Error ? error.message : '请稍后重试'}`)
     // demo fallback
     selected.value = {
       id: b.id, bomCode: b.bomCode, bomName: b.bomName,
@@ -426,6 +478,32 @@ async function selectBom(b: BomSummary) {
   explosion.value = null
 }
 
+async function refreshEngineeringEvidenceForSelection() {
+  const failures: string[] = []
+  const readbackOptions = { failLoud: true }
+  try {
+    alternateApproval.value = await readAlternateMaterialApprovalBackendFirst(readbackOptions)
+  } catch (error: unknown) {
+    failures.push(`替代料确认：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  try {
+    engineeringChangeImpact.value = await readEngineeringChangeImpactAnalysisBackendFirst(readbackOptions)
+  } catch (error: unknown) {
+    failures.push(`ECN 影响分析：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  try {
+    bomKittingPackage.value = await readBomKittingPackageBackendFirst(readbackOptions)
+  } catch (error: unknown) {
+    failures.push(`齐套检查包：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  if (failures.length) {
+    setOperationBomError(`BOM 工程证据刷新失败：${failures.join('；')}。已继续加载 BOM 详情。`)
+  } else {
+    clearStartupBomError('BOM 工程证据加载失败')
+    clearOperationBomError('BOM 工程证据刷新失败')
+  }
+}
+
 function approveAlternateMaterial() {
   if (!selected.value) return
   try {
@@ -434,13 +512,13 @@ function approveAlternateMaterial() {
       bomVersion: selected.value.version,
     })
     if (!approval) {
-      bomError.value = '替代料放行失败：请稍后重试'
+      setOperationBomError('替代料放行失败：请稍后重试')
       return
     }
     alternateApproval.value = approval
-    if (bomError.value.startsWith('替代料放行失败')) bomError.value = ''
+    clearOperationBomError('替代料放行失败')
   } catch (error: unknown) {
-    bomError.value = `替代料放行失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`替代料放行失败：${error instanceof Error ? error.message : '请稍后重试'}`)
   }
 }
 
@@ -452,13 +530,13 @@ function analyzeEngineeringChangeImpact() {
       bomVersion: selected.value.version,
     })
     if (!impact) {
-      bomError.value = 'ECN 影响分析失败：请稍后重试'
+      setOperationBomError('ECN 影响分析失败：请稍后重试')
       return
     }
     engineeringChangeImpact.value = impact
-    if (bomError.value.startsWith('ECN 影响分析失败')) bomError.value = ''
+    clearOperationBomError('ECN 影响分析失败')
   } catch (error: unknown) {
-    bomError.value = `ECN 影响分析失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`ECN 影响分析失败：${error instanceof Error ? error.message : '请稍后重试'}`)
   }
 }
 
@@ -466,13 +544,13 @@ function approveEngineeringChange() {
   try {
     const impact = approveEngineeringChangeImpactAnalysis()
     if (!impact) {
-      bomError.value = 'ECN 放行失败：请稍后重试'
+      setOperationBomError('ECN 放行失败：请稍后重试')
       return
     }
     engineeringChangeImpact.value = impact
-    if (bomError.value.startsWith('ECN 放行失败')) bomError.value = ''
+    clearOperationBomError('ECN 放行失败')
   } catch (error: unknown) {
-    bomError.value = `ECN 放行失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`ECN 放行失败：${error instanceof Error ? error.message : '请稍后重试'}`)
   }
 }
 
@@ -480,17 +558,26 @@ function rejectEngineeringChange() {
   try {
     const impact = rejectEngineeringChangeImpactAnalysis()
     if (!impact) {
-      bomError.value = 'ECN 驳回失败：请稍后重试'
+      setOperationBomError('ECN 驳回失败：请稍后重试')
       return
     }
     engineeringChangeImpact.value = impact
-    if (bomError.value.startsWith('ECN 驳回失败')) bomError.value = ''
+    clearOperationBomError('ECN 驳回失败')
   } catch (error: unknown) {
-    bomError.value = `ECN 驳回失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`ECN 驳回失败：${error instanceof Error ? error.message : '请稍后重试'}`)
   }
 }
 
-function publishBomKittingPackage() {
+async function confirmBomKittingPackageReadback(fallback: BomKittingPackage) {
+  try {
+    bomKittingPackage.value = await readBomKittingPackageBackendFirst() ?? fallback
+    clearOperationBomError('BOM 齐套检查包读回失败')
+  } catch (error: unknown) {
+    setOperationBomError(`BOM 齐套检查包读回失败：${error instanceof Error ? error.message : '请稍后重试'}。已保留本地发布证据，需复核后端读回状态。`)
+  }
+}
+
+async function publishBomKittingPackage() {
   if (!selected.value) return
   const now = new Date().toISOString()
   const record: BomKittingPackage = {
@@ -510,22 +597,28 @@ function publishBomKittingPackage() {
   }
   try {
     writeBomKittingPackage(record)
-    upsertOtdEvidenceChainRecord({
-      id: record.id,
-      stage: '库存齐套',
-      title: `${record.bomCode} 展开齐套检查包已进入排产复核`,
-      summary: `${record.summary} 责任人：${record.owner}；动作：${record.items.map(item => `${item.materialCode} ${item.action}`).join('；')}`,
-      object: record.workOrderNumber,
-      source: `BOM 管理 / ${record.bomCode} ${record.bomVersion}`,
-      traceId: record.traceId,
-      status: 'active',
-      statusLabel: record.statusLabel,
-      createdAt: record.createdAt,
-    })
     bomKittingPackage.value = record
-    if (bomError.value.startsWith('BOM 齐套检查包发布失败')) bomError.value = ''
+    clearOperationBomError('BOM 齐套检查包发布失败')
+    try {
+      upsertOtdEvidenceChainRecord({
+        id: record.id,
+        stage: '库存齐套',
+        title: `${record.bomCode} 展开齐套检查包已进入排产复核`,
+        summary: `${record.summary} 责任人：${record.owner}；动作：${record.items.map(item => `${item.materialCode} ${item.action}`).join('；')}`,
+        object: record.workOrderNumber,
+        source: `BOM 管理 / ${record.bomCode} ${record.bomVersion}`,
+        traceId: record.traceId,
+        status: 'active',
+        statusLabel: record.statusLabel,
+        createdAt: record.createdAt,
+      })
+      clearOperationBomError('BOM 齐套检查包已发布，但 OTD 证据链同步失败')
+    } catch (error: unknown) {
+      setOperationBomError(`BOM 齐套检查包已发布，但 OTD 证据链同步失败：${error instanceof Error ? error.message : '请稍后重试'}`)
+    }
+    await confirmBomKittingPackageReadback(record)
   } catch (error: unknown) {
-    bomError.value = `BOM 齐套检查包发布失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`BOM 齐套检查包发布失败：${error instanceof Error ? error.message : '请稍后重试'}`)
   }
 }
 
@@ -534,9 +627,9 @@ async function handleExplode() {
   explodeQty.value = 1
   try {
     explosion.value = await explodeBom(selected.value.id, 1)
-    if (bomError.value.startsWith('BOM 展开失败')) bomError.value = ''
+    clearOperationBomError('BOM 展开失败')
   } catch (error: unknown) {
-    bomError.value = `BOM 展开失败：${error instanceof Error ? error.message : '请稍后重试'}`
+    setOperationBomError(`BOM 展开失败：${error instanceof Error ? error.message : '请稍后重试'}`)
     explosion.value = demoExplosion(selected.value)
   }
 }
@@ -563,17 +656,27 @@ function demoItems(bomId: string): BomItem[] {
 }
 
 function demoExplosion(bom: BomDetail): BomExplosionResult {
+  const items = bom.items.length ? bom.items : demoItems(bom.id)
   return {
     bomId: bom.id, bomName: bom.bomName,
     productCode: bom.productCode, productName: bom.productName,
-    items: [
-      { materialCode: 'MAT-A01', materialName: '轴承钢圈', quantityPerUnit: 2, totalQuantity: 2, unit: '个', lossRate: 0.02, leadTimeDays: 5, consumptionTiming: '装配前', level: 0, children: [] },
-      { materialCode: 'MAT-A02', materialName: '滚珠 φ8mm', quantityPerUnit: 12, totalQuantity: 12, unit: '颗', lossRate: 0.05, leadTimeDays: 3, consumptionTiming: '装配', level: 0, children: [] },
-      { materialCode: 'MAT-A03', materialName: '保持架', quantityPerUnit: 1, totalQuantity: 1, unit: '个', lossRate: null, leadTimeDays: 2, consumptionTiming: '装配', level: 0, children: [] },
-      { materialCode: 'MAT-A04', materialName: '密封圈', quantityPerUnit: 2, totalQuantity: 2, unit: '个', lossRate: 0.01, leadTimeDays: 7, consumptionTiming: '装配后', level: 0, children: [] },
-      { materialCode: 'MAT-A05', materialName: '润滑脂', quantityPerUnit: 0.5, totalQuantity: 0.5, unit: 'kg', lossRate: 0.03, leadTimeDays: 10, consumptionTiming: '包装前', level: 0, children: [] },
-    ]
+    items: demoExplosionItems(items, 0)
   }
+}
+
+function demoExplosionItems(items: BomItem[], level: number): BomExplosionItem[] {
+  return items.map(item => ({
+    materialCode: item.materialCode,
+    materialName: item.materialName,
+    quantityPerUnit: item.quantity,
+    totalQuantity: item.quantity * explodeQty.value,
+    unit: item.unit,
+    lossRate: item.lossRate,
+    leadTimeDays: item.leadTimeDays,
+    consumptionTiming: item.consumptionTiming,
+    level,
+    children: demoExplosionItems(item.children, level + 1),
+  }))
 }
 
 async function loadBoms() {
@@ -582,20 +685,45 @@ async function loadBoms() {
     const result = await getBomList(currentPage.value, pageSize.value)
     boms.value = result.items
     totalCount.value = result.totalCount
-    if (bomError.value.startsWith('BOM 列表加载失败')) bomError.value = ''
+    if (listBomError.value.startsWith('BOM 列表加载失败')) {
+      listBomError.value = ''
+      syncBomError()
+    }
   } catch (error: unknown) {
-    bomError.value = `BOM 列表加载失败：${error instanceof Error ? error.message : '请稍后重试'}`
     boms.value = demoBoms
     totalCount.value = demoBoms.length
+    if (!isOfflineDemoError(error)) {
+      setListBomError(`BOM 列表加载失败：${error instanceof Error ? error.message : '请稍后重试'}`)
+    }
   }
   loading.value = false
 }
 
+async function loadStartupEngineeringEvidence() {
+  const failures: string[] = []
+  try {
+    alternateApproval.value = await readAlternateMaterialApprovalBackendFirst()
+  } catch (error: unknown) {
+    failures.push(`替代料确认：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  try {
+    engineeringChangeImpact.value = await readEngineeringChangeImpactAnalysisBackendFirst()
+  } catch (error: unknown) {
+    failures.push(`ECN 影响分析：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  try {
+    bomKittingPackage.value = await readBomKittingPackageBackendFirst()
+  } catch (error: unknown) {
+    failures.push(`齐套检查包：${error instanceof Error ? error.message : '请稍后重试'}`)
+  }
+  if (failures.length) {
+    setStartupBomError(`BOM 工程证据加载失败：${failures.join('；')}`)
+  }
+}
+
 onMounted(async () => {
-  alternateApproval.value = await readAlternateMaterialApprovalBackendFirst()
-  engineeringChangeImpact.value = await readEngineeringChangeImpactAnalysisBackendFirst()
-  bomKittingPackage.value = await readBomKittingPackageBackendFirst()
-  loadBoms()
+  await loadStartupEngineeringEvidence()
+  await loadBoms()
 })
 </script>
 
@@ -687,6 +815,11 @@ onMounted(async () => {
 .kitting-source-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 6px; }
 .kitting-source-actions button { padding: 6px 10px; border: 1px solid #4f46e5; border-radius: 4px; background: #4f46e5; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
 .kitting-source-actions em { color: #15803d; font-size: 12px; font-style: normal; font-weight: 700; }
+.kitting-source-guidance { padding: 9px 10px; border: 1px solid #c7d2fe; border-radius: 6px; background: #f8fafc; }
+.kitting-source-guidance strong { display: block; color: #1f2937; font-size: 12px; }
+.kitting-source-guidance p { margin: 3px 0 0; color: #667085; font-size: 12px; line-height: 1.45; }
+.kitting-source-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.kitting-source-links a { padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; background: #fff; color: #3730a3; font-size: 12px; font-weight: 700; text-decoration: none; }
 .kitting-source-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .kitting-source-card { min-width: 0; padding: 8px; border: 1px solid rgba(255,255,255,0.78); border-radius: 6px; background: rgba(255,255,255,0.78); }
 .kitting-source-card.shortage { border-color: #fecaca; background: #fff7f7; }

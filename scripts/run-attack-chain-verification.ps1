@@ -16,6 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $failResultToken = "Result: FAIL"
+$script:repositoryRoot = Split-Path -Parent $PSScriptRoot
 
 function Add-Line([string]$Line = "") {
     $script:reportLines += $Line
@@ -31,10 +32,35 @@ function Test-RealEvidence([string]$Value) {
     }
 
     $trimmed = $Value.Trim()
+    $tail = if ($trimmed.Contains(":")) { $trimmed.Substring($trimmed.LastIndexOf(":") + 1).Trim() } else { $trimmed }
     $placeholders = @("TBD", "TODO", "PENDING", "待补", "待定")
     return -not ($placeholders | Where-Object {
-        [string]::Equals($trimmed, $_, [StringComparison]::OrdinalIgnoreCase)
+        [string]::Equals($trimmed, $_, [StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals($tail, $_, [StringComparison]::OrdinalIgnoreCase)
     } | Select-Object -First 1)
+}
+
+function Test-EvidenceReferenceExists([string]$Value) {
+    if (-not (Test-HasValue $Value)) {
+        return $false
+    }
+
+    # Repo-local evidence references are accepted under _docs/ and output/.
+    $evidenceMatches = @($Value | Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' | ForEach-Object { $_.Matches } | ForEach-Object { $_ })
+    if ($evidenceMatches.Count -eq 0) {
+        return $true
+    }
+
+    foreach ($evidenceMatch in $evidenceMatches) {
+        $evidencePath = $evidenceMatch.Value.TrimEnd(',', ';', '.', ':', ')', ']')
+        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $candidate = Join-Path $script:repositoryRoot $relativePath
+        if (-not (Test-Path $candidate)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 $reportDirectory = Split-Path -Parent $ReportPath
@@ -44,8 +70,8 @@ if (-not [string]::IsNullOrWhiteSpace($reportDirectory)) {
 
 $violations = New-Object System.Collections.Generic.List[string]
 
-if (-not (Test-HasValue $Verifier)) {
-    $violations.Add("Verifier is required for manual verification.")
+if (-not (Test-RealEvidence $Verifier)) {
+    $violations.Add("Verifier is required for manual verification. Verifier cannot be a placeholder.")
 }
 
 if (-not (Test-HasValue $VerifiedAt)) {
@@ -75,14 +101,20 @@ if ($AttackChainC -ne "PASS") {
 
 if (-not (Test-RealEvidence $AttackChainAEvidence)) {
     $violations.Add("Attack Chain A evidence is required. Evidence cannot be a placeholder.")
+} elseif (-not (Test-EvidenceReferenceExists $AttackChainAEvidence)) {
+    $violations.Add("Attack Chain A evidence reference does not exist. Evidence reference does not exist.")
 }
 
 if (-not (Test-RealEvidence $AttackChainBEvidence)) {
     $violations.Add("Attack Chain B evidence is required. Evidence cannot be a placeholder.")
+} elseif (-not (Test-EvidenceReferenceExists $AttackChainBEvidence)) {
+    $violations.Add("Attack Chain B evidence reference does not exist. Evidence reference does not exist.")
 }
 
 if (-not (Test-RealEvidence $AttackChainCEvidence)) {
     $violations.Add("Attack Chain C evidence is required. Evidence cannot be a placeholder.")
+} elseif (-not (Test-EvidenceReferenceExists $AttackChainCEvidence)) {
+    $violations.Add("Attack Chain C evidence reference does not exist. Evidence reference does not exist.")
 }
 
 $status = if ($violations.Count -eq 0) { "VERIFIED" } else { "PENDING_MANUAL_VERIFICATION" }

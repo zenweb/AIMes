@@ -10,6 +10,8 @@ public sealed class AimesHostOptions
 
     public bool DisableHttpsRedirect { get; set; }
 
+    public bool SeedDemoDataOnStartup { get; set; }
+
     public static void BindFromConfiguration(AimesHostOptions options, IConfiguration configuration)
     {
         configuration.GetSection(SectionName).Bind(options);

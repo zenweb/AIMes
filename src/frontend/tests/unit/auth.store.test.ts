@@ -203,6 +203,22 @@ describe('useAuth', () => {
     })
   })
 
+  it('clears stale offline demo mode on boot when cached auth uses a live backend token', async () => {
+    localStorage.setItem('aimes_offline_demo', 'true')
+    localStorage.setItem('aimes_token', '  backend-access-token  ')
+    localStorage.setItem('aimes_user', JSON.stringify({
+      username: 'admin',
+      displayName: 'Backend Admin',
+      role: 'Admin',
+      mustChangePassword: false,
+    }))
+
+    const { useAuth } = await loadAuthStore()
+
+    expect(useAuth().user.value?.token).toBe('backend-access-token')
+    expect(localStorage.getItem('aimes_offline_demo')).toBe('false')
+  })
+
   it('uses the offline demo account without calling the backend when demo mode is requested', async () => {
     window.history.replaceState({}, '', '/login?offlineDemo=1')
     const { useAuth } = await loadAuthStore()

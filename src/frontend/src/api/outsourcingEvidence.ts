@@ -1,22 +1,24 @@
 import http from './http'
 import type { OutsourcingCommitmentPackage } from '../utils/outsourcing-commitment-sync'
 
-export async function queryOutsourcingCommitments(take = 8): Promise<OutsourcingCommitmentPackage[]> {
+export async function queryOutsourcingCommitments(take = 8, options?: { failLoud?: boolean }): Promise<OutsourcingCommitmentPackage[]> {
   try {
     const { data } = await http.get<OutsourcingCommitmentPackage[]>('/scheduling/outsourcing-commitments', {
       params: { take },
     })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
 
-export async function getLatestOutsourcingCommitment(): Promise<OutsourcingCommitmentPackage | null> {
+export async function getLatestOutsourcingCommitment(options?: { failLoud?: boolean }): Promise<OutsourcingCommitmentPackage | null> {
   try {
     const { data } = await http.get<OutsourcingCommitmentPackage>('/scheduling/outsourcing-commitments/latest')
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return null
   }
 }

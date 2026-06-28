@@ -63,7 +63,7 @@
   </ItemGroup>
 
   <!-- 构建后复制前端文件 -->
-  <Target Name="CopyFrontendBuild" AfterTargets="AfterBuild" Condition="Exists('../../frontend/.output/public')">
+  <Target Name="CopyFrontendBuild" AfterTargets="AfterBuild" Condition="'$(SkipFrontendBuildCopy)' != 'true' and Exists('../../frontend/.output/public')">
     <ItemGroup>
       <FrontendFiles Include="../../frontend/.output/public/**/*" />
     </ItemGroup>
@@ -72,7 +72,7 @@
   </Target>
 
   <!-- 发布时也复制 -->
-  <Target Name="PublishFrontendBuild" AfterTargets="Publish" Condition="Exists('../../frontend/.output/public')">
+  <Target Name="PublishFrontendBuild" AfterTargets="Publish" Condition="'$(SkipFrontendBuildCopy)' != 'true' and Exists('../../frontend/.output/public')">
     <ItemGroup>
       <FrontendFiles Include="../../frontend/.output/public/**/*" />
     </ItemGroup>

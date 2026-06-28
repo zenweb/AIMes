@@ -1,0 +1,491 @@
+diff --git a/src/frontend/scripts/e2e.mjs b/src/frontend/scripts/e2e.mjs
+index e861331..72a7aad 100644
+--- a/src/frontend/scripts/e2e.mjs
++++ b/src/frontend/scripts/e2e.mjs
+@@ -5,7 +5,12 @@ import { runCommand } from '@nuxt/cli'
+ 
+ const e2eBuildId = process.env.AIMES_E2E_BUILD_ID ?? process.pid.toString()
+ const e2ePort = process.env.AIMES_E2E_PORT ?? await findAvailablePort(4173)
+-const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' ? 'false' : 'true'
++const targetsAgentBackendMock = process.argv.slice(2).some(arg =>
++  arg.includes('调度员 Agent 工作台通过后端 API') ||
++  arg.includes('调度员 Agent 工作台后端 403') ||
++  arg.includes('调度员 Agent 工作台 API 不可用')
++)
++const e2eOfflineDemo = process.env.AIMES_E2E_OFFLINE_DEMO === 'false' || targetsAgentBackendMock ? 'false' : 'true'
+ 
+ const testEnv = {
+   ...process.env,
+diff --git a/src/frontend/tests/e2e/scheduling.spec.ts b/src/frontend/tests/e2e/scheduling.spec.ts
+index 82703ad..c7fe50a 100644
+--- a/src/frontend/tests/e2e/scheduling.spec.ts
++++ b/src/frontend/tests/e2e/scheduling.spec.ts
+@@ -1,15 +1,53 @@
+ import { test, expect } from '@playwright/test'
+ 
++const LABOR_EVIDENCE_RETRY_TITLE = '人员证据启动读取失败后可重试'
++const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
++  '人员替班证据释放排产人员约束',
++  '人员无有效替班候选时排产保持停工复核事件',
++]
++const AGENT_BACKEND_EVIDENCE_TITLES = [
++  '调度员 Agent 工作台通过后端 API',
++  '调度员 Agent 工作台后端 403',
++  '调度员 Agent 工作台 API 不可用',
++]
++
++const laborEvidenceRetryReads = {
++  blocks: 0,
++  reassignments: 0,
++}
++
+ test.describe.configure({ timeout: 90000 })
+ 
+ test.describe('Scheduling 排产甘特图', () => {
+-  test.beforeEach(async ({ page }) => {
+-    await page.addInitScript(() => {
+-      localStorage.setItem('aimes_token', 'mock-e2e-token')
++  test.beforeEach(async ({ page }, testInfo) => {
++    const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
++    await page.addInitScript((offlineDemoSession) => {
++      localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
++      localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
++      localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+-    })
+-    await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
++    }, !usesLiveBackendMock)
++    if (usesAgentBackendMock) {
++      await mockSchedulingPlanApis(page)
++    }
++    if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
++      await page.addInitScript(() => {
++        localStorage.setItem('aimes_offline_demo', 'false')
++        localStorage.removeItem('aimes_labor_qualification_block')
++        localStorage.removeItem('aimes_labor_reassignment')
++      })
++      await mockLaborRetrySchedulingPlanApis(page)
++      await mockLaborEvidenceRetryApis(page)
++    }
++    const entry = usesLiveBackendMock
++      ? 'scheduling?offlineDemo=0'
++      : 'scheduling?offlineDemo=1'
++    if (!usesLegacyPersonnelOfflineDemo) {
++      await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
++      await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
++    }
+   })
+ 
+   test('页面加载 — 指标卡片', async ({ page }) => {
+@@ -57,8 +95,6 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+     await mockAgentApi(page, { adoptStatus: 200 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -72,8 +108,6 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+     await mockAgentApi(page, { adoptStatus: 403 })
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -84,10 +118,7 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ 
+   test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+     await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+-    await page.reload({ waitUntil: 'commit' })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const panel = page.locator('.agent-workbench-panel')
+     await panel.getByRole('button', { name: '生成后端建议' }).click()
+@@ -108,7 +139,7 @@ test.describe('Scheduling 排产甘特图', () => {
+         onTimeDeliveryRate: 0.91,
+       }),
+     }))
+-    await page.route('**/api/v1/equipment**', route => route.fulfill({
++    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+       status: 200,
+       contentType: 'application/json',
+       body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+@@ -148,7 +179,7 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('设备列表返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+-    await page.route('**/api/v1/equipment**', route => route.fulfill({
++    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+       status: 200,
+       contentType: 'text/html',
+       body: '<!doctype html><html><body>equipment SPA fallback from chromium</body></html>',
+@@ -484,14 +515,14 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ 
+   test('人员替班证据释放排产人员约束', async ({ page }) => {
+-    await page.goto('employee', { waitUntil: 'commit' })
++    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.emp-board', { timeout: 20000 })
+     const skillPanel = page.locator('.skill-matrix-panel')
+     await expect(skillPanel.getByText(/推荐 EMP-006 孙八/)).toBeVisible({ timeout: 20000 })
+     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
+     await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible({ timeout: 10000 })
+ 
+-    await page.goto('scheduling', { waitUntil: 'commit' })
++    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+     const constraintPanel = page.locator('.engineering-constraint-panel')
+     await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
+@@ -509,8 +540,36 @@ test.describe('Scheduling 排产甘特图', () => {
+     await expect(eventPanel.getByText(/生产开工按替班复核执行/)).toBeVisible()
+   })
+ 
++  test('人员证据启动读取失败后可重试并释放排产人员约束', async ({ page }) => {
++    const warning = page.locator('.warnings-bar')
++    await expect(warning).toBeVisible()
++    await expect(warning).toContainText('人员约束启动证据加载失败')
++    await expect(warning).toContainText('chromium startup labor block read unavailable')
++    const retryButton = warning.getByRole('button', { name: '重试人员证据 / Retry labor evidence' })
++    await expect(retryButton).toBeVisible()
++
++    await retryButton.click()
++    await expect.poll(() => laborEvidenceRetryReads.blocks).toBeGreaterThanOrEqual(2)
++    await expect.poll(() => laborEvidenceRetryReads.reassignments).toBeGreaterThanOrEqual(2)
++    await expect(page.getByText('人员约束启动证据加载失败')).toHaveCount(0)
++
++    const constraintPanel = page.locator('.engineering-constraint-panel')
++    await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
++    await expect(constraintPanel.getByText(/生产开工可直接读取该证据/)).toBeVisible()
++    await expect(constraintPanel.getByText('AUD-LABOR-RELEASE-20260520-001', { exact: true })).toBeVisible()
++    await expect(constraintPanel.getByText('TRACE-LABOR-RELEASE-WO-013-OP-10', { exact: true })).toBeVisible()
++
++    const eventPanel = page.locator('.event-queue-panel')
++    const laborEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-013 热处理替班已确认' })
++    await expect(laborEvent.getByText('人员替班事件')).toBeVisible()
++    await expect(laborEvent.getByText('已闭环')).toBeVisible()
++    await expect(laborEvent.getByText('人员约束已由替班建议转为开工校验')).toBeVisible()
++    await expect(page.locator('.agent-workbench-panel')).toBeVisible()
++    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
++  })
++
+   test('人员无有效替班候选时排产保持停工复核事件', async ({ page }) => {
+-    await page.evaluate(() => {
++    await page.addInitScript(() => {
+       localStorage.setItem('aimes_labor_qualification_block', JSON.stringify([
+         {
+           id: 'labor-qualification-block-WO-013-heat-treatment',
+@@ -536,7 +595,7 @@ test.describe('Scheduling 排产甘特图', () => {
+         },
+       ]))
+     })
+-    await page.reload({ waitUntil: 'commit' })
++    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const constraintPanel = page.locator('.engineering-constraint-panel')
+@@ -801,6 +860,77 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ })
+ 
++async function mockSchedulingPlanApis(page: import('@playwright/test').Page) {
++  const plan = {
++    id: 'plan-agent-e2e',
++    planName: 'Agent E2E 排产计划',
++    planStartDate: '2026-05-20T08:00:00.000Z',
++    planEndDate: '2026-05-20T20:00:00.000Z',
++    overallUtilizationRate: 0.82,
++    onTimeDeliveryRate: 0.91,
++    totalChangeoverMinutes: 35,
++    groupCount: 1,
++    createdAt: '2026-05-20T08:00:00.000Z',
++    items: [
++      {
++        id: 'agent-e2e-item-001',
++        workOrderId: 'wo-agent-e2e-001',
++        workOrderNumber: 'WO-AGENT-E2E-001',
++        equipmentId: 'eq-agent-e2e-001',
++        equipmentName: 'CNC Agent E2E',
++        plannedStartTime: '2026-05-20T08:00:00.000Z',
++        plannedEndTime: '2026-05-20T10:00:00.000Z',
++        sequence: 1,
++        setupTime: '20 分钟',
++        dependentItems: [],
++      },
++    ],
++  }
++
++  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      token: 'mock-e2e-token',
++      refreshToken: 'mock-e2e-refresh',
++      expiresAt: '2026-12-31T23:59:59Z',
++    }),
++  }))
++  await page.route('**/api/v1/**', route => {
++    const url = route.request().url()
++    if (url.includes('/api/v1/scheduling/agent/recommend') || url.includes('/adopt')) {
++      return route.fallback()
++    }
++    if (url.includes('/api/v1/scheduling/agent/decisions')) {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: JSON.stringify([]),
++      })
++    }
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++    })
++  })
++  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(plan),
++  }))
++  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify([]),
++  }))
++  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
++  }))
++}
++
+ async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+   await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+ 
+@@ -876,3 +1006,219 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
+     })
+   })
+ }
++
++async function mockLaborRetrySchedulingPlanApis(page: import('@playwright/test').Page) {
++  const plan = {
++    id: 'plan-labor-retry-e2e',
++    planName: '人员证据重试排产计划',
++    planStartDate: '2026-05-20T08:00:00.000Z',
++    planEndDate: '2026-05-20T20:00:00.000Z',
++    overallUtilizationRate: 0.82,
++    onTimeDeliveryRate: 0.9,
++    totalChangeoverMinutes: 35,
++    groupCount: 1,
++    createdAt: '2026-05-20T08:00:00.000Z',
++    items: [
++      {
++        id: 'labor-retry-item-wo-013-op-10',
++        workOrderId: 'wo-013',
++        workOrderNumber: 'WO-013',
++        equipmentId: 'eq-heat-01',
++        equipmentName: '热处理炉 01',
++        plannedStartTime: '2026-05-20T10:00:00.000Z',
++        plannedEndTime: '2026-05-20T14:00:00.000Z',
++        sequence: 1,
++        setupTime: '20 分钟',
++        dependentItems: [],
++      },
++    ],
++  }
++
++  const equipment = {
++    items: [
++      {
++        id: 'eq-heat-01',
++        equipmentCode: 'HEAT-01',
++        equipmentName: '热处理炉 01',
++        equipmentType: 'HeatTreatment',
++        status: 'running',
++        capacity: 60,
++        utilizationRate: 0.82,
++      },
++    ],
++    totalCount: 1,
++    page: 1,
++    pageSize: 50,
++  }
++
++  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(plan),
++  }))
++  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(['eq-heat-01']),
++  }))
++  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(equipment),
++  }))
++}
++
++async function mockLaborEvidenceRetryApis(page: import('@playwright/test').Page) {
++  laborEvidenceRetryReads.blocks = 0
++  laborEvidenceRetryReads.reassignments = 0
++
++  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      token: 'mock-e2e-token',
++      refreshToken: 'mock-e2e-refresh',
++      expiresAt: '2026-12-31T23:59:59Z',
++    }),
++  }))
++  await page.route('**/api/v1/llm/status', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ available: false, provider: 'mock-e2e' }),
++  }))
++  await page.route('**/api/v1/dashboard', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      equipmentStatus: [],
++      todaySchedules: [],
++      materialAlerts: [],
++      qualitySummary: {
++        inspectionCount: 0,
++        passCount: 0,
++        defectCount: 0,
++        pendingAnomalies: 0,
++      },
++    }),
++  }))
++  await page.route('**/api/v1/risk/dashboard', route => route.fulfill({
++    status: 503,
++    contentType: 'application/json',
++    body: JSON.stringify({ message: 'chromium risk dashboard unavailable for labor retry evidence' }),
++  }))
++  await page.route('**/api/v1/scheduling/**', route => {
++    const request = route.request()
++    const pathname = new URL(request.url()).pathname
++    if (
++      pathname.endsWith('/api/v1/scheduling/current')
++      || pathname.endsWith('/api/v1/scheduling/labor-qualification-blocks')
++      || pathname.endsWith('/api/v1/scheduling/labor-reassignments')
++    ) {
++      return route.fallback()
++    }
++    const method = request.method()
++    if (method !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: request.postData() || '{}',
++      })
++    }
++    return route.fulfill({
++      status: 503,
++      contentType: 'application/json',
++      body: JSON.stringify({ message: `chromium scheduling evidence unavailable: ${pathname}` }),
++    })
++  })
++  await page.route('**/api/v1/scheduling/labor-qualification-blocks**', route => {
++    if (route.request().method() !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: route.request().postData() || '{}',
++      })
++    }
++    laborEvidenceRetryReads.blocks += 1
++    if (laborEvidenceRetryReads.blocks === 1) {
++      return route.fulfill({
++        status: 503,
++        contentType: 'application/json',
++        body: JSON.stringify({ message: 'chromium startup labor block read unavailable' }),
++      })
++    }
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify([
++        {
++          id: 'labor-qualification-block-WO-013-heat-treatment',
++          workOrderNumber: 'WO-013',
++          operationCode: 'OP-10',
++          operationCodes: ['OP-10', 'OP-20'],
++          operationName: '淬火 / 回火',
++          blockedEmployeeNumber: 'EMP-003',
++          blockedEmployeeName: '王五',
++          blockedCertification: '热处理上岗证',
++          blockedExpiresAt: '2026-05-25',
++          requiredSkill: '热处理',
++          requiredTeam: '乙班',
++          requiredShift: '夜班',
++          reviewerEmployeeNumber: 'EMP-004',
++          reviewerName: '赵六',
++          reviewerRole: '工程放行',
++          reason: 'EMP-003 王五的热处理上岗证已通过补证改派重新放行。',
++          auditId: 'AUD-LABOR-BLOCK-20260520-001',
++          traceId: 'TRACE-LABOR-BLOCK-WO-013-OP-10',
++          createdAt: '2026-05-20T09:00:00.000Z',
++          status: 'released',
++          releasedAt: '2026-05-20T10:00:00.000Z',
++          releaseAuditId: 'AUD-LABOR-RELEASE-20260520-001',
++          releaseTraceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
++          releaseReason: '补证改派后释放热处理开工。',
++        },
++      ]),
++    })
++  })
++  await page.route('**/api/v1/scheduling/labor-reassignments**', route => {
++    if (route.request().method() !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: route.request().postData() || '{}',
++      })
++    }
++    laborEvidenceRetryReads.reassignments += 1
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify(laborEvidenceRetryReads.reassignments === 1 ? [] : [
++        {
++          id: 'labor-reassignment-release-WO-013-heat-treatment',
++          workOrderNumber: 'WO-013',
++          operationCode: 'OP-10',
++          operationCodes: ['OP-10', 'OP-20'],
++          operationName: '淬火 / 回火',
++          blockedEmployeeNumber: 'EMP-003',
++          blockedEmployeeName: '王五',
++          blockedCertification: '热处理上岗证',
++          blockedExpiresAt: '2026-05-25',
++          replacementEmployeeNumber: 'EMP-006',
++          replacementEmployeeName: '孙八',
++          replacementTeam: '甲班',
++          replacementShift: '白班',
++          replacementSkill: '补证改派 / 热处理替班复核',
++          replacementCertification: '热处理上岗证',
++          replacementExpiresAt: '2026-12-31',
++          reviewerEmployeeNumber: 'EMP-004',
++          reviewerName: '赵六',
++          reviewerRole: '工程放行',
++          reason: '补证改派后，EMP-006 接管 WO-013 热处理开工复核。',
++          auditId: 'AUD-LABOR-RELEASE-20260520-001',
++          traceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
++          createdAt: '2026-05-20T10:00:00.000Z',
++          status: 'approved',
++        },
++      ]),
++    })
++  })
++}

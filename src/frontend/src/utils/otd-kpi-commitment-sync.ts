@@ -121,18 +121,32 @@ export function readOtdKpiCommitmentPackages(): OtdKpiCommitmentPackage[] {
   return readRawPackages()
 }
 
-export async function readOtdKpiCommitmentPackagesBackendFirst(): Promise<OtdKpiCommitmentPackage[]> {
-  const records = await queryOtdKpiCommitments()
-  return records.length > 0 ? records : readOtdKpiCommitmentPackages()
+export async function readOtdKpiCommitmentPackagesBackendFirst(options?: { failLoud?: boolean }): Promise<OtdKpiCommitmentPackage[]> {
+  try {
+    const records = await queryOtdKpiCommitments(MAX_RECORDS, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组 OTD KPI 承诺审计载荷')
+    }
+    const backendRecords = records.filter(isCommitmentPackage)
+    return backendRecords.length > 0 ? backendRecords : readOtdKpiCommitmentPackages()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
+    return readOtdKpiCommitmentPackages()
+  }
 }
 
 export function readLatestOtdKpiCommitmentPackage(): OtdKpiCommitmentPackage | null {
   return readRawPackages()[0] ?? null
 }
 
-export async function readLatestOtdKpiCommitmentPackageBackendFirst(): Promise<OtdKpiCommitmentPackage | null> {
-  const record = await getLatestOtdKpiCommitment()
-  return record ?? readLatestOtdKpiCommitmentPackage()
+export async function readLatestOtdKpiCommitmentPackageBackendFirst(options?: { failLoud?: boolean }): Promise<OtdKpiCommitmentPackage | null> {
+  try {
+    const record = await getLatestOtdKpiCommitment(options)
+    return isCommitmentPackage(record) ? record : readLatestOtdKpiCommitmentPackage()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
+    return readLatestOtdKpiCommitmentPackage()
+  }
 }
 
 export function writeOtdKpiCommitmentPackage(input: WriteOtdKpiCommitmentPackageInput): OtdKpiCommitmentPackage {

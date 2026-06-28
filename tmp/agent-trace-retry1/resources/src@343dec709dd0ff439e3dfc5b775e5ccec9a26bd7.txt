@@ -1,0 +1,4077 @@
+import { test, expect } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const RUSH_WRITEBACK_EVIDENCE_DIR = resolve(process.cwd(), '..', '..', 'output', 'playwright', '20260612-schedule-rush-formal-writeback')
+const LABOR_EVIDENCE_RETRY_TITLE = '人员证据启动读取失败后可重试'
+const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
+  '人员替班证据释放排产人员约束',
+  '人员无有效替班候选时排产保持停工复核事件',
+]
+const AGENT_BACKEND_EVIDENCE_TITLES = [
+  '调度员 Agent 工作台通过后端 API',
+  '调度员 Agent 工作台后端 403',
+  '调度员 Agent 工作台 API 不可用',
+]
+
+const laborEvidenceRetryReads = {
+  blocks: 0,
+  reassignments: 0,
+}
+
+test.describe.configure({ timeout: 90000 })
+
+test.describe('Scheduling 排产甘特图', () => {
+  test.beforeAll(async () => {
+    mkdirSync(RUSH_WRITEBACK_EVIDENCE_DIR, { recursive: true })
+  })
+
+  test.beforeEach(async ({ page }, testInfo) => {
+    const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+    const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+    const usesLiveBackendMock = usesAgentBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE) || testInfo.title.includes('真实 dhtmlx')
+    await page.addInitScript((offlineDemoSession) => {
+      localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
+      localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+      localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+    }, !usesLiveBackendMock)
+    if (testInfo.title.includes('真实 dhtmlx')) {
+      await page.addInitScript(() => localStorage.setItem('aimes_offline_demo', 'false'))
+      await mockSchedulingPlanApis(page)
+    }
+    if (usesAgentBackendMock) {
+      await mockSchedulingPlanApis(page)
+    }
+    if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
+      await page.addInitScript(() => {
+        localStorage.setItem('aimes_offline_demo', 'false')
+        localStorage.removeItem('aimes_labor_qualification_block')
+        localStorage.removeItem('aimes_labor_reassignment')
+      })
+      await mockLaborRetrySchedulingPlanApis(page)
+      await mockLaborEvidenceRetryApis(page)
+    }
+    const entry = usesLiveBackendMock
+      ? 'scheduling?offlineDemo=0'
+      : 'scheduling?offlineDemo=1'
+    if (!usesLegacyPersonnelOfflineDemo) {
+      await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
+      await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    }
+  })
+
+  test('页面加载 — 指标卡片', async ({ page }) => {
+    const cards = page.locator('.metric-card')
+    await expect(cards).toHaveCount(4)
+    const labels = await cards.locator('.metric-label').allTextContents()
+    expect(labels).toContain('设备利用率')
+    expect(labels).toContain('准时交付率')
+    expect(labels).toContain('换线时间')
+    expect(labels).toContain('批次组数')
+  })
+
+  test('展示基线与 Agent 的 OTD 改善', async ({ page }) => {
+    const panel = page.locator('.impact-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('基线 vs Agent 方案')).toBeVisible()
+    await expect(panel.getByText(/OTD \+\d+%/)).toBeVisible()
+    await expect(panel.getByText('人工基线')).toBeVisible()
+    await expect(panel.getByText('Agent 推荐')).toBeVisible()
+    await expect(panel.getByText('优先保护临近交期工单')).toBeVisible()
+  })
+
+  test('展示调度员 Agent 工作台', async ({ page }) => {
+    const panel = page.locator('.agent-workbench-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('工单池、方案、解释与执行追踪')).toBeVisible()
+    await expect(panel.getByText('待排')).toBeVisible()
+    await expect(panel.getByText('已排')).toBeVisible()
+    await expect(panel.getByText('风险')).toBeVisible()
+    await expect(panel.getByText('插单')).toBeVisible()
+    await expect(panel.getByText('人工基线')).toBeVisible()
+    await expect(panel.getByText('Agent 推荐')).toBeVisible()
+    await expect(panel.getByText('人工调整')).toBeVisible()
+    await expect(panel.getByText('锁定期后的第一个 CNC 空窗')).toBeVisible()
+    await expect(panel.getByText('等待调度员决策')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台提供后端建议采纳拒绝入口', async ({ page }) => {
+    const panel = page.locator('.agent-workbench-panel')
+    await expect(panel.getByRole('button', { name: '生成后端建议' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: '采纳推荐' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: '拒绝建议' })).toBeVisible()
+    await expect(panel.getByText(/demo fallback/)).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台通过后端 API 生成并采纳推荐', async ({ page }) => {
+    await mockAgentApi(page, { adoptStatus: 200 })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+    await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
+
+    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
+    await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
+    await mockAgentApi(page, { adoptStatus: 403 })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
+    })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+
+    await panel.getByRole('button', { name: '采纳推荐' }).click()
+    await expect(panel.getByText('采纳失败，请确认当前用户具有 Admin 或 Planner 权限。')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台 API 不可用时保留 demo fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/agent/**', route => route.abort())
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const panel = page.locator('.agent-workbench-panel')
+    await panel.getByRole('button', { name: '生成后端建议' }).click()
+    await expect(panel.getByText('后端建议生成失败，已保留 demo fallback。')).toBeVisible()
+    await expect(panel.getByText(/API 不可用 \/ demo fallback/)).toBeVisible()
+  })
+
+  test('后端返回空排产计划时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'empty-plan-e2e',
+        planName: '空排产计划',
+        items: [],
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.91,
+      }),
+    }))
+  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端排产计划缺少可执行任务')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('排产计划返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><body>schedule SPA fallback from chromium</body></html>',
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端排产计划载荷不完整')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('设备列表返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/equipment**', route => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><body>equipment SPA fallback from chromium</body></html>',
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('后端排产服务不可用')
+    await expect(warning).toContainText('当前显示演示排产数据')
+    await expect(warning).toContainText('后端设备列表载荷不完整')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line')).not.toHaveCount(0)
+  })
+
+  test('A/B 报告读取失败时真实浏览器展示 OTD 对比来源提示', async ({ page }) => {
+    await page.route('**/reports/latest-ab-report.json', route => route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'schedule A/B report missing from chromium' }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('A/B 报告读取失败')
+    await expect(warning).toContainText('基线 vs Agent OTD 对比暂用排产计划推导值')
+    await expect(warning).toContainText('latest A/B report HTTP 404')
+  })
+
+  test('排产优化失败时真实浏览器保留当前甘特图并展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium optimizer unavailable' }),
+    }))
+
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    const taskCountBefore = await page.locator('.gantt_task_line').count()
+
+    await page.getByRole('button', { name: '排产优化' }).click()
+
+    const alert = page.locator('.error-banner[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('优化失败')
+    await expect(alert).toContainText('chromium optimizer unavailable')
+    await expect(page.locator('.gantt_task_line')).toHaveCount(taskCountBefore)
+  })
+
+  test('排产优化返回 200 但缺少计划时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        assignments: [],
+        estimatedCompletionRate: 0.92,
+        utilizationRate: 0.86,
+        warnings: ['chromium optimizer returned no plan'],
+      }),
+    }))
+
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    const taskCountBefore = await page.locator('.gantt_task_line').count()
+
+    await page.getByRole('button', { name: '排产优化' }).click()
+
+    const alert = page.locator('.error-banner[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('优化失败')
+    await expect(alert).toContainText('后端优化结果缺少排产计划')
+    await expect(page.locator('.gantt_task_line')).toHaveCount(taskCountBefore)
+  })
+
+  test('风险看板读取失败时真实浏览器展示本地事件 fallback', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'risk-fallback-plan-e2e',
+        planName: '风险 fallback 排产计划',
+        planStartDate: '2026-06-01T08:00:00.000Z',
+        planEndDate: '2026-06-01T12:00:00.000Z',
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.9,
+        totalChangeoverMinutes: 35,
+        groupCount: 1,
+        createdAt: '2026-06-01T08:00:00.000Z',
+        items: [
+          {
+            id: 'risk-fallback-item-1',
+            workOrderId: 'risk-fallback-wo-1',
+            workOrderNumber: 'WO-RISK-FALLBACK-001',
+            equipmentId: 'risk-fallback-eq-1',
+            equipmentName: 'CNC 风险复核机台',
+            plannedStartTime: '2026-06-01T08:00:00.000Z',
+            plannedEndTime: '2026-06-01T12:00:00.000Z',
+            sequence: 1,
+            setupTime: '30 分钟',
+            dependentItems: [],
+          },
+        ],
+      }),
+    }))
+    await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['risk-fallback-eq-1']),
+    }))
+    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            id: 'risk-fallback-eq-1',
+            equipmentCode: 'CNC-RISK-01',
+            equipmentName: 'CNC 风险复核机台',
+            equipmentType: 'CNC',
+            status: 'running',
+            capacity: 100,
+            utilizationRate: 0.82,
+          },
+        ],
+        totalCount: 1,
+        page: 1,
+        pageSize: 50,
+      }),
+    }))
+    let riskRequests = 0
+    await page.route('**/api/v1/risk/dashboard**', route => {
+      riskRequests += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium risk dashboard unavailable' }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await expect.poll(() => riskRequests).toBeGreaterThan(0)
+
+    const note = page.locator('.risk-event-sync-note')
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('风险事件加载失败')
+    await expect(note).toContainText('已显示本地演示事件')
+    await expect(note).toContainText('chromium risk dashboard unavailable')
+
+    const panel = page.locator('.event-queue-panel')
+    await expect(panel.getByText('缺料事件')).toBeVisible()
+    await expect(panel.getByText('设备故障事件')).toBeVisible()
+    await expect(panel.getByText('急单插单事件')).toBeVisible()
+  })
+
+  test('Assistant 恢复交接闭环刷新失败时真实浏览器保留闭环建议并提示原因', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.setItem('aimes_assistant_recovery_packages', JSON.stringify([{
+        id: 'wo-rush-9001-delivery-recovery',
+        title: 'WO-RUSH-9001 交期恢复执行包',
+        auditCode: 'AUD-CHAT-RECOVERY-PACKAGE-20260521-001',
+        traceId: 'TRACE-CHAT-RECOVERY-WO-RUSH-9001-20260521',
+        actor: 'admin',
+        role: 'Planner',
+        workOrders: 'WO-RUSH-9001 / WO-DEMO-1002',
+        priority: 'critical',
+        owner: '生产经理审批',
+        dueAt: '今日 15:30',
+        scheduleWindow: '锁定期后第一个 CNC 空窗 + 夜班加班',
+        scheduleAction: '保护 8h 锁定期并插入 WO-RUSH-9001。',
+        riskImpact: '急单与缺料叠加。',
+        riskSuggestion: '风险队列转生产经理审批。',
+        otdImpact: '+3.33pt',
+        delayImpact: '-4 单延期风险',
+        changeoverImpact: '+20min 可控',
+        status: 'active',
+        statusLabel: '待跨模块复核',
+        purchaseActionStatus: 'closed',
+        purchaseActionSummary: '采购已确认替代料到货',
+        qualityActionStatus: 'closed',
+        qualityActionSummary: '质量已完成 OP-20 复核',
+        summary: 'AI 生产助手把急单、缺料、设备维护和质量复核合并成一张可执行动作包。',
+        dispatchSteps: [
+          {
+            module: 'AI 排产',
+            owner: '调度员 李工',
+            action: '生成锁定期后插入建议',
+            evidence: 'TRACE-SCH-RECOVERY-WO-RUSH-9001',
+            status: 'closed',
+          },
+        ],
+        createdAt: '2026-06-01T08:00:00.000Z',
+      }]))
+    })
+    let recoveryReads = 0
+    await page.route('**/api/v1/scheduling/assistant-recovery-packages**', route => {
+      recoveryReads += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium assistant recovery refresh unavailable' }),
+      })
+    })
+    let engineeringReads = 0
+    await page.route('**/api/v1/scheduling/assistant-engineering-constraint-packages**', route => {
+      engineeringReads += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium assistant engineering refresh unavailable' }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await expect(page.locator('.recovery-handoff-panel')).toContainText('WO-RUSH-9001 交期恢复执行包')
+    await page.getByRole('button', { name: '确认执行交接闭环' }).click()
+
+    await expect.poll(() => recoveryReads).toBeGreaterThan(0)
+    await expect.poll(() => engineeringReads).toBeGreaterThan(1)
+    const note = page.locator('.sync-note').filter({ hasText: 'Assistant 恢复交接闭环刷新失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('Assistant 恢复交接闭环刷新失败')
+    await expect(note).toContainText('chromium assistant recovery refresh unavailable')
+    await expect(note).toContainText('Assistant 工程约束闭环刷新失败')
+    await expect(note).toContainText('chromium assistant engineering refresh unavailable')
+    await expect(page.locator('.agent-suggestion')).toContainText('WO-RUSH-9001 交期恢复执行包闭环复核建议')
+    await expect(page.locator('.agent-suggestion')).toContainText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')
+  })
+
+  test('Assistant 恢复交接闭环本地保存失败时真实浏览器提示原因', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.removeItem('aimes_assistant_recovery_packages')
+    })
+    await page.route('**/api/v1/scheduling/assistant-recovery-packages**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{
+        id: 'remote-only-recovery-package',
+        title: '远端恢复执行包',
+        auditCode: 'AUD-REMOTE-RECOVERY-001',
+        traceId: 'TRACE-REMOTE-RECOVERY-001',
+        actor: 'admin',
+        role: 'Planner',
+        workOrders: 'WO-RUSH-REMOTE',
+        priority: 'critical',
+        owner: '生产经理审批',
+        dueAt: '今日 16:00',
+        scheduleWindow: '夜班 CNC 空窗',
+        scheduleAction: '远端建议插入恢复窗口。',
+        riskImpact: '远端执行包尚未落本地。',
+        riskSuggestion: '闭环前确认本地执行包持久化。',
+        otdImpact: '+2pt',
+        delayImpact: '-1 单延期风险',
+        changeoverImpact: '+10min',
+        status: 'active',
+        statusLabel: '待跨模块复核',
+        summary: '后端已有恢复执行包，但本地闭环记录缺失。',
+        dispatchSteps: [{
+          module: 'AI 排产',
+          owner: '调度员 李工',
+          action: '复核远端恢复包',
+          evidence: 'TRACE-REMOTE-RECOVERY-STEP-001',
+          status: 'closed',
+        }],
+        createdAt: '2026-06-01T09:00:00.000Z',
+      }]),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await expect(page.locator('.recovery-handoff-panel')).toContainText('远端恢复执行包')
+    await page.getByRole('button', { name: '确认执行交接闭环' }).click()
+
+    const note = page.locator('.sync-note').filter({ hasText: 'Assistant 恢复交接闭环保存失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('未找到可闭环的本地执行包')
+    await expect(note).toContainText('remote-only-recovery-package')
+    await expect(page.locator('.agent-suggestion')).not.toContainText('远端恢复执行包闭环复核建议')
+  })
+
+  test('工程约束启动证据失败时真实浏览器仍加载正式排产主数据', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithScheduleEngineeringFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium schedule engineering evidence storage unavailable')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithScheduleEngineeringFailure(key: string) {
+        if (key === 'aimes_engineering_change_impact_analysis') {
+          throw new Error('chromium schedule engineering evidence storage unavailable')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.route('**/api/v1/scheduling/engineering-change-impact/latest', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium schedule engineering evidence API unavailable' }),
+    }))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'engineering-startup-plan-e2e',
+        planName: '工程约束失败主排产计划',
+        planStartDate: '2026-06-01T08:00:00.000Z',
+        planEndDate: '2026-06-01T12:00:00.000Z',
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.9,
+        totalChangeoverMinutes: 35,
+        groupCount: 1,
+        createdAt: '2026-06-01T08:00:00.000Z',
+        items: [{
+          id: 'engineering-startup-item-1',
+          workOrderId: 'engineering-startup-wo-1',
+          workOrderNumber: 'WO-ENG-STARTUP-001',
+          equipmentId: 'engineering-startup-eq-1',
+          equipmentName: 'CNC 工程约束复核机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '30 分钟',
+          dependentItems: [],
+        }],
+      }),
+    }))
+    await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['engineering-startup-eq-1']),
+    }))
+    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'engineering-startup-eq-1',
+          equipmentCode: 'CNC-ENG-01',
+          equipmentName: 'CNC 工程约束复核机台',
+          equipmentType: 'CNC',
+          status: 'running',
+          capacity: 100,
+          utilizationRate: 0.82,
+        }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 50,
+      }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('工程约束启动证据加载失败')
+    await expect(warning).toContainText('已继续加载排产主数据')
+    await expect(warning).toContainText('chromium schedule engineering evidence storage unavailable')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line').filter({ hasText: 'WO-ENG-STARTUP-001' }).first()).toBeVisible()
+  })
+
+  test('Assistant 工程约束包失败时真实浏览器仍加载正式排产主数据', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_offline_demo', 'false')
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItemWithAssistantEngineeringFailure(key: string) {
+        if (key === 'aimes_assistant_engineering_constraint_packages') {
+          throw new Error('chromium assistant engineering package storage unavailable')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItemWithAssistantEngineeringFailure(key: string) {
+        if (key === 'aimes_assistant_engineering_constraint_packages') {
+          throw new Error('chromium assistant engineering package cleanup unavailable')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.route('**/api/v1/scheduling/assistant-engineering-constraint-packages**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium assistant engineering package API unavailable' }),
+    }))
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'assistant-engineering-startup-plan-e2e',
+        planName: '助手工程约束失败主排产计划',
+        planStartDate: '2026-06-01T08:00:00.000Z',
+        planEndDate: '2026-06-01T12:00:00.000Z',
+        overallUtilizationRate: 0.82,
+        onTimeDeliveryRate: 0.9,
+        totalChangeoverMinutes: 35,
+        groupCount: 1,
+        createdAt: '2026-06-01T08:00:00.000Z',
+        items: [{
+          id: 'assistant-engineering-startup-item-1',
+          workOrderId: 'assistant-engineering-startup-wo-1',
+          workOrderNumber: 'WO-AST-ENG-001',
+          equipmentId: 'assistant-engineering-startup-eq-1',
+          equipmentName: 'CNC 助手工程约束复核机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '30 分钟',
+          dependentItems: [],
+        }],
+      }),
+    }))
+    await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['assistant-engineering-startup-eq-1']),
+    }))
+    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'assistant-engineering-startup-eq-1',
+          equipmentCode: 'CNC-AST-ENG-01',
+          equipmentName: 'CNC 助手工程约束复核机台',
+          equipmentType: 'CNC',
+          status: 'running',
+          capacity: 100,
+          utilizationRate: 0.82,
+        }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 50,
+      }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('工程约束启动证据加载失败')
+    await expect(warning).toContainText('Assistant 工程约束包')
+    await expect(warning).toContainText('chromium assistant engineering package cleanup unavailable')
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await expect(page.locator('.gantt_task_line').filter({ hasText: 'WO-AST-ENG-001' }).first()).toBeVisible()
+  })
+
+  test('批量方案反馈同步失败时真实浏览器保留本地目标切换并展示原因', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    const comparedPlan = {
+      id: 'batch-balanced-plan-e2e',
+      planName: '综合平衡方案',
+      planStartDate: '2026-06-01T08:00:00.000Z',
+      planEndDate: '2026-06-01T12:00:00.000Z',
+      overallUtilizationRate: 0.86,
+      onTimeDeliveryRate: 0.93,
+      totalChangeoverMinutes: 28,
+      groupCount: 1,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      items: [
+        {
+          id: 'batch-balanced-item-1',
+          workOrderId: 'batch-balanced-wo-1',
+          workOrderNumber: 'WO-BATCH-BALANCED-001',
+          equipmentId: 'batch-balanced-eq-1',
+          equipmentName: 'CNC 批量对比机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '20 分钟',
+          dependentItems: [],
+        },
+      ],
+    }
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        recommendationScoreFormula: {
+          version: 'v1-weighted-kpi-40-40-20',
+          utilizationWeight: 0.4,
+          onTimeDeliveryWeight: 0.4,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 1000,
+          description: '综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。',
+        },
+        items: [
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡',
+            plan: comparedPlan,
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.95,
+            totalWorkOrders: 1,
+            recommendationScore: 0.91,
+            recommendationScoreBreakdown: {
+              utilizationContribution: 0.344,
+              onTimeDeliveryContribution: 0.372,
+              changeoverContribution: 0.194,
+            },
+          },
+        ],
+      }),
+    }))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        plan: comparedPlan,
+        assignments: [],
+        estimatedCompletionRate: 0.95,
+        utilizationRate: 0.86,
+        warnings: ['综合平衡方案已应用'],
+      }),
+    }))
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium batch feedback unavailable' }),
+      })
+    })
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+    const recommendCard = dialog.locator('.recommend-card')
+    await expect(recommendCard).toContainText('综合平衡')
+    await expect(recommendCard).toContainText('综合得分最高：综合分 91.0')
+    await expect(recommendCard).toContainText('利用率 86%')
+    await expect(recommendCard).toContainText('准时率 93%')
+    await expect(recommendCard).toContainText('换线 28 分钟')
+    await expect(recommendCard).toContainText('分组 1')
+    await expect(recommendCard).toContainText('完工率 95%')
+    await expect(recommendCard).toContainText('利用率贡献 34.4')
+    await expect(recommendCard).toContainText('准时率贡献 37.2')
+    await expect(recommendCard).toContainText('换线贡献 19.4')
+    await expect(recommendCard).toContainText('公式 v1-weighted-kpi-40-40-20')
+    await expect(recommendCard).toContainText('权重 40/40/20')
+    await expect(recommendCard).toContainText('换线 1000 分钟归一')
+
+    await dialog.getByRole('button', { name: '采用此方案' }).click()
+    await expect.poll(() => feedbackRequests).toBeGreaterThan(0)
+
+    const note = page.locator('.sync-note').filter({ hasText: '批量方案采纳反馈同步失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('批量方案采纳反馈同步失败')
+    await expect(note).toContainText('当前仅保留本地目标切换')
+    await expect(note).toContainText('chromium batch feedback unavailable')
+    await expect(page.locator('.toolbar')).toContainText('综合平衡方案')
+    await expect(page.locator('.warnings-bar')).toContainText('综合平衡方案已应用')
+
+    const record = page.locator('.feedback-record')
+    await expect(record.getByText('已采纳批量对比方案')).toBeVisible()
+    await expect(record.getByText(/批量对比采纳/)).toBeVisible()
+    await expect(record.getByText(/综合平衡/)).toBeVisible()
+    await expect(record.getByText('从批量对比中选择此方案')).toBeVisible()
+    const snapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_schedule_feedback_snapshot') || 'null'))
+    expect(snapshot).toMatchObject({
+      decision: 'accepted',
+      decisionLabel: '已采纳批量对比方案',
+      reasonCategory: 'batch_optimize_apply',
+      categoryLabel: '批量对比采纳',
+      reasonDetail: '从批量对比中选择此方案',
+      objectiveLabel: '综合平衡',
+      traceId: 'TRACE-SCH-FEEDBACK-BATCH-balanced',
+      source: 'local',
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    const restoredRecord = page.locator('.feedback-record')
+    await expect(restoredRecord.getByText('已采纳批量对比方案')).toBeVisible()
+    await expect(restoredRecord.getByText(/批量对比采纳/)).toBeVisible()
+    await expect(restoredRecord.getByText(/综合平衡/)).toBeVisible()
+    await expect(restoredRecord.getByText('从批量对比中选择此方案')).toBeVisible()
+
+    await page.route('**/api/v1/scheduling/adoption-feedback/latest', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        decision: 'accepted',
+        decisionLabel: '后端已采纳 Agent 推荐',
+        reasonCategory: 'backend_adoption',
+        categoryLabel: '后端正式采纳',
+        reasonDetail: '后台同步的最新调度员决策',
+        objectiveLabel: 'OTD 优先',
+        createdAt: '2026-06-14T11:30:00.000Z',
+        traceId: 'TRACE-SCH-FEEDBACK-BACKEND',
+        source: 'backend',
+      }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    const backendRecord = page.locator('.feedback-record')
+    await expect(backendRecord.getByText('后端已采纳 Agent 推荐')).toBeVisible()
+    await expect(backendRecord.getByText(/后端正式采纳/)).toBeVisible()
+    await expect(backendRecord.getByText(/OTD 优先/)).toBeVisible()
+    await expect(backendRecord.getByText('后台同步的最新调度员决策')).toBeVisible()
+    await expect(backendRecord.getByText(/批量对比采纳/)).toHaveCount(0)
+
+    await page.unroute('**/api/v1/scheduling/adoption-feedback/latest')
+    await page.route('**/api/v1/scheduling/adoption-feedback/latest', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        decision: 'accepted',
+        decisionLabel: '后端已采纳 Agent 推荐',
+        reasonCategory: 'backend_adoption',
+        categoryLabel: '后端正式采纳',
+        reasonDetail: '',
+        objectiveLabel: 'OTD 优先',
+        createdAt: '2026-06-14T11:30:00.000Z',
+        source: 'backend',
+      }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    const fallbackRecord = page.locator('.feedback-record')
+    await expect(fallbackRecord.getByText('已采纳批量对比方案')).toBeVisible()
+    await expect(fallbackRecord.getByText(/批量对比采纳/)).toBeVisible()
+    await expect(fallbackRecord.getByText(/综合平衡/)).toBeVisible()
+    await expect(fallbackRecord.getByText('从批量对比中选择此方案')).toBeVisible()
+    const feedbackSyncNote = page.locator('.feedback-panel .sync-note')
+    await expect(feedbackSyncNote).toContainText('后端最新采纳反馈不可审计')
+    await expect(feedbackSyncNote).toContainText('缺少原因说明')
+    await expect(feedbackSyncNote).toContainText('已回退本地最近反馈')
+  })
+
+  test('最新采纳反馈读取失败时真实浏览器继续加载排产计划并 fail-loud', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/adoption-feedback/latest', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium latest feedback unavailable' }),
+    }))
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    await expect(page.locator('.agent-workbench-panel')).toBeVisible()
+    await expect(page.locator('.metric-card').filter({ hasText: '准时交付率' })).toBeVisible()
+    const feedbackSyncNote = page.locator('.feedback-panel .sync-note')
+    await expect(feedbackSyncNote).toContainText('后端最新采纳反馈读取失败')
+    await expect(feedbackSyncNote).toContainText('chromium latest feedback unavailable')
+  })
+
+  test('多目标对比后端失败时真实浏览器阻止采用演示推荐', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'chromium compare unavailable' }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('503')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比返回空方案时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端未返回可对比排产方案')
+    await expect(dialog.locator('.empty-state')).toHaveCount(0)
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比结果缺少方案列表时真实浏览器展示业务化 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比结果缺少方案列表')
+    await expect(alert).not.toContainText('Cannot read')
+    await expect(dialog.locator('.empty-state')).toHaveCount(0)
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比推荐目标缺失时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    const dueDatePlan = {
+      id: 'compare-due-date-only-plan-e2e',
+      planName: '交期优先方案',
+      planStartDate: '2026-06-01T08:00:00.000Z',
+      planEndDate: '2026-06-01T12:00:00.000Z',
+      overallUtilizationRate: 0.7,
+      onTimeDeliveryRate: 0.95,
+      totalChangeoverMinutes: 45,
+      groupCount: 1,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      items: [{
+        id: 'compare-due-date-only-item-1',
+        workOrderId: 'compare-due-date-only-wo-1',
+        workOrderNumber: 'WO-COMPARE-DUE-001',
+        equipmentId: 'compare-due-date-only-eq-1',
+        equipmentName: 'CNC 多目标对比机台',
+        plannedStartTime: '2026-06-01T08:00:00.000Z',
+        plannedEndTime: '2026-06-01T12:00:00.000Z',
+        sequence: 1,
+        setupTime: '20 分钟',
+        dependentItems: [],
+      }],
+    }
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'due_date',
+          objectiveLabel: '交期优先',
+          plan: dueDatePlan,
+          utilizationRate: 0.7,
+          onTimeDeliveryRate: 0.95,
+          totalChangeoverMinutes: 45,
+          groupCount: 1,
+          estimatedCompletionRate: 0.9,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端推荐方案不在可对比排产方案中')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比缺少推荐方案时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-without-recommendation-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-without-recommendation-item-1',
+              workOrderId: 'compare-balanced-without-recommendation-wo-1',
+              workOrderNumber: 'WO-COMPARE-WITHOUT-RECOMMENDATION-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.91,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比结果缺少推荐方案')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比推荐方案不是最高分时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'due_date',
+        recommendationScoreFormula: {
+          version: 'v1-weighted-kpi-40-40-20',
+          utilizationWeight: 0.4,
+          onTimeDeliveryWeight: 0.4,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 1000,
+          description: '综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。',
+        },
+        items: [{
+          objective: 'due_date',
+          objectiveLabel: '交期优先',
+          plan: {
+            id: 'compare-due-date-lower-score-plan-e2e',
+            planName: '交期优先方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.62,
+            onTimeDeliveryRate: 0.82,
+            totalChangeoverMinutes: 600,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-due-date-lower-score-item-1',
+              workOrderId: 'compare-due-date-lower-score-wo-1',
+              workOrderNumber: 'WO-COMPARE-DUE-DATE-LOWER-SCORE-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.62,
+          onTimeDeliveryRate: 0.82,
+          totalChangeoverMinutes: 600,
+          groupCount: 1,
+          estimatedCompletionRate: 0.88,
+          totalWorkOrders: 1,
+          recommendationScore: 0.656,
+          recommendationScoreBreakdown: {
+            utilizationContribution: 0.248,
+            onTimeDeliveryContribution: 0.328,
+            changeoverContribution: 0.08,
+          },
+        }, {
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-highest-score-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.9,
+            onTimeDeliveryRate: 0.94,
+            totalChangeoverMinutes: 40,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-highest-score-item-1',
+              workOrderId: 'compare-balanced-highest-score-wo-1',
+              workOrderNumber: 'WO-COMPARE-BALANCED-HIGHEST-SCORE-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.9,
+          onTimeDeliveryRate: 0.94,
+          totalChangeoverMinutes: 40,
+          groupCount: 1,
+          estimatedCompletionRate: 0.96,
+          totalWorkOrders: 1,
+          recommendationScore: 0.928,
+          recommendationScoreBreakdown: {
+            utilizationContribution: 0.36,
+            onTimeDeliveryContribution: 0.376,
+            changeoverContribution: 0.192,
+          },
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端推荐方案不是综合得分最高方案')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比方案目标名称为空时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '',
+          plan: {
+            id: 'compare-balanced-missing-objective-label-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-missing-objective-label-item-1',
+              workOrderId: 'compare-balanced-missing-objective-label-wo-1',
+              workOrderNumber: 'WO-COMPARE-MISSING-OBJECTIVE-LABEL-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案缺少目标标识或名称')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比方案目标标识重复时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        recommendationScoreFormula: {
+          version: 'v1-weighted-kpi-40-40-20',
+          utilizationWeight: 0.4,
+          onTimeDeliveryWeight: 0.4,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 1000,
+          description: '综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。',
+        },
+        items: [
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡 A',
+            plan: {
+              id: 'compare-balanced-duplicate-objective-plan-a-e2e',
+              planName: '综合平衡方案 A',
+              planStartDate: '2026-06-01T08:00:00.000Z',
+              planEndDate: '2026-06-01T12:00:00.000Z',
+              overallUtilizationRate: 0.86,
+              onTimeDeliveryRate: 0.93,
+              totalChangeoverMinutes: 28,
+              groupCount: 1,
+              createdAt: '2026-06-01T08:00:00.000Z',
+              items: [{
+                id: 'compare-balanced-duplicate-objective-a-item-1',
+                workOrderId: 'compare-balanced-duplicate-objective-a-wo-1',
+                workOrderNumber: 'WO-COMPARE-DUPLICATE-A-001',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台 A',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              }],
+            },
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.92,
+            totalWorkOrders: 1,
+          },
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡 B',
+            plan: {
+              id: 'compare-balanced-duplicate-objective-plan-b-e2e',
+              planName: '综合平衡方案 B',
+              planStartDate: '2026-06-01T13:00:00.000Z',
+              planEndDate: '2026-06-01T17:00:00.000Z',
+              overallUtilizationRate: 0.82,
+              onTimeDeliveryRate: 0.9,
+              totalChangeoverMinutes: 35,
+              groupCount: 1,
+              createdAt: '2026-06-01T08:00:00.000Z',
+              items: [{
+                id: 'compare-balanced-duplicate-objective-b-item-1',
+                workOrderId: 'compare-balanced-duplicate-objective-b-wo-1',
+                workOrderNumber: 'WO-COMPARE-DUPLICATE-B-001',
+                equipmentId: 'compare-balanced-eq-2',
+                equipmentName: 'CNC 多目标对比机台 B',
+                plannedStartTime: '2026-06-01T13:00:00.000Z',
+                plannedEndTime: '2026-06-01T17:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              }],
+            },
+            utilizationRate: 0.82,
+            onTimeDeliveryRate: 0.9,
+            totalChangeoverMinutes: 35,
+            groupCount: 1,
+            estimatedCompletionRate: 0.88,
+            totalWorkOrders: 1,
+          },
+        ],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案目标标识重复')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比方案排产计划标识重复时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [
+          {
+            objective: 'due_date',
+            objectiveLabel: '交期优先',
+            plan: {
+              id: 'compare-shared-plan-id-e2e',
+              planName: '交期优先方案',
+              planStartDate: '2026-06-01T08:00:00.000Z',
+              planEndDate: '2026-06-01T12:00:00.000Z',
+              overallUtilizationRate: 0.72,
+              onTimeDeliveryRate: 0.96,
+              totalChangeoverMinutes: 40,
+              groupCount: 1,
+              createdAt: '2026-06-01T08:00:00.000Z',
+              items: [{
+                id: 'compare-duplicate-plan-id-due-date-item-1',
+                workOrderId: 'compare-duplicate-plan-id-due-date-wo-1',
+                workOrderNumber: 'WO-COMPARE-DUPLICATE-PLAN-DUE-001',
+                equipmentId: 'compare-duplicate-plan-id-eq-1',
+                equipmentName: 'CNC 多目标对比机台 A',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              }],
+            },
+            utilizationRate: 0.72,
+            onTimeDeliveryRate: 0.96,
+            totalChangeoverMinutes: 40,
+            groupCount: 1,
+            estimatedCompletionRate: 0.9,
+            totalWorkOrders: 1,
+          },
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡',
+            plan: {
+              id: 'compare-shared-plan-id-e2e',
+              planName: '综合平衡方案',
+              planStartDate: '2026-06-01T13:00:00.000Z',
+              planEndDate: '2026-06-01T17:00:00.000Z',
+              overallUtilizationRate: 0.86,
+              onTimeDeliveryRate: 0.93,
+              totalChangeoverMinutes: 28,
+              groupCount: 1,
+              createdAt: '2026-06-01T08:00:00.000Z',
+              items: [{
+                id: 'compare-duplicate-plan-id-balanced-item-1',
+                workOrderId: 'compare-duplicate-plan-id-balanced-wo-1',
+                workOrderNumber: 'WO-COMPARE-DUPLICATE-PLAN-BALANCED-001',
+                equipmentId: 'compare-duplicate-plan-id-eq-2',
+                equipmentName: 'CNC 多目标对比机台 B',
+                plannedStartTime: '2026-06-01T13:00:00.000Z',
+                plannedEndTime: '2026-06-01T17:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              }],
+            },
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.92,
+            totalWorkOrders: 1,
+          },
+        ],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案排产计划标识重复')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比方案缺少排产计划标识时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: '   ',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-missing-plan-id-item-1',
+              workOrderId: 'compare-balanced-missing-plan-id-wo-1',
+              workOrderNumber: 'WO-COMPARE-MISSING-PLAN-ID-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案缺少排产计划标识')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比方案缺少排产计划时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案缺少排产计划')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划明细为空但声明有工单时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-empty-items-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划明细为空')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比工单数与计划明细不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-workorder-count-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-workorder-count-item-1',
+              workOrderId: 'compare-balanced-workorder-count-wo-1',
+              workOrderNumber: 'WO-COMPARE-WORKORDER-COUNT-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 2,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案工单数与计划明细不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比指标超出有效范围时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-invalid-kpi-rate-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-invalid-kpi-rate-item-1',
+              workOrderId: 'compare-balanced-invalid-kpi-rate-wo-1',
+              workOrderNumber: 'WO-COMPARE-INVALID-KPI-RATE-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 1.2,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案指标超出有效范围')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比分组数无效时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-invalid-group-count-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: -1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-invalid-group-count-item-1',
+              workOrderId: 'compare-balanced-invalid-group-count-wo-1',
+              workOrderNumber: 'WO-COMPARE-INVALID-GROUP-COUNT-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: -1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案分组数无效')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比分组数与计划摘要不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-group-count-mismatch-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 2,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-group-count-mismatch-item-1',
+              workOrderId: 'compare-balanced-group-count-mismatch-wo-1',
+              workOrderNumber: 'WO-COMPARE-GROUP-COUNT-MISMATCH-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案分组数与计划摘要不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比利用率与计划摘要不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-utilization-mismatch-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.72,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-utilization-mismatch-item-1',
+              workOrderId: 'compare-balanced-utilization-mismatch-wo-1',
+              workOrderNumber: 'WO-COMPARE-UTILIZATION-MISMATCH-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案利用率与计划摘要不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比准时率与计划摘要不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-otd-mismatch-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.74,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-otd-mismatch-item-1',
+              workOrderId: 'compare-balanced-otd-mismatch-wo-1',
+              workOrderNumber: 'WO-COMPARE-OTD-MISMATCH-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案准时率与计划摘要不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比换型分钟为负数时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-invalid-changeover-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-invalid-changeover-item-1',
+              workOrderId: 'compare-balanced-invalid-changeover-wo-1',
+              workOrderNumber: 'WO-COMPARE-INVALID-CHANGEOVER-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: -5,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案换型分钟无效')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比换型分钟与计划摘要不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-changeover-mismatch-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 60,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-changeover-mismatch-item-1',
+              workOrderId: 'compare-balanced-changeover-mismatch-wo-1',
+              workOrderNumber: 'WO-COMPARE-CHANGEOVER-MISMATCH-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案换型分钟与计划摘要不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项缺少时间窗时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-missing-window-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-missing-window-item-1',
+              workOrderId: 'compare-balanced-missing-window-wo-1',
+              workOrderNumber: 'WO-COMPARE-NO-WINDOW-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项缺少时间窗')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项时间窗无效时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-invalid-window-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-invalid-window-item-1',
+              workOrderId: 'compare-balanced-invalid-window-wo-1',
+              workOrderNumber: 'WO-COMPARE-INVALID-WINDOW-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T12:00:00.000Z',
+              plannedEndTime: '2026-06-01T08:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项时间窗无效')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项缺少工单或设备锚点时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-missing-anchor-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-missing-anchor-item-1',
+              workOrderId: 'compare-balanced-missing-anchor-wo-1',
+              workOrderNumber: 'WO-COMPARE-NO-ANCHOR-001',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项缺少工单或设备锚点')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项缺少任务身份标识时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-missing-task-identity-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              workOrderId: 'compare-balanced-missing-task-identity-wo-1',
+              workOrderNumber: 'WO-COMPARE-NO-TASK-ID-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项缺少任务身份标识')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项依赖不存在时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-missing-dependency-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-missing-dependency-item-1',
+              workOrderId: 'compare-balanced-missing-dependency-wo-1',
+              workOrderNumber: 'WO-COMPARE-MISSING-DEPENDENCY-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: ['missing-upstream-task'],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项依赖不存在')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项自依赖时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-self-dependency-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T12:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-self-dependency-item-1',
+              workOrderId: 'compare-balanced-self-dependency-wo-1',
+              workOrderNumber: 'WO-COMPARE-SELF-DEPENDENCY-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: ['compare-balanced-self-dependency-item-1'],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项不能依赖自身')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项循环依赖时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-cycle-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T16:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [
+              {
+                id: 'compare-balanced-cycle-item-a',
+                workOrderId: 'compare-balanced-cycle-wo-a',
+                workOrderNumber: 'WO-COMPARE-CYCLE-A',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: ['compare-balanced-cycle-item-b'],
+              },
+              {
+                id: 'compare-balanced-cycle-item-b',
+                workOrderId: 'compare-balanced-cycle-wo-b',
+                workOrderNumber: 'WO-COMPARE-CYCLE-B',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T12:00:00.000Z',
+                plannedEndTime: '2026-06-01T16:00:00.000Z',
+                sequence: 2,
+                setupTime: '20 分钟',
+                dependentItems: ['compare-balanced-cycle-item-a'],
+              },
+            ],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 2,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项存在循环依赖')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划摘要时间窗未覆盖明细时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-short-summary-window-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T10:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [{
+              id: 'compare-balanced-outside-summary-window-item-1',
+              workOrderId: 'compare-balanced-outside-summary-window-wo-1',
+              workOrderNumber: 'WO-COMPARE-OUTSIDE-SUMMARY-001',
+              equipmentId: 'compare-balanced-eq-1',
+              equipmentName: 'CNC 多目标对比机台',
+              plannedStartTime: '2026-06-01T08:00:00.000Z',
+              plannedEndTime: '2026-06-01T12:00:00.000Z',
+              sequence: 1,
+              setupTime: '20 分钟',
+              dependentItems: [],
+            }],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 1,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划摘要时间窗未覆盖计划明细')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比同设备计划项时间重叠时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-equipment-overlap-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T14:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [
+              {
+                id: 'compare-balanced-overlap-item-a',
+                workOrderId: 'compare-balanced-overlap-wo-a',
+                workOrderNumber: 'WO-COMPARE-OVERLAP-A',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+              {
+                id: 'compare-balanced-overlap-item-b',
+                workOrderId: 'compare-balanced-overlap-wo-b',
+                workOrderNumber: 'WO-COMPARE-OVERLAP-B',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T10:00:00.000Z',
+                plannedEndTime: '2026-06-01T14:00:00.000Z',
+                sequence: 2,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+            ],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 2,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案同设备计划项时间重叠')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比计划项依赖时间顺序无效时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-dependency-window-conflict-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T14:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 2,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [
+              {
+                id: 'compare-balanced-dependency-upstream',
+                workOrderId: 'compare-balanced-dependency-upstream-wo',
+                workOrderNumber: 'WO-COMPARE-DEPENDENCY-UPSTREAM',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台 A',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+              {
+                id: 'compare-balanced-dependency-downstream',
+                workOrderId: 'compare-balanced-dependency-downstream-wo',
+                workOrderNumber: 'WO-COMPARE-DEPENDENCY-DOWNSTREAM',
+                equipmentId: 'compare-balanced-eq-2',
+                equipmentName: 'CNC 多目标对比机台 B',
+                plannedStartTime: '2026-06-01T10:00:00.000Z',
+                plannedEndTime: '2026-06-01T14:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: ['compare-balanced-dependency-upstream'],
+              },
+            ],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 2,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 2,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案计划项依赖时间顺序无效')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标对比同设备计划项顺序与时间不一致时真实浏览器展示 fail-loud 告警', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [{
+          objective: 'balanced',
+          objectiveLabel: '综合平衡',
+          plan: {
+            id: 'compare-balanced-sequence-window-conflict-plan-e2e',
+            planName: '综合平衡方案',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T16:00:00.000Z',
+            overallUtilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [
+              {
+                id: 'compare-balanced-sequence-late-first',
+                workOrderId: 'compare-balanced-sequence-late-first-wo',
+                workOrderNumber: 'WO-COMPARE-SEQUENCE-LATE-FIRST',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T12:00:00.000Z',
+                plannedEndTime: '2026-06-01T16:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+              {
+                id: 'compare-balanced-sequence-early-second',
+                workOrderId: 'compare-balanced-sequence-early-second-wo',
+                workOrderNumber: 'WO-COMPARE-SEQUENCE-EARLY-SECOND',
+                equipmentId: 'compare-balanced-eq-1',
+                equipmentName: 'CNC 多目标对比机台',
+                plannedStartTime: '2026-06-01T08:00:00.000Z',
+                plannedEndTime: '2026-06-01T12:00:00.000Z',
+                sequence: 2,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+            ],
+          },
+          utilizationRate: 0.86,
+          onTimeDeliveryRate: 0.93,
+          totalChangeoverMinutes: 28,
+          groupCount: 1,
+          estimatedCompletionRate: 0.92,
+          totalWorkOrders: 2,
+        }],
+      }),
+    }))
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+
+    const alert = dialog.locator('.error-msg[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('批量优化对比失败')
+    await expect(alert).toContainText('后端对比方案同设备计划项顺序与时间不一致')
+    await expect(dialog.locator('.recommend-card')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '采用此方案' })).toHaveCount(0)
+  })
+
+  test('多目标方案优化缺少计划时真实浏览器保留待采纳状态', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    const comparedPlan = {
+      id: 'batch-balanced-plan-e2e',
+      planName: '综合平衡方案',
+      planStartDate: '2026-06-01T08:00:00.000Z',
+      planEndDate: '2026-06-01T12:00:00.000Z',
+      overallUtilizationRate: 0.86,
+      onTimeDeliveryRate: 0.93,
+      totalChangeoverMinutes: 28,
+      groupCount: 1,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      items: [
+        {
+          id: 'batch-balanced-item-1',
+          workOrderId: 'batch-balanced-wo-1',
+          workOrderNumber: 'WO-BATCH-BALANCED-001',
+          equipmentId: 'batch-balanced-eq-1',
+          equipmentName: 'CNC 批量对比机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '20 分钟',
+          dependentItems: [],
+        },
+      ],
+    }
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        recommendationScoreFormula: {
+          version: 'v1-weighted-kpi-40-40-20',
+          utilizationWeight: 0.4,
+          onTimeDeliveryWeight: 0.4,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 1000,
+          description: '综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。',
+        },
+        items: [
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡',
+            plan: comparedPlan,
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.95,
+            totalWorkOrders: 1,
+            recommendationScore: 0.91,
+            recommendationScoreBreakdown: {
+              utilizationContribution: 0.344,
+              onTimeDeliveryContribution: 0.372,
+              changeoverContribution: 0.194,
+            },
+          },
+        ],
+      }),
+    }))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        assignments: [],
+        estimatedCompletionRate: 0.95,
+        utilizationRate: 0.86,
+        warnings: ['chromium batch optimize returned no plan'],
+      }),
+    }))
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accepted: true }),
+      })
+    })
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('.recommend-card')).toContainText('综合平衡')
+
+    await dialog.getByRole('button', { name: '采用此方案' }).click()
+
+    await expect(dialog).toBeVisible()
+    await expect(page.locator('.objective-label select')).toHaveValue('due_date')
+    await expect(page.locator('.toolbar')).not.toContainText('综合平衡方案')
+    const alert = page.locator('.error-banner[role="alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('优化失败')
+    await expect(alert).toContainText('后端优化结果缺少排产计划')
+    await expect.poll(() => feedbackRequests).toBe(0)
+  })
+
+  test('外协到货建议被采纳后真实浏览器归档排产释放证据', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
+        {
+          id: 'outsourcing-commitment-product-flange',
+          sourceKpiId: 'product-flange',
+          dimensionLabel: '产品族',
+          targetName: '法兰盘 DN100',
+          title: '法兰盘 DN100 外协承诺包',
+          auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
+          traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
+          actor: '经营复盘 王经理',
+          baselineOtd: 84,
+          agentOtd: 91,
+          lift: 7,
+          delayedReduced: 3,
+          statusLabel: '外协到货已确认',
+          commitment: '法兰盘 DN100 外协到货口径：华东精密外协厂已按 2026-05-23 到货，厂外等待可关闭但仍需排产释放复核。',
+          owner: '采购 / 计划联合确认',
+          dueAt: '2026-05-23',
+          summary: '外协等待未闭环转为外协承诺口径，外协到货后等待 AI 排产采纳释放。',
+          actions: [
+            {
+              module: '外协协同',
+              owner: '采购 / 计划',
+              action: '向 华东精密外协厂 锁定 法兰盘 DN100 的外协承诺日期 2026-05-23',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-20260521',
+            },
+            {
+              module: '采购协同',
+              owner: '采购员 周工',
+              action: '确认 华东精密外协厂 的 法兰盘 DN100 外协到货并触发排产释放复核',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+            },
+          ],
+          partnerName: '华东精密外协厂',
+          promiseDate: '2026-05-23',
+          affectedOrders: 'WO-DEMO-1013',
+          sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
+          createdAt: '2026-05-21T08:00:00.000Z',
+          receivedAt: '2026-05-23T09:30:00.000Z',
+          receivedBy: '采购员 周工',
+          receiptAuditId: 'AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001',
+          receiptTraceId: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+          receiptMessage: '华东精密外协厂 已按 2026-05-23 完成 法兰盘 DN100 外协到货，WO-DEMO-1013 可从厂外等待转为排产释放复核。',
+        },
+      ]))
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const outsourcingEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
+    await expect(outsourcingEvent.locator('.event-severity').getByText('已到货', { exact: true })).toBeVisible()
+    await expect(outsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521')).toBeVisible()
+
+    await outsourcingEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.locator('.agent-suggestion').getByText('外协到货后的排产释放复核')).toBeVisible()
+    await expect(eventPanel.locator('.agent-suggestion').getByText(/关闭 WO-DEMO-1013 的厂外等待口径/)).toBeVisible()
+
+    await eventPanel.locator('.agent-suggestion').getByRole('button', { name: '采纳此建议' }).click()
+    const suggestion = eventPanel.locator('.agent-suggestion')
+    await expect(suggestion.getByText('外协排产释放已确认')).toBeVisible()
+    await expect(suggestion.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
+    await expect(suggestion.getByText('AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001')).toBeVisible()
+    await expect(suggestion.getByText('OTD +2% 已释放归档')).toBeVisible()
+    await expect(suggestion.getByText('延期 0 单外部等待')).toBeVisible()
+
+    const releasedEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协排产释放已确认' })
+    await expect(releasedEvent.locator('.event-severity').getByText('已释放', { exact: true })).toBeVisible()
+    await expect(releasedEvent.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
+
+    const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]'))
+    expect(packageSnapshot[0].scheduleReleaseTraceId).toBe('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+    expect(packageSnapshot[0].scheduleReleaseAuditId).toBe('AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001')
+
+    const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
+    expect(evidenceSnapshot.some((item: { traceId?: string }) => item.traceId === 'TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBe(true)
+  })
+
+  test('外协到货建议采纳但本地承诺包缺失时真实浏览器提示释放归档失败', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
+        {
+          id: 'outsourcing-commitment-product-flange',
+          sourceKpiId: 'product-flange',
+          dimensionLabel: '产品族',
+          targetName: '法兰盘 DN100',
+          title: '法兰盘 DN100 外协承诺包',
+          auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
+          traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
+          actor: '经营复盘 王经理',
+          baselineOtd: 84,
+          agentOtd: 91,
+          lift: 7,
+          delayedReduced: 3,
+          statusLabel: '外协到货已确认',
+          commitment: '法兰盘 DN100 外协到货口径：华东精密外协厂已按 2026-05-23 到货，厂外等待可关闭但仍需排产释放复核。',
+          owner: '采购 / 计划联合确认',
+          dueAt: '2026-05-23',
+          summary: '外协等待未闭环转为外协承诺口径，外协到货后等待 AI 排产采纳释放。',
+          actions: [
+            {
+              module: '采购协同',
+              owner: '采购员 周工',
+              action: '确认 华东精密外协厂 的 法兰盘 DN100 外协到货并触发排产释放复核',
+              evidence: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+            },
+          ],
+          partnerName: '华东精密外协厂',
+          promiseDate: '2026-05-23',
+          affectedOrders: 'WO-DEMO-1013',
+          sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
+          createdAt: '2026-05-21T08:00:00.000Z',
+          receivedAt: '2026-05-23T09:30:00.000Z',
+          receivedBy: '采购员 周工',
+          receiptAuditId: 'AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001',
+          receiptTraceId: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+          receiptMessage: '华东精密外协厂 已按 2026-05-23 完成 法兰盘 DN100 外协到货，WO-DEMO-1013 可从厂外等待转为排产释放复核。',
+        },
+      ]))
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const outsourcingEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
+    await expect(outsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521')).toBeVisible()
+
+    await outsourcingEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.locator('.agent-suggestion').getByText('外协到货后的排产释放复核')).toBeVisible()
+    await page.evaluate(() => localStorage.removeItem('aimes_outsourcing_commitment_packages'))
+
+    await eventPanel.locator('.agent-suggestion').getByRole('button', { name: '采纳此建议' }).click()
+    const note = page.locator('.sync-note').filter({ hasText: '外协排产释放同步失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('未找到已到货的外协承诺包')
+    await expect(note).toContainText('product-flange')
+    await expect(eventPanel.locator('.agent-suggestion')).not.toContainText('外协排产释放已确认')
+  })
+
+  test('展示急单插单前影响分析', async ({ page }) => {
+    const panel = page.locator('.rush-impact-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('插单前先算账')).toBeVisible()
+    await expect(panel.getByText('WO-RUSH-9001 急单影响分析')).toBeVisible()
+    await expect(panel.getByText('受影响工单')).toBeVisible()
+    await expect(panel.getByText(/新增延期/)).toBeVisible()
+    await expect(panel.getByText(/换线增加/)).toBeVisible()
+    await expect(panel.getByText('M-AL-6061 缺 12 件')).toBeVisible()
+    await expect(panel.getByText('建议加班插入')).toBeVisible()
+  })
+
+  test('展示 BOM 与工艺路线约束解释', async ({ page }) => {
+    const panel = page.locator('.engineering-constraint-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('BOM 与工艺路线进入排产解释')).toBeVisible()
+    await expect(panel.getByText('BOM-A100 V1.0')).toBeVisible()
+    await expect(panel.getByText('M-AL-6061B 可替代 M-AL-6061')).toBeVisible()
+    await expect(panel.getByText('R-A100 OP-020')).toBeVisible()
+    await expect(panel.getByText(/CNC 精加工必须匹配 CNC 设备能力/)).toBeVisible()
+    await expect(panel.getByText(/OP-040 质检窗口/)).toBeVisible()
+    await expect(panel.getByText('人员能力')).toBeVisible()
+    await expect(panel.locator('.constraint-topline').filter({ hasText: '人员能力' }).getByText('EMP-001 / EMP-003')).toBeVisible()
+    await expect(panel.locator('.constraint-evidence').getByText('EMP-001 / EMP-003 技能矩阵')).toBeVisible()
+    await expect(panel.getByText(/热处理夜班 EMP-003 资质 2026-05-25 到期/)).toBeVisible()
+  })
+
+  test('人员替班证据释放排产人员约束', async ({ page }) => {
+    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+    await page.waitForSelector('.emp-board', { timeout: 20000 })
+    const skillPanel = page.locator('.skill-matrix-panel')
+    await expect(skillPanel.getByText(/推荐 EMP-006 孙八/)).toBeVisible({ timeout: 20000 })
+    await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
+    await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible({ timeout: 10000 })
+
+    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    const constraintPanel = page.locator('.engineering-constraint-panel')
+    await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
+    const laborConstraint = constraintPanel.locator('.constraint-item').filter({ hasText: 'EMP-003 资质临期已生成 EMP-006 替班复核' })
+    await expect(laborConstraint.locator('.constraint-evidence').getByText('AUD-LABOR-REASSIGN-20260520-001', { exact: true })).toBeVisible()
+    await expect(laborConstraint.locator('.constraint-evidence').getByText('TRACE-LABOR-REASSIGN-WO-013-OP-10', { exact: true })).toBeVisible()
+    await expect(constraintPanel.getByText(/生产开工可直接读取该证据/)).toBeVisible()
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const laborEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-013 热处理替班已确认' })
+    await expect(laborEvent.getByText('人员替班事件')).toBeVisible()
+    await expect(laborEvent.getByText('已闭环')).toBeVisible()
+    await laborEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.getByText('人员替班后的开工复核建议')).toBeVisible()
+    await expect(eventPanel.getByText(/生产开工按替班复核执行/)).toBeVisible()
+  })
+
+  test('人员证据启动读取失败后可重试并释放排产人员约束', async ({ page }) => {
+    const warning = page.locator('.warnings-bar')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('人员约束启动证据加载失败')
+    await expect(warning).toContainText('chromium startup labor block read unavailable')
+    const retryButton = warning.getByRole('button', { name: '重试人员证据 / Retry labor evidence' })
+    await expect(retryButton).toBeVisible()
+
+    await retryButton.click()
+    await expect.poll(() => laborEvidenceRetryReads.blocks).toBeGreaterThanOrEqual(2)
+    await expect.poll(() => laborEvidenceRetryReads.reassignments).toBeGreaterThanOrEqual(2)
+    await expect(page.getByText('人员约束启动证据加载失败')).toHaveCount(0)
+
+    const constraintPanel = page.locator('.engineering-constraint-panel')
+    await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
+    await expect(constraintPanel.getByText(/生产开工可直接读取该证据/)).toBeVisible()
+    await expect(constraintPanel.getByText('AUD-LABOR-RELEASE-20260520-001', { exact: true })).toBeVisible()
+    await expect(constraintPanel.getByText('TRACE-LABOR-RELEASE-WO-013-OP-10', { exact: true })).toBeVisible()
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const laborEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-013 热处理替班已确认' })
+    await expect(laborEvent.getByText('人员替班事件')).toBeVisible()
+    await expect(laborEvent.getByText('已闭环')).toBeVisible()
+    await expect(laborEvent.getByText('人员约束已由替班建议转为开工校验')).toBeVisible()
+    await expect(page.locator('.agent-workbench-panel')).toBeVisible()
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+  })
+
+  test('人员无有效替班候选时排产保持停工复核事件', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('aimes_labor_qualification_block', JSON.stringify([
+        {
+          id: 'labor-qualification-block-WO-013-heat-treatment',
+          workOrderNumber: 'WO-013',
+          operationCode: 'OP-10',
+          operationCodes: ['OP-10', 'OP-20'],
+          operationName: '淬火 / 回火',
+          blockedEmployeeNumber: 'EMP-003',
+          blockedEmployeeName: '王五',
+          blockedCertification: '热处理上岗证',
+          blockedExpiresAt: '2026-05-25',
+          requiredSkill: '热处理',
+          requiredTeam: '乙班',
+          requiredShift: '夜班',
+          reviewerEmployeeNumber: 'EMP-004',
+          reviewerName: '赵六',
+          reviewerRole: '工程放行',
+          reason: 'EMP-003 王五的热处理上岗证 2026-05-25 临期；系统按热处理技能、班组/班次、同证书有效期与复核授权评分后未找到有效替班候选，WO-013 热处理必须停工复核。',
+          auditId: 'AUD-LABOR-BLOCK-20260520-001',
+          traceId: 'TRACE-LABOR-BLOCK-WO-013-OP-10',
+          createdAt: '2026-05-20T09:00:00.000Z',
+          status: 'active',
+        },
+      ]))
+    })
+    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const constraintPanel = page.locator('.engineering-constraint-panel')
+    await expect(constraintPanel.getByText('EMP-003 资质临期且无有效替班候选')).toBeVisible()
+    const laborConstraint = constraintPanel.locator('.constraint-item').filter({ hasText: 'EMP-003 资质临期且无有效替班候选' })
+    await expect(laborConstraint.locator('.constraint-evidence').getByText('AUD-LABOR-BLOCK-20260520-001', { exact: true })).toBeVisible()
+    await expect(laborConstraint.locator('.constraint-evidence').getByText('TRACE-LABOR-BLOCK-WO-013-OP-10', { exact: true })).toBeVisible()
+    await expect(constraintPanel.getByText(/生产开工必须读取阻断证据/)).toBeVisible()
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const laborEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-013 热处理无有效替班候选' })
+    await expect(laborEvent.getByText('人员资质阻断事件')).toBeVisible()
+    await expect(laborEvent.getByText('停工复核')).toBeVisible()
+    await laborEvent.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(eventPanel.getByText('人员资质停工复核建议')).toBeVisible()
+    await expect(eventPanel.getByText(/复核通过前生产开工不得放行/)).toBeVisible()
+  })
+
+  test('记录 Agent 方案采纳原因', async ({ page }) => {
+    const panel = page.locator('.feedback-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('采纳 / 拒绝原因')).toBeVisible()
+
+    await panel.locator('select').selectOption('rush_order')
+    await panel.locator('input').fill('急单客户承诺交期优先，接受加班插入')
+    await panel.getByRole('button', { name: '采纳方案' }).click()
+
+    const record = panel.locator('.feedback-record')
+    await expect(record.getByText('最近反馈')).toBeVisible()
+    await expect(record.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(record.getByText(/急单插入/)).toBeVisible()
+    await expect(record.getByText('急单客户承诺交期优先，接受加班插入')).toBeVisible()
+  })
+
+  test('三类事件触发 Agent 重排建议', async ({ page }) => {
+    const panel = page.locator('.event-queue-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('三类事件重排队列')).toBeVisible()
+    const eventList = panel.locator('.event-grid')
+    await expect(eventList).toHaveAttribute('role', 'list')
+    await expect(eventList).toHaveAttribute('aria-label', /排产事件重排队列：\d+ 个待评估事件/)
+    await expect(panel.getByText('缺料事件')).toBeVisible()
+    await expect(panel.getByText('设备故障事件')).toBeVisible()
+    await expect(panel.getByText('急单插单事件')).toBeVisible()
+
+    const materialEvent = panel.locator('.event-card').filter({ hasText: 'M-AL-6061 齐套缺口' })
+    await expect(materialEvent).toHaveAttribute('role', 'listitem')
+    await expect(materialEvent).toHaveAttribute('aria-label', /缺料事件：M-AL-6061 齐套缺口/)
+    await materialEvent.getByRole('button', { name: '生成重排建议' }).click()
+    await expect(panel.getByText('缺料约束重排建议')).toBeVisible()
+    await expect(panel.getByText(/BOM-A100 替代料规则/)).toBeVisible()
+    await expect(panel.getByText(/R-A100 CNC 能力要求/)).toBeVisible()
+
+    await panel.locator('.event-card').filter({ hasText: 'CNC 加工中心 01 健康下降' }).getByRole('button', { name: '生成重排建议' }).click()
+    await expect(panel.getByText('设备维护窗口重排建议')).toBeVisible()
+    await expect(panel.locator('.agent-suggestion > p').getByText(/维护窗口放入夜班/)).toBeVisible()
+
+    await panel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+    await expect(panel.getByText('急单插入重排建议')).toBeVisible()
+    await expect(panel.locator('.agent-suggestion > p').getByText(/锁定期后第一个 CNC 空窗/)).toBeVisible()
+  })
+
+  test('急单插单生成多方案决策包并进入 OTD 复盘', async ({ page }) => {
+    const eventPanel = page.locator('.event-queue-panel')
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    let optimizeRequests = 0
+    await page.route('**/api/v1/scheduling/optimize', (route) => {
+      optimizeRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          plan: {
+            id: 'rush-adopted-optimized-plan-e2e',
+            planName: '急单采纳后正式排产计划',
+            planStartDate: '2026-06-01T08:00:00.000Z',
+            planEndDate: '2026-06-01T14:00:00.000Z',
+            overallUtilizationRate: 0.88,
+            onTimeDeliveryRate: 0.94,
+            totalChangeoverMinutes: 42,
+            groupCount: 1,
+            createdAt: '2026-06-01T08:00:00.000Z',
+            items: [
+              {
+                id: 'rush-adopted-item-1',
+                workOrderId: 'rush-adopted-wo-1',
+                workOrderNumber: 'WO-RUSH-9001',
+                equipmentId: 'rush-adopted-eq-1',
+                equipmentName: 'CNC 急单正式窗口',
+                plannedStartTime: '2026-06-01T10:00:00.000Z',
+                plannedEndTime: '2026-06-01T14:00:00.000Z',
+                sequence: 1,
+                setupTime: '20 分钟',
+                dependentItems: [],
+              },
+            ],
+          },
+          assignments: [],
+          estimatedCompletionRate: 0.96,
+          utilizationRate: 0.88,
+          warnings: ['急单采纳后正式计划已更新'],
+        }),
+      })
+    })
+
+    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+
+    const scenarioPackage = eventPanel.locator('.scenario-package')
+    await expect(scenarioPackage.getByText('Agent 多方案决策包')).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '加班插入' })).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '强插当前窗口' })).toBeVisible()
+    await expect(scenarioPackage.locator('.scenario-row').filter({ hasText: '换设备插入' })).toBeVisible()
+    const recommendedScenario = scenarioPackage.locator('.scenario-row').filter({ hasText: '加班插入' })
+    await expect(recommendedScenario.getByText(/OTD 改善最高/)).toBeVisible()
+    await expect(scenarioPackage.getByText(/破坏锁定期并扩大换线成本/)).toBeVisible()
+    await expect(recommendedScenario.getByText(/适用条件/)).toBeVisible()
+    await expect(recommendedScenario.getByText(/锁定期内任务不可动，且夜班 CNC 有可用加班窗口/)).toBeVisible()
+    await expect(recommendedScenario.getByText(/取舍代价/)).toBeVisible()
+    await expect(recommendedScenario.getByText(/增加 20min 换线与夜班加班成本/)).toBeVisible()
+
+    await eventPanel.getByRole('button', { name: '采纳此建议' }).click()
+
+    const feedbackRecord = page.locator('.feedback-record')
+    await expect(feedbackRecord.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(feedbackRecord.getByText(/推荐方案：加班插入/)).toBeVisible()
+    await expect(feedbackRecord.getByText(/适用条件：锁定期内任务不可动，且夜班 CNC 有可用加班窗口/)).toBeVisible()
+    await expect(feedbackRecord.getByText(/取舍代价：增加 20min 换线与夜班加班成本/)).toBeVisible()
+    await expect(feedbackRecord.getByText(/未选方案：强插当前窗口/)).toBeVisible()
+    const feedbackSyncNote = page.locator('.feedback-panel .sync-note')
+    await expect(feedbackSyncNote).toContainText('尚未写入正式排产计划')
+    await expect(page.locator('.agent-workbench-panel')).toContainText('正式计划待优化或保存')
+
+    await page.getByRole('button', { name: '排产优化' }).click()
+    await expect.poll(() => optimizeRequests).toBeGreaterThan(0)
+    await expect(page.locator('.agent-workbench-panel')).toContainText('正式排产计划已更新')
+    await page.locator('.agent-workbench-panel').screenshot({
+      path: resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'schedule-rush-formal-writeback-saved.png'),
+    })
+
+    const snapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_schedule_feedback_snapshot') || 'null'))
+    expect(snapshot.reasonDetail).toContain('推荐方案：加班插入')
+    expect(snapshot.reasonDetail).toContain('适用条件：锁定期内任务不可动，且夜班 CNC 有可用加班窗口')
+    expect(snapshot.reasonDetail).toContain('取舍代价：增加 20min 换线与夜班加班成本')
+    expect(snapshot.reasonDetail).toContain('未选方案：强插当前窗口')
+    expect(snapshot.reasonDetail).toContain('换设备插入')
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
+    await expect(scheduleEvidence.locator('span').getByText('人工采纳', { exact: true })).toBeVisible()
+    await expect(scheduleEvidence.getByText(/推荐方案：加班插入/)).toBeVisible()
+    await expect(scheduleEvidence.getByText(/适用条件：锁定期内任务不可动，且夜班 CNC 有可用加班窗口/)).toBeVisible()
+    await expect(scheduleEvidence.getByText(/取舍代价：增加 20min 换线与夜班加班成本/)).toBeVisible()
+    await expect(scheduleEvidence.getByText(/未选方案：强插当前窗口/)).toBeVisible()
+    writeFileSync(
+      resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'manifest.md'),
+      [
+        '# 2026-06-12 急单正式计划回写真实浏览器证据',
+        '',
+        '- `schedule-rush-formal-writeback-saved.png`：采纳急单建议后执行排产优化，调度员 Agent 工作台显示“正式排产计划已更新”。',
+        '- E2E：`scheduling.spec.ts` / `急单插单生成多方案决策包并进入 OTD 复盘`。',
+        '- 防回归：用例断言 optimize API mock 至少命中一次，避免 offline demo mode 短路后误报。',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+  })
+
+  test('采纳事件建议进入反馈记录', async ({ page }) => {
+    const eventPanel = page.locator('.event-queue-panel')
+    const feedbackPanel = page.locator('.feedback-panel')
+
+    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+    await eventPanel.getByRole('button', { name: '采纳此建议' }).click()
+
+    const workbench = page.locator('.agent-workbench-panel')
+    await expect(workbench.getByText('已进入反馈数据集')).toBeVisible()
+    await expect(workbench.locator('.suggestion-title').getByText('急单插入重排建议')).toBeVisible()
+    await expect(workbench.getByText('排产反馈已写入本地复盘记录')).toBeVisible()
+
+    const record = feedbackPanel.locator('.feedback-record')
+    await expect(record.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(record.locator('span').getByText(/急单插单事件/)).toBeVisible()
+    await expect(record.getByText(/急单插入重排建议/)).toBeVisible()
+    await expect(record.getByText(/锁定期后第一个 CNC 空窗/)).toBeVisible()
+
+    const snapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_schedule_feedback_snapshot') || 'null'))
+    expect(snapshot.reasonDetail).toContain('急单插入重排建议')
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
+    await expect(scheduleEvidence.locator('span').getByText('人工采纳', { exact: true })).toBeVisible()
+    await expect(scheduleEvidence.getByText('已采纳 Agent 推荐')).toBeVisible()
+    await expect(scheduleEvidence.getByText(/急单插入重排建议/)).toBeVisible()
+  })
+
+  test('点击任务条展示任务级排产解释', async ({ page }) => {
+    await page.locator('.task-explain-shortcuts').getByRole('button', { name: /打开 .* 排产解释/ }).first().click()
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel.getByText('一键解释这个排产')).toBeVisible()
+    await expect(panel.getByText(/为什么排在这里/)).toBeVisible()
+    const cardLabels = panel.locator('.explain-card span')
+    await expect(cardLabels.getByText('交期', { exact: true })).toBeVisible()
+    await expect(cardLabels.getByText('设备', { exact: true })).toBeVisible()
+    await expect(cardLabels.getByText('前置工序', { exact: true })).toBeVisible()
+    await expect(cardLabels.getByText('缺料', { exact: true })).toBeVisible()
+    await expect(cardLabels.getByText('瓶颈', { exact: true })).toBeVisible()
+    const summary = panel.locator('.explain-summary')
+    await expect(summary.getByText('Agent 推荐理由')).toBeVisible()
+    await expect(summary.getByText('风险提示')).toBeVisible()
+    await expect(summary.getByText('可替代方案')).toBeVisible()
+  })
+
+  test('工单详情接口失败时真实浏览器展示本地排产解释兜底', async ({ page }) => {
+    let detailRequests = 0
+    await page.route('**/api/v1/scheduling/workorders/**', async route => {
+      detailRequests += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'work order detail unavailable from chromium' }),
+      })
+    })
+
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel).toHaveAttribute('role', 'dialog')
+    await expect(panel).toHaveAttribute('aria-modal', 'true')
+    await expect(panel).toHaveAttribute('aria-label', /工单详情/)
+    await expect(panel.getByRole('button', { name: '关闭工单详情' })).toBeVisible()
+    const error = panel.locator('.panel-body.error')
+    await expect(error).toHaveAttribute('role', 'alert')
+    await expect(error).toHaveAttribute('aria-live', 'assertive')
+    await expect(error).toContainText('工单详情加载失败')
+    await expect(error).toContainText('已显示本地排产解释兜底')
+    await expect(error).toContainText('work order detail unavailable from chromium')
+    expect(detailRequests).toBeGreaterThan(0)
+  })
+
+  test('甘特图路由往返后仍可用键盘打开工单详情', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.detail-panel')).toHaveClass(/open/)
+
+    await page.goto('report', { waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel).toHaveAttribute('role', 'dialog')
+    await expect(panel).toHaveAttribute('aria-label', /工单详情/)
+  })
+
+  test('工具栏显示', async ({ page }) => {
+    await expect(page.locator('.toolbar')).toBeVisible()
+
+    await expect(page.getByText('排产优化').first()).toBeVisible()
+    await expect(page.getByText('刷新').first()).toBeVisible()
+  })
+
+  test('优化目标下拉框可用', async ({ page }) => {
+    const select = page.locator('.objective-label select')
+    await expect(select).toBeVisible()
+
+    await select.selectOption('utilization')
+    await expect(select).toHaveValue('utilization')
+
+    await select.selectOption('balanced')
+    await expect(select).toHaveValue('balanced')
+  })
+
+  test('甘特图视图渲染', async ({ page }) => {
+    await expect(page.locator('.gantt-container')).toBeVisible()
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+  })
+
+  test('真实 dhtmlx 甘特图在后端排产载荷可用时渲染任务条', async ({ page }) => {
+    await expect(page.locator('.gantt-e2e-markers')).toHaveCount(0)
+    await page.waitForSelector('.gantt_task_line', { timeout: 15000 })
+    await expect(page.locator('.gantt_task_line').filter({ hasText: 'WO-RUSH-9001' }).first()).toBeVisible()
+  })
+
+  test('真实 dhtmlx 甘特图在 URL 显式关闭离线演示时不被 demo hints 覆盖', async ({ page }) => {
+    await page.goto('scheduling?offlineDemo=false', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    await expect(page.locator('.gantt-e2e-markers')).toHaveCount(0)
+    await page.waitForSelector('.gantt_task_line', { timeout: 15000 })
+    await expect(page.locator('.gantt_task_line').filter({ hasText: 'WO-RUSH-9001' }).first()).toBeVisible()
+  })
+
+  test('真实 dhtmlx 甘特图在离线演示存储读取失败时仍渲染任务条', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalGetItem = Storage.prototype.getItem
+      Storage.prototype.getItem = function getItemWithOfflineDemoReadFailure(key: string) {
+        if (key === 'aimes_offline_demo') {
+          throw new Error('offline demo storage unavailable from chromium')
+        }
+        return originalGetItem.call(this, key)
+      }
+    })
+
+    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await expect(page.locator('.gantt-e2e-markers')).toHaveCount(0)
+    await page.waitForSelector('.gantt_task_line', { timeout: 15000 })
+    await expect(page.locator('.gantt_task_line').filter({ hasText: 'WO-RUSH-9001' }).first()).toBeVisible()
+    await expect(page.locator('.gantt-wrapper [role="alert"]')).toHaveCount(0)
+  })
+
+  test('真实 dhtmlx 拖拽保存后回写正式排产计划', async ({ page }) => {
+    const rescheduleRequests: Array<{ url: string; body: unknown }> = []
+    await page.route('**/api/v1/scheduling/plans/*/items/*', async route => {
+      const request = route.request()
+      rescheduleRequests.push({
+        url: request.url(),
+        body: request.postDataJSON(),
+      })
+      await route.fulfill({ status: 204 })
+    })
+
+    await adoptRushSuggestion(page)
+
+    await dragRushTask(page, () => rescheduleRequests.length > 0)
+
+    await expect.poll(() => rescheduleRequests.length).toBeGreaterThan(0)
+    expect(rescheduleRequests[0].url).toContain('/api/v1/scheduling/plans/plan-dhtmlx-e2e/items/dhtmlx-item-rush')
+    expect(rescheduleRequests[0].body).toEqual(expect.objectContaining({
+      plannedStartTime: expect.any(String),
+      plannedEndTime: expect.any(String),
+    }))
+    const rescheduleWindow = getRescheduleWindow(rescheduleRequests[0].body)
+    expect(rescheduleWindow.durationHours).toBeCloseTo(4, 1)
+    expect(rescheduleWindow.plannedEndTime.getTime()).toBeGreaterThan(rescheduleWindow.plannedStartTime.getTime())
+    await expect(page.locator('.agent-workbench-panel')).toContainText('正式排产计划已更新')
+    await page.locator('.agent-workbench-panel').screenshot({
+      path: resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-writeback-saved.png'),
+    })
+    writeFileSync(
+      resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-writeback-manifest.md'),
+      [
+        '# 2026-06-12 真实 dhtmlx 拖拽保存浏览器证据',
+        '',
+        '- `real-dhtmlx-drag-writeback-saved.png`：关闭轻量 marker/offline demo 后，真实 dhtmlx 任务条拖拽触发 reschedule API，工作台显示“正式排产计划已更新”。',
+        '- E2E：`scheduling.spec.ts` / `真实 dhtmlx 拖拽保存后回写正式排产计划`。',
+        '- 防回归：断言 PATCH URL 指向 `plan-dhtmlx-e2e/items/dhtmlx-item-rush`，且提交有效 `plannedStartTime/plannedEndTime` 形成约 4 小时排产窗口。',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+  })
+
+  test('真实 dhtmlx 拖拽保存后刷新从后端读回同一窗口', async ({ page }) => {
+    const rescheduleRequests: Array<{ url: string; body: unknown }> = []
+    const getWindows: Array<{ plannedStartTime: string; plannedEndTime: string }> = []
+    let currentPlan = createDhtmlxSchedulePlan()
+    await page.route('**/api/v1/scheduling/current', route => {
+      const rushItem = currentPlan.items.find(item => item.id === 'dhtmlx-item-rush')
+      if (rushItem) {
+        getWindows.push({
+          plannedStartTime: rushItem.plannedStartTime,
+          plannedEndTime: rushItem.plannedEndTime,
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(currentPlan),
+      })
+    })
+    await page.route('**/api/v1/scheduling/plans/*/items/*', async route => {
+      const request = route.request()
+      const body = request.postDataJSON()
+      rescheduleRequests.push({
+        url: request.url(),
+        body,
+      })
+      const rescheduleWindow = getRescheduleWindow(body)
+      currentPlan = withRushWindow(
+        currentPlan,
+        rescheduleWindow.plannedStartTime.toISOString(),
+        rescheduleWindow.plannedEndTime.toISOString(),
+      )
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await adoptRushSuggestion(page)
+
+    await dragRushTask(page, () => rescheduleRequests.length > 0)
+
+    await expect.poll(() => rescheduleRequests.length).toBeGreaterThan(0)
+    const savedWindow = getRescheduleWindow(rescheduleRequests[0].body)
+    await expect(page.locator('.agent-workbench-panel')).toContainText('正式排产计划已更新')
+
+    await page.getByRole('button', { name: '刷新' }).click()
+    await expect.poll(() => getWindows.length).toBeGreaterThanOrEqual(2)
+    const readBackWindow = getWindows[getWindows.length - 1]
+    expect(readBackWindow).toEqual({
+      plannedStartTime: savedWindow.plannedStartTime.toISOString(),
+      plannedEndTime: savedWindow.plannedEndTime.toISOString(),
+    })
+    await expect(page.locator('.gantt_task_line[task_id="dhtmlx-item-rush"]').first()).toBeVisible()
+    await page.locator('.gantt-wrapper').screenshot({
+      path: resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-refresh-readback.png'),
+    })
+    writeFileSync(
+      resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-refresh-readback-manifest.md'),
+      [
+        '# 2026-06-12 真实 dhtmlx 拖拽保存刷新读回浏览器证据',
+        '',
+        '- `real-dhtmlx-drag-refresh-readback.png`：真实 dhtmlx 任务条拖拽保存后点击“刷新”，页面继续渲染正式任务条。',
+        '- E2E：`scheduling.spec.ts` / `真实 dhtmlx 拖拽保存后刷新从后端读回同一窗口`。',
+        '- 防回归：PATCH mock 会把保存窗口写入可变 read model；刷新后第二次 GET 必须读回相同 `plannedStartTime/plannedEndTime`，避免只靠前端本地内存误报。',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+  })
+
+  test('真实 dhtmlx 拖拽保存失败时保留待回写状态并显示原因', async ({ page }) => {
+    const rescheduleRequests: Array<{ url: string; body: unknown }> = []
+    await page.route('**/api/v1/scheduling/plans/*/items/*', async route => {
+      const request = route.request()
+      rescheduleRequests.push({
+        url: request.url(),
+        body: request.postDataJSON(),
+      })
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'reschedule write rejected by MES' }),
+      })
+    })
+
+    await adoptRushSuggestion(page)
+
+    await dragRushTask(page, () => rescheduleRequests.length > 0)
+
+    await expect.poll(() => rescheduleRequests.length).toBeGreaterThan(0)
+    expect(rescheduleRequests[0].url).toContain('/api/v1/scheduling/plans/plan-dhtmlx-e2e/items/dhtmlx-item-rush')
+    expect(rescheduleRequests[0].body).toEqual(expect.objectContaining({
+      plannedStartTime: expect.any(String),
+      plannedEndTime: expect.any(String),
+    }))
+    const rescheduleWindow = getRescheduleWindow(rescheduleRequests[0].body)
+    expect(rescheduleWindow.durationHours).toBeCloseTo(4, 1)
+    expect(rescheduleWindow.plannedEndTime.getTime()).toBeGreaterThan(rescheduleWindow.plannedStartTime.getTime())
+    await expect(page.locator('.gantt-wrapper [role="alert"]')).toContainText('保存失败')
+    await expect(page.locator('.gantt-wrapper [role="alert"]')).toContainText('reschedule write rejected by MES')
+    await expect(page.locator('.agent-workbench-panel')).toContainText('正式计划待优化或保存')
+    await expect(page.locator('.agent-workbench-panel')).not.toContainText('正式排产计划已更新')
+    await page.locator('.gantt-wrapper').screenshot({
+      path: resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-writeback-failed.png'),
+    })
+    writeFileSync(
+      resolve(RUSH_WRITEBACK_EVIDENCE_DIR, 'real-dhtmlx-drag-writeback-failed-manifest.md'),
+      [
+        '# 2026-06-12 真实 dhtmlx 拖拽保存失败浏览器证据',
+        '',
+        '- `real-dhtmlx-drag-writeback-failed.png`：真实 dhtmlx 任务条拖拽触发 reschedule API，但后端拒绝写入后页面显示“保存失败”。',
+        '- E2E：`scheduling.spec.ts` / `真实 dhtmlx 拖拽保存失败时保留待回写状态并显示原因`。',
+        '- 防回归：失败时工作台仍显示“正式计划待优化或保存”，不能误报“正式排产计划已更新”。',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+  })
+
+  test('真实 dhtmlx 拖拽缺少排产计划 ID 时提示无法写回', async ({ page }) => {
+    const planWithoutId = {
+      ...createDhtmlxSchedulePlan(),
+      id: '',
+    }
+    const rescheduleRequests: Array<{ url: string; body: unknown }> = []
+    await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(planWithoutId),
+    }))
+    await page.route('**/api/v1/scheduling/plans/*/items/*', async route => {
+      const request = route.request()
+      rescheduleRequests.push({
+        url: request.url(),
+        body: request.postDataJSON(),
+      })
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+    await adoptRushSuggestion(page)
+
+    await dragRushTask(
+      page,
+      async () => await page.locator('.gantt-wrapper [role="alert"]').filter({ hasText: '当前排产计划缺少 ID' }).count() > 0,
+      2500,
+    )
+
+    await expect(page.locator('.gantt-wrapper [role="alert"]')).toContainText('保存失败')
+    await expect(page.locator('.gantt-wrapper [role="alert"]')).toContainText('当前排产计划缺少 ID')
+    await expect.poll(() => rescheduleRequests.length).toBe(0)
+    await expect(page.locator('.agent-workbench-panel')).not.toContainText('正式排产计划已更新')
+  })
+
+  test('任务条数量', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    const bars = page.locator('.gantt_task_line')
+    const count = await bars.count()
+    expect(count).toBeGreaterThan(0)
+  })
+
+  test('时间刻度切换', async ({ page }) => {
+    const scaleSelect = page.locator('.scale-label select')
+    await expect(scaleSelect).toBeVisible()
+
+    await scaleSelect.selectOption('month')
+    await expect(page.locator('.gantt_task')).toBeVisible()
+
+    await scaleSelect.selectOption('day')
+    await expect(page.locator('.gantt_task')).toBeVisible()
+  })
+
+  test('依赖箭头渲染', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    const links = page.locator('.gantt_task_link')
+    const count = await links.count()
+    expect(count).toBeGreaterThanOrEqual(0)
+  })
+
+  test('瓶颈设备标记', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    // Bottleneck indicator may not render in every dataset
+    const bottleneck = page.getByText('[瓶颈]').first()
+    const visible = await bottleneck.isVisible().catch(() => false)
+    if (visible) {
+      await expect(bottleneck).toBeVisible()
+    }
+  })
+
+  test('刷新按钮点击响应', async ({ page }) => {
+    const refreshBtn = page.getByText('刷新')
+    await expect(refreshBtn).toBeVisible()
+    await refreshBtn.click()
+    // Page should remain stable after refresh
+    await expect(page.locator('.toolbar')).toBeVisible()
+  })
+})
+
+async function mockAgentApi(page: import('@playwright/test').Page, options: { adoptStatus: 200 | 403 }) {
+  await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+  const pendingDecision = {
+    id: 'agent-decision-e2e-001',
+    triggerEventId: 'trigger-e2e-001',
+    boundedContext: 'Scheduling',
+    decisionType: 'MultiScenario',
+    status: 'PendingReview',
+    recommendedScenarioId: 'scenario-weighted',
+    agentName: 'SchedulingAgent',
+    agentVersion: 'v1.5-e2e',
+    traceId: 'trace-agent-e2e-001',
+    promptHash: 'prompt-hash-e2e',
+    contextHash: 'context-hash-e2e',
+    inputSummary: 'Workshop=ws-001;Orders=30',
+    outputSummary: 'Scenarios=2;Recommended=WeightedComposite',
+    businessKey: 'Workshop:ws-001',
+    createdAt: '2026-05-23T08:00:00.000Z',
+    scenarios: [
+      {
+        id: 'scenario-fcfs',
+        strategyName: 'FCFS',
+        priorityRule: 'FCFS',
+        capacityStrategy: 'LeastLoaded',
+        objective: 'due_date',
+        otdProjection: 26.67,
+        utilizationProjection: 71,
+        changeoverProjection: 218,
+        explanation: '先到先服务基线。',
+      },
+      {
+        id: 'scenario-weighted',
+        strategyName: 'WeightedComposite',
+        priorityRule: 'WeightedComposite',
+        capacityStrategy: 'LeastLoaded',
+        objective: 'due_date',
+        otdProjection: 30,
+        utilizationProjection: 82,
+        changeoverProjection: 145,
+        explanation: '交期、优先级、加工时长加权后推荐。',
+      },
+    ],
+  }
+
+  await page.route('**/api/v1/scheduling/agent/decisions**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([]),
+  }))
+  await page.route('**/api/v1/scheduling/agent/recommend', route => route.fulfill({
+    status: 201,
+    contentType: 'application/json',
+    body: JSON.stringify(pendingDecision),
+  }))
+  await page.route('**/api/v1/scheduling/agent/agent-decision-e2e-001/adopt', route => {
+    if (options.adoptStatus === 403) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Only Admin or Planner can adopt Scheduling Agent decisions.' }),
+      })
+    }
+
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...pendingDecision,
+        status: 'Adopted',
+        adoptedScenarioId: 'scenario-weighted',
+      }),
+    })
+  })
+}
+
+async function dragRushTask(page: Page, isSaved: () => boolean | Promise<boolean>, pollTimeout = 5000) {
+  await expect(page.locator('.gantt-e2e-markers')).toHaveCount(0)
+
+  const rushTask = page.locator('.gantt_task_line[task_id="dhtmlx-item-rush"]').first()
+  await expect(rushTask).toBeVisible()
+  await rushTask.scrollIntoViewIfNeeded()
+  await expect(rushTask).toBeInViewport()
+
+  const dragHandle = rushTask.locator('.gantt_task_content').first()
+  await expect(dragHandle).toBeVisible()
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const beforeBox = await waitForStableBox(rushTask)
+    const handleBox = await waitForStableBox(dragHandle)
+    const startX = handleBox.x + Math.max(12, handleBox.width / 2)
+    const startY = handleBox.y + handleBox.height / 2
+
+    await page.mouse.move(startX, startY)
+    await page.mouse.down()
+    await page.mouse.move(startX + 180, startY, { steps: 16 })
+    await page.mouse.up()
+    await expect(rushTask).toBeVisible()
+
+    const saved = await expect.poll(() => isSaved(), { timeout: pollTimeout })
+      .toBe(true)
+      .then(() => true)
+      .catch(() => false)
+    if (saved) return
+
+    const afterBox = await rushTask.boundingBox()
+    const taskMoved = !!afterBox && Math.abs(afterBox.x - beforeBox.x) > 20
+    if (!taskMoved) {
+      continue
+    }
+  }
+
+  await expect.poll(() => isSaved(), { timeout: Math.max(10000, pollTimeout) }).toBe(true)
+}
+
+function getRescheduleWindow(body: unknown) {
+  const payload = body as { plannedStartTime?: unknown; plannedEndTime?: unknown }
+  expect(typeof payload.plannedStartTime).toBe('string')
+  expect(typeof payload.plannedEndTime).toBe('string')
+
+  const plannedStartTime = new Date(payload.plannedStartTime as string)
+  const plannedEndTime = new Date(payload.plannedEndTime as string)
+  expect(Number.isNaN(plannedStartTime.getTime())).toBe(false)
+  expect(Number.isNaN(plannedEndTime.getTime())).toBe(false)
+
+  return {
+    plannedStartTime,
+    plannedEndTime,
+    durationHours: (plannedEndTime.getTime() - plannedStartTime.getTime()) / (1000 * 60 * 60),
+  }
+}
+
+async function adoptRushSuggestion(page: Page) {
+  const eventPanel = page.locator('.event-queue-panel')
+  const rushEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' })
+  await expect(rushEvent).toBeVisible()
+  await rushEvent.scrollIntoViewIfNeeded()
+
+  const generateButton = rushEvent.getByRole('button', { name: '生成重排建议' })
+  await expect(generateButton).toBeVisible()
+  await clickUntilSuggestionAppears(generateButton, eventPanel.locator('.agent-suggestion'))
+  const adoptButton = eventPanel.locator('.adopt-suggestion')
+  await expect(adoptButton).toBeVisible()
+  await adoptButton.click()
+  await expect(page.locator('.agent-workbench-panel')).toContainText('正式计划待优化或保存')
+}
+
+async function clickUntilSuggestionAppears(button: Locator, suggestion: Locator) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await button.click()
+    const appeared = await suggestion
+      .filter({ hasText: '急单插入重排建议' })
+      .first()
+      .waitFor({ state: 'visible', timeout: 2500 })
+      .then(() => true)
+      .catch(() => false)
+    if (appeared) return
+  }
+  await expect(suggestion).toContainText('急单插入重排建议')
+}
+
+async function waitForStableBox(locator: Locator) {
+  let stableBox = await locator.boundingBox()
+  await expect.poll(async () => {
+    const first = await locator.boundingBox()
+    if (!first) return false
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const second = await locator.boundingBox()
+    if (!second) return false
+    const isStable =
+      Math.abs(first.x - second.x) < 1 &&
+      Math.abs(first.y - second.y) < 1 &&
+      Math.abs(first.width - second.width) < 1 &&
+      Math.abs(first.height - second.height) < 1
+    if (isStable) stableBox = second
+    return isStable
+  }, { timeout: 10000 }).toBe(true)
+  expect(stableBox).not.toBeNull()
+  return stableBox!
+}
+
+async function mockSchedulingPlanApis(page: import('@playwright/test').Page) {
+  const plan = createDhtmlxSchedulePlan()
+
+  const equipment = {
+    items: [
+      {
+        id: 'eq-cnc-01',
+        equipmentCode: 'CNC-01',
+        equipmentName: 'CNC 加工中心 01',
+        equipmentType: 'CNC',
+        status: 'running',
+        capacity: 120,
+        utilizationRate: 0.86,
+      },
+      {
+        id: 'eq-asm-01',
+        equipmentCode: 'ASM-01',
+        equipmentName: '总装线 01',
+        equipmentType: 'Assembly',
+        status: 'running',
+        capacity: 80,
+        utilizationRate: 0.72,
+      },
+    ],
+    totalCount: 2,
+    page: 1,
+    pageSize: 50,
+  }
+
+  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(plan),
+  }))
+  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(['eq-cnc-01']),
+  }))
+  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(equipment),
+  }))
+}
+
+async function mockLaborRetrySchedulingPlanApis(page: import('@playwright/test').Page) {
+  const plan = {
+    id: 'plan-labor-retry-e2e',
+    planName: '人员证据重试排产计划',
+    planStartDate: '2026-05-20T08:00:00.000Z',
+    planEndDate: '2026-05-20T20:00:00.000Z',
+    overallUtilizationRate: 0.82,
+    onTimeDeliveryRate: 0.9,
+    totalChangeoverMinutes: 35,
+    groupCount: 1,
+    createdAt: '2026-05-20T08:00:00.000Z',
+    items: [
+      {
+        id: 'labor-retry-item-wo-013-op-10',
+        workOrderId: 'wo-013',
+        workOrderNumber: 'WO-013',
+        equipmentId: 'eq-heat-01',
+        equipmentName: '热处理炉 01',
+        plannedStartTime: '2026-05-20T10:00:00.000Z',
+        plannedEndTime: '2026-05-20T14:00:00.000Z',
+        sequence: 1,
+        setupTime: '20 分钟',
+        dependentItems: [],
+      },
+    ],
+  }
+
+  const equipment = {
+    items: [
+      {
+        id: 'eq-heat-01',
+        equipmentCode: 'HEAT-01',
+        equipmentName: '热处理炉 01',
+        equipmentType: 'HeatTreatment',
+        status: 'running',
+        capacity: 60,
+        utilizationRate: 0.82,
+      },
+    ],
+    totalCount: 1,
+    page: 1,
+    pageSize: 50,
+  }
+
+  await page.route('**/api/v1/**', route => {
+    const url = route.request().url()
+    if (url.includes('/api/v1/auth/refresh')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          token: 'mock-e2e-token',
+          refreshToken: 'mock-e2e-refresh',
+          expiresAt: '2026-12-31T23:59:59Z',
+        }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: route.request().method() === 'GET' ? '[]' : route.request().postData() || '{}',
+    })
+  })
+
+  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(plan),
+  }))
+  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(['eq-heat-01']),
+  }))
+  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(equipment),
+  }))
+}
+
+async function mockLaborEvidenceRetryApis(page: import('@playwright/test').Page) {
+  laborEvidenceRetryReads.blocks = 0
+  laborEvidenceRetryReads.reassignments = 0
+
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      token: 'mock-e2e-token',
+      refreshToken: 'mock-e2e-refresh',
+      expiresAt: '2026-12-31T23:59:59Z',
+    }),
+  }))
+  await page.route('**/api/v1/llm/status', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ available: false, provider: 'mock-e2e' }),
+  }))
+  await page.route('**/api/v1/dashboard', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      equipmentStatus: [],
+      todaySchedules: [],
+      materialAlerts: [],
+      qualitySummary: {
+        inspectionCount: 0,
+        passCount: 0,
+        defectCount: 0,
+        pendingAnomalies: 0,
+      },
+    }),
+  }))
+  await page.route('**/api/v1/risk/dashboard', route => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ message: 'chromium risk dashboard unavailable for labor retry evidence' }),
+  }))
+  await page.route('**/api/v1/scheduling/**', route => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (
+      pathname.endsWith('/api/v1/scheduling/current')
+      || pathname.endsWith('/api/v1/scheduling/labor-qualification-blocks')
+      || pathname.endsWith('/api/v1/scheduling/labor-reassignments')
+    ) {
+      return route.fallback()
+    }
+    const method = request.method()
+    if (method !== 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: request.postData() || '{}',
+      })
+    }
+    return route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: `chromium scheduling evidence unavailable: ${pathname}` }),
+    })
+  })
+  await page.route('**/api/v1/scheduling/labor-qualification-blocks**', route => {
+    if (route.request().method() !== 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+    }
+    laborEvidenceRetryReads.blocks += 1
+    if (laborEvidenceRetryReads.blocks === 1) {
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'chromium startup labor block read unavailable' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'labor-qualification-block-WO-013-heat-treatment',
+          workOrderNumber: 'WO-013',
+          operationCode: 'OP-10',
+          operationCodes: ['OP-10', 'OP-20'],
+          operationName: '淬火 / 回火',
+          blockedEmployeeNumber: 'EMP-003',
+          blockedEmployeeName: '王五',
+          blockedCertification: '热处理上岗证',
+          blockedExpiresAt: '2026-05-25',
+          requiredSkill: '热处理',
+          requiredTeam: '乙班',
+          requiredShift: '夜班',
+          reviewerEmployeeNumber: 'EMP-004',
+          reviewerName: '赵六',
+          reviewerRole: '工程放行',
+          reason: 'EMP-003 王五的热处理上岗证已通过补证改派重新放行。',
+          auditId: 'AUD-LABOR-BLOCK-20260520-001',
+          traceId: 'TRACE-LABOR-BLOCK-WO-013-OP-10',
+          createdAt: '2026-05-20T09:00:00.000Z',
+          status: 'released',
+          releasedAt: '2026-05-20T10:00:00.000Z',
+          releaseAuditId: 'AUD-LABOR-RELEASE-20260520-001',
+          releaseTraceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
+          releaseReason: '补证改派后释放热处理开工。',
+        },
+      ]),
+    })
+  })
+  await page.route('**/api/v1/scheduling/labor-reassignments**', route => {
+    if (route.request().method() !== 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+    }
+    laborEvidenceRetryReads.reassignments += 1
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(laborEvidenceRetryReads.reassignments === 1 ? [] : [
+        {
+          id: 'labor-reassignment-release-WO-013-heat-treatment',
+          workOrderNumber: 'WO-013',
+          operationCode: 'OP-10',
+          operationCodes: ['OP-10', 'OP-20'],
+          operationName: '淬火 / 回火',
+          blockedEmployeeNumber: 'EMP-003',
+          blockedEmployeeName: '王五',
+          blockedCertification: '热处理上岗证',
+          blockedExpiresAt: '2026-05-25',
+          replacementEmployeeNumber: 'EMP-006',
+          replacementEmployeeName: '孙八',
+          replacementTeam: '甲班',
+          replacementShift: '白班',
+          replacementSkill: '补证改派 / 热处理替班复核',
+          replacementCertification: '热处理上岗证',
+          replacementExpiresAt: '2026-12-31',
+          reviewerEmployeeNumber: 'EMP-004',
+          reviewerName: '赵六',
+          reviewerRole: '工程放行',
+          reason: '补证改派后，EMP-006 接管 WO-013 热处理开工复核。',
+          auditId: 'AUD-LABOR-RELEASE-20260520-001',
+          traceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
+          createdAt: '2026-05-20T10:00:00.000Z',
+          status: 'approved',
+        },
+      ]),
+    })
+  })
+}
+
+function createDhtmlxSchedulePlan() {
+  return {
+    id: 'plan-dhtmlx-e2e',
+    planName: '真实 dhtmlx e2e 排产计划',
+    planStartDate: '2026-06-01T08:00:00.000Z',
+    planEndDate: '2026-06-02T18:00:00.000Z',
+    overallUtilizationRate: 0.86,
+    onTimeDeliveryRate: 0.95,
+    totalChangeoverMinutes: 55,
+    groupCount: 2,
+    createdAt: '2026-06-01T08:00:00.000Z',
+    items: [
+      {
+        id: 'dhtmlx-item-rush',
+        workOrderId: 'dhtmlx-wo-rush',
+        workOrderNumber: 'WO-RUSH-9001',
+        equipmentId: 'eq-cnc-01',
+        equipmentName: 'CNC 加工中心 01',
+        plannedStartTime: '2026-06-01T10:00:00.000Z',
+        plannedEndTime: '2026-06-01T14:00:00.000Z',
+        sequence: 1,
+        setupTime: '20 分钟',
+        dependentItems: [],
+      },
+      {
+        id: 'dhtmlx-item-demo',
+        workOrderId: 'dhtmlx-wo-demo',
+        workOrderNumber: 'WO-DEMO-1002',
+        equipmentId: 'eq-asm-01',
+        equipmentName: '总装线 01',
+        plannedStartTime: '2026-06-01T15:00:00.000Z',
+        plannedEndTime: '2026-06-01T18:00:00.000Z',
+        sequence: 2,
+        setupTime: '15 分钟',
+        dependentItems: ['dhtmlx-item-rush'],
+      },
+    ],
+  }
+}
+
+function withRushWindow(
+  plan: ReturnType<typeof createDhtmlxSchedulePlan>,
+  plannedStartTime: string,
+  plannedEndTime: string,
+) {
+  return {
+    ...plan,
+    items: plan.items.map(item => item.id === 'dhtmlx-item-rush'
+      ? { ...item, plannedStartTime, plannedEndTime }
+      : item),
+  }
+}

@@ -121,7 +121,12 @@
       </div>
 
       <div class="supplier-network-actions">
-        <button type="button" class="btn supplier-network-commit" @click="handleSupplierNetworkDecision">
+        <button
+          type="button"
+          class="btn supplier-network-commit"
+          :disabled="Boolean(supplierNetworkDecision)"
+          @click="handleSupplierNetworkDecision"
+        >
           选优供应商并生成 SLA 决策
         </button>
       </div>
@@ -134,7 +139,12 @@
       </div>
     </section>
 
-    <section v-if="outsourcingCommitment" class="outsourcing-receipt-panel" aria-label="外协承诺到货确认">
+    <section
+      v-if="outsourcingCommitment"
+      class="outsourcing-receipt-panel"
+      aria-label="外协承诺到货确认"
+      aria-describedby="outsourcing-receipt-help"
+    >
       <div class="outsourcing-receipt-heading">
         <div>
           <span class="eyebrow">外协协同</span>
@@ -143,6 +153,19 @@
         <span class="risk-badge" :class="outsourcingCommitment.receiptTraceId ? 'mitigated' : 'ordered'">
           {{ outsourcingCommitment.statusLabel }}
         </span>
+      </div>
+
+      <div id="outsourcing-receipt-help" class="outsourcing-receipt-guidance">
+        <p>
+          确认外协到货前，请核对承诺追踪、外协厂、影响工单、到货责任人和排产释放路径。
+          Before confirming outsourced receipt, verify commitment trace, partner, impacted work orders, receiver, and scheduling release path.
+        </p>
+        <nav aria-label="外协到货相关入口">
+          <RouterLink to="/risk">风险预警 / Risk queue</RouterLink>
+          <RouterLink to="/scheduling">AI 排产 / Scheduling</RouterLink>
+          <RouterLink to="/report">报表证据 / Report evidence</RouterLink>
+          <a href="#outsourcing-receipt-help">帮助 / Help</a>
+        </nav>
       </div>
 
       <div class="outsourcing-receipt-grid">
@@ -379,6 +402,7 @@ import { getPurchaseList, getPurchaseById, createPurchaseOrder, submitPurchaseOr
 import { exportToCsv } from '../../utils/export'
 import { formatDate } from '../../utils/date'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import ShortageActionPanel, {
   type ShortageAction,
   type ShortageTrace,
@@ -449,6 +473,8 @@ const showReceive = ref(false)
 const receiveMaterial = ref('')
 const receiveQty = ref(1)
 const notification = ref('')
+const startupSyncFailures = ref<string[]>([])
+const operationNotification = ref('')
 const form = ref<CreatePurchaseOrderRequest>({
   orderNumber: '', supplierName: '', supplierContact: '', expectedDeliveryDate: '', remark: '', createdBy: 'operator1',
   items: [],
@@ -459,9 +485,9 @@ type SupplyRiskDecision = 'open' | 'escalated' | 'alternate_committed' | 'altern
 
 const supplyRiskDecision = ref<SupplyRiskDecision>('open')
 const supplyRiskTrace = ref<{ title: string; detail: string; traceId: string } | null>(null)
-const supplierNetworkDecision = ref<SupplierNetworkDecision | null>(readSupplierNetworkDecision())
-const outsourcingCommitment = ref<OutsourcingCommitmentPackage | null>(readLatestOutsourcingCommitmentPackage())
-const materialDispatch = ref<AnomalyDispatchRecord | null>(readAnomalyDispatchRecordByType('material'))
+const supplierNetworkDecision = ref<SupplierNetworkDecision | null>(null)
+const outsourcingCommitment = ref<OutsourcingCommitmentPackage | null>(null)
+const materialDispatch = ref<AnomalyDispatchRecord | null>(null)
 const shortageAction = ref<ShortageAction>({
   materialCode: 'M-AL-6061',
   materialName: '铝合金 6061',
@@ -614,21 +640,61 @@ function purchaseOrderOptionLabel(o: PurchaseOrderSummary) {
   return `${o.orderNumber}，${o.supplierName}，${statusLabel(o.status)}，${o.itemCount} 项`
 }
 
+function appendStartupSyncFailure(message: string) {
+  startupSyncFailures.value = [...startupSyncFailures.value, message]
+  syncNotification()
+}
+
+function setNotification(message: string) {
+  operationNotification.value = message
+  syncNotification()
+}
+
+function clearNotification() {
+  operationNotification.value = ''
+  syncNotification()
+}
+
+function syncNotification() {
+  notification.value = [
+    ...startupSyncFailures.value,
+    operationNotification.value,
+  ].filter(Boolean).join('；')
+}
+
+function applyLocalStartupEvidence() {
+  try {
+    supplierNetworkDecision.value = readSupplierNetworkDecision()
+  } catch (error: unknown) {
+    appendStartupSyncFailure(`供应网络本地决策读取失败：${errorMessage(error, '请稍后重试')}`)
+  }
+  try {
+    outsourcingCommitment.value = readLatestOutsourcingCommitmentPackage()
+  } catch (error: unknown) {
+    appendStartupSyncFailure(`外协承诺本地读取失败：${errorMessage(error, '请稍后重试')}`)
+  }
+  try {
+    materialDispatch.value = readAnomalyDispatchRecordByType('material')
+  } catch (error: unknown) {
+    appendStartupSyncFailure(`异常分流本地供应整改读取失败：${errorMessage(error, '请稍后重试')}`)
+  }
+}
+
 async function selectOrder(o: PurchaseOrderSummary) {
   try {
     selected.value = await getPurchaseById(o.id)
-    if (notification.value.startsWith('采购订单详情加载失败')) notification.value = ''
+    if (operationNotification.value.startsWith('采购订单详情加载失败')) clearNotification()
   } catch (error: unknown) {
-    notification.value = `采购订单详情加载失败，已保留当前列表状态：${errorMessage(error, '请稍后重试')}`
+    setNotification(`采购订单详情加载失败，已保留当前列表状态：${errorMessage(error, '请稍后重试')}`)
     selected.value = demoDetail[o.id] || null
   }
 }
 
 async function handleCreate() {
-  notification.value = ''
+  clearNotification()
   try { await createPurchaseOrder(form.value) }
   catch (error) {
-    notification.value = `创建失败：${errorMessage(error, '请稍后重试')}`
+    setNotification(`创建失败：${errorMessage(error, '请稍后重试')}`)
     return
   }
   showCreate.value = false
@@ -636,10 +702,10 @@ async function handleCreate() {
 
 async function handleSubmit() {
   if (!selected.value) return
-  notification.value = ''
+  clearNotification()
   try { selected.value = await submitPurchaseOrder(selected.value.id) }
   catch (error) {
-    notification.value = `提交失败：${errorMessage(error, '请稍后重试')}`
+    setNotification(`提交失败：${errorMessage(error, '请稍后重试')}`)
     return
   }
   await refreshList()
@@ -647,10 +713,10 @@ async function handleSubmit() {
 
 async function handleConfirm() {
   if (!selected.value) return
-  notification.value = ''
+  clearNotification()
   try { selected.value = await confirmPurchaseOrder(selected.value.id) }
   catch (error) {
-    notification.value = `确认失败：${errorMessage(error, '请稍后重试')}`
+    setNotification(`确认失败：${errorMessage(error, '请稍后重试')}`)
     return
   }
   await refreshList()
@@ -673,10 +739,10 @@ async function handleConfirm() {
 
 async function handleReceive() {
   if (!selected.value || !receiveMaterial.value) return
-  notification.value = ''
+  clearNotification()
   try { selected.value = await receivePurchaseOrder(selected.value.id, { materialCode: receiveMaterial.value, quantity: receiveQty.value }) }
   catch (error) {
-    notification.value = `收货失败：${errorMessage(error, '请稍后重试')}`
+    setNotification(`收货失败：${errorMessage(error, '请稍后重试')}`)
     return
   }
   showReceive.value = false
@@ -685,10 +751,10 @@ async function handleReceive() {
 
 async function handleCancel() {
   if (!selected.value) return
-  notification.value = ''
+  clearNotification()
   try { await cancelPurchaseOrder(selected.value.id) }
   catch (error) {
-    notification.value = `取消失败：${errorMessage(error, '请稍后重试')}`
+    setNotification(`取消失败：${errorMessage(error, '请稍后重试')}`)
     return
   }
   selected.value = { ...selected.value, status: 'Cancelled', completedDate: new Date().toISOString() }
@@ -832,7 +898,7 @@ function handleEscalateSupplyRisk() {
       createdAt: record.createdAt,
     })
   } catch (error: unknown) {
-    notification.value = `供应风险升级失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    setNotification(`供应风险升级失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`)
     return
   }
   supplyRiskDecision.value = 'escalated'
@@ -860,7 +926,7 @@ function handleCommitAlternateSupplier() {
       createdAt: record.createdAt,
     })
   } catch (error: unknown) {
-    notification.value = `替代供应商锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    setNotification(`替代供应商锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`)
     return
   }
   supplyRiskDecision.value = 'alternate_committed'
@@ -895,7 +961,7 @@ function handleReceiveAlternateSupplier() {
       createdAt: record.createdAt,
     })
   } catch (error: unknown) {
-    notification.value = `替代供应商到货确认失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    setNotification(`替代供应商到货确认失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`)
     return
   }
   supplyRiskDecision.value = 'alternate_received'
@@ -907,6 +973,7 @@ function handleReceiveAlternateSupplier() {
 }
 
 function handleSupplierNetworkDecision() {
+  if (supplierNetworkDecision.value) return
   const createdAt = new Date().toISOString()
   const record: SupplierNetworkDecision = {
     materialCode: supplyRisk.materialCode,
@@ -940,7 +1007,7 @@ function handleSupplierNetworkDecision() {
       createdAt,
     })
   } catch (error: unknown) {
-    notification.value = `供应网络选优失败，SLA 决策仍未生效：${errorMessage(error, '请稍后重试')}`
+    setNotification(`供应网络选优失败，SLA 决策仍未生效：${errorMessage(error, '请稍后重试')}`)
     return
   }
   supplierNetworkDecision.value = record
@@ -951,12 +1018,12 @@ function handleConfirmOutsourcingArrival() {
   try {
     const updated = confirmOutsourcingCommitmentArrival(outsourcingCommitment.value.sourceKpiId, '采购 王工')
     if (!updated) {
-      notification.value = '外协到货确认失败，外协承诺仍待到货：未找到可写入的外协承诺记录'
+      setNotification('外协到货确认失败，外协承诺仍待到货：未找到可写入的外协承诺记录')
       return
     }
     outsourcingCommitment.value = updated
   } catch (error: unknown) {
-    notification.value = `外协到货确认失败，外协承诺仍待到货：${errorMessage(error, '请稍后重试')}`
+    setNotification(`外协到货确认失败，外协承诺仍待到货：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -997,7 +1064,7 @@ function handleMaterialSupplierCorrection() {
       createdAt,
     })
   } catch (error: unknown) {
-    notification.value = `供应商整改承诺锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    setNotification(`供应商整改承诺锁定失败，供应风险仍未关闭：${errorMessage(error, '请稍后重试')}`)
     return
   }
   supplyRiskDecision.value = 'alternate_committed'
@@ -1084,7 +1151,7 @@ async function handleReceiveExpedite() {
       createdAt: new Date().toISOString(),
     })
   } catch (error: unknown) {
-    notification.value = `采购加急收货回写失败，缺料风险仍未关闭：${errorMessage(error, '请稍后重试')}`
+    setNotification(`采购加急收货回写失败，缺料风险仍未关闭：${errorMessage(error, '请稍后重试')}`)
     return
   }
   selected.value = receivedDetail
@@ -1100,16 +1167,20 @@ async function handleReceiveExpedite() {
     title: '采购收货已回写风险',
     detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。`,
   }
-  const assistantRecoveryPackage = (await readAssistantRecoveryPackagesBackendFirst())
-    .find(record => record.workOrders.includes('WO-RUSH-9001') && record.purchaseActionStatus !== 'closed')
-  const assistantPurchaseClosure = assistantRecoveryPackage
-    ? closeAssistantRecoveryPurchaseAction(assistantRecoveryPackage.id, '采购 王工', receivedDetail.orderNumber)
-    : null
-  if (assistantPurchaseClosure?.purchaseActionSummary) {
-    shortageTrace.value = {
-      title: '采购收货已回写风险',
-      detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。${assistantPurchaseClosure.purchaseActionSummary}`,
+  try {
+    const assistantRecoveryPackage = (await readAssistantRecoveryPackagesBackendFirst())
+      .find(record => record.workOrders.includes('WO-RUSH-9001') && record.purchaseActionStatus !== 'closed')
+    const assistantPurchaseClosure = assistantRecoveryPackage
+      ? closeAssistantRecoveryPurchaseAction(assistantRecoveryPackage.id, '采购 王工', receivedDetail.orderNumber)
+      : null
+    if (assistantPurchaseClosure?.purchaseActionSummary) {
+      shortageTrace.value = {
+        title: '采购收货已回写风险',
+        detail: `${materialCode} 加急收货完成，缺口清零，排产缺料风险从高风险降为可执行。${assistantPurchaseClosure.purchaseActionSummary}`,
+      }
     }
+  } catch (error: unknown) {
+    setNotification(`采购收货已回写风险，但 AI 助手采购动作闭环失败：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1119,7 +1190,7 @@ async function refreshList() {
     orders.value = result.items
     totalCount.value = result.totalCount
   } catch (error: unknown) {
-    notification.value = `采购订单列表刷新失败，当前保留本地列表状态：${errorMessage(error, '请稍后重试')}`
+    setNotification(`采购订单列表刷新失败，当前保留本地列表状态：${errorMessage(error, '请稍后重试')}`)
   }
 }
 
@@ -1170,26 +1241,27 @@ async function applyAuditFocus() {
 }
 
 onMounted(async () => {
+  applyLocalStartupEvidence()
   await applyAuditFocus()
   try {
     await applyStoredSupplyRiskEscalation()
   } catch (error: unknown) {
-    notification.value = `供应风险状态同步失败：${errorMessage(error, '请稍后重试')}`
+    appendStartupSyncFailure(`供应风险状态同步失败：${errorMessage(error, '请稍后重试')}`)
   }
   try {
     supplierNetworkDecision.value = await readSupplierNetworkDecisionBackendFirst()
   } catch (error: unknown) {
-    notification.value = `供应网络决策同步失败：${errorMessage(error, '请稍后重试')}`
+    appendStartupSyncFailure(`供应网络决策同步失败：${errorMessage(error, '请稍后重试')}`)
   }
   try {
     outsourcingCommitment.value = await readLatestOutsourcingCommitmentPackageBackendFirst()
   } catch (error: unknown) {
-    notification.value = `外协承诺同步失败：${errorMessage(error, '请稍后重试')}`
+    appendStartupSyncFailure(`外协承诺同步失败：${errorMessage(error, '请稍后重试')}`)
   }
   try {
     materialDispatch.value = await readAnomalyDispatchRecordByTypeBackendFirst('material')
   } catch (error: unknown) {
-    notification.value = `异常分流供应整改同步失败：${errorMessage(error, '请稍后重试')}`
+    appendStartupSyncFailure(`异常分流供应整改同步失败：${errorMessage(error, '请稍后重试')}`)
   }
   try {
     const result = await getPurchaseList(currentPage.value, pageSize.value)
@@ -1198,7 +1270,9 @@ onMounted(async () => {
   } catch (error: unknown) {
     orders.value = demoOrders
     totalCount.value = demoOrders.length
-    notification.value = `采购订单列表加载失败，已显示本地演示采购单：${errorMessage(error, '请稍后重试')}`
+    if (!isOfflineDemoError(error)) {
+      appendStartupSyncFailure(`采购订单列表加载失败，已显示本地演示采购单：${errorMessage(error, '请稍后重试')}`)
+    }
   } finally {
     await applyAuditFocus()
   }
@@ -1371,6 +1445,38 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 .outsourcing-receipt-heading h3 {
   color: #111827;
   font-size: 16px;
+}
+
+.outsourcing-receipt-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+  font-size: 12px;
+}
+
+.outsourcing-receipt-guidance p {
+  margin: 0;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.outsourcing-receipt-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.outsourcing-receipt-guidance a {
+  color: #1d4ed8;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .risk-badge {
@@ -1686,6 +1792,14 @@ h4 { font-size: 13px; margin: 0 0 8px; }
 }
 
 @media (max-width: 1100px) {
+  .outsourcing-receipt-guidance {
+    grid-template-columns: 1fr;
+  }
+
+  .outsourcing-receipt-guidance nav {
+    justify-content: flex-start;
+  }
+
   .supply-risk-grid,
   .supplier-network-grid,
   .outsourcing-receipt-grid,

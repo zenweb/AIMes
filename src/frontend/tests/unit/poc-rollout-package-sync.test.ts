@@ -89,6 +89,18 @@ describe('poc rollout package sync', () => {
     await expect(readPocRolloutPackageRecordBackendFirst()).resolves.toEqual(localRecord)
   })
 
+  it('ignores incomplete backend rollout packages so go-live gate and actions stay auditable', async () => {
+    const localRecord = writePocRolloutPackageRecord(signoff())
+    getLatestPocRolloutPackage.mockResolvedValueOnce({
+      id: 'poc-rollout-package-20260521',
+      title: 'POC 成功转上线交付行动包',
+      status: 'ready',
+      createdAt: '2099-01-01T00:00:00.000Z',
+    })
+
+    await expect(readPocRolloutPackageRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
   it('removes corrupt rollout JSON so boards do not render stale go-live actions', () => {
     localStorage.setItem('aimes_poc_rollout_package', '{bad json')
 

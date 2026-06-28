@@ -14,30 +14,13 @@ namespace MES.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
-                name: "original_assignments_json",
-                table: "schedule_adoption_feedbacks",
-                type: "jsonb",
-                nullable: false,
-                oldClrType: typeof(string),
-                oldType: "text");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "modified_assignments_json",
-                table: "schedule_adoption_feedbacks",
-                type: "jsonb",
-                nullable: false,
-                oldClrType: typeof(string),
-                oldType: "text");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "moved_order_ids_json",
-                table: "schedule_adoption_feedbacks",
-                type: "jsonb",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "text",
-                oldNullable: true);
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE schedule_adoption_feedbacks
+                    ALTER COLUMN original_assignments_json TYPE jsonb USING original_assignments_json::jsonb,
+                    ALTER COLUMN modified_assignments_json TYPE jsonb USING modified_assignments_json::jsonb,
+                    ALTER COLUMN moved_order_ids_json TYPE jsonb USING moved_order_ids_json::jsonb;
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "IX_work_orders_status_workshop_id_product_code_planned_start_date_planned_end_date",
@@ -88,30 +71,13 @@ namespace MES.Infrastructure.Data.Migrations
                 name: "IX_stock_transactions_material_code_created_at",
                 table: "stock_transactions");
 
-            migrationBuilder.AlterColumn<string>(
-                name: "original_assignments_json",
-                table: "schedule_adoption_feedbacks",
-                type: "text",
-                nullable: false,
-                oldClrType: typeof(string),
-                oldType: "jsonb");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "modified_assignments_json",
-                table: "schedule_adoption_feedbacks",
-                type: "text",
-                nullable: false,
-                oldClrType: typeof(string),
-                oldType: "jsonb");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "moved_order_ids_json",
-                table: "schedule_adoption_feedbacks",
-                type: "text",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "jsonb",
-                oldNullable: true);
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE schedule_adoption_feedbacks
+                    ALTER COLUMN original_assignments_json TYPE text USING original_assignments_json::text,
+                    ALTER COLUMN modified_assignments_json TYPE text USING modified_assignments_json::text,
+                    ALTER COLUMN moved_order_ids_json TYPE text USING moved_order_ids_json::text;
+                """);
         }
     }
 }

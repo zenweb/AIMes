@@ -68,6 +68,36 @@ describe('assistant action package sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/assistant-recovery-packages', { params: { take: 8 } })
   })
 
+  it('fails loud for recovery package refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('assistant recovery backend unavailable'))
+
+    await expect(readAssistantRecoveryPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('assistant recovery backend unavailable')
+  })
+
+  it('fails loud when recovery package backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readAssistantRecoveryPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组执行包审计载荷')
+  })
+
+  it('keeps local complete recovery package when backend returns incomplete package evidence', async () => {
+    const localRecord = writeAssistantRecoveryPackage({ actor: 'admin', role: 'Planner' })
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: localRecord.id,
+          title: localRecord.title,
+          traceId: 'TRACE-BACKEND-PARTIAL-RECOVERY',
+          createdAt: '2026-06-20T08:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(readAssistantRecoveryPackagesBackendFirst()).resolves.toEqual([localRecord])
+  })
+
   it('closes purchase, quality, and package handoff actions with OTD evidence', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-31T09:00:00.000Z'))

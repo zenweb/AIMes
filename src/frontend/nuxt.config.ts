@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url'
+import { createBackendProxyConfig, resolveApiTarget } from './src/config/backend-proxy'
 
-const apiTarget = process.env.VITE_API_TARGET ?? process.env.NUXT_API_TARGET ?? 'http://localhost:5003'
+const apiTarget = resolveApiTarget()
+const backendProxy = createBackendProxyConfig(apiTarget)
 const buildDir = process.env.NUXT_BUILD_DIR ?? '.nuxt'
 const nitroOutputDir = process.env.NITRO_OUTPUT_DIR
 const vueSharedPath = fileURLToPath(new URL('./node_modules/@vue/shared/dist/shared.esm-bundler.js', import.meta.url))
@@ -9,10 +11,7 @@ export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
   buildDir,
-  routeRules: {
-    '/api/**': { proxy: `${apiTarget}/api/**` },
-    '/hubs/**': { proxy: `${apiTarget}/hubs/**` },
-  },
+  routeRules: backendProxy.routeRules,
   app: {
     baseURL: '/scheduling/',
     head: {
@@ -38,10 +37,7 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
   vite: {
     server: {
-      proxy: {
-        '/api': { target: apiTarget, changeOrigin: true },
-        '/hubs': { target: apiTarget, changeOrigin: true, ws: true },
-      },
+      proxy: backendProxy.viteProxy,
     },
     build: {
       sourcemap: process.env.NODE_ENV === 'production' ? 'hidden' : true,
@@ -84,8 +80,7 @@ export default defineNuxtConfig({
         }
       : {}),
     devProxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
-      '/hubs': { target: apiTarget, changeOrigin: true, ws: true },
+      ...backendProxy.nitroDevProxy,
     },
   },
   compatibilityDate: '2026-05-18',

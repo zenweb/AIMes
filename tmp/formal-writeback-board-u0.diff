@@ -1,0 +1,616 @@
+diff --git a/src/frontend/src/components/schedule/ScheduleBoard.vue b/src/frontend/src/components/schedule/ScheduleBoard.vue
+index afe1b21..4226140 100644
+--- a/src/frontend/src/components/schedule/ScheduleBoard.vue
++++ b/src/frontend/src/components/schedule/ScheduleBoard.vue
+@@ -32,0 +33,17 @@
++      <section class="schedule-workbench-guidance" aria-label="排产操作指引">
++        <div>
++          <strong>优化或采纳前，请确认目标、锁定期、证据链和回写路径。</strong>
++          <span>Before optimizing or adopting a plan, confirm objective, lock window, evidence trail, and writeback path.</span>
++        </div>
++        <nav aria-label="排产关联证据">
++          <a href="/audit-logs">审计回放 / Audit trail</a>
++          <a href="/report">交付报表 / Delivery report</a>
++          <a href="#schedule-workbench-help">帮助 / Help</a>
++        </nav>
++      </section>
++
++      <section id="schedule-workbench-help" class="schedule-workbench-help" aria-label="排产帮助">
++        <strong>先复核影响范围，再执行优化、采纳或拖拽回写。</strong>
++        <span>Review impact scope before optimization, adoption, or drag writeback.</span>
++      </section>
++
+@@ -58,0 +76 @@
++        :formal-schedule-writeback="formalScheduleWriteback"
+@@ -105,0 +124,4 @@
++        <p v-if="scheduleSaveStatus" class="schedule-save-status" role="status" aria-live="polite">
++          {{ scheduleSaveStatus }}
++        </p>
++
+@@ -224 +246 @@ import { readAnomalyDispatchRecords, readAnomalyDispatchRecordsBackendFirst, typ
+-import { writeScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
++import { readScheduleFeedbackSnapshot, writeScheduleFeedbackSnapshot } from '../../utils/schedule-feedback-sync'
+@@ -310,0 +333,2 @@ const feedbackSyncNote = ref('')
++const formalScheduleWriteback = ref<'pending' | 'saved'>('pending')
++const scheduleSaveStatus = ref('')
+@@ -311,0 +336 @@ const riskEventSyncNote = ref('')
++const startupEngineeringConstraintWarnings = ref<string[]>([])
+@@ -458 +483 @@ const abReportWarning = ref('')
+-const laborEvidenceStartupWarnings = ref<string[]>([])
++let scheduleStateVersion = 0
+@@ -460 +485 @@ const displayWarnings = computed(() => [
+-  ...laborEvidenceStartupWarnings.value,
++  ...startupEngineeringConstraintWarnings.value,
+@@ -466 +491 @@ const laborEvidenceStartupFailed = computed(() =>
+-  laborEvidenceStartupWarnings.value.some(warning => warning.startsWith(laborEvidenceWarningPrefix))
++  startupEngineeringConstraintWarnings.value.some(warning => warning.startsWith(laborEvidenceWarningPrefix))
+@@ -532,0 +558,2 @@ const scenarioTemplatesByType: Record<ScheduleEventItem['type'], ScenarioTemplat
++      fitCondition: '锁定期内任务不可动，且夜班 CNC 有可用加班窗口',
++      tradeoffCost: '增加 20min 换线与夜班加班成本',
+@@ -541,0 +569,2 @@ const scenarioTemplatesByType: Record<ScheduleEventItem['type'], ScenarioTemplat
++      fitCondition: '客户交期不可让步，且当前窗口允许打破 8 小时锁定期',
++      tradeoffCost: '低优先级工单立即后移，并产生 42min 额外换线',
+@@ -549,0 +579,2 @@ const scenarioTemplatesByType: Record<ScheduleEventItem['type'], ScenarioTemplat
++      fitCondition: 'CNC-002/CNC-003 具备同工艺能力，且首件检验可同步插入',
++      tradeoffCost: '需要额外设备能力确认和首件检验窗口',
+@@ -826,2 +857,19 @@ function formatScenarioDecisionTrail(suggestion: ScheduleAgentSuggestion) {
+-  const rejectedSummary = rejected.map(scenario => `${scenario.name}：${scenario.rationale}`).join('；')
+-  return `${suggestion.action} 推荐方案：${recommended.name}（${recommended.strategy}，OTD ${recommended.otdImpact}，延期 ${recommended.delayImpact}，换线 ${recommended.changeoverImpact}）。未选方案：${rejectedSummary}。决策依据：${suggestion.decisionRationale ?? recommended.rationale}`
++  const scenarioDecisionNotes = (scenario: ScheduleAgentScenario) => [
++    scenario.fitCondition ? `适用条件：${scenario.fitCondition}` : '',
++    scenario.tradeoffCost ? `取舍代价：${scenario.tradeoffCost}` : '',
++  ].filter(Boolean).join('，')
++  const recommendedNotes = scenarioDecisionNotes(recommended)
++  const recommendedSummary = [
++    recommended.strategy,
++    `OTD ${recommended.otdImpact}`,
++    `延期 ${recommended.delayImpact}`,
++    `换线 ${recommended.changeoverImpact}`,
++    recommendedNotes,
++  ].filter(Boolean).join('，')
++  const rejectedSummary = rejected
++    .map((scenario) => {
++      const notes = scenarioDecisionNotes(scenario)
++      return `${scenario.name}：${[scenario.rationale, notes].filter(Boolean).join('，')}`
++    })
++    .join('；')
++  return `${suggestion.action} 推荐方案：${recommended.name}（${recommendedSummary}）。未选方案：${rejectedSummary}。决策依据：${suggestion.decisionRationale ?? recommended.rationale}`
+@@ -854 +902,46 @@ watch(activeAgentSuggestion, (suggestion) => {
+-async function loadData(options: { preserveError?: boolean } = {}) {
++function missingFeedbackSnapshotFields(snapshot: Partial<ScheduleFeedbackRecord> | null | undefined) {
++  if (!snapshot) return ['反馈记录']
++  const requiredFields: Array<[keyof ScheduleFeedbackRecord, string]> = [
++    ['decision', '决策'],
++    ['decisionLabel', '决策标签'],
++    ['reasonCategory', '原因分类'],
++    ['categoryLabel', '分类标签'],
++    ['reasonDetail', '原因说明'],
++    ['objectiveLabel', '目标'],
++    ['createdAt', '时间'],
++  ]
++  return requiredFields
++    .filter(([key]) => typeof snapshot[key] !== 'string' || !String(snapshot[key]).trim())
++    .map(([, label]) => label)
++}
++
++async function restoreLatestFeedbackSnapshot() {
++  let backendSnapshot: ScheduleFeedbackRecord | null = null
++  try {
++    backendSnapshot = await api.getLatestAdoptionFeedback()
++  } catch (e: unknown) {
++    if (!isOfflineDemoError(e)) {
++      feedbackSyncNote.value = `后端最新采纳反馈读取失败，已继续加载排产计划并回退本地最近反馈：${errorMessage(e, '未知错误')}`
++    }
++  }
++  let snapshot = backendSnapshot
++  const backendMissingFields = missingFeedbackSnapshotFields(backendSnapshot)
++  if (backendSnapshot && backendMissingFields.length) {
++    feedbackSyncNote.value = `后端最新采纳反馈不可审计，缺少${backendMissingFields.join('、')}，已回退本地最近反馈。`
++    snapshot = readScheduleFeedbackSnapshot()
++  } else if (!snapshot) {
++    snapshot = readScheduleFeedbackSnapshot()
++  }
++  if (!snapshot) return
++  latestFeedback.value = {
++    decision: snapshot.decision,
++    decisionLabel: snapshot.decisionLabel,
++    reasonCategory: snapshot.reasonCategory,
++    categoryLabel: snapshot.categoryLabel,
++    reasonDetail: snapshot.reasonDetail,
++    objectiveLabel: snapshot.objectiveLabel,
++    createdAt: snapshot.createdAt,
++  }
++}
++
++async function loadData(options: { preserveError?: boolean; expectedStateVersion?: number } = {}) {
+@@ -857,0 +951,2 @@ async function loadData(options: { preserveError?: boolean } = {}) {
++  scheduleSaveStatus.value = ''
++  const loadVersion = options.expectedStateVersion ?? scheduleStateVersion
+@@ -862,0 +958 @@ async function loadData(options: { preserveError?: boolean } = {}) {
++        if (isOfflineDemoError(e)) throw e
+@@ -882,0 +979,3 @@ async function loadData(options: { preserveError?: boolean } = {}) {
++    if (loadVersion !== scheduleStateVersion) {
++      return
++    }
+@@ -902,0 +1002,3 @@ async function loadData(options: { preserveError?: boolean } = {}) {
++    if (loadVersion !== scheduleStateVersion) {
++      return
++    }
+@@ -904 +1006,3 @@ async function loadData(options: { preserveError?: boolean } = {}) {
+-    warnings.value = [`后端排产服务不可用，当前显示演示排产数据：${errorMessage(e, '未知错误')}`]
++    warnings.value = isOfflineDemoError(e)
++      ? []
++      : [`后端排产服务不可用，当前显示演示排产数据：${errorMessage(e, '未知错误')}`]
+@@ -1064 +1168,6 @@ async function applyShortageResolutionToEvents(events: ScheduleEventItem[]): Pro
+-  const outsourcingCommitment = await readLatestOutsourcingCommitmentPackageBackendFirst()
++  const backendOutsourcingCommitment = await readLatestOutsourcingCommitmentPackageBackendFirst()
++  const currentOutsourcingCommitment = outsourcingCommitmentRecord.value
++  const outsourcingCommitment = currentOutsourcingCommitment?.scheduleReleaseTraceId
++    && (!backendOutsourcingCommitment || backendOutsourcingCommitment.sourceKpiId === currentOutsourcingCommitment.sourceKpiId)
++    ? currentOutsourcingCommitment
++    : backendOutsourcingCommitment
+@@ -1589 +1698,2 @@ async function applyEngineeringChangeApprovals() {
+-  const approval = await readAlternateMaterialApprovalBackendFirst()
++  const readbackOptions = { failLoud: true }
++  const approval = await readAlternateMaterialApprovalBackendFirst(readbackOptions)
+@@ -1591 +1701 @@ async function applyEngineeringChangeApprovals() {
+-  const impact = await readEngineeringChangeImpactAnalysisBackendFirst()
++  const impact = await readEngineeringChangeImpactAnalysisBackendFirst(readbackOptions)
+@@ -1674 +1784 @@ async function applyRouteCapabilityValidation() {
+-  const validation = await readRouteCapabilityValidationBackendFirst()
++  const validation = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
+@@ -1700,0 +1811,56 @@ async function applyRouteCapabilityValidation() {
++async function loadStartupEngineeringConstraints() {
++  const failures: string[] = []
++  try {
++    await applyEngineeringChangeApprovals()
++  } catch (error: unknown) {
++    if (!isOfflineDemoError(error)) {
++      failures.push(`BOM/ECN 约束：${errorMessage(error, '未知错误')}`)
++    }
++  }
++  try {
++    await applyRouteCapabilityValidation()
++  } catch (error: unknown) {
++    if (!isOfflineDemoError(error)) {
++      failures.push(`工艺能力约束：${errorMessage(error, '未知错误')}`)
++    }
++  }
++  if (failures.length) {
++    startupEngineeringConstraintWarnings.value = [`工程约束启动证据加载失败，已继续加载排产主数据：${failures.join('；')}`]
++  }
++}
++
++async function readAssistantEngineeringConstraintPackagesSafely(
++  context: 'startup' | 'handoff-refresh' = 'startup',
++) {
++  try {
++    return await readAssistantEngineeringConstraintPackagesBackendFirst({
++      failLoud: context === 'handoff-refresh',
++    })
++  } catch (error: unknown) {
++    const warning = context === 'handoff-refresh'
++      ? `Assistant 工程约束闭环刷新失败，已保留本地闭环建议：${errorMessage(error, '未知错误')}`
++      : `工程约束启动证据加载失败，已继续加载排产主数据：Assistant 工程约束包：${errorMessage(error, '未知错误')}`
++    if (context === 'handoff-refresh') {
++      appendFeedbackSyncNote(warning)
++    }
++    if (!startupEngineeringConstraintWarnings.value.includes(warning)) {
++      startupEngineeringConstraintWarnings.value = [
++        ...startupEngineeringConstraintWarnings.value,
++        warning,
++      ]
++    }
++    return []
++  }
++}
++
++function appendFeedbackSyncNote(message: string) {
++  feedbackSyncNote.value = feedbackSyncNote.value
++    ? `${feedbackSyncNote.value}；${message}`
++    : message
++}
++
++function keepClosedAssistantRecoveryPackageVisible(closed: AssistantRecoveryPackage) {
++  if (assistantRecoveryPackageRecords.value.some(record => record.id === closed.id)) return
++  assistantRecoveryPackageRecords.value = [closed, ...assistantRecoveryPackageRecords.value]
++}
++
+@@ -1715,4 +1881,4 @@ async function loadStartupLaborEvidence() {
+-      const warning = laborEvidenceWarningPrefix + '，已继续加载排产主数据：' + errorMessage(e, '未知错误')
+-      if (!laborEvidenceStartupWarnings.value.includes(warning)) {
+-        laborEvidenceStartupWarnings.value = [
+-          ...laborEvidenceStartupWarnings.value,
++      const warning = `${laborEvidenceWarningPrefix}，已继续加载排产主数据：${errorMessage(e, '未知错误')}`
++      if (!startupEngineeringConstraintWarnings.value.includes(warning)) {
++        startupEngineeringConstraintWarnings.value = [
++          ...startupEngineeringConstraintWarnings.value,
+@@ -1728 +1894 @@ async function retryStartupLaborEvidence() {
+-  laborEvidenceStartupWarnings.value = laborEvidenceStartupWarnings.value.filter(
++  startupEngineeringConstraintWarnings.value = startupEngineeringConstraintWarnings.value.filter(
+@@ -1929 +2095 @@ function handleExportCsv() {
+-async function handleOptimize() {
++async function handleOptimize(objective = currentObjective.value) {
+@@ -1931 +2097 @@ async function handleOptimize() {
+-  loadingMessage.value = `排产优化中（目标: ${currentObjective.value}）...`
++  loadingMessage.value = `排产优化中（目标: ${objective}）...`
+@@ -1936 +2102 @@ async function handleOptimize() {
+-      optimizationObjective: currentObjective.value,
++      optimizationObjective: objective,
+@@ -1939,11 +2105,2 @@ async function handleOptimize() {
+-    if (result.plan) {
+-      error.value = ''
+-      planData.value = result.plan
+-      planName.value = result.plan.planName
+-      metrics.utilization = Math.round(result.plan.overallUtilizationRate * 100)
+-      metrics.onTimeDelivery = Math.round(result.plan.onTimeDeliveryRate * 100)
+-      metrics.changeoverMinutes = result.plan.totalChangeoverMinutes ?? metrics.changeoverMinutes
+-      metrics.groupCount = result.plan.groupCount ?? metrics.groupCount
+-      applyImpactComparison(result.plan)
+-      ganttData.value = planToGanttData(result.plan, equipmentList.value, bottleneckIds.value)
+-      warnings.value = result.warnings ?? result.plan.warnings ?? []
++    if (!result.plan) {
++      throw new Error('后端优化结果缺少排产计划')
+@@ -1950,0 +2108,14 @@ async function handleOptimize() {
++
++    error.value = ''
++    planData.value = result.plan
++    planName.value = result.plan.planName
++    metrics.utilization = Math.round(result.plan.overallUtilizationRate * 100)
++    metrics.onTimeDelivery = Math.round(result.plan.onTimeDeliveryRate * 100)
++    metrics.changeoverMinutes = result.plan.totalChangeoverMinutes ?? metrics.changeoverMinutes
++    metrics.groupCount = result.plan.groupCount ?? metrics.groupCount
++    scheduleStateVersion += 1
++    applyImpactComparison(result.plan)
++    ganttData.value = planToGanttData(result.plan, equipmentList.value, bottleneckIds.value)
++    warnings.value = result.warnings ?? result.plan.warnings ?? []
++    formalScheduleWriteback.value = 'saved'
++    return true
+@@ -1953,0 +2125 @@ async function handleOptimize() {
++    return false
+@@ -2067 +2239,10 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
+-  if (!task || !planData.value?.id) return
++  if (!task) {
++    error.value = `保存失败: 未找到可写回的排产任务 ${taskId}`
++    scheduleSaveStatus.value = ''
++    return
++  }
++  if (!planData.value?.id) {
++    error.value = `保存失败: 当前排产计划缺少 ID，无法写回任务 ${taskId}`
++    scheduleSaveStatus.value = ''
++    return
++  }
+@@ -2068,0 +2250 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
++  scheduleSaveStatus.value = ''
+@@ -2077,0 +2260 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
++    task.end_date = newEnd
+@@ -2079,0 +2263,2 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
++    formalScheduleWriteback.value = 'saved'
++    scheduleSaveStatus.value = `${task.text} 已保存到正式排产计划：${formatScheduleSaveDate(newStart)} - ${formatScheduleSaveDate(newEnd)}`
+@@ -2081,0 +2267 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
++    scheduleSaveStatus.value = ''
+@@ -2087,0 +2274,4 @@ function handleTaskDragEnd(taskId: string, newStart: Date, newEnd: Date) {
++function formatScheduleSaveDate(value: Date) {
++  return value.toISOString().slice(0, 16).replace('T', ' ')
++}
++
+@@ -2188,0 +2379,4 @@ function objectiveLabel(objective: string): string {
++function needsFormalScheduleWritebackNotice(payload: ScheduleFeedbackPayload) {
++  return payload.decision === 'accepted' && payload.reasonCategory === 'rush_event_agent'
++}
++
+@@ -2191,0 +2386,4 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
++  const needsWritebackNotice = needsFormalScheduleWritebackNotice(payload)
++  if (needsWritebackNotice) {
++    formalScheduleWriteback.value = 'pending'
++  }
+@@ -2210 +2408,3 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
+-    feedbackSyncNote.value = '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台。'
++    feedbackSyncNote.value = needsWritebackNotice
++      ? '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台，且尚未写入正式排产计划。'
++      : '反馈已写入本地复盘记录；当前排产计划缺少 ID，暂未同步后台。'
+@@ -2225 +2425,3 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
+-    feedbackSyncNote.value = '反馈已同步后台，可用于后续审计与模型复盘。'
++    feedbackSyncNote.value = needsWritebackNotice
++      ? '反馈已同步后台，可用于后续审计与模型复盘；尚未写入正式排产计划，请执行排产优化或拖拽保存后再交接生产。'
++      : '反馈已同步后台，可用于后续审计与模型复盘。'
+@@ -2228 +2430,3 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
+-    feedbackSyncNote.value = `后台反馈接口不可用，当前先保留本地复盘记录用于演示。原因：${errorMessage(e, '未知错误')}`
++    feedbackSyncNote.value = needsWritebackNotice
++      ? `后台反馈接口不可用，当前先保留本地复盘记录用于演示；尚未写入正式排产计划。原因：${errorMessage(e, '未知错误')}`
++      : `后台反馈接口不可用，当前先保留本地复盘记录用于演示。原因：${errorMessage(e, '未知错误')}`
+@@ -2234 +2438 @@ async function handleScheduleDecision(payload: ScheduleFeedbackPayload) {
+-function generateAgentSuggestion(event: ScheduleEventItem) {
++async function generateAgentSuggestion(event: ScheduleEventItem) {
+@@ -2323 +2527,15 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const routeCapability = routeCapabilityValidation.value ?? readRouteCapabilityValidation()
++  let routeCapability = routeCapabilityValidation.value ?? readRouteCapabilityValidation()
++  if (event.type === 'route') {
++    try {
++      routeCapability = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
++      if (!routeCapability) {
++        throw new Error('后端未返回工艺能力放行证据')
++      }
++      routeCapabilityValidation.value = routeCapability
++      error.value = ''
++    } catch (e: unknown) {
++      activeAgentSuggestion.value = null
++      error.value = `工艺能力证据刷新失败，未生成排产建议：${errorMessage(e, '未知错误')}`
++      return
++    }
++  }
+@@ -2337 +2555,15 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const engineeringImpact = engineeringChangeImpact.value ?? readEngineeringChangeImpactAnalysis()
++  let engineeringImpact = engineeringChangeImpact.value ?? readEngineeringChangeImpactAnalysis()
++  if (event.type === 'engineering') {
++    try {
++      engineeringImpact = await readEngineeringChangeImpactAnalysisBackendFirst({ failLoud: true })
++      if (!engineeringImpact) {
++        throw new Error('后端未返回工程变更影响证据')
++      }
++      engineeringChangeImpact.value = engineeringImpact
++      error.value = ''
++    } catch (e: unknown) {
++      activeAgentSuggestion.value = null
++      error.value = `工程变更证据刷新失败，未生成排产建议：${errorMessage(e, '未知错误')}`
++      return
++    }
++  }
+@@ -2383 +2615,15 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const approvedAlternate = alternateMaterialApproval.value ?? readAlternateMaterialApproval()
++  let approvedAlternate = alternateMaterialApproval.value ?? readAlternateMaterialApproval()
++  if (event.type === 'material' && event.title.includes('M-AL-6061')) {
++    try {
++      approvedAlternate = await readAlternateMaterialApprovalBackendFirst({ failLoud: true })
++      if (!approvedAlternate) {
++        throw new Error('后端未返回替代料放行证据')
++      }
++      alternateMaterialApproval.value = approvedAlternate
++      error.value = ''
++    } catch (e: unknown) {
++      activeAgentSuggestion.value = null
++      error.value = `替代料证据刷新失败，未生成排产建议：${errorMessage(e, '未知错误')}`
++      return
++    }
++  }
+@@ -2419 +2665,15 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const activeOutsourcingCommitment = outsourcingCommitmentRecord.value ?? readLatestOutsourcingCommitmentPackage()
++  let activeOutsourcingCommitment = outsourcingCommitmentRecord.value ?? readLatestOutsourcingCommitmentPackage()
++  if (event.id.startsWith('evt-outsourcing-commitment-')) {
++    try {
++      activeOutsourcingCommitment = await readLatestOutsourcingCommitmentPackageBackendFirst({ failLoud: true })
++      if (!activeOutsourcingCommitment || event.id !== `evt-outsourcing-commitment-${activeOutsourcingCommitment.sourceKpiId}`) {
++        throw new Error('后端未返回外协承诺证据')
++      }
++      outsourcingCommitmentRecord.value = activeOutsourcingCommitment
++      error.value = ''
++    } catch (e: unknown) {
++      activeAgentSuggestion.value = null
++      error.value = `外协承诺证据刷新失败，未生成排产建议：${errorMessage(e, '未知错误')}`
++      return
++    }
++  }
+@@ -2478 +2738,36 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const activeLaborBlock = currentActiveLaborQualificationBlock()
++  let activeLaborBlock = currentActiveLaborQualificationBlock()
++  let approvedLaborReassignment = currentLaborReassignment()
++  if (event.type === 'labor') {
++    try {
++      const [backendBlocks, backendReassignments] = await Promise.all([
++        readLaborQualificationBlocksBackendFirst({ failLoud: true }),
++        readLaborReassignmentsBackendFirst({ failLoud: true }),
++      ])
++      activeLaborBlock = backendBlocks.find(record => event.id === `evt-labor-block-${record.id}`) ?? null
++      approvedLaborReassignment = backendReassignments.find(record => event.id === `evt-labor-${record.id}`) ?? null
++      laborQualificationBlock.value = activeLaborBlock
++      laborReassignment.value = approvedLaborReassignment
++      if (!activeLaborBlock && !approvedLaborReassignment) {
++        throw new Error(event.resolved
++          ? '后端未返回人员替班放行证据'
++          : '后端未返回人员资质阻断证据')
++      }
++      error.value = ''
++    } catch (e: unknown) {
++      if (isOfflineDemoError(e)) {
++        activeLaborBlock = event.id === `evt-labor-block-${readLaborQualificationBlock()?.id}`
++          ? readLaborQualificationBlock()
++          : null
++        approvedLaborReassignment = event.id === `evt-labor-${readLaborReassignment()?.id}`
++          ? readLaborReassignment()
++          : null
++        laborQualificationBlock.value = activeLaborBlock
++        laborReassignment.value = approvedLaborReassignment
++        error.value = ''
++      } else {
++      activeAgentSuggestion.value = null
++      error.value = `人员资质证据刷新失败，未生成排产建议：${errorMessage(e, '未知错误')}`
++      return
++      }
++    }
++  }
+@@ -2493 +2787,0 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+-  const approvedLaborReassignment = currentLaborReassignment()
+@@ -2671 +2965,4 @@ async function adoptAgentSuggestion(suggestion: ScheduleAgentSuggestion) {
+-  if (!released) return
++  if (!released) {
++    feedbackSyncNote.value = `外协排产释放同步失败，采纳反馈已保留但释放审计未归档：未找到已到货的外协承诺包 ${activeOutsourcingCommitment.sourceKpiId}`
++    return
++  }
+@@ -2686,4 +2983,23 @@ async function closeAssistantRecoveryHandoff(id: string) {
+-  if (!closed) return
+-  assistantRecoveryPackageRecords.value = await readAssistantRecoveryPackagesBackendFirst()
+-  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
+-  await loadRiskTriggeredEvents()
++  if (!closed) {
++    appendFeedbackSyncNote(`Assistant 恢复交接闭环保存失败，未找到可闭环的本地执行包：${id}`)
++    return
++  }
++  try {
++    const refreshedPackages = await readAssistantRecoveryPackagesBackendFirst({ failLoud: true })
++    assistantRecoveryPackageRecords.value = refreshedPackages
++    if (!refreshedPackages.some(record => record.id === closed.id)) {
++      keepClosedAssistantRecoveryPackageVisible(closed)
++      appendFeedbackSyncNote(`Assistant 恢复交接闭环刷新缺少刚闭环的执行包，已保留本地闭环建议：${closed.id}`)
++    }
++  } catch (e: unknown) {
++    logUnlessOfflineDemo('warn', 'Assistant 恢复交接闭环刷新失败:', e)
++    appendFeedbackSyncNote(`Assistant 恢复交接闭环刷新失败，已保留本地闭环建议：${errorMessage(e, '未知错误')}`)
++  }
++  try {
++    assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesSafely('handoff-refresh')
++    await loadRiskTriggeredEvents()
++    keepClosedAssistantRecoveryPackageVisible(closed)
++  } catch (e: unknown) {
++    logUnlessOfflineDemo('warn', 'Assistant 工程约束闭环刷新失败:', e)
++    appendFeedbackSyncNote(`Assistant 工程约束闭环刷新失败，已保留本地闭环建议：${errorMessage(e, '未知错误')}`)
++  }
+@@ -2705 +3021,4 @@ function onFeedbackSubmitted() {
+-function onApplyObjective(objective: string) {
++async function onApplyObjective(objective: string) {
++  const optimized = await handleOptimize(objective)
++  if (!optimized) return
++
+@@ -2707,0 +3027,14 @@ function onApplyObjective(objective: string) {
++  const feedbackRecord: ScheduleFeedbackRecord = {
++    decision: 'accepted',
++    decisionLabel: '已采纳批量对比方案',
++    reasonCategory: 'batch_optimize_apply',
++    categoryLabel: '批量对比采纳',
++    reasonDetail: '从批量对比中选择此方案',
++    objectiveLabel: objectiveLabel(objective),
++    createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
++  }
++  latestFeedback.value = feedbackRecord
++  writeScheduleFeedbackSnapshot({
++    ...feedbackRecord,
++    traceId: `TRACE-SCH-FEEDBACK-BATCH-${objective}`,
++  })
+@@ -2726 +3058,0 @@ function onApplyObjective(objective: string) {
+-  handleOptimize()
+@@ -2730,2 +3062,3 @@ onMounted(async () => {
+-  await applyEngineeringChangeApprovals()
+-  await applyRouteCapabilityValidation()
++  const initialScheduleStateVersion = scheduleStateVersion
++  await restoreLatestFeedbackSnapshot()
++  await loadStartupEngineeringConstraints()
+@@ -2735,2 +3068,2 @@ onMounted(async () => {
+-  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
+-  loadData()
++  assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesSafely()
++  loadData({ expectedStateVersion: initialScheduleStateVersion })
+@@ -2824,5 +3157,7 @@ onMounted(async () => {
+-.gantt-wrapper {
+-  min-height: 560px;
+-  flex: 1;
+-  position: relative;
+-  overflow: hidden;
++.schedule-workbench-guidance,
++.schedule-workbench-help {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  padding: 12px 14px;
+@@ -2832 +3167,2 @@ onMounted(async () => {
+-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
++  color: #334155;
++  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+@@ -2835,4 +3171,33 @@ onMounted(async () => {
+-.warning-action {
+-  border: 1px solid #f59e0b;
+-  background: #fff7ed;
+-  color: #92400e;
++.schedule-workbench-guidance div,
++.schedule-workbench-help {
++  min-width: 0;
++}
++
++.schedule-workbench-guidance strong,
++.schedule-workbench-help strong {
++  display: block;
++  color: #0b1220;
++  font-size: 13px;
++  line-height: 1.45;
++}
++
++.schedule-workbench-guidance span,
++.schedule-workbench-help span {
++  display: block;
++  margin-top: 3px;
++  color: #64748b;
++  font-size: 12px;
++  line-height: 1.45;
++}
++
++.schedule-workbench-guidance nav {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: flex-end;
++  gap: 8px;
++}
++
++.schedule-workbench-guidance a {
++  min-height: 30px;
++  padding: 6px 10px;
++  border: 1px solid #bfdbfe;
+@@ -2840 +3205,2 @@ onMounted(async () => {
+-  padding: 4px 8px;
++  background: #eff6ff;
++  color: #1d4ed8;
+@@ -2842,2 +3208,2 @@ onMounted(async () => {
+-  cursor: pointer;
+-  white-space: nowrap;
++  font-weight: 700;
++  text-decoration: none;
+@@ -2846,3 +3212,9 @@ onMounted(async () => {
+-.warning-action:disabled {
+-  cursor: not-allowed;
+-  opacity: 0.6;
++.gantt-wrapper {
++  min-height: 560px;
++  flex: 1;
++  position: relative;
++  overflow: hidden;
++  border: 1px solid #d8e2ee;
++  border-radius: 8px;
++  background: #fff;
++  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+@@ -2951,0 +3324,28 @@ onMounted(async () => {
++.warning-action {
++  min-height: 28px;
++  padding: 4px 10px;
++  border: 1px solid #f59e0b;
++  border-radius: 4px;
++  background: #fff7ed;
++  color: #92400e;
++  cursor: pointer;
++  font-size: 12px;
++  font-weight: 700;
++}
++
++.warning-action:disabled {
++  cursor: wait;
++  opacity: 0.65;
++}
++
++.schedule-save-status {
++  margin: 4px 8px;
++  padding: 8px 12px;
++  border: 1px solid #bbf7d0;
++  border-radius: 4px;
++  background: #f0fdf4;
++  color: #166534;
++  font-size: 13px;
++  font-weight: 700;
++}
++
+@@ -2956,0 +3357,9 @@ onMounted(async () => {
++
++  .schedule-workbench-guidance {
++    align-items: flex-start;
++    flex-direction: column;
++  }
++
++  .schedule-workbench-guidance nav {
++    justify-content: flex-start;
++  }

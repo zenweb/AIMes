@@ -1,4 +1,4 @@
-import http from './http'
+import http, { type AimesRequestConfig } from './http'
 import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-sync'
 import type { LaborQualificationBlockRecord, LaborReassignmentRecord } from '../utils/labor-assignment-sync'
 import type { QualityCapaClosure } from '../utils/quality-capa-sync'
@@ -39,11 +39,15 @@ export async function upsertLaborQualificationBlock(item: LaborQualificationBloc
   return data
 }
 
-export async function queryBarcodeScanEvidence(take = 20): Promise<BarcodeScanEvidenceRecord[]> {
+export async function queryBarcodeScanEvidence(
+  take = 20,
+  options?: { failLoud?: boolean },
+): Promise<BarcodeScanEvidenceRecord[]> {
   try {
     const { data } = await http.get<BarcodeScanEvidenceRecord[]>('/scheduling/barcode-scan-evidence', { params: { take } })
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return []
   }
 }
@@ -55,7 +59,8 @@ export async function upsertBarcodeScanEvidence(item: BarcodeScanEvidenceRecord)
 
 export async function getLatestQualityCapaClosure(): Promise<QualityCapaClosure | null> {
   try {
-    const { data } = await http.get<QualityCapaClosure>('/scheduling/quality-capa-closure/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<QualityCapaClosure>('/scheduling/quality-capa-closure/latest', config)
     return data
   } catch {
     return null

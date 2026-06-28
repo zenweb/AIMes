@@ -39,4 +39,26 @@ describe('GanttToolbar', () => {
     expect(wrapper.emitted('update:objective')?.[0]).toEqual(['balanced'])
     expect(wrapper.emitted('update:scale')?.[0]).toEqual(['week'])
   })
+
+  it('shows optimization progress and prevents duplicate optimize commands while loading', async () => {
+    const wrapper = mountToolbar({ loading: true })
+
+    const optimize = wrapper.get('.btn-primary')
+    expect(optimize.text()).toBe('优化中...')
+    expect(optimize.attributes('disabled')).toBeDefined()
+
+    await optimize.trigger('click')
+
+    expect(wrapper.emitted('optimize')).toBeUndefined()
+  })
+
+  it('hides optional plan metadata when no plan name or lock period is provided', () => {
+    const wrapper = mountToolbar({
+      planName: '',
+      lockPeriodHours: undefined,
+    })
+
+    expect(wrapper.find('.plan-name').exists()).toBe(false)
+    expect(wrapper.find('.lock-info').exists()).toBe(false)
+  })
 })

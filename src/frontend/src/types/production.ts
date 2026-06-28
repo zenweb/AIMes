@@ -29,6 +29,7 @@ export interface OperationInfoDto {
   plannedQuantity: number
   completedQuantity: number
   status: string
+  nextOperation?: OperationInfoDto | null
 }
 
 export interface OperationResultDto {

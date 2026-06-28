@@ -1,5 +1,7 @@
+using MES.Api.Configuration;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace MES.Api.Services;
 
@@ -25,6 +27,7 @@ public interface IDemoDataSeeder
 public sealed class DatabaseStartupValidator(
     IDatabaseSchemaState schemaState,
     IHostEnvironment environment,
+    IOptions<AimesHostOptions> hostOptions,
     IDemoDataSeeder demoDataSeeder) : IDatabaseStartupValidator
 {
     public async Task ValidateAsync(CancellationToken ct)
@@ -37,6 +40,11 @@ public sealed class DatabaseStartupValidator(
                 throw new InvalidOperationException(
                     "Database has pending EF migrations. Run 'dotnet ef database update' before starting Production. " +
                     $"Pending migrations: {string.Join(", ", pendingMigrations)}");
+            }
+
+            if (hostOptions.Value.SeedDemoDataOnStartup)
+            {
+                await demoDataSeeder.SeedAsync(ct);
             }
 
             return;

@@ -1,0 +1,459 @@
+﻿# Release Candidate Slice Boundary
+
+- GeneratedAt: 2026-06-22T00:57:55.7898917+08:00
+- ManifestPath: _docs/_reports/release-candidate-slice-20260622-labor-agent-combo.manifest.json
+- Candidate: schedule-labor-retry-plus-agent-e2e
+- FirstSlice: labor-agent-e2e-routing-combo
+- DiffMode: working
+- Result: FAIL
+
+## Inspected Files
+
+- src/frontend/scripts/e2e.mjs
+- src/frontend/tests/e2e/scheduling.spec.ts
+
+## Diff Files Missing From Manifest
+
+- scripts/run-attack-chain-automated-evidence.ps1
+- scripts/run-attack-chain-verification.ps1
+- scripts/run-gray-observation.ps1
+- scripts/run-hosted-ci-evidence.ps1
+- scripts/run-release-gate-audit.ps1
+- scripts/run-security-self-assessment.ps1
+- scripts/run-staging-rehearsal.ps1
+- src/backend/MES.AI/Services/LlmGatewayService.cs
+- src/backend/MES.Api/Configuration/AimesHostOptions.cs
+- src/backend/MES.Api/Endpoints/ReportEndpoints.cs
+- src/backend/MES.Api/Endpoints/SchedulingEndpoints.cs
+- src/backend/MES.Api/Extensions/ServiceCollectionExtensions.cs
+- src/backend/MES.Api/MES.Api.csproj
+- src/backend/MES.Api/Properties/launchSettings.json
+- src/backend/MES.Api/Services/DatabaseStartupValidator.cs
+- src/backend/MES.Application/DTOs/OperationDtos.cs
+- src/backend/MES.Application/DTOs/ReportDtos.cs
+- src/backend/MES.Application/DTOs/SchedulingDtos.cs
+- src/backend/MES.Application/Services/OperationService.cs
+- src/backend/MES.Application/Services/SchedulingAppService.cs
+- src/backend/MES.Domain/Entities/Admin/SystemUser.cs
+- src/backend/MES.Domain/Interfaces/Repositories/IOperationRepository.cs
+- src/backend/MES.Domain/ValueObjects/OperationCode.cs
+- src/backend/MES.Infrastructure/Data/Configurations/AgentEvidenceLinkConfiguration.cs
+- src/backend/MES.Infrastructure/Data/DemoDataSeeder.cs
+- src/backend/MES.Infrastructure/Data/Migrations/20260510220003_InitialCreate.cs
+- src/backend/MES.Infrastructure/Data/Migrations/20260523063550_AddAdminAuthAndConcurrencyBaseline.cs
+- src/backend/MES.Infrastructure/Data/Migrations/20260530090000_AddSystemUserMustChangePassword.cs
+- src/backend/MES.Infrastructure/Data/Migrations/20260531120000_AddCoreCompositeIndexesAndJsonb.cs
+- src/backend/MES.Infrastructure/Data/Migrations/MesDbContextModelSnapshot.cs
+- src/backend/MES.Infrastructure/Repositories/AgentDecisionRepository.cs
+- src/backend/MES.Infrastructure/Repositories/OperationRepository.cs
+- src/backend/MES.Infrastructure/Repositories/ScheduleRepository.cs
+- src/backend/MES.Infrastructure/Services/ExportAppService.cs
+- src/backend/MES.Infrastructure/Services/SchedulingContextProvider.cs
+- src/frontend/middleware/auth.global.ts
+- src/frontend/nuxt.config.ts
+- src/frontend/scripts/preview.mjs
+- src/frontend/src/api/assistantEvidence.ts
+- src/frontend/src/api/engineeringEvidence.ts
+- src/frontend/src/api/equipmentEvidence.ts
+- src/frontend/src/api/executionEvidence.ts
+- src/frontend/src/api/http.ts
+- src/frontend/src/api/otdKpiCommitmentEvidence.ts
+- src/frontend/src/api/outsourcingEvidence.ts
+- src/frontend/src/api/pocEvidence.ts
+- src/frontend/src/api/production.ts
+- src/frontend/src/api/qualityEvidence.ts
+- src/frontend/src/api/riskEvidence.ts
+- src/frontend/src/api/scheduling.ts
+- src/frontend/src/api/shortageEvidence.ts
+- src/frontend/src/components/admin/AdminBoard.vue
+- src/frontend/src/components/anomaly/AnomalyBoard.vue
+- src/frontend/src/components/auditLog/AuditDecisionReplayPanel.vue
+- src/frontend/src/components/auditLog/AuditLogBoard.vue
+- src/frontend/src/components/auth/LoginPage.vue
+- src/frontend/src/components/barcode/BarcodePrintBoard.vue
+- src/frontend/src/components/bom/BomBoard.vue
+- src/frontend/src/components/chat/ChatPanel.vue
+- src/frontend/src/components/dashboard/DashboardBoard.vue
+- src/frontend/src/components/employee/EmployeeBoard.vue
+- src/frontend/src/components/employee/SkillMatrixPanel.vue
+- src/frontend/src/components/equipment/EquipmentBoard.vue
+- src/frontend/src/components/gantt/GanttChart.vue
+- src/frontend/src/components/inventory/InventoryBoard.vue
+- src/frontend/src/components/knowledge/DocumentUpload.vue
+- src/frontend/src/components/knowledge/KnowledgeGovernancePanel.vue
+- src/frontend/src/components/layout/MainLayout.css
+- src/frontend/src/components/layout/MainLayout.vue
+- src/frontend/src/components/monitoring/MonitoringBoard.vue
+- src/frontend/src/components/production/ProductionBoard.vue
+- src/frontend/src/components/purchase/PurchaseBoard.vue
+- src/frontend/src/components/quality/QualityBoard.vue
+- src/frontend/src/components/quality/QualityCapaTaskPanel.vue
+- src/frontend/src/components/quality/QualityReworkImpactPanel.vue
+- src/frontend/src/components/report/ReportBoard.vue
+- src/frontend/src/components/risk/RiskActionQueuePanel.vue
+- src/frontend/src/components/routing/RoutingBoard.vue
+- src/frontend/src/components/scanner/ScannerBoard.vue
+- src/frontend/src/components/schedule/ParetoCompare.vue
+- src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue
+- src/frontend/src/components/schedule/ScheduleBoard.vue
+- src/frontend/src/components/schedule/ScheduleEventQueuePanel.vue
+- src/frontend/src/env.d.ts
+- src/frontend/src/router/index.ts
+- src/frontend/src/stores/auth.ts
+- src/frontend/src/stores/notifications.ts
+- src/frontend/src/types/production.ts
+- src/frontend/src/utils/agent-config-approval-sync.ts
+- src/frontend/src/utils/anomaly-dispatch-sync.ts
+- src/frontend/src/utils/assistant-action-audit.ts
+- src/frontend/src/utils/assistant-action-package-sync.ts
+- src/frontend/src/utils/assistant-anomaly-card-sync.ts
+- src/frontend/src/utils/assistant-engineering-constraint-package-sync.ts
+- src/frontend/src/utils/barcode-scan-evidence-sync.ts
+- src/frontend/src/utils/customer-order-import-sync.ts
+- src/frontend/src/utils/engineering-change-sync.ts
+- src/frontend/src/utils/equipment-risk-sync.ts
+- src/frontend/src/utils/knowledge-governance-sync.ts
+- src/frontend/src/utils/local-user.ts
+- src/frontend/src/utils/monitoring-situation-escalation-sync.ts
+- src/frontend/src/utils/offline-demo-mode.ts
+- src/frontend/src/utils/otd-evidence-chain-sync.ts
+- src/frontend/src/utils/otd-kpi-commitment-sync.ts
+- src/frontend/src/utils/outsourcing-commitment-sync.ts
+- src/frontend/src/utils/poc-hypercare-sync.ts
+- src/frontend/src/utils/poc-pilot-run-sync.ts
+- src/frontend/src/utils/poc-review-signoff-sync.ts
+- src/frontend/src/utils/poc-rollout-package-sync.ts
+- src/frontend/src/utils/production-anomaly-sync.ts
+- src/frontend/src/utils/quality-capa-sync.ts
+- src/frontend/src/utils/quality-knowledge-sample-sync.ts
+- src/frontend/src/utils/quality-mrb-disposition-sync.ts
+- src/frontend/src/utils/quality-rework-sync.ts
+- src/frontend/src/utils/risk-action-sync.ts
+- src/frontend/src/utils/risk-sla-review-sync.ts
+- src/frontend/src/utils/schedule-feedback-sync.ts
+- src/frontend/src/utils/shortage-risk-sync.ts
+- src/frontend/tests/e2e/admin.spec.ts
+- src/frontend/tests/e2e/anomaly.spec.ts
+- src/frontend/tests/e2e/audit.spec.ts
+- src/frontend/tests/e2e/chat.spec.ts
+- src/frontend/tests/e2e/dashboard.spec.ts
+- src/frontend/tests/e2e/employee.spec.ts
+- src/frontend/tests/e2e/engineering-data.spec.ts
+- src/frontend/tests/e2e/knowledge.spec.ts
+- src/frontend/tests/e2e/modules.spec.ts
+- src/frontend/tests/e2e/production.spec.ts
+- src/frontend/tests/e2e/purchase.spec.ts
+- src/frontend/tests/e2e/quality.spec.ts
+- src/frontend/tests/e2e/report.spec.ts
+- src/frontend/tests/unit/admin-board.test.ts
+- src/frontend/tests/unit/agent-config-approval-sync.test.ts
+- src/frontend/tests/unit/anomaly-board.test.ts
+- src/frontend/tests/unit/anomaly-dispatch-sync.test.ts
+- src/frontend/tests/unit/assistant-action-audit.test.ts
+- src/frontend/tests/unit/assistant-action-package-sync.test.ts
+- src/frontend/tests/unit/assistant-anomaly-card-sync.test.ts
+- src/frontend/tests/unit/assistant-engineering-constraint-package-sync.test.ts
+- src/frontend/tests/unit/audit-decision-replay-panel.test.ts
+- src/frontend/tests/unit/audit-log-board.test.ts
+- src/frontend/tests/unit/auth.store.test.ts
+- src/frontend/tests/unit/barcode-print-board.test.ts
+- src/frontend/tests/unit/barcode-scan-evidence-sync.test.ts
+- src/frontend/tests/unit/bom-board.test.ts
+- src/frontend/tests/unit/chat-panel.test.ts
+- src/frontend/tests/unit/customer-order-import-sync.test.ts
+- src/frontend/tests/unit/dashboard-board.test.ts
+- src/frontend/tests/unit/document-upload.test.ts
+- src/frontend/tests/unit/employee-board.test.ts
+- src/frontend/tests/unit/engineering-change-sync.test.ts
+- src/frontend/tests/unit/engineering-constraint-panel.test.ts
+- src/frontend/tests/unit/equipment-board.test.ts
+- src/frontend/tests/unit/equipment-risk-sync.test.ts
+- src/frontend/tests/unit/feedback-form.test.ts
+- src/frontend/tests/unit/gantt-chart.test.ts
+- src/frontend/tests/unit/gantt-toolbar.test.ts
+- src/frontend/tests/unit/http-refresh.test.ts
+- src/frontend/tests/unit/inventory-board.test.ts
+- src/frontend/tests/unit/kitting-closure-panel.test.ts
+- src/frontend/tests/unit/knowledge-citations.test.ts
+- src/frontend/tests/unit/knowledge-governance-panel.test.ts
+- src/frontend/tests/unit/knowledge-governance-sync.test.ts
+- src/frontend/tests/unit/labor-assignment-sync.test.ts
+- src/frontend/tests/unit/local-user.test.ts
+- src/frontend/tests/unit/login-page.test.ts
+- src/frontend/tests/unit/main-layout.test.ts
+- src/frontend/tests/unit/monitoring-board.test.ts
+- src/frontend/tests/unit/monitoring-situation-escalation-sync.test.ts
+- src/frontend/tests/unit/notifications.store.test.ts
+- src/frontend/tests/unit/offline-demo-mode.test.ts
+- src/frontend/tests/unit/order-detail-panel.test.ts
+- src/frontend/tests/unit/otd-kpi-commitment-sync.test.ts
+- src/frontend/tests/unit/outsourcing-commitment-sync.test.ts
+- src/frontend/tests/unit/pareto-compare.test.ts
+- src/frontend/tests/unit/poc-evidence-governance.test.ts
+- src/frontend/tests/unit/poc-hypercare-sync.test.ts
+- src/frontend/tests/unit/poc-pilot-run-sync.test.ts
+- src/frontend/tests/unit/poc-review-signoff-sync.test.ts
+- src/frontend/tests/unit/poc-rollout-package-sync.test.ts
+- src/frontend/tests/unit/production-anomaly-sync.test.ts
+- src/frontend/tests/unit/production-api.test.ts
+- src/frontend/tests/unit/production-board.test.ts
+- src/frontend/tests/unit/production-execution-trace-panel.test.ts
+- src/frontend/tests/unit/purchase-board.test.ts
+- src/frontend/tests/unit/quality-board.test.ts
+- src/frontend/tests/unit/quality-capa-sync.test.ts
+- src/frontend/tests/unit/quality-capa-task-panel.test.ts
+- src/frontend/tests/unit/quality-knowledge-sample-sync.test.ts
+- src/frontend/tests/unit/quality-mrb-disposition-panel.test.ts
+- src/frontend/tests/unit/quality-mrb-disposition-sync.test.ts
+- src/frontend/tests/unit/quality-rework-impact-panel.test.ts
+- src/frontend/tests/unit/quality-rework-sync.test.ts
+- src/frontend/tests/unit/report-board.test.ts
+- src/frontend/tests/unit/risk-action-queue-panel.test.ts
+- src/frontend/tests/unit/risk-action-sync.test.ts
+- src/frontend/tests/unit/risk-sla-review-sync.test.ts
+- src/frontend/tests/unit/router-auth.test.ts
+- src/frontend/tests/unit/routing-board.test.ts
+- src/frontend/tests/unit/scanner-board.test.ts
+- src/frontend/tests/unit/schedule-agent-workbench-panel.test.ts
+- src/frontend/tests/unit/schedule-board.test.ts
+- src/frontend/tests/unit/schedule-metrics.test.ts
+- src/frontend/tests/unit/schedule-recovery-handoff-panel.test.ts
+- src/frontend/tests/unit/shortage-risk-sync.test.ts
+- src/frontend/tests/unit/skill-matrix-panel.test.ts
+- src/frontend/tests/unit/start-qualification-panel.test.ts
+- src/frontend/tests/unit/use-export.test.ts
+- src/tests/MES.ArchitectureTests/ArchitectureRuleTests.cs
+- src/tests/MES.ArchitectureTests/MES.ArchitectureTests.csproj
+- src/tests/MES.Tests.Evaluation/EvalScriptTests.cs
+- src/tests/MES.Tests.Integration/Controllers/ProductionControllerTests.cs
+- src/tests/MES.Tests.Integration/Controllers/ReportControllerTests.cs
+- src/tests/MES.Tests.Integration/Controllers/SchedulingControllerTests.cs
+- src/tests/MES.Tests.Integration/MES.Tests.Integration.csproj
+- src/tests/MES.Tests.Integration/Repositories/OperationTransactionRepositoryTests.cs
+- src/tests/MES.Tests.Integration/Security/CorsPolicyTests.cs
+- src/tests/MES.Tests.Integration/Security/EndpointAuthorizationTests.cs
+- src/tests/MES.Tests.Integration/TestDataSeedFilter.cs
+- src/tests/MES.Tests.Unit/Application/OperationServiceTests.cs
+- src/tests/MES.Tests.Unit/Application/SchedulingAppServiceTests.cs
+- src/tests/MES.Tests.Unit/Domain/EquipmentTests.cs
+- src/tests/MES.Tests.Unit/Domain/MaterialTests.cs
+- src/tests/MES.Tests.Unit/Domain/OperationExecutionStateMachineTests.cs
+- src/tests/MES.Tests.Unit/Domain/SystemUserTests.cs
+- src/tests/MES.Tests.Unit/Domain/WorkOrderTests.cs
+- src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj
+- src/tests/MES.Tests.Unit/Services/DatabaseStartupValidatorTests.cs
+
+## Included Slice Token Hits
+
+- LABOR_EVIDENCE_RETRY_TITLE
+- LEGACY_PERSONNEL_EVIDENCE_TITLES
+- AGENT_BACKEND_EVIDENCE_TITLES
+- usesLiveBackendMock
+- mockSchedulingPlanApis
+- mockLaborEvidenceRetryApis
+- 人员证据启动读取失败后可重试
+- 人员替班证据释放排产人员约束
+- 人员无有效替班候选时排产保持停工复核事件
+- 调度员 Agent 工作台通过后端 API
+- 调度员 Agent 工作台后端 403
+- 调度员 Agent 工作台 API 不可用
+
+## Excluded Theme Token Hits
+
+- real-dhtmlx-rush-drag-writeback: RUSH_WRITEBACK_EVIDENCE_DIR
+- real-dhtmlx-rush-drag-writeback: 真实 dhtmlx
+- real-dhtmlx-rush-drag-writeback: dragRushTask
+- real-dhtmlx-rush-drag-writeback: createDhtmlxSchedulePlan
+- real-dhtmlx-rush-drag-writeback: withRushWindow
+- multi-objective-feedback-readback: 多目标对比
+- multi-objective-feedback-readback: adoption-feedback/latest
+- assistant-engineering-fail-loud: Assistant 恢复交接
+
+## Included Slice Token Locations
+
+- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
+- src/frontend/scripts/e2e.mjs:15: 调度员 Agent 工作台通过后端 API
+- src/frontend/scripts/e2e.mjs:16: 调度员 Agent 工作台后端 403
+- src/frontend/scripts/e2e.mjs:17: 调度员 Agent 工作台 API 不可用
+- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
+- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
+- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
+- src/frontend/tests/e2e/scheduling.spec.ts:12: AGENT_BACKEND_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:13: 调度员 Agent 工作台通过后端 API
+- src/frontend/tests/e2e/scheduling.spec.ts:14: 调度员 Agent 工作台后端 403
+- src/frontend/tests/e2e/scheduling.spec.ts:15: 调度员 Agent 工作台 API 不可用
+- src/frontend/tests/e2e/scheduling.spec.ts:31: LEGACY_PERSONNEL_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:32: AGENT_BACKEND_EVIDENCE_TITLES
+- src/frontend/tests/e2e/scheduling.spec.ts:33: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:33: usesLiveBackendMock
+- src/frontend/tests/e2e/scheduling.spec.ts:39: usesLiveBackendMock
+- src/frontend/tests/e2e/scheduling.spec.ts:42: mockSchedulingPlanApis
+- src/frontend/tests/e2e/scheduling.spec.ts:45: mockSchedulingPlanApis
+- src/frontend/tests/e2e/scheduling.spec.ts:47: LABOR_EVIDENCE_RETRY_TITLE
+- src/frontend/tests/e2e/scheduling.spec.ts:54: mockLaborEvidenceRetryApis
+- src/frontend/tests/e2e/scheduling.spec.ts:56: usesLiveBackendMock
+- src/frontend/tests/e2e/scheduling.spec.ts:108: 调度员 Agent 工作台通过后端 API
+- src/frontend/tests/e2e/scheduling.spec.ts:126: 调度员 Agent 工作台后端 403
+- src/frontend/tests/e2e/scheduling.spec.ts:142: 调度员 Agent 工作台 API 不可用
+- src/frontend/tests/e2e/scheduling.spec.ts:2914: 人员替班证据释放排产人员约束
+- src/frontend/tests/e2e/scheduling.spec.ts:2940: 人员证据启动读取失败后可重试
+- src/frontend/tests/e2e/scheduling.spec.ts:2968: 人员无有效替班候选时排产保持停工复核事件
+- src/frontend/tests/e2e/scheduling.spec.ts:3744: mockSchedulingPlanApis
+- src/frontend/tests/e2e/scheduling.spec.ts:3891: mockLaborEvidenceRetryApis
+
+## Excluded Theme Token Locations
+
+- src/frontend/scripts/e2e.mjs:9: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:6: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:27: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:33: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:40: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:371: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:437: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:441: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:449: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:494: Assistant 恢复交接
+- src/frontend/tests/e2e/scheduling.spec.ts:757: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:813: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:838: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:839: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:869: adoption-feedback/latest
+- src/frontend/tests/e2e/scheduling.spec.ts:885: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:893: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:905: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:916: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:929: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:939: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:953: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:970: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:997: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1009: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1033: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1051: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1063: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1096: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1134: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1158: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1170: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1195: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1213: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1225: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1259: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1292: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1311: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1323: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1349: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1382: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1401: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1413: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1438: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1456: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1468: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1488: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1500: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1532: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1544: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1569: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1587: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1599: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1624: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1642: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1654: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1679: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1697: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1709: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1734: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1752: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1764: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1789: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1807: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1819: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1844: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1862: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1874: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1899: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1917: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1929: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1954: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1972: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:1984: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2009: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2026: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2038: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2063: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2081: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2093: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2117: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2135: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2147: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2171: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2189: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2201: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2226: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2244: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2256: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2281: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2299: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2311: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2337: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2349: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2368: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2380: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2405: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2423: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2435: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2461: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2473: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2492: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2504: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2530: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2542: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2561: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2573: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2599: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2611: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2630: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:2723: 多目标对比
+- src/frontend/tests/e2e/scheduling.spec.ts:3132: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3152: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3289: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3295: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3304: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3323: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3336: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3349: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3352: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3354: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3356: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3357: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3365: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3368: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:3391: withRushWindow
+- src/frontend/tests/e2e/scheduling.spec.ts:3403: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3418: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3421: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3423: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3425: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3426: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3434: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3451: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3467: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3470: RUSH_WRITEBACK_EVIDENCE_DIR
+- src/frontend/tests/e2e/scheduling.spec.ts:3472: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3474: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3475: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3483: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:3485: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:3507: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3639: dragRushTask
+- src/frontend/tests/e2e/scheduling.spec.ts:3745: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:4046: createDhtmlxSchedulePlan
+- src/frontend/tests/e2e/scheduling.spec.ts:4049: 真实 dhtmlx
+- src/frontend/tests/e2e/scheduling.spec.ts:4086: withRushWindow
+- src/frontend/tests/e2e/scheduling.spec.ts:4087: createDhtmlxSchedulePlan
+
+## Gate
+
+- Boundary check failed: working diff contains code/script files that are not listed in the manifest. Add them to the manifest or split them out before using this as a push gate.

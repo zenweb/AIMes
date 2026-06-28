@@ -8,6 +8,7 @@ const readCustomerOrderImportEvidenceBackendFirst = vi.hoisted(() => vi.fn())
 const readQualityKnowledgeSamplesBackendFirst = vi.hoisted(() => vi.fn())
 const readQualityKnowledgeReviewQueueRecordsBackendFirst = vi.hoisted(() => vi.fn())
 const readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst = vi.hoisted(() => vi.fn())
+const readQualityKnowledgeGrayReleaseDecisionRecords = vi.hoisted(() => vi.fn())
 const readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst = vi.hoisted(() => vi.fn())
 const grayPublishQualityKnowledgeNextTrainingSetVersion = vi.hoisted(() => vi.fn())
 const grayPublishQualityExperimentShadowValidationVersion = vi.hoisted(() => vi.fn())
@@ -24,6 +25,7 @@ const mergeQualityKnowledgeNextTrainingSetCandidate = vi.hoisted(() => vi.fn())
 const buildQualityKnowledgeRecommendationExperimentCandidateRecords = vi.hoisted(() => vi.fn())
 const mergeQualityExperimentNegativeSampleCandidate = vi.hoisted(() => vi.fn())
 const runQualityExperimentShadowValidationCandidate = vi.hoisted(() => vi.fn())
+const readKnowledgeGovernanceDocuments = vi.hoisted(() => vi.fn())
 const writeKnowledgeGovernanceReview = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/api/knowledge', () => ({
@@ -44,7 +46,7 @@ vi.mock('../../src/utils/knowledge-governance-sync', () => ({
     reviewedVersion: 'V1.0',
     reviewedAt: '2026-06-01T00:00:00.000Z',
   })),
-  readKnowledgeGovernanceDocuments: vi.fn(() => []),
+  readKnowledgeGovernanceDocuments,
   writeKnowledgeGovernanceReview,
 }))
 
@@ -59,7 +61,7 @@ vi.mock('../../src/utils/quality-knowledge-sample-sync', () => ({
   mergeQualityExperimentNegativeSampleCandidate,
   mergeQualityKnowledgeNextTrainingSetCandidate,
   publishQualityKnowledgeRetrainingVersion,
-  readQualityKnowledgeGrayReleaseDecisionRecords: vi.fn(() => []),
+  readQualityKnowledgeGrayReleaseDecisionRecords,
   readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst,
   readQualityKnowledgeRecommendationFeedbackRecords: vi.fn(() => []),
   readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst,
@@ -162,6 +164,10 @@ describe('DocumentUpload', () => {
     readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst.mockResolvedValue([])
     readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst.mockReset()
     readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst.mockResolvedValue([])
+    readQualityKnowledgeGrayReleaseDecisionRecords.mockReset()
+    readQualityKnowledgeGrayReleaseDecisionRecords.mockReturnValue([])
+    readKnowledgeGovernanceDocuments.mockReset()
+    readKnowledgeGovernanceDocuments.mockReturnValue([])
     grayPublishQualityKnowledgeNextTrainingSetVersion.mockReset()
     grayPublishQualityExperimentShadowValidationVersion.mockReset()
     readQualityKnowledgeRetrainingVersionRecords.mockReset()
@@ -197,6 +203,43 @@ describe('DocumentUpload', () => {
 
     expect(click).toHaveBeenCalledOnce()
     click.mockRestore()
+  })
+
+  it('guides knowledge upload with bilingual prompts, related evidence links, and help support', () => {
+    const wrapper = mountDocumentUpload()
+
+    const guidance = wrapper.get('.upload-guidance')
+    expect(guidance.text()).toContain('上传前请确认分类、有效期和引用范围')
+    expect(guidance.text()).toContain('Before upload, confirm category, validity window, and citation scope')
+
+    const links = guidance.findAll('a')
+    expect(links.map(link => link.text())).toEqual([
+      '知识治理队列',
+      '质量证据复核',
+      '报表证据中心',
+      '帮助：知识入库支持',
+    ])
+    expect(links.map(link => link.attributes('href'))).toEqual([
+      '#knowledge-governance',
+      '/quality',
+      '/report',
+      '#knowledge-upload-help',
+    ])
+    expect(links[3].attributes('aria-label')).toBe('打开知识入库帮助')
+  })
+
+  it('anchors knowledge governance and help targets with bilingual operator guidance', () => {
+    const wrapper = mountDocumentUpload()
+
+    const governanceAnchor = wrapper.get('#knowledge-governance')
+    expect(governanceAnchor.attributes('aria-label')).toBe('知识治理队列')
+
+    const help = wrapper.get('#knowledge-upload-help')
+    expect(help.text()).toContain('知识入库帮助')
+    expect(help.text()).toContain('选择分类后再上传，避免文档进入错误的治理队列')
+    expect(help.text()).toContain('Choose a category before upload so the document enters the right governance queue')
+    expect(help.text()).toContain('遇到索引或证据刷新失败时，保留当前页面证据并联系知识库管理员')
+    expect(help.text()).toContain('If indexing or evidence refresh fails, keep the current evidence visible and contact the knowledge owner')
   })
 
   it('announces rejected files through an alert message', async () => {
@@ -298,6 +341,18 @@ describe('DocumentUpload', () => {
     expect(wrapper.get('.import-metrics').text()).toContain('尚未准备客户样例')
   })
 
+  it('keeps local customer import sample state quiet when offline demo skips backend refresh', async () => {
+    readCustomerOrderImportEvidenceBackendFirst.mockResolvedValueOnce(null)
+
+    const wrapper = mountDocumentUpload()
+    await flushPromises()
+
+    expect(wrapper.find('.customer-import-error').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('客户工单导入证据刷新失败')
+    expect(wrapper.text()).not.toContain('Offline demo mode skipped backend request')
+    expect(wrapper.get('.import-metrics').text()).toContain('尚未准备客户样例')
+  })
+
   it('fails loud when customer order import evidence refresh returns a non-evidence payload', async () => {
     readCustomerOrderImportEvidenceBackendFirst.mockResolvedValueOnce('<!doctype html><title>502</title>')
 
@@ -394,6 +449,125 @@ describe('DocumentUpload', () => {
     expect(wrapper.get('.history-table tbody').text()).toContain('暂无上传记录')
   })
 
+  it('adds dropped files once, clears drag state, and lets operators remove queued mistakes', async () => {
+    const wrapper = mountDocumentUpload()
+    const dropZone = wrapper.get('.drop-zone')
+    const file = new File(['# work instruction'], '装配作业指导.md', { type: 'text/markdown' })
+
+    await dropZone.trigger('dragover')
+    expect(dropZone.classes()).toContain('dragover')
+
+    await dropZone.trigger('drop', {
+      dataTransfer: {
+        files: [file, file],
+      },
+    })
+    await flushPromises()
+
+    expect(dropZone.classes()).not.toContain('dragover')
+    expect(wrapper.findAll('.queue-item')).toHaveLength(1)
+    expect(wrapper.get('.queue-name').text()).toBe('装配作业指导.md')
+
+    await wrapper.get('.btn-del').trigger('click')
+
+    expect(wrapper.find('.file-queue').exists()).toBe(false)
+    expect(wrapper.get<HTMLButtonElement>('.btn-upload').element.disabled).toBe(true)
+  })
+
+  it('keeps uploading files when clearing the queue so in-flight evidence is not discarded', async () => {
+    let resolveUpload: (value: unknown) => void = () => undefined
+    uploadDocument.mockReturnValueOnce(new Promise(resolve => {
+      resolveUpload = resolve
+    }))
+    const wrapper = mountDocumentUpload()
+    const input = wrapper.get<HTMLInputElement>('.file-input')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [
+        new File(['quality'], '质量检验规程.pdf', { type: 'application/pdf' }),
+        new File(['process'], '工艺路线说明.txt', { type: 'text/plain' }),
+      ],
+    })
+
+    await input.trigger('change')
+    expect(wrapper.findAll('.queue-item')).toHaveLength(2)
+
+    await wrapper.get('.btn-upload').trigger('click')
+    await flushPromises()
+    await wrapper.get('.btn-clear').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.queue-item')).toHaveLength(1)
+    expect(wrapper.get('.status-progress').exists()).toBe(true)
+    expect(wrapper.get('.queue-name').text()).toBe('质量检验规程.pdf')
+
+    resolveUpload({
+      documentId: 'DOC-KG-UPLOADING-001',
+      fileName: '质量检验规程.pdf',
+      chunkCount: 8,
+      uploadedAt: '2026-06-15T04:40:00.000Z',
+      status: 'indexed',
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.status-done').text()).toBe('已上传')
+    expect(wrapper.get('.history-table tbody').text()).toContain('DOC-KG-UPLOADING-001')
+  })
+
+  it('adds successful uploads to the governance review queue with the selected category', async () => {
+    uploadDocument.mockResolvedValueOnce({
+      documentId: 'DOC-KG-QUALITY-SOP-001',
+      fileName: '质量作业指导书.pdf',
+      chunkCount: 12,
+      uploadedAt: '2026-06-02T02:00:00.000Z',
+      status: 'indexed',
+    })
+    const wrapper = mount(DocumentUpload, {
+      global: {
+        stubs: {
+          KnowledgeGovernancePanel: {
+            props: {
+              documents: Array,
+            },
+            template: `
+              <section class="governance-probe">
+                <article v-for="doc in documents" :key="doc.id" class="governance-doc">
+                  <strong>{{ doc.id }}</strong>
+                  <span>{{ doc.title }}</span>
+                  <em>{{ doc.category }}</em>
+                  <code>{{ doc.indexStatus }}</code>
+                  <p>{{ doc.recommendedAction }}</p>
+                </article>
+              </section>
+            `,
+          },
+        },
+      },
+    })
+    await flushPromises()
+    await wrapper.get('.cat-select').setValue('quality')
+    const input = wrapper.get<HTMLInputElement>('.file-input')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['quality'], '质量作业指导书.pdf', { type: 'application/pdf' })],
+    })
+
+    await input.trigger('change')
+    await wrapper.get('.btn-upload').trigger('click')
+    await flushPromises()
+
+    expect(uploadDocument).toHaveBeenCalledWith(expect.any(File), 'quality')
+    const governanceDoc = wrapper.get('.governance-doc')
+    expect(governanceDoc.text()).toContain('DOC-KG-QUALITY-SOP-001')
+    expect(governanceDoc.text()).toContain('质量作业指导书.pdf')
+    expect(governanceDoc.text()).toContain('质量文档')
+    expect(governanceDoc.text()).toContain('pending')
+    expect(governanceDoc.text()).toContain('确认文档分类、有效期和引用范围后再重建索引')
+    const history = wrapper.get('.history-table tbody').text()
+    expect(history).toContain('质量文档')
+    expect(history).not.toContain('quality')
+  })
+
   it('announces upload failures on the queued document row', async () => {
     uploadDocument.mockRejectedValueOnce(new Error('索引服务不可用'))
     const wrapper = mountDocumentUpload()
@@ -414,6 +588,46 @@ describe('DocumentUpload', () => {
     expect(wrapper.get('.history-table tbody').text()).toContain('暂无上传记录')
   })
 
+  it('lets operators retry a failed upload in place with bilingual recovery guidance and help links', async () => {
+    uploadDocument
+      .mockRejectedValueOnce(new Error('索引服务不可用'))
+      .mockResolvedValueOnce({
+        documentId: 'DOC-KG-RETRY-001',
+        fileName: '质量检验规程.pdf',
+        chunkCount: 8,
+        uploadedAt: '2026-06-19T04:40:00.000Z',
+        status: 'indexed',
+      })
+    const wrapper = mountDocumentUpload()
+    const input = wrapper.get<HTMLInputElement>('.file-input')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['quality'], '质量检验规程.pdf', { type: 'application/pdf' })],
+    })
+
+    await input.trigger('change')
+    await wrapper.get('.btn-upload').trigger('click')
+    await flushPromises()
+
+    const recovery = wrapper.get('.queue-recovery')
+    expect(recovery.text()).toContain('保留原文件，可直接重试')
+    expect(recovery.text()).toContain('Keep the file and retry after confirming the category and evidence scope')
+    expect(recovery.get('a').attributes('href')).toBe('#knowledge-upload-help')
+    expect(wrapper.get<HTMLButtonElement>('.btn-upload').element.disabled).toBe(true)
+
+    await wrapper.get('.btn-retry-upload').trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLButtonElement>('.btn-upload').element.disabled).toBe(false)
+
+    await wrapper.get('.btn-upload').trigger('click')
+    await flushPromises()
+
+    expect(uploadDocument).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.status-done').text()).toBe('已上传')
+    expect(wrapper.find('.queue-recovery').exists()).toBe(false)
+    expect(wrapper.get('.history-table tbody').text()).toContain('DOC-KG-RETRY-001')
+  })
+
   it('alerts when quality knowledge evidence refresh fails and keeps local data visible', async () => {
     readQualityKnowledgeSamplesBackendFirst.mockRejectedValueOnce(new Error('quality evidence API unavailable'))
 
@@ -427,6 +641,107 @@ describe('DocumentUpload', () => {
     expect(alert.text()).toContain('quality evidence API unavailable')
     expect(wrapper.get('.drop-zone').exists()).toBe(true)
     expect(wrapper.get('.btn-upload').exists()).toBe(true)
+  })
+
+  it('keeps local governance documents visible when backend quality evidence refresh fails', async () => {
+    readKnowledgeGovernanceDocuments.mockReturnValue([
+      {
+        id: 'LOCAL-KG-SOP-001',
+        title: '本地质量检验规程.pdf',
+        category: '质量文档',
+        version: 'V1.0',
+        summary: '本地治理缓存仍可用于现场复核。',
+        indexStatus: 'indexed',
+        validUntil: '2026-06-30',
+        freshnessStatus: '有效',
+        references: ['质量复核'],
+        owner: '知识库管理员',
+        recommendedAction: '后端不可用时保留本地治理证据，待恢复后再刷新。',
+        auditHint: 'AUD-LOCAL-KG-001',
+      },
+    ])
+    readQualityKnowledgeSamplesBackendFirst.mockRejectedValueOnce(new Error('quality evidence API unavailable'))
+    const wrapper = mount(DocumentUpload, {
+      global: {
+        stubs: {
+          KnowledgeGovernancePanel: {
+            props: {
+              documents: Array,
+            },
+            template: `
+              <section class="governance-probe">
+                <article v-for="doc in documents" :key="doc.id" class="governance-doc">
+                  <strong>{{ doc.id }}</strong>
+                  <span>{{ doc.title }}</span>
+                  <em>{{ doc.category }}</em>
+                  <p>{{ doc.summary }}</p>
+                  <small>{{ doc.recommendedAction }}</small>
+                  <code>{{ doc.auditHint }}</code>
+                </article>
+              </section>
+            `,
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('质量知识证据刷新失败')
+    expect(alert.text()).toContain('quality evidence API unavailable')
+
+    const governanceDoc = wrapper.get('.governance-doc')
+    expect(governanceDoc.text()).toContain('LOCAL-KG-SOP-001')
+    expect(governanceDoc.text()).toContain('本地质量检验规程.pdf')
+    expect(governanceDoc.text()).toContain('本地治理缓存仍可用于现场复核')
+    expect(governanceDoc.text()).toContain('后端不可用时保留本地治理证据')
+    expect(governanceDoc.text()).toContain('AUD-LOCAL-KG-001')
+  })
+
+  it('hydrates the governance queue from backend quality knowledge evidence', async () => {
+    readQualityKnowledgeSamplesBackendFirst.mockResolvedValueOnce([
+      {
+        documentId: 'QK-DOC-OP20-TORQUE-001',
+        documentTitle: 'OP-20 扭矩偏移返工样本',
+        version: 'V1.2',
+        summary: '跨线 OP-20 扭矩偏移返工样本已进入推荐知识库。',
+        validUntil: '2026-06-30',
+        reuseTargets: ['AI 生产助手', '质量返工复核'],
+        auditId: 'AUD-QK-OP20-001',
+      },
+    ])
+    const wrapper = mount(DocumentUpload, {
+      global: {
+        stubs: {
+          KnowledgeGovernancePanel: {
+            props: {
+              documents: Array,
+            },
+            template: `
+              <section class="governance-probe">
+                <article v-for="doc in documents" :key="doc.id" class="governance-doc">
+                  <strong>{{ doc.id }}</strong>
+                  <span>{{ doc.title }}</span>
+                  <em>{{ doc.category }}</em>
+                  <p>{{ doc.summary }}</p>
+                  <small>{{ doc.recommendedAction }}</small>
+                  <code>{{ doc.auditHint }}</code>
+                </article>
+              </section>
+            `,
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const governanceDoc = wrapper.get('.governance-doc')
+    expect(governanceDoc.text()).toContain('QK-DOC-OP20-TORQUE-001')
+    expect(governanceDoc.text()).toContain('OP-20 扭矩偏移返工样本')
+    expect(governanceDoc.text()).toContain('质量文档')
+    expect(governanceDoc.text()).toContain('跨线 OP-20 扭矩偏移返工样本已进入推荐知识库')
+    expect(governanceDoc.text()).toContain('保持扫码返工样本与质量闭环、AI 助手和审计日志的引用范围一致')
+    expect(governanceDoc.text()).toContain('AUD-QK-OP20-001')
   })
 
   it('fails loud when knowledge governance review cannot be written', async () => {
@@ -885,6 +1200,90 @@ describe('DocumentUpload', () => {
     expect(wrapper.get('.history-table tbody').text()).toContain('暂无上传记录')
   })
 
+  it('refreshes gray decision evidence after quality experiment shadow gray publish succeeds', async () => {
+    const version = {
+      ...makeValidationPassedVersion(),
+      id: 'quality-version-r7',
+      trainingSetVersion: 'QK-TRAIN-20260521-R7',
+      trainingSetName: 'R7 跨线扭矩偏移影子验证集',
+      sourceReviewQueueId: 'experiment-candidate-r7-shadow-validation',
+    }
+    const published = {
+      ...version,
+      status: 'gray_published',
+      statusLabel: '影子验证已灰度发布',
+      publishAuditId: 'AUD-QK-R7-GRAY-PUBLISH',
+      publishTraceId: 'TRACE-QK-R7-GRAY-PUBLISH',
+      publishedAt: '2026-06-01T04:00:00.000Z',
+      recommendationScope: ['OP-20 跨线扭矩偏移影子灰度'],
+    }
+    const refreshedDecision = {
+      id: 'gray-decision-r7-shadow',
+      trainingSetVersion: 'QK-TRAIN-20260521-R7',
+      targetWorkOrderId: 'WO-DEMO-1018',
+      operationCode: 'OP-20',
+      reviewIssueStatus: 'shadow_gray_published',
+      decisionAuditId: 'AUD-QK-R7-GRAY-PUBLISH',
+      decisionTraceId: 'TRACE-QK-R7-GRAY-PUBLISH',
+      summary: 'R7 影子验证已灰度发布到 OP-20。',
+    }
+    readQualityKnowledgeRetrainingVersionRecords.mockReturnValue([version])
+    readQualityKnowledgeRetrainingVersionRecordsBackendFirst.mockResolvedValue([version])
+    grayPublishQualityExperimentShadowValidationVersion.mockReturnValueOnce(published)
+    readQualityKnowledgeGrayReleaseDecisionRecords
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([refreshedDecision])
+    const wrapper = mount(DocumentUpload, {
+      global: {
+        stubs: {
+          KnowledgeGovernancePanel: {
+            props: {
+              qualityGrayReleaseDecisions: Array,
+            },
+            emits: ['quality-experiment-shadow-gray-published'],
+            template: `
+              <section>
+                <button
+                  type="button"
+                  class="shadow-gray-publish-trigger"
+                  @click="$emit('quality-experiment-shadow-gray-published', 'quality-version-r7')"
+                >
+                  影子灰度发布 R7
+                </button>
+                <article
+                  v-for="decision in qualityGrayReleaseDecisions"
+                  :key="decision.id"
+                  class="gray-decision-probe"
+                >
+                  <strong>{{ decision.trainingSetVersion }}</strong>
+                  <span>{{ decision.reviewIssueStatus }}</span>
+                  <code>{{ decision.decisionAuditId }}</code>
+                  <p>{{ decision.summary }}</p>
+                </article>
+              </section>
+            `,
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.gray-decision-probe').exists()).toBe(false)
+
+    await wrapper.get('.shadow-gray-publish-trigger').trigger('click')
+    await flushPromises()
+
+    expect(grayPublishQualityExperimentShadowValidationVersion).toHaveBeenCalledWith(version)
+    const decision = wrapper.get('.gray-decision-probe')
+    expect(decision.text()).toContain('QK-TRAIN-20260521-R7')
+    expect(decision.text()).toContain('shadow_gray_published')
+    expect(decision.text()).toContain('AUD-QK-R7-GRAY-PUBLISH')
+    expect(decision.text()).toContain('R7 影子验证已灰度发布到 OP-20')
+    const history = wrapper.get('.history-table tbody').text()
+    expect(history).toContain('AUD-QK-R7-GRAY-PUBLISH')
+    expect(history).toContain('质量实验灰度发布')
+  })
+
   it('records successful quality publish, gray publish, and rollback actions in history', async () => {
     const validationPassedVersion = makeValidationPassedVersion()
     const publishedVersion = makePublishedVersion()
@@ -957,6 +1356,31 @@ describe('DocumentUpload', () => {
     expect(history).toContain('QK-TRAIN-20260521-R3_回滚到_QK-TRAIN-20260520-R2')
     expect(history).toContain('质量再训练回滚')
     expect(history).toContain('done')
+  })
+
+  it('fails loud but keeps local publish history when quality publish readback fails', async () => {
+    const validationPassedVersion = makeValidationPassedVersion()
+    const publishedVersion = makePublishedVersion()
+    readQualityKnowledgeRetrainingVersionRecords.mockReturnValue([validationPassedVersion])
+    readQualityKnowledgeRetrainingVersionRecordsBackendFirst
+      .mockResolvedValueOnce([validationPassedVersion])
+      .mockRejectedValueOnce(new Error('quality publish readback unavailable'))
+    publishQualityKnowledgeRetrainingVersion.mockReturnValueOnce(publishedVersion)
+    const wrapper = mountDocumentUploadWithQualityAction('quality-retraining-published')
+    await flushPromises()
+
+    await wrapper.get('.quality-action-trigger').trigger('click')
+    await flushPromises()
+
+    expect(publishQualityKnowledgeRetrainingVersion).toHaveBeenCalledWith(validationPassedVersion)
+    expect(readQualityKnowledgeRetrainingVersionRecordsBackendFirst).toHaveBeenCalledTimes(2)
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('质量知识正式发布读回失败')
+    expect(alert.text()).toContain('quality publish readback unavailable')
+    const history = wrapper.get('.history-table tbody').text()
+    expect(history).toContain('AUD-QK-R3-PUBLISH')
+    expect(history).toContain('QK-TRAIN-20260521-R3_发布到_AI_推荐链路')
+    expect(history).toContain('质量再训练发布')
   })
 
   it('fails loud when quality retraining publish cannot be written', async () => {

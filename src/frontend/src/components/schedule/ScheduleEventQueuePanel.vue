@@ -76,6 +76,16 @@
                 <span>延期 {{ scenario.delayImpact }}</span>
                 <span>换线 {{ scenario.changeoverImpact }}</span>
               </div>
+              <dl v-if="scenario.fitCondition || scenario.tradeoffCost" class="scenario-decision-notes">
+                <template v-if="scenario.fitCondition">
+                  <dt>适用条件</dt>
+                  <dd>{{ scenario.fitCondition }}</dd>
+                </template>
+                <template v-if="scenario.tradeoffCost">
+                  <dt>取舍代价</dt>
+                  <dd>{{ scenario.tradeoffCost }}</dd>
+                </template>
+              </dl>
               <em>{{ scenario.rationale }}</em>
             </article>
           </div>
@@ -135,6 +145,8 @@ export interface ScheduleAgentScenario {
   otdImpact: string
   delayImpact: string
   changeoverImpact: string
+  fitCondition?: string
+  tradeoffCost?: string
   rationale: string
   recommended?: boolean
 }
@@ -333,6 +345,25 @@ h3 {
   color: #1d4ed8;
   font-size: 11px;
   font-weight: 700;
+}
+
+.scenario-decision-notes {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 6px;
+  margin: 0;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.scenario-decision-notes dt {
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.scenario-decision-notes dd {
+  margin: 0;
 }
 
 .scenario-row p,

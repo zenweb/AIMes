@@ -120,6 +120,67 @@ describe('labor assignment sync', () => {
     expect(block.id).toBe('labor-qualification-block-WO-013-heat-treatment')
   })
 
+  it('ignores incomplete backend labor records so qualification risk and replacement owner stay auditable', async () => {
+    const reassignment = writeLaborReassignment(createDefaultLaborReassignment('2026-05-31T09:00:00.000Z'))
+    const activeBlock = writeLaborQualificationBlock(createDefaultLaborQualificationBlock('2026-05-31T10:00:00.000Z', {
+      id: 'labor-qualification-block-WO-014-assembly',
+      workOrderNumber: 'WO-014',
+      operationCode: 'OP-30',
+      operationCodes: ['OP-30'],
+      operationName: '装配复核',
+      traceId: 'TRACE-LABOR-BLOCK-WO-014-OP-30',
+    }))
+    httpGet
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: 'labor-reassignment-WO-013-heat-treatment',
+            workOrderNumber: 'WO-013',
+            operationCode: 'OP-10',
+            status: 'approved',
+            createdAt: '2026-06-01T08:00:00.000Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: 'labor-qualification-block-WO-014-assembly',
+            workOrderNumber: 'WO-014',
+            operationCode: 'OP-30',
+            status: 'active',
+            createdAt: '2026-06-01T08:00:00.000Z',
+          },
+        ],
+      })
+
+    await expect(readLaborReassignmentsBackendFirst()).resolves.toEqual([reassignment])
+    await expect(readLaborQualificationBlocksBackendFirst()).resolves.toEqual([activeBlock])
+  })
+
+  it('fails loud when labor reassignment backend evidence cannot be refreshed for audit', async () => {
+    const error = new Error('labor reassignment backend unavailable')
+    httpGet.mockRejectedValue(error)
+
+    await expect(readLaborReassignmentsBackendFirst({ failLoud: true })).rejects.toThrow(error)
+  })
+
+  it('fails loud when labor qualification backend evidence cannot be refreshed for audit', async () => {
+    const error = new Error('labor qualification backend unavailable')
+    httpGet.mockRejectedValue(error)
+
+    await expect(readLaborQualificationBlocksBackendFirst({ failLoud: true })).rejects.toThrow(error)
+  })
+
+  it('fails loud when labor backend evidence payloads are not arrays during audit refresh', async () => {
+    httpGet
+      .mockResolvedValueOnce({ data: { id: 'not-array' } })
+      .mockResolvedValueOnce({ data: { id: 'not-array' } })
+
+    await expect(readLaborReassignmentsBackendFirst({ failLoud: true })).rejects.toThrow('后端返回非数组人员替班审计载荷')
+    await expect(readLaborQualificationBlocksBackendFirst({ failLoud: true })).rejects.toThrow('后端返回非数组人员资质阻断审计载荷')
+  })
+
   it('removes corrupt labor JSON so production boards do not render stale assignment state', () => {
     localStorage.setItem('aimes_labor_reassignment', '{bad json')
     localStorage.setItem('aimes_labor_qualification_block', '{bad json')

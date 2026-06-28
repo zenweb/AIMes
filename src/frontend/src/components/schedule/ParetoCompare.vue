@@ -12,7 +12,7 @@
           <span>正在并行优化 {{ objectiveCount }} 个目标...</span>
         </div>
 
-        <div v-else-if="error" class="error-msg">
+        <div v-else-if="error" class="error-msg" role="alert">
           {{ error }}
           <button @click="loadData">重试</button>
         </div>
@@ -192,7 +192,7 @@
 import { ref, reactive, computed, watch, defineAsyncComponent } from 'vue'
 import * as api from '../../api/scheduling'
 import { getBottleneckEquipmentIds } from '../../api/equipment'
-import { logUnlessOfflineDemo } from '../../utils/offline-demo-mode'
+import { isOfflineDemoError, logUnlessOfflineDemo } from '../../utils/offline-demo-mode'
 
 const GanttChart = defineAsyncComponent(() => import('../gantt/GanttChart.vue'))
 import { planToGanttData } from '../../utils/gantt-mapper'
@@ -213,6 +213,23 @@ interface ObjectiveCompareItem {
   groupCount: number
   estimatedCompletionRate: number
   totalWorkOrders: number
+  recommendationScore: number
+  recommendationScoreBreakdown: RecommendationScoreBreakdown
+}
+
+interface RecommendationScoreBreakdown {
+  utilizationContribution: number
+  onTimeDeliveryContribution: number
+  changeoverContribution: number
+}
+
+interface RecommendationScoreFormula {
+  version: string
+  utilizationWeight: number
+  onTimeDeliveryWeight: number
+  changeoverWeight: number
+  changeoverNormalizationMinutes: number
+  description: string
 }
 
 const props = defineProps<{
@@ -229,6 +246,7 @@ const loading = ref(false)
 const error = ref('')
 const items = ref<ObjectiveCompareItem[]>([])
 const bestOverall = ref('')
+const recommendationScoreFormula = ref<RecommendationScoreFormula | null>(null)
 const activeTab = ref('')
 const ganttDataByObjective = reactive<Record<string, GanttData>>({})
 
@@ -264,6 +282,15 @@ const barChartMetrics = [
   { key: 'estimatedCompletion', label: '完工率' },
 ]
 
+const DEFAULT_RECOMMENDATION_SCORE_FORMULA: RecommendationScoreFormula = {
+  version: 'v1-weighted-kpi-40-40-20',
+  utilizationWeight: 0.4,
+  onTimeDeliveryWeight: 0.4,
+  changeoverWeight: 0.2,
+  changeoverNormalizationMinutes: 1000,
+  description: '综合分 = 利用率 40% + 准时率 40% + 换线效率 20%；换线效率按 1000 分钟归一化。',
+}
+
 function findItem(objective: string) {
   return items.value.find(i => i.objective === objective)
 }
@@ -272,11 +299,26 @@ const recommendReason = computed(() => {
   if (!bestOverall.value) return ''
   const item = findItem(bestOverall.value)
   if (!item) return ''
-  const parts: string[] = []
-  if (item.utilizationRate > 0.75) parts.push(`利用率 ${(item.utilizationRate * 100).toFixed(0)}%`)
-  if (item.onTimeDeliveryRate > 0.85) parts.push(`准时率 ${(item.onTimeDeliveryRate * 100).toFixed(0)}%`)
-  if (item.totalChangeoverMinutes < 500) parts.push(`换线 ${item.totalChangeoverMinutes.toFixed(0)} 分钟`)
-  return `—— 综合得分最高（${parts.join('，')}）`
+  const score = (item.recommendationScore * 100).toFixed(1)
+  const parts = [
+    `利用率 ${(item.utilizationRate * 100).toFixed(0)}%`,
+    `准时率 ${(item.onTimeDeliveryRate * 100).toFixed(0)}%`,
+    `换线 ${item.totalChangeoverMinutes.toFixed(0)} 分钟`,
+    `分组 ${item.groupCount}`,
+    `完工率 ${(item.estimatedCompletionRate * 100).toFixed(0)}%`,
+    `利用率贡献 ${(item.recommendationScoreBreakdown.utilizationContribution * 100).toFixed(1)}`,
+    `准时率贡献 ${(item.recommendationScoreBreakdown.onTimeDeliveryContribution * 100).toFixed(1)}`,
+    `换线贡献 ${(item.recommendationScoreBreakdown.changeoverContribution * 100).toFixed(1)}`,
+  ]
+  if (recommendationScoreFormula.value) {
+    const formula = recommendationScoreFormula.value
+    parts.push(
+      `公式 ${formula.version}`,
+      `权重 ${(formula.utilizationWeight * 100).toFixed(0)}/${(formula.onTimeDeliveryWeight * 100).toFixed(0)}/${(formula.changeoverWeight * 100).toFixed(0)}`,
+      `换线 ${formula.changeoverNormalizationMinutes.toFixed(0)} 分钟归一`,
+    )
+  }
+  return `—— 综合得分最高：综合分 ${score}（${parts.join('，')}）`
 })
 
 // 获取某个指标在全部方案中的最大/最小值
@@ -515,16 +557,258 @@ function loadDemoData() {
     groupCount: plans[obj].groupCount ?? 0,
     estimatedCompletionRate: obj === 'due_date' ? 0.92 : obj === 'balanced' ? 0.85 : obj === 'utilization' ? 0.72 : 0.80,
     totalWorkOrders: plans[obj].items.length,
+    recommendationScore: 0,
+    recommendationScoreBreakdown: {
+      utilizationContribution: 0,
+      onTimeDeliveryContribution: 0,
+      changeoverContribution: 0,
+    },
   }))
+
+  for (const item of itemList) {
+    item.recommendationScoreBreakdown = calculateDemoRecommendationScoreBreakdown(item)
+    item.recommendationScore = calculateDemoRecommendationScore(item.recommendationScoreBreakdown)
+  }
 
   items.value = itemList
   bestOverall.value = 'balanced'
+  recommendationScoreFormula.value = DEFAULT_RECOMMENDATION_SCORE_FORMULA
   activeTab.value = 'due_date'
 
   // 转换甘特图数据
   for (const obj of ALL_OBJECTIVES) {
     ganttDataByObjective[obj] = planToGanttData(plans[obj], allEquipment)
   }
+}
+
+function hasDependencyCycle(plan: SchedulePlanDto) {
+  const dependencies = new Map(plan.items.map(item => [item.id, item.dependentItems]))
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+
+  function visit(taskId: string): boolean {
+    if (visiting.has(taskId)) {
+      return true
+    }
+    if (visited.has(taskId)) {
+      return false
+    }
+    visiting.add(taskId)
+    for (const dependencyId of dependencies.get(taskId) ?? []) {
+      if (visit(dependencyId)) {
+        return true
+      }
+    }
+    visiting.delete(taskId)
+    visited.add(taskId)
+    return false
+  }
+
+  return plan.items.some(item => visit(item.id))
+}
+
+function planSummaryWindowMissesItems(plan: SchedulePlanDto) {
+  const planStart = new Date(plan.planStartDate).getTime()
+  const planEnd = new Date(plan.planEndDate).getTime()
+  if (Number.isNaN(planStart) || Number.isNaN(planEnd) || planEnd <= planStart) {
+    return true
+  }
+
+  return plan.items.some(item => {
+    const itemStart = new Date(item.plannedStartTime).getTime()
+    const itemEnd = new Date(item.plannedEndTime).getTime()
+    return itemStart < planStart || itemEnd > planEnd
+  })
+}
+
+function hasSameEquipmentOverlap(plan: SchedulePlanDto) {
+  const itemsByEquipment = new Map<string, SchedulePlanDto['items']>()
+  for (const item of plan.items) {
+    const equipmentItems = itemsByEquipment.get(item.equipmentId) ?? []
+    equipmentItems.push(item)
+    itemsByEquipment.set(item.equipmentId, equipmentItems)
+  }
+
+  return [...itemsByEquipment.values()].some(equipmentItems => {
+    const sortedItems = [...equipmentItems].sort((left, right) =>
+      new Date(left.plannedStartTime).getTime() - new Date(right.plannedStartTime).getTime(),
+    )
+
+    return sortedItems.some((item, index) => {
+      if (index === 0) {
+        return false
+      }
+      const previousEnd = new Date(sortedItems[index - 1].plannedEndTime).getTime()
+      const currentStart = new Date(item.plannedStartTime).getTime()
+      return previousEnd > currentStart
+    })
+  })
+}
+
+function hasSameEquipmentSequenceTimeConflict(plan: SchedulePlanDto) {
+  const itemsByEquipment = new Map<string, SchedulePlanDto['items']>()
+  for (const item of plan.items) {
+    const equipmentItems = itemsByEquipment.get(item.equipmentId) ?? []
+    equipmentItems.push(item)
+    itemsByEquipment.set(item.equipmentId, equipmentItems)
+  }
+
+  return [...itemsByEquipment.values()].some(equipmentItems => {
+    const sortedItems = [...equipmentItems].sort((left, right) =>
+      new Date(left.plannedStartTime).getTime() - new Date(right.plannedStartTime).getTime(),
+    )
+
+    return sortedItems.some((item, index) => index > 0 && item.sequence < sortedItems[index - 1].sequence)
+  })
+}
+
+function hasDependencyWindowConflict(plan: SchedulePlanDto) {
+  const itemsById = new Map(plan.items.map(item => [item.id, item]))
+
+  return plan.items.some(item => {
+    const itemStart = new Date(item.plannedStartTime).getTime()
+    return item.dependentItems.some(dependencyId => {
+      const dependency = itemsById.get(dependencyId)
+      if (!dependency) {
+        return false
+      }
+      const dependencyEnd = new Date(dependency.plannedEndTime).getTime()
+      return dependencyEnd > itemStart
+    })
+  })
+}
+
+function hasInvalidRatioMetrics(item: ObjectiveCompareItem) {
+  return [
+    item.utilizationRate,
+    item.onTimeDeliveryRate,
+    item.estimatedCompletionRate,
+  ].some(value => !Number.isFinite(value) || value < 0 || value > 1)
+}
+
+function hasUtilizationRateMismatch(item: ObjectiveCompareItem) {
+  return item.plan.overallUtilizationRate !== item.utilizationRate
+}
+
+function hasOnTimeDeliveryRateMismatch(item: ObjectiveCompareItem) {
+  return item.plan.onTimeDeliveryRate !== item.onTimeDeliveryRate
+}
+
+function hasInvalidChangeoverMinutes(item: ObjectiveCompareItem) {
+  return !Number.isFinite(item.totalChangeoverMinutes) || item.totalChangeoverMinutes < 0
+}
+
+function hasChangeoverMinutesMismatch(item: ObjectiveCompareItem) {
+  return item.plan.totalChangeoverMinutes !== undefined && item.plan.totalChangeoverMinutes !== item.totalChangeoverMinutes
+}
+
+function hasInvalidGroupCount(item: ObjectiveCompareItem) {
+  return !Number.isFinite(item.groupCount) || item.groupCount < 0
+}
+
+function hasGroupCountMismatch(item: ObjectiveCompareItem) {
+  return item.plan.groupCount !== undefined && item.plan.groupCount !== item.groupCount
+}
+
+function calculateDemoRecommendationScoreBreakdown(item: ObjectiveCompareItem): RecommendationScoreBreakdown {
+  return {
+    utilizationContribution: item.utilizationRate * 0.4,
+    onTimeDeliveryContribution: item.onTimeDeliveryRate * 0.4,
+    changeoverContribution: Math.max(0, 1 - item.totalChangeoverMinutes / 1000) * 0.2,
+  }
+}
+
+function calculateDemoRecommendationScore(breakdown: RecommendationScoreBreakdown) {
+  return breakdown.utilizationContribution
+    + breakdown.onTimeDeliveryContribution
+    + breakdown.changeoverContribution
+}
+
+function recommendationScoreBreakdownTotal(breakdown: RecommendationScoreBreakdown) {
+  return breakdown.utilizationContribution
+    + breakdown.onTimeDeliveryContribution
+    + breakdown.changeoverContribution
+}
+
+function hasMismatchedBestOverallObjective(items: ObjectiveCompareItem[], bestObjective: string) {
+  const scores = items.map(item => item.recommendationScore)
+  const maxScore = Math.max(...scores)
+
+  return !items.some((item, index) => item.objective === bestObjective && scores[index] === maxScore)
+}
+
+function hasMissingObjectiveIdentity(item: ObjectiveCompareItem) {
+  return !item.objective?.trim() || !item.objectiveLabel?.trim()
+}
+
+function hasInvalidRecommendationScore(item: ObjectiveCompareItem) {
+  return !Number.isFinite(item.recommendationScore)
+    || item.recommendationScore < 0
+    || item.recommendationScore > 1
+}
+
+function hasInvalidRecommendationScoreBreakdown(item: ObjectiveCompareItem) {
+  const breakdown = item.recommendationScoreBreakdown
+  if (!breakdown) return true
+
+  const contributions = [
+    breakdown.utilizationContribution,
+    breakdown.onTimeDeliveryContribution,
+    breakdown.changeoverContribution,
+  ]
+
+  return contributions.some(contribution =>
+    !Number.isFinite(contribution) || contribution < 0 || contribution > 1)
+}
+
+function hasMismatchedRecommendationScoreBreakdown(item: ObjectiveCompareItem) {
+  return Math.abs(item.recommendationScore - recommendationScoreBreakdownTotal(item.recommendationScoreBreakdown)) > 0.0001
+}
+
+function hasFormulaMismatchedRecommendationScoreBreakdown(item: ObjectiveCompareItem, formula: RecommendationScoreFormula) {
+  const contributionTolerance = 0.001
+  const expectedUtilizationContribution = item.utilizationRate * formula.utilizationWeight
+  const expectedOnTimeDeliveryContribution = item.onTimeDeliveryRate * formula.onTimeDeliveryWeight
+  const expectedChangeoverContribution = Math.max(0, 1 - item.totalChangeoverMinutes / formula.changeoverNormalizationMinutes)
+    * formula.changeoverWeight
+
+  return Math.abs(item.recommendationScoreBreakdown.utilizationContribution - expectedUtilizationContribution) > contributionTolerance
+    || Math.abs(item.recommendationScoreBreakdown.onTimeDeliveryContribution - expectedOnTimeDeliveryContribution) > contributionTolerance
+    || Math.abs(item.recommendationScoreBreakdown.changeoverContribution - expectedChangeoverContribution) > contributionTolerance
+}
+
+function hasInvalidRecommendationScoreFormulaWeightTotal(formula: RecommendationScoreFormula) {
+  const totalWeight = formula.utilizationWeight
+    + formula.onTimeDeliveryWeight
+    + formula.changeoverWeight
+
+  return Math.abs(totalWeight - 1) > 0.0001
+}
+
+function hasInvalidRecommendationScoreFormula(formula: RecommendationScoreFormula | undefined) {
+  if (!formula) return true
+
+  const weights = [
+    formula.utilizationWeight,
+    formula.onTimeDeliveryWeight,
+    formula.changeoverWeight,
+    formula.changeoverNormalizationMinutes,
+  ]
+  return !formula.version?.trim()
+    || !formula.description?.trim()
+    || weights.some(weight => !Number.isFinite(weight) || weight <= 0)
+}
+
+function hasDuplicateObjectiveKeys(items: ObjectiveCompareItem[]) {
+  return new Set(items.map(item => item.objective)).size !== items.length
+}
+
+function hasMissingPlanId(item: ObjectiveCompareItem) {
+  return !item.plan.id?.trim()
+}
+
+function hasDuplicatePlanIds(items: ObjectiveCompareItem[]) {
+  return new Set(items.map(item => item.plan.id)).size !== items.length
 }
 
 async function loadData() {
@@ -535,8 +819,121 @@ async function loadData() {
     const result = await api.batchOptimize({
       workshopId: props.workshopId,
     })
+    if (!Array.isArray(result.items)) {
+      throw new Error('后端对比结果缺少方案列表')
+    }
+    if (!result.items.length) {
+      throw new Error('后端未返回可对比排产方案')
+    }
+    if (!result.bestOverallObjective?.trim()) {
+      throw new Error('后端对比结果缺少推荐方案')
+    }
+    if (!result.items.some(item => item.objective === result.bestOverallObjective)) {
+      throw new Error('后端推荐方案不在可对比排产方案中')
+    }
+    if (result.items.some(item => hasMissingObjectiveIdentity(item))) {
+      throw new Error('后端对比方案缺少目标标识或名称')
+    }
+    if (hasDuplicateObjectiveKeys(result.items)) {
+      throw new Error('后端对比方案目标标识重复')
+    }
+    if (result.items.some(item => !item.plan || !Array.isArray(item.plan.items))) {
+      throw new Error('后端对比方案缺少排产计划')
+    }
+    if (result.items.some(item => hasMissingPlanId(item))) {
+      throw new Error('后端对比方案缺少排产计划标识')
+    }
+    if (hasDuplicatePlanIds(result.items)) {
+      throw new Error('后端对比方案排产计划标识重复')
+    }
+    if (result.items.some(item => item.totalWorkOrders > 0 && item.plan.items.length === 0)) {
+      throw new Error('后端对比方案计划明细为空')
+    }
+    if (result.items.some(item => item.totalWorkOrders !== item.plan.items.length)) {
+      throw new Error('后端对比方案工单数与计划明细不一致')
+    }
+    if (result.items.some(item => hasInvalidRatioMetrics(item))) {
+      throw new Error('后端对比方案指标超出有效范围')
+    }
+    if (result.items.some(item => hasUtilizationRateMismatch(item))) {
+      throw new Error('后端对比方案利用率与计划摘要不一致')
+    }
+    if (result.items.some(item => hasOnTimeDeliveryRateMismatch(item))) {
+      throw new Error('后端对比方案准时率与计划摘要不一致')
+    }
+    if (result.items.some(item => hasInvalidChangeoverMinutes(item))) {
+      throw new Error('后端对比方案换型分钟无效')
+    }
+    if (result.items.some(item => hasChangeoverMinutesMismatch(item))) {
+      throw new Error('后端对比方案换型分钟与计划摘要不一致')
+    }
+    if (result.items.some(item => hasInvalidGroupCount(item))) {
+      throw new Error('后端对比方案分组数无效')
+    }
+    if (result.items.some(item => hasGroupCountMismatch(item))) {
+      throw new Error('后端对比方案分组数与计划摘要不一致')
+    }
+    if (result.items.some(item => item.plan.items.some(planItem => !planItem.plannedStartTime || !planItem.plannedEndTime))) {
+      throw new Error('后端对比方案计划项缺少时间窗')
+    }
+    if (result.items.some(item => item.plan.items.some(planItem => {
+      const startTime = new Date(planItem.plannedStartTime).getTime()
+      const endTime = new Date(planItem.plannedEndTime).getTime()
+      return Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime
+    }))) {
+      throw new Error('后端对比方案计划项时间窗无效')
+    }
+    if (result.items.some(item => item.plan.items.some(planItem => !planItem.workOrderId || !planItem.equipmentId))) {
+      throw new Error('后端对比方案计划项缺少工单或设备锚点')
+    }
+    if (result.items.some(item => item.plan.items.some(planItem => !planItem.id || !planItem.workOrderNumber))) {
+      throw new Error('后端对比方案计划项缺少任务身份标识')
+    }
+    if (result.items.some(item => {
+      const taskIds = new Set(item.plan.items.map(planItem => planItem.id))
+      return item.plan.items.some(planItem => planItem.dependentItems.some(dependentItem => !taskIds.has(dependentItem)))
+    })) {
+      throw new Error('后端对比方案计划项依赖不存在')
+    }
+    if (result.items.some(item => planSummaryWindowMissesItems(item.plan))) {
+      throw new Error('后端对比方案计划摘要时间窗未覆盖计划明细')
+    }
+    if (result.items.some(item => hasSameEquipmentOverlap(item.plan))) {
+      throw new Error('后端对比方案同设备计划项时间重叠')
+    }
+    if (result.items.some(item => hasSameEquipmentSequenceTimeConflict(item.plan))) {
+      throw new Error('后端对比方案同设备计划项顺序与时间不一致')
+    }
+    if (result.items.some(item => item.plan.items.some(planItem => planItem.dependentItems.includes(planItem.id)))) {
+      throw new Error('后端对比方案计划项不能依赖自身')
+    }
+    if (result.items.some(item => hasDependencyCycle(item.plan))) {
+      throw new Error('后端对比方案计划项存在循环依赖')
+    }
+    if (result.items.some(item => hasDependencyWindowConflict(item.plan))) {
+      throw new Error('后端对比方案计划项依赖时间顺序无效')
+    }
+    if (result.items.some(item => hasInvalidRecommendationScore(item) || hasInvalidRecommendationScoreBreakdown(item))) {
+      throw new Error('后端对比方案缺少推荐分数或组成')
+    }
+    if (result.items.some(item => hasMismatchedRecommendationScoreBreakdown(item))) {
+      throw new Error('后端推荐分数与组成不一致')
+    }
+    if (hasInvalidRecommendationScoreFormula(result.recommendationScoreFormula)) {
+      throw new Error('后端推荐公式说明缺失或无效')
+    }
+    if (hasInvalidRecommendationScoreFormulaWeightTotal(result.recommendationScoreFormula)) {
+      throw new Error('后端推荐公式权重合计无效')
+    }
+    if (result.items.some(item => hasFormulaMismatchedRecommendationScoreBreakdown(item, result.recommendationScoreFormula))) {
+      throw new Error('后端推荐分数组成与公式不一致')
+    }
+    if (hasMismatchedBestOverallObjective(result.items, result.bestOverallObjective)) {
+      throw new Error('后端推荐方案不是综合得分最高方案')
+    }
     items.value = result.items
     bestOverall.value = result.bestOverallObjective ?? ''
+    recommendationScoreFormula.value = result.recommendationScoreFormula
     activeTab.value = result.items[0]?.objective ?? ''
 
     // 转换甘特图数据
@@ -549,8 +946,16 @@ async function loadData() {
       ganttDataByObjective[item.objective] = planToGanttData(item.plan, equipment.items, bottleneckSet)
     }
   } catch (e: unknown) {
-    logUnlessOfflineDemo('error', '批量优化对比失败，使用演示数据:', e)
-    loadDemoData()
+    logUnlessOfflineDemo('error', '批量优化对比失败:', e)
+    if (isOfflineDemoError(e)) {
+      loadDemoData()
+      return
+    }
+    error.value = `批量优化对比失败: ${e instanceof Error ? e.message : '未知错误'}`
+    items.value = []
+    bestOverall.value = ''
+    recommendationScoreFormula.value = null
+    activeTab.value = ''
   } finally {
     loading.value = false
   }

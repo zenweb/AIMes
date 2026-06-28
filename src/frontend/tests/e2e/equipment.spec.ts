@@ -2,13 +2,20 @@ import { test, expect } from '@playwright/test'
 
 test.describe.configure({ timeout: 90000 })
 
+function offlineDemoPath(path: string) {
+  return `${path}?offlineDemo=1`
+}
+
 test.describe('Equipment 设备管理', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      if (localStorage.getItem('aimes_e2e_live_backend') === 'true') return
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('equipment')
+    await page.goto(offlineDemoPath('equipment'), { waitUntil: 'commit' })
     await page.waitForSelector('.equipment-board', { timeout: 20000 })
   })
 
@@ -51,7 +58,7 @@ test.describe('Equipment 设备管理', () => {
     await expect(panel.getByText('设备故障已同步 AI 排产')).toBeVisible()
     await expect(panel.getByText(/CNC-001 预计停机 4h/)).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'), { waitUntil: 'commit' })
     await page.waitForSelector('.schedule-board', { timeout: 20000 })
     const eventPanel = page.locator('.event-queue-panel')
     await expect(eventPanel.getByText('CNC-001 停机影响')).toBeVisible({ timeout: 10000 })
@@ -65,13 +72,13 @@ test.describe('Equipment 设备管理', () => {
     await expect(eventPanel.getByText(/夜班加班/)).toBeVisible()
     await expect(eventPanel.getByText(/拆单分流到 CNC-003/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const equipmentEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'CNC-001 停机窗口已同步重排' })
     await expect(equipmentEvidence.locator('.evidence-topline span').getByText('设备维护', { exact: true })).toBeVisible()
     await expect(equipmentEvidence.getByText('TRACE-EQ-DOWNTIME-CNC-001')).toBeVisible()
 
-    await page.goto('audit-logs', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('audit-logs'), { waitUntil: 'commit' })
     await page.waitForSelector('.audit-board', { timeout: 60000 })
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '设备停机回放' }).getByText('1')).toBeVisible()
@@ -129,13 +136,13 @@ test.describe('Equipment 设备管理', () => {
     await expect(customerPanel.getByText('4h 停机样例已映射')).toBeVisible()
     await expect(panel.getByText('客户设备故障样例已接入')).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto(offlineDemoPath('scheduling'), { waitUntil: 'commit' })
     await page.waitForSelector('.schedule-board', { timeout: 20000 })
     const eventCard = page.locator('.event-queue-panel .event-card').filter({ hasText: 'CNC-001 停机影响' })
     await expect(eventCard).toBeVisible()
     await expect(eventCard.getByText(/客户真实故障样例|CNC-002 \/ CNC-003/)).toBeVisible()
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('report'), { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const customerFaultEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '客户真实设备故障样例已映射' })
     await expect(customerFaultEvidence.getByText('设备实证')).toBeVisible()
@@ -178,14 +185,14 @@ test.describe('Equipment 设备管理', () => {
   })
 
   test('异常分流维护复核单 OTD 证据写入失败时真实浏览器保留 fail-loud 告警', async ({ page }) => {
-    await page.goto('anomaly')
+    await page.goto(offlineDemoPath('anomaly'), { waitUntil: 'commit' })
     await page.waitForSelector('.event-center', { timeout: 30000 })
     const anomalyPanel = page.locator('.event-center')
     const equipmentLane = anomalyPanel.locator('.event-lane').filter({ hasText: 'CNC-001 主轴温升异常' })
     await equipmentLane.getByRole('button', { name: '确认分流' }).click()
     await expect(anomalyPanel.locator('.dispatch-trace').getByText('设备分流已确认')).toBeVisible()
 
-    await page.goto('equipment', { waitUntil: 'commit' })
+    await page.goto(offlineDemoPath('equipment'), { waitUntil: 'commit' })
     await page.waitForSelector('.equipment-impact-panel', { timeout: 30000 })
     await page.evaluate(() => {
       const originalSetItem = Storage.prototype.setItem
@@ -355,7 +362,23 @@ test.describe('Equipment 设备管理', () => {
 
   test('空筛选结果显示空状态', async ({ page }) => {
     // 拦截设备列表 API 返回空
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_e2e_live_backend', 'true')
+      localStorage.setItem('aimes_offline_demo', 'false')
+      localStorage.setItem('aimes_token', 'backend-token-admin-e2e')
+      localStorage.setItem('aimes_refresh_token', 'backend-refresh-token-admin-e2e')
+    })
+    await page.route('**/api/v1/auth/refresh', route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          token: 'backend-token-admin-e2e',
+          refreshToken: 'backend-refresh-token-admin-e2e',
+          expiresAt: '2026-12-31T23:59:59Z',
+        }),
+      })
+    })
     await page.route('**/api/v1/equipment*', (route) => {
       route.fulfill({
         status: 200,
@@ -363,7 +386,7 @@ test.describe('Equipment 设备管理', () => {
         body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 1 }),
       })
     })
-    await page.reload()
+    await page.goto('equipment?offlineDemo=0', { waitUntil: 'commit' })
     await page.waitForSelector('.equipment-board', { timeout: 10000 })
 
     await expect(page.getByText('无匹配设备')).toBeVisible()

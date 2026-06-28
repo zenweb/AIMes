@@ -106,6 +106,73 @@ test.describe('Report 报表中心', () => {
     await page.waitForSelector('.report-board', { timeout: 60000 })
   })
 
+  test('多源报表证据加载失败时真实浏览器展示单条聚合 fail-loud 告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      const brokenKeys = new Set([
+        'aimes_customer_order_import_evidence',
+        'aimes_customer_equipment_fault_evidence',
+        'aimes_otd_evidence_chain',
+      ])
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItem(key: string) {
+        if (brokenKeys.has(key)) throw new Error(`report evidence local read unavailable: ${key}`)
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItem(key: string) {
+        if (brokenKeys.has(key)) throw new Error(`report evidence cleanup unavailable: ${key}`)
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+
+    const alerts = page.locator('.report-board [role="alert"]').filter({
+      hasText: '报表证据加载失败',
+    })
+    await expect(alerts).toHaveCount(1, { timeout: 10000 })
+    await expect(alerts.first()).toContainText('客户工单导入证据')
+    await expect(alerts.first()).toContainText('客户设备故障证据')
+    await expect(alerts.first()).toContainText('OTD 证据链')
+    await expect(alerts.first()).toContainText('/api/v1/scheduling/customer-order-import/latest')
+    await expect(alerts.first()).toContainText('aimes_customer_equipment_fault_evidence')
+    await expect(alerts.first()).toContainText('aimes_otd_evidence_chain')
+    await expect(page.locator('.report-board section').filter({ hasText: '生产概况' }).getByText('工单总数')).toBeVisible()
+  })
+
+  test('CSV 导出成功后仍保留报表证据加载 fail-loud 告警', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalGetItem = Storage.prototype.getItem
+      const originalRemoveItem = Storage.prototype.removeItem
+      Storage.prototype.getItem = function getItem(key: string) {
+        if (key === 'aimes_customer_order_import_evidence') {
+          throw new Error('report evidence local read unavailable after csv')
+        }
+        return originalGetItem.call(this, key)
+      }
+      Storage.prototype.removeItem = function removeItem(key: string) {
+        if (key === 'aimes_customer_order_import_evidence') {
+          throw new Error('report evidence cleanup unavailable after csv')
+        }
+        return originalRemoveItem.call(this, key)
+      }
+    })
+    await page.goto('report', { waitUntil: 'commit', timeout: 45000 })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+
+    const alert = page.locator('.report-board [role="alert"]')
+    await expect(alert).toContainText('报表证据加载失败')
+    await expect(alert).toContainText('客户工单导入证据')
+
+    const download = await captureCsvDownload(page, async () => {
+      await page.getByRole('button', { name: 'CSV' }).click()
+    })
+    expect(download.text.replace(/\uFEFF/g, '')).toContain('OTD复盘')
+    await expect(alert).toContainText('报表证据加载失败')
+    await expect(alert).toContainText('客户工单导入证据')
+    await expect(alert).toContainText('/api/v1/scheduling/customer-order-import/latest')
+  })
+
   test('展示 OTD 改善复盘报告', async ({ page }) => {
     const panel = page.locator('.otd-report-section')
 
@@ -129,6 +196,51 @@ test.describe('Report 报表中心', () => {
     await expect(agentEvidence.getByText('TRACE-SCH-20260520-001')).toBeVisible()
   })
 
+  test('OTD 证据链消费批量对比采纳 feedback snapshot', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_schedule_feedback_snapshot', JSON.stringify({
+        decision: 'accepted',
+        decisionLabel: '已采纳批量对比方案',
+        reasonCategory: 'batch_optimize_apply',
+        categoryLabel: '批量对比采纳',
+        reasonDetail: '从批量对比中选择此方案',
+        objectiveLabel: '综合平衡',
+        createdAt: '2026-06-14T10:30:00.000Z',
+        traceId: 'TRACE-SCH-FEEDBACK-BATCH-balanced',
+        agentDecisionId: 'decision-batch-balanced-001',
+        source: 'local',
+      }))
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.report-board', { timeout: 60000 })
+
+    const evidenceChain = page.locator('.otd-evidence-chain')
+    const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '已采纳批量对比方案' })
+    await expect(scheduleEvidence.getByText('人工采纳')).toBeVisible()
+    await expect(scheduleEvidence.getByText('批量对比采纳：从批量对比中选择此方案')).toBeVisible()
+    await expect(scheduleEvidence.getByText('对象：综合平衡')).toBeVisible()
+    await expect(scheduleEvidence.getByText('TRACE-SCH-FEEDBACK-BATCH-balanced')).toBeVisible()
+
+    await scheduleEvidence.click()
+    const detail = page.locator('.drilldown-detail')
+    await expect(detail.getByText('批量对比采纳是否已进入 OTD 复盘？')).toBeVisible()
+    await expect(detail.getByText('decision-batch-balanced-001')).toBeVisible()
+    await expect(detail.getByText('在AI 排产核对批量对比采纳记录，确认目标、原因、traceId 和 Agent 决策证据 是否已同步到 OTD 证据链。')).toBeVisible()
+    await expect(page.getByText('本地采纳证据随 CSV 导出；Excel/PDF 为后端报表快照。')).toBeVisible()
+
+    const download = await captureCsvDownload(page, async () => {
+      await page.getByRole('button', { name: 'CSV' }).click()
+    })
+    const csv = download.text.replace(/\uFEFF/g, '')
+    expect(csv).toContain('OTD经营钻取')
+    expect(csv).toContain('人工采纳 / 批量对比采纳是否已进入 OTD 复盘？')
+    expect(csv).toContain('在AI 排产核对批量对比采纳记录，确认目标、原因、traceId 和 Agent 决策证据 是否已同步到 OTD 证据链。')
+    expect(csv).toContain('TRACE-SCH-FEEDBACK-BATCH-balanced')
+    expect(csv).toContain('decision-batch-balanced-001')
+
+    await page.getByRole('button', { name: 'Excel' }).click()
+    await expect(page.getByRole('alert')).toContainText('报表 Excel 已请求后端快照导出；本地批量采纳证据请使用 CSV 导出。')
+  })
   test('OTD 经营复盘支持按证据钻取解释和跳转', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('aimes_otd_evidence_chain', JSON.stringify([
@@ -152,7 +264,7 @@ test.describe('Report 报表中心', () => {
     const panel = page.locator('.otd-drilldown-panel')
     await expect(panel.getByRole('heading', { name: '经营复盘钻取' })).toBeVisible()
     await expect(panel.getByText(/条已闭环/)).toBeVisible()
-    await expect(panel.getByText('Agent 推荐为什么能提升 OTD？')).toBeVisible()
+    await expect(panel.getByRole('button', { name: /Agent 推荐为什么能提升 OTD/ })).toBeVisible()
     await expect(panel.locator('.drilldown-detail').getByText('已解释，可作为采纳证据')).toBeVisible()
 
     await panel.getByRole('button', { name: /缺料风险是否已被采购承诺消除/ }).click()
@@ -223,6 +335,7 @@ test.describe('Report 报表中心', () => {
     await expect(detail.getByText('华东新能源 交付恢复承诺包')).toBeVisible()
     await expect(detail.getByText('AUD-KPI-COMMITMENT-HUADONG-20260521-001')).toBeVisible()
     await expect(detail.getByText('TRACE-KPI-COMMITMENT-HUADONG-20260521')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '生成客户交付恢复承诺包' })).toBeDisabled()
 
     const evidenceChain = page.locator('.otd-evidence-chain')
     await expect(evidenceChain.getByText('客户承诺包')).toBeVisible()
@@ -272,6 +385,7 @@ test.describe('Report 报表中心', () => {
     await expect(detail.getByText('法兰盘 DN100 外协承诺包')).toBeVisible()
     await expect(detail.getByText('AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001')).toBeVisible()
     await expect(detail.getByText('TRACE-OUTSOURCING-FLANGE-20260521')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '生成外协承诺包' })).toBeDisabled()
 
     const evidenceChain = page.locator('.otd-evidence-chain')
     await expect(evidenceChain.getByText('法兰盘 DN100 外协承诺包')).toBeVisible()

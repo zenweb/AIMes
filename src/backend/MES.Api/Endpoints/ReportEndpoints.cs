@@ -4,6 +4,7 @@ using MES.Domain.Entities.Anomalies;
 using MES.Domain.Entities.Equipment;
 using MES.Domain.Entities.Production;
 using MES.Domain.Entities.Quality;
+using MES.Domain.Entities.Scheduling;
 using MES.Domain.Enums;
 using MES.Domain.Interfaces.Repositories;
 
@@ -70,6 +71,7 @@ public static class ReportEndpoints
         var workOrders = await workOrderRepo.GetAllAsync(null, ct);
         var equipment = await equipmentRepo.GetAllAsync(ct);
         var inspections = await qualityRepo.GetAllAsync(ct);
+        var scheduleFeedback = await scheduleRepo.GetLatestFeedbackAsync(ct);
 
         // Production
         var completedWo = workOrders.Count(w => w.Status == WorkOrderStatus.Completed);
@@ -166,6 +168,47 @@ public static class ReportEndpoints
                 AvgResolveHours = 0,
                 AnomalyByType = anomalyByType,
             },
+            ScheduleFeedback = MapScheduleFeedback(scheduleFeedback),
         };
     }
+
+    private static AdoptionFeedbackSnapshotDto? MapScheduleFeedback(ScheduleAdoptionFeedback? feedback)
+    {
+        if (feedback is null || string.IsNullOrWhiteSpace(feedback.ReasonDetail)) return null;
+
+        var accepted = feedback.InitiatedByAgent || !string.IsNullOrWhiteSpace(feedback.AgentDecisionId);
+        return new AdoptionFeedbackSnapshotDto(
+            accepted ? "accepted" : "rejected",
+            accepted ? "已采纳 Agent 排产建议" : "已记录人工排产调整",
+            feedback.ReasonCategory.ToString(),
+            GetReasonCategoryLabel(feedback.ReasonCategory),
+            feedback.ReasonDetail,
+            GetObjectiveLabel(feedback.OptimizationObjective),
+            feedback.CreatedAt,
+            feedback.AiTraceId,
+            "backend",
+            feedback.AgentDecisionId);
+    }
+
+    private static string GetReasonCategoryLabel(OverrideReasonCategory category) => category switch
+    {
+        OverrideReasonCategory.DueDateAdvanced => "交期提前",
+        OverrideReasonCategory.DueDatePostponed => "交期推迟",
+        OverrideReasonCategory.UrgentInsertion => "紧急插单",
+        OverrideReasonCategory.MaterialShortage => "物料未齐套",
+        OverrideReasonCategory.EquipmentFailure => "设备故障",
+        OverrideReasonCategory.CapacityInsufficient => "产能不足",
+        OverrideReasonCategory.StaffShortage => "人员缺勤",
+        OverrideReasonCategory.Rework => "质量返工",
+        _ => "其他",
+    };
+
+    private static string GetObjectiveLabel(string? objective) => objective switch
+    {
+        "due_date" => "交期优先",
+        "utilization" => "设备利用率优先",
+        "changeover" => "换线最小",
+        "balanced" => "综合平衡",
+        _ => "综合平衡",
+    };
 }

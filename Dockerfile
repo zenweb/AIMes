@@ -23,12 +23,12 @@ RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:8c0b6857eab7b2aa57884c839bf4678414606bd7d17370f18a842ac5cf414711 AS final
 WORKDIR /app
-EXPOSE 5000
+EXPOSE 5003
 
 COPY --from=build /app/publish .
 COPY --from=frontend-build /frontend/.output/public ./wwwroot/scheduling
 
-ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_URLS=http://+:5003
 ENV ASPNETCORE_ENVIRONMENT=Production
 USER $APP_UID
 

@@ -78,7 +78,27 @@
         </span>
         <strong>复用效果 {{ props.qualityKnowledgeReuseDraft.effectScore }} 分</strong>
       </div>
-      <div class="formal-capa-flow" :class="{ verified: reuseClosure?.status === 'verified' }">
+      <div id="quality-capa-operation-help" class="capa-operation-guidance">
+        <div>
+          <span>操作前提示 / Before writeback</span>
+          <p>正式 CAPA、低分复核队列、发布推荐采纳都会回写质量知识、审计留痕与后续训练排序。</p>
+          <p>These actions update quality knowledge, audit evidence, and future recommendation ranking.</p>
+        </div>
+        <nav aria-label="质量 CAPA 操作关联链接">
+          <a :href="`#quality-capa-evidence-${props.qualityKnowledgeReuseDraft.traceId}`">
+            查看草案证据 {{ props.qualityKnowledgeReuseDraft.traceId }}
+          </a>
+          <a :href="`#quality-capa-audit-${props.qualityKnowledgeReuseDraft.auditId}`">
+            查看审计 {{ props.qualityKnowledgeReuseDraft.auditId }}
+          </a>
+          <a href="#quality-capa-operation-help">帮助 / Help</a>
+        </nav>
+      </div>
+      <div
+        class="formal-capa-flow"
+        :class="{ verified: reuseClosure?.status === 'verified' }"
+        aria-describedby="quality-capa-operation-help"
+      >
         <div>
           <span>人工复核与效果回写</span>
           <strong>{{ reuseClosure ? reuseClosure.formalCapaTitle : '草案待质量工程师复核' }}</strong>
@@ -194,7 +214,10 @@
           </button>
         </div>
       </div>
-      <code>{{ props.qualityKnowledgeReuseDraft.traceId }}</code>
+      <div class="capa-draft-links">
+        <code :id="`quality-capa-evidence-${props.qualityKnowledgeReuseDraft.traceId}`">{{ props.qualityKnowledgeReuseDraft.traceId }}</code>
+        <code :id="`quality-capa-audit-${props.qualityKnowledgeReuseDraft.auditId}`">{{ props.qualityKnowledgeReuseDraft.auditId }}</code>
+      </div>
     </div>
 
     <div v-if="showStandaloneReuseRanking" class="reuse-ranking-panel standalone-ranking-panel">
@@ -305,6 +328,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { RootCauseItemDto } from '../../types/quality'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import { writeQualityCapaClosure } from '../../utils/quality-capa-sync'
 import {
   closeAssistantRecoveryQualityAction,
@@ -436,6 +460,59 @@ const latestGrayReleaseDecision = computed(() =>
 const assistantRecoveryPackage = computed(() =>
   assistantRecoveryPackages.value.find(record => record.workOrders.includes('WO-RUSH-9001')) ?? null
 )
+
+async function refreshStartupEvidence() {
+  const failures: string[] = []
+
+  await refreshStartupSource(
+    '质量知识复用闭环',
+    () => readQualityKnowledgeReuseClosuresBackendFirst(),
+    records => { reuseClosure.value = records[0] ?? readLatestQualityKnowledgeReuseClosure() },
+    failures
+  )
+  await refreshStartupSource(
+    '低分样本复核队列',
+    () => readQualityKnowledgeReviewQueueRecordsBackendFirst(),
+    records => { reviewQueue.value = records[0] ?? readLatestQualityKnowledgeReviewQueueRecord() },
+    failures
+  )
+  await refreshStartupSource(
+    '质量推荐采纳反馈',
+    () => readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst(),
+    records => { recommendationFeedbackRecords.value = records },
+    failures
+  )
+  await refreshStartupSource(
+    '质量知识灰度决策',
+    () => readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst(),
+    records => { grayReleaseDecisionRecords.value = records },
+    failures
+  )
+  await refreshStartupSource(
+    '助手执行包质量责任',
+    () => readAssistantRecoveryPackagesBackendFirst(),
+    records => { assistantRecoveryPackages.value = records },
+    failures
+  )
+
+  if (failures.length > 0) {
+    closureErrorMessage.value = `质量 CAPA 启动证据刷新失败，已保留本地处置状态：${failures.join('；')}`
+  }
+}
+
+async function refreshStartupSource<T>(
+  label: string,
+  read: () => Promise<T[]>,
+  apply: (records: T[]) => void,
+  failures: string[]
+) {
+  try {
+    apply(await read())
+  } catch (error: unknown) {
+    if (isOfflineDemoError(error)) return
+    failures.push(`${label}: ${errorMessage(error, '请稍后重试')}`)
+  }
+}
 
 function statusText(status: CapaStatus) {
   return {
@@ -574,13 +651,7 @@ async function closeAssistantQualityAction() {
   records.value.unshift(`${updated.qualityActionAuditCode} 已回写助手执行包质量责任动作：${updated.qualityActionTraceId}`)
 }
 
-onMounted(async () => {
-  reuseClosure.value = (await readQualityKnowledgeReuseClosuresBackendFirst())[0] ?? readLatestQualityKnowledgeReuseClosure()
-  reviewQueue.value = (await readQualityKnowledgeReviewQueueRecordsBackendFirst())[0] ?? readLatestQualityKnowledgeReviewQueueRecord()
-  recommendationFeedbackRecords.value = await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst()
-  grayReleaseDecisionRecords.value = await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst()
-  assistantRecoveryPackages.value = await readAssistantRecoveryPackagesBackendFirst()
-})
+onMounted(refreshStartupEvidence)
 </script>
 
 <style scoped>
@@ -805,6 +876,51 @@ h3 {
   background: #dcfce7;
   color: #166534;
   font-size: 12px;
+}
+
+.capa-operation-guidance {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.38fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #f0f9ff;
+}
+
+.capa-operation-guidance span {
+  color: #075985;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.capa-operation-guidance p {
+  margin: 4px 0 0;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.capa-operation-guidance nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.capa-operation-guidance a {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}
+
+.capa-draft-links {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .formal-capa-flow {
@@ -1266,6 +1382,7 @@ h3 {
   .root-cause-strip,
   .task-grid,
   .sample-reuse-card,
+  .capa-operation-guidance,
   .formal-capa-flow,
   .ranking-grid {
     grid-template-columns: 1fr;

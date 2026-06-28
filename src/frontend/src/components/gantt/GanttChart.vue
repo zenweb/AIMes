@@ -3,11 +3,24 @@
     <div v-if="ganttError" class="gantt-error" role="alert" aria-live="assertive">
       {{ ganttError }}
     </div>
+    <div id="gantt-drag-help" class="gantt-drag-guidance">
+      <p>
+        拖拽排产前，请核对锁定期、设备冲突、工序依赖和回写证据。
+        Before dragging schedule tasks, verify lock window, equipment conflicts, operation dependencies, and writeback evidence.
+      </p>
+      <nav aria-label="甘特拖拽相关入口">
+        <a href="/scheduling">AI 排产 / Scheduling</a>
+        <a href="/audit-logs">审计回放 / Audit trail</a>
+        <a href="/report">报表证据 / Report evidence</a>
+        <a href="#gantt-drag-help">帮助 / Help</a>
+      </nav>
+    </div>
     <div
       class="gantt-e2e-markers"
       :class="{ visible: useLightweightGantt }"
       role="list"
       aria-label="轻量甘特图任务"
+      aria-describedby="gantt-drag-help"
     >
       <span v-if="useLightweightGantt" class="gantt_task" />
       <span
@@ -38,7 +51,8 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import gantt from 'dhtmlx-gantt'
 import type { GanttData, GanttTask } from '../../types/scheduling'
-import { isOfflineDemoMode } from '../../utils/offline-demo-mode'
+import { getLocalAccessToken } from '../../utils/auth-token'
+import { shouldSkipBackendForOfflineDemo } from '../../utils/offline-demo-mode'
 import '../../assets/styles/gantt-overrides.css'
 
 // dhtmlx-gantt 需要 CSS
@@ -61,7 +75,7 @@ const emit = defineEmits<{
 const ganttContainer = ref<HTMLDivElement>()
 const ganttError = ref('')
 let isInitialized = false
-const useLightweightGantt = import.meta.env.VITE_SHOW_DEMO_HINTS === 'true' || isOfflineDemoMode()
+const useLightweightGantt = shouldUseLightweightGantt()
 
 const now = ref(Date.now())
 const ganttEventIds: string[] = []
@@ -83,11 +97,34 @@ function emitLightweightTaskClick(taskId: GanttTask['id']) {
 // 更新当前时间，每 60 秒刷新一次锁定期边界
 let timeRefreshTimer: ReturnType<typeof setInterval> | undefined
 
+function isExplicitLiveMode(): boolean {
+  if (typeof window === 'undefined') return false
+  const queryValue = new URLSearchParams(window.location.search).get('offlineDemo')
+    ?? new URLSearchParams(window.location.search).get('demoMode')
+  if (queryValue === '0' || queryValue === 'false') return true
+  try {
+    const storage = window.localStorage
+    if (!storage || typeof storage.getItem !== 'function') return false
+    return storage.getItem('aimes_offline_demo') === 'false'
+  } catch {
+    return true
+  }
+}
+
+function shouldUseLightweightGantt(): boolean {
+  if (isExplicitLiveMode()) return false
+  if (shouldSkipBackendForOfflineDemo(getLocalAccessToken())) return true
+  return import.meta.env.VITE_SHOW_DEMO_HINTS === 'true' && !getLocalAccessToken()
+}
+
 function initGantt() {
-  if (useLightweightGantt) return
-  if (isInitialized || !ganttContainer.value) return
+  if (useLightweightGantt) return true
+  if (isInitialized) return true
+  if (!ganttContainer.value) return false
 
   gantt.config.date_format = '%Y-%m-%d %H:%i'
+  gantt.config.root_id = '0'
+  gantt.config.duration_unit = 'hour'
   gantt.config.drag_project = true
   gantt.config.drag_links = true
   gantt.config.round_dnd_dates = true
@@ -107,7 +144,7 @@ function initGantt() {
   gantt.config.columns = [
     { name: 'text', label: '设备/工单', tree: true, width: 180 },
     { name: 'start_date', label: '开始', align: 'center', width: 120 },
-    { name: 'duration', label: '天数', align: 'center', width: 60 },
+    { name: 'duration', label: '工时', align: 'center', width: 60 },
   ]
 
   // 最小时间单位 15 分钟
@@ -164,10 +201,10 @@ function initGantt() {
   // 工具提示
   gantt.templates.tooltip_text = (_start: Date, _end: Date, task: GanttTask) => {
     if (task.parent !== '0') {
-      return `<b>工单:</b> ${task.text}<br/>
+              return `<b>工单:</b> ${task.text}<br/>
               <b>设备:</b> ${task.equipmentName || task.equipmentId || '-'}<br/>
               <b>开始:</b> ${formatDisplayDate(task.start_date)}<br/>
-              <b>工期:</b> ${task.duration} 天<br/>
+              <b>工期:</b> ${task.duration} 小时<br/>
               ${task.setupMinutes ? `<b>换线:</b> ${task.setupMinutes} 分钟<br/>` : ''}
               ${task.isOnBottleneck ? '<b style="color:red">瓶颈工序</b><br/>' : ''}
               ${task.hasConflict ? `<b style="color:red">⚠ ${task.conflictMessage || '时间冲突'}</b>` : ''}`
@@ -178,7 +215,7 @@ function initGantt() {
   // 事件绑定
   ganttEventIds.push(gantt.attachEvent('onTaskClick', (id: string) => {
     const task = gantt.getTask(id)
-    if (task.parent !== '0') {
+    if (task && task.parent !== '0') {
       emit('taskClick', id)
     }
     return true
@@ -186,7 +223,7 @@ function initGantt() {
 
   ganttEventIds.push(gantt.attachEvent('onTaskDblClick', (id: string) => {
     const task = gantt.getTask(id)
-    if (task.parent !== '0') {
+    if (task && task.parent !== '0') {
       emit('taskDblClick', id)
     }
     return false // 阻止默认行为
@@ -199,8 +236,8 @@ function initGantt() {
     // 锁定期检查
     if (props.lockPeriodHours && props.lockPeriodHours > 0) {
       const lockEndTime = lockEnd.value!
-      const taskStart = gantt.date.parseDate(task.start_date, gantt.config.date_format)
-      const taskEnd = new Date(taskStart.getTime() + task.duration * 24 * 60 * 60 * 1000)
+      const taskStart = toTaskDate(task.start_date)
+      const taskEnd = getTaskEndDate(task, taskStart)
       const overlapsLockedPeriod = taskStart < lockEndTime && taskEnd > lockStart.value
       if (overlapsLockedPeriod) {
         gantt.message({
@@ -224,8 +261,8 @@ function initGantt() {
   ganttEventIds.push(gantt.attachEvent('onTaskDrag', (id: string, _mode: unknown, task: GanttTask, _original: GanttTask) => {
     if (task.parent === '0') return true
 
-    const draggedStart = new Date(task.start_date)
-    const draggedEnd = new Date(draggedStart.getTime() + task.duration * 24 * 60 * 60 * 1000)
+    const draggedStart = toTaskDate(task.start_date)
+    const draggedEnd = getTaskEndDate(task, draggedStart)
     const equipmentId = task.parent
 
     // 同设备上的所有其他任务
@@ -237,8 +274,8 @@ function initGantt() {
     })
 
     const hasConflict = siblings.some((t: GanttTask) => {
-      const tStart = new Date(t.start_date)
-      const tEnd = new Date(tStart.getTime() + t.duration * 24 * 60 * 60 * 1000)
+      const tStart = toTaskDate(t.start_date)
+      const tEnd = getTaskEndDate(t, tStart)
       return draggedStart < tEnd && draggedEnd > tStart
     })
 
@@ -252,13 +289,12 @@ function initGantt() {
     return true // 继续拖拽
   }))
 
-  ganttEventIds.push(gantt.attachEvent('onAfterTaskDrag', (id: string, _mode: unknown, task: GanttTask) => {
+  ganttEventIds.push(gantt.attachEvent('onAfterTaskDrag', (id: string) => {
+    const task = gantt.getTask(id)
     if (!task || task.parent === '0') return
 
-    const newStart = task.start_date
-      ? gantt.date.parseDate(task.start_date, gantt.config.date_format)
-      : new Date()
-    const newEnd = new Date(newStart.getTime() + task.duration * 24 * 60 * 60 * 1000)
+    const newStart = task.start_date ? toTaskDate(task.start_date) : new Date()
+    const newEnd = getTaskEndDate(task, newStart)
 
     // 拖拽结束后再次检查冲突
     const equipmentId = task.parent
@@ -269,8 +305,8 @@ function initGantt() {
     })
 
     const conflict = siblings.find((t: GanttTask) => {
-      const tStart = new Date(t.start_date)
-      const tEnd = new Date(tStart.getTime() + t.duration * 24 * 60 * 60 * 1000)
+      const tStart = toTaskDate(t.start_date)
+      const tEnd = getTaskEndDate(t, tStart)
       return newStart < tEnd && newEnd > tStart
     })
 
@@ -296,7 +332,12 @@ function initGantt() {
     }
   }))
 
-  gantt.init(ganttContainer.value)
+  try {
+    gantt.init(ganttContainer.value)
+  } catch (err: unknown) {
+    ganttError.value = `甘特图初始化失败：${err instanceof Error ? err.message : '请稍后重试'}。排产时间轴暂不可用，请保留当前筛选条件后重试。`
+    return false
+  }
   isInitialized = true
   if (props.scale) setScale(props.scale)
 
@@ -312,6 +353,7 @@ function initGantt() {
       }
     }
   }, 60000)
+  return true
 }
 
 // 加载数据
@@ -320,13 +362,65 @@ function loadData() {
   if (!isInitialized || !props.data) return
   try {
     gantt.clearAll()
-    gantt.parse(props.data)
+    gantt.parse(toDhtmlxData(props.data))
     ganttError.value = ''
     // 渲染锁定期遮罩
     gantt.render()
   } catch (err: unknown) {
     ganttError.value = `甘特图加载失败：${err instanceof Error ? err.message : '请稍后重试'}。排产任务图暂不可用，请保留当前筛选条件后重试。`
   }
+}
+
+function toDhtmlxData(data: GanttData) {
+  return {
+    data: data.tasks.map(task => toDhtmlxTask(task)),
+    links: data.links.map(link => ({ ...link })),
+  }
+}
+
+function toDhtmlxTask(task: GanttTask): GanttTask {
+  const startDate = cloneGanttDate(task.start_date)
+  const endDate = task.end_date
+    ? cloneGanttDate(task.end_date)
+    : formatDhtmlxDate(addHours(toDate(task.start_date), task.duration * 24))
+  const durationHours = task.end_date
+    ? hoursBetween(toDate(task.start_date), toDate(task.end_date))
+    : task.duration * 24
+  return {
+    ...task,
+    start_date: startDate,
+    end_date: endDate,
+    duration: Math.max(durationHours, 0.25),
+  }
+}
+
+function cloneGanttDate(date: Date | string): Date | string {
+  return date instanceof Date ? new Date(date.getTime()) : date
+}
+
+function toTaskDate(date: Date | string): Date {
+  return date instanceof Date ? date : gantt.date.parseDate(date, gantt.config.date_format)
+}
+
+function getTaskEndDate(task: GanttTask, startDate = toTaskDate(task.start_date)): Date {
+  if (task.end_date) return toTaskDate(task.end_date)
+  return addHours(startDate, task.duration)
+}
+
+function addHours(date: Date, hours: number): Date {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000)
+}
+
+function hoursBetween(start: Date, end: Date): number {
+  return (end.getTime() - start.getTime()) / (60 * 60 * 1000)
+}
+
+function toDate(date: Date | string): Date {
+  return date instanceof Date ? date : gantt.date.parseDate(date, gantt.config.date_format)
+}
+
+function formatDhtmlxDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 // 设置时间刻度
@@ -391,8 +485,7 @@ watch(
 )
 
 onMounted(() => {
-  initGantt()
-  loadData()
+  if (initGantt()) loadData()
 })
 
 onBeforeUnmount(() => {
@@ -424,9 +517,44 @@ defineExpose({ setScale })
   position: relative;
 }
 
+.gantt-drag-guidance {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin: 8px;
+  padding: 8px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  font-size: 12px;
+}
+
+.gantt-drag-guidance p {
+  margin: 0;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.gantt-drag-guidance nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gantt-drag-guidance a {
+  color: #1d4ed8;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .gantt-e2e-markers {
   position: absolute;
-  top: 8px;
+  top: 58px;
   left: 8px;
   display: flex;
   gap: 6px;
@@ -469,5 +597,19 @@ defineExpose({ setScale })
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .gantt-drag-guidance {
+    grid-template-columns: 1fr;
+  }
+
+  .gantt-drag-guidance nav {
+    justify-content: flex-start;
+  }
+
+  .gantt-e2e-markers {
+    top: 96px;
+  }
 }
 </style>

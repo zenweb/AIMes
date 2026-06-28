@@ -110,6 +110,26 @@
         </div>
       </section>
 
+      <section class="module-guidance" aria-label="当前模块关联证据与帮助">
+        <div class="module-guidance-copy">
+          <span>模块操作提示</span>
+          <strong>{{ moduleGuidance.zh }}</strong>
+          <em>{{ moduleGuidance.en }}</em>
+        </div>
+        <nav class="module-guidance-links" aria-label="当前模块关联入口">
+          <NuxtLink v-for="link in moduleGuidance.links" :key="link.to" :to="link.to">
+            {{ link.label }}
+          </NuxtLink>
+          <a href="#module-help">帮助：当前模块操作支持</a>
+        </nav>
+      </section>
+
+      <section id="module-help" class="module-help" aria-label="当前模块操作支持">
+        <span>复杂模块操作支持</span>
+        <strong>复杂动作前确认来源证据、责任人、目标页面和审计留痕。</strong>
+        <em>Complex operations should preserve source evidence, owner, target module, and audit trail.</em>
+      </section>
+
       <main class="content app-content">
         <slot />
       </main>
@@ -145,6 +165,28 @@ const keyword = ref('')
 
 const activeItem = computed(() => navItems.find((item) => item.path === route.path))
 const activeGroup = computed(() => activeItem.value?.group ?? '制造运营')
+const moduleGuidance = computed(() => {
+  if (route.path === '/scheduling') {
+    return {
+      zh: '先核对排产约束、审计回放和交付报告，再采纳复杂动作。',
+      en: 'Review scheduling constraints, audit replay, and delivery evidence before complex actions.',
+      links: [
+        { label: 'AI 排产', to: '/scheduling' },
+        { label: '报表中心', to: '/report' },
+        { label: '审计日志', to: '/audit-logs' },
+      ],
+    }
+  }
+  return {
+    zh: '先核对当前模块证据、关联记录和审计留痕，再执行复杂动作。',
+    en: 'Review module evidence, related records, and audit trail before complex actions.',
+    links: [
+      { label: activeItem.value?.label ?? '生产概览', to: activeItem.value?.path ?? '/dashboard' },
+      { label: '报表中心', to: '/report' },
+      { label: '审计日志', to: '/audit-logs' },
+    ],
+  }
+})
 
 const navGroups = computed(() => {
   const groups = new Map<string, typeof navItems>()

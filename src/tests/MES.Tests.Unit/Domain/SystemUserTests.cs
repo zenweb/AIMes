@@ -15,6 +15,14 @@ public class SystemUserTests
     }
 
     [Fact]
+    public void Create_WhenPasswordHashIsEmpty_ShouldReject()
+    {
+        var act = () => SystemUser.Create("newuser", "New User", "", "Operator");
+
+        act.Should().Throw<ArgumentException>("seeded or admin-created accounts must never be persisted with an empty password hash");
+    }
+
+    [Fact]
     public void ChangePassword_ShouldClearPasswordChangeRequirement()
     {
         var user = SystemUser.Create("newuser", "New User", "old-hash", "Operator");

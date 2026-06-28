@@ -248,14 +248,13 @@ namespace MES.Infrastructure.Data.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.InsertData(
-                table: "equipment",
-                columns: new[] { "id", "capacity", "created_at", "current_work_order_id", "equipment_code", "equipment_name", "equipment_type", "last_maintenance_date", "next_maintenance_date", "Parameters", "status", "updated_at", "utilization_rate", "workshop_id", "workshop_name" },
-                values: new object[,]
-                {
-                    { "eq-001", 100.0, new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), "", "CNC-001", "CNC加工中心1号", "CNC", null, null, new Dictionary<string, string>(), "Available", null, 0.0, "ws-001", "精密加工车间" },
-                    { "eq-002", 100.0, new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), "", "CNC-002", "CNC加工中心2号", "CNC", null, null, new Dictionary<string, string>(), "Available", null, 0.0, "ws-001", "精密加工车间" }
-                });
+            migrationBuilder.Sql(
+                """
+                INSERT INTO equipment (id, capacity, created_at, current_work_order_id, equipment_code, equipment_name, equipment_type, last_maintenance_date, next_maintenance_date, "Parameters", status, updated_at, utilization_rate, workshop_id, workshop_name)
+                VALUES
+                    ('eq-001', 100.0, TIMESTAMPTZ '2024-01-01T00:00:00Z', '', 'CNC-001', 'CNC加工中心1号', 'CNC', NULL, NULL, ''::hstore, 'Available', NULL, 0.0, 'ws-001', '精密加工车间'),
+                    ('eq-002', 100.0, TIMESTAMPTZ '2024-01-01T00:00:00Z', '', 'CNC-002', 'CNC加工中心2号', 'CNC', NULL, NULL, ''::hstore, 'Available', NULL, 0.0, 'ws-001', '精密加工车间');
+                """);
 
             migrationBuilder.InsertData(
                 table: "materials",

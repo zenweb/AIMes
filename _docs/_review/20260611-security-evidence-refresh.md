@@ -1,0 +1,111 @@
+# 2026-06-11 Review: Security Evidence Refresh
+
+## 结论
+
+自动化安全证据已刷新到 2026-06-11，并保持 PASS。人工发布闸门仍正确失败，没有被自动证据替代。
+
+## 审查点
+
+- Security self-assessment 覆盖 Unit security、Integration security、Architecture security gates、NuGet vulnerability audit、npm audit。
+- Attack Chain automated support 覆盖：
+  - A：endpoint authorization 与 agent role matrix。
+  - B：credential/token/audit leakage controls。
+  - C：release security configuration gates。
+- Attack Chain manual verification 报告仍要求 verifier、VerifiedAt 和 A/B/C 每链 evidence。
+- Attack Chain manual verification 的占位拒绝已补强：Verifier 不能是 `TBD/TODO/PENDING` 等占位；每链 evidence 也会拒绝冒号尾部占位，例如 `Chain A: TBD`。
+- Attack Chain human review packet 与 release human action packet 已同步占位拒绝规则，减少人工 verifier 照旧模板填占位后返工。
+- Non-mutating staging transcript 已脚本化，可复跑补充匿名拒绝、坏 token 拒绝、错误登录不泄漏和 CORS 拒绝证据。
+- Account-backed staging probes 已脚本化，补充 admin/operator 登录、admin endpoint 授权边界和普通保护资源访问证据。
+- Audit redaction staging probe 已脚本化：Admin 创建用户时 audit payload 包含 `***REDACTED***`，且未包含明文密码。
+- Staging transcript 报告的 system user count 文案已修正并复跑。
+- 真实 Chrome 前端证据已生成：78 个 login/audit/monitoring/quality e2e 全部通过，覆盖 auth guard、审计回放、现场态势、质量闭环和多条 fail-loud 不伪造证据路径。
+- Docker/网络恢复确认后已再次复跑真实 Chrome release-critical 前端套件：production build PASS，login/audit/monitoring/quality 78 passed；该证据继续只覆盖 A 轨质量证据，不替代人工 Attack Chain、security signoff 或 14 天灰度观察。
+- Docker/网络恢复确认后已补跑 5 分钟 Demo 主链路真实 Chrome 证据：production build PASS，`Dashboard -> Scheduling -> Audit -> Report 可回放` 1 passed；该证据同样只证明 A 轨前端主链路当前可用，不替代 B 轨人工/墙钟门禁。
+- 真实 Chrome 关键页面截图已生成，且每页先通过 DOM 文本/选择器断言再截图；截图大小均大于 200KB，避免空白截图误入证据包。
+- Attack Chain A/B/C human review packet 已准备，用于人类 verifier 填写真实验收结论。
+- Hosted CI 复核已完成：GitHub `V1` 已推送到 `d8bb6e484f86a6fbd6673317385caf34ba774ee2`，CI run `27318467207` PASS，Agent Evaluation run `27318467206` PASS。
+- Security signoff packet 与 gray readiness packet 已更新为 2026-06-11 当前证据口径。
+- Release human action packet 已准备，明确人工 Attack Chain、signoff 和 gray observation 的执行顺序。
+- Security signoff 生成脚本已准备；pending 报告按预期 FAIL，证明脚本不会绕过 Attack Chain 人工验证或 signer。
+- 主 security signoff packet 已同步脚本化签字规则：不得手工薄改 `UNSIGNED`/`SIGNED`，必须由 `scripts/run-security-signoff.ps1` 生成有效 `Result: PASS`。
+- Security signoff 生成脚本已补强 Attack Chain 前置校验：总体 VERIFIED/PASS 不够，必须有 A/B/C 每链 PASS 与非占位 evidence。
+- Gray observation 脚本已增加 security signoff 前置校验；未签字 OBSERVING dry-run 按预期 FAIL。
+- Gray observation OBSERVING 校验已补强：即使观察窗口仍按预期 FAIL，也必须记录 `ObservationStartedAt` 和非占位 gray start evidence，避免后续 14 天窗口起点无证据。
+- Gray observation 的 signoff 前置校验已补强：薄签字文件只有 `Status/Decision: SIGNED` 不再足够，必须是带 signer、SignedAt、evidence、Attack Chain PASS 和 `Result: PASS` 的有效签字包。
+- Gray observation 的 evidence 占位拒绝已补强：`UNSIGNED` / `FAIL` 不能作为 signoff evidence 或 gray start evidence；`Evidence: FAIL` 薄签字样本已按预期被阻断。
+- Release human action packet 已同步 gray start 前置条件：必须等待有效 `Result: PASS` security signoff packet，而不是只看 `Status/Decision: SIGNED`。
+- Staging 临时账号清理 dry-run 已准备，覆盖 `attack_chain_admin`、`attack_chain_operator` 与 `attack_chain_audit_probe_20260611`；默认不删除，需显式 `-Remove -IncludeAuditProbe`。
+- Release gate audit 的 security signoff 判断已收紧到签字包自身状态与 Attack Chain 状态：未来 signed signoff 可以同时说明 Gray observation 仍 FAIL，而不会把独立灰度门禁误归因到 security signoff。
+- Release gate audit 仍为 FAIL，失败项回到人工 Attack Chain、security signoff、gray observation。
+- 当前 release gate audit 已复跑到 `_docs/_reports/release-gate-audit-20260611-current-rerun.md`：Hosted CI 与 PostgreSQL/staging 为 PASS；Attack Chain A/B/C、Security signoff、Gray observation 为 FAIL。
+- Release human action packet 已统一到 Docker 恢复后的 staging 证据，并加入 signoff 后、gray start 后、gray PASS 后的审计复跑命令，降低人工操作后漏审计的风险。
+- Phase-one Sprint 0-3 acceptance matrix 已新增，用来补齐 CC plan 源验收项到当前证据包之间的可追溯性；初版矩阵对弱证据使用 `PARTIAL/INDIRECT`，没有把宽泛绿灯硬解释成逐项完成。
+- Phase-one partial evidence tightening 已新增：五个核心模块持久化、六个 Agent C6 测试覆盖、Metrics background structured logging 三项均补到具体代码/测试锚点，并继续引用 hosted CI/staging 作为执行证据。
+
+## 风险
+
+- 自动化 PASS 不能替代人类安全签字。
+- 不能由 Codex 代填 verifier、SignedAt 或灰度观察窗口。
+- GitHub push 通道短暂恢复并已成功触发当前 `V1` hosted CI；不过 `~/.ssh/aa.pub` 仍未被 GitHub 接受，后续推送仍建议修复 SSH key 或保持 HTTPS 可用。
+- 当前 staging 已准备临时 admin/operator 账号；人工验证结束后必须旋转或移除。
+- 当前 staging 已创建审计脱敏样本用户；清理脚本已能纳入该用户，但实际删除必须等人工验证截图/证据采集完成后执行。
+- 复跑审计没有发现新的自动化缺口；继续编码不能合法关闭剩余三项人工/墙钟门禁。
+- 人工执行包仍保持 `PREPARED_ONLY`；这些模板不能替代 verifier、signer 或 14 天观察。
+- 阶段一矩阵不是 release PASS 证明；总发布门仍以 release gate audit 为准。
+- 五个核心模块持久化已可作为 Sprint 0 验收 `PASS`，但当前收紧报告明确它不是单独的 create-restart-query 恢复专项报告；如果治理要求该精确证据，需要再补一片窄测试/报告。
+- 当前 release gate audit 已再次复跑，失败项仍只有 Attack Chain manual、security signoff、gray observation；没有发现自动门禁回退。
+- 主 security signoff packet 已统一引用 docker-restored staging 证据，避免人工 signer 使用旧 staging report。
+- 当前可复用脚本入口也已统一到 docker-restored staging 证据：`run-security-signoff.ps1` 默认值和 `run-attack-chain-staging-transcript.ps1` 报告输出已修正。
+- Security signoff 脚本已补强引用证据校验：SIGNED 前必须读取 hosted CI、PostgreSQL/staging、security self-assessment、Attack Chain automated support、真实 Chrome 前端证据，并确认每份为 PASS。
+- 缺 PostgreSQL/staging evidence 的薄签字样本已按预期 FAIL，证明 signer 不能只靠人工 Evidence 字段绕过机器证据包。
+- 引用证据 PASS 校验目前覆盖 signoff 生成入口；最终 release gate audit 仍保留独立 Hosted CI / PostgreSQL-staging / Attack Chain / Security signoff / Gray observation 判断。
+- Release gate audit 脚本默认参数已更新到当前权威证据；人工无参复跑不再误用 2026-06-02 旧 release evidence 路径。
+- 默认参数审计报告 `_docs/_reports/release-gate-audit-20260611-default-current.md` 已证明无参审计仍 fail loud，且失败项只剩三个人工/墙钟门禁。
+- ArchitectureTests 的 release gate 聚合约束已同步到当前默认审计报告；`ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence` 不再从旧 2026-06-02 报告取证，避免测试约束与脚本默认值漂移。
+- 本次测试锚点修复只关闭证据漂移问题，不关闭 Attack Chain manual、security signoff 或 gray observation。
+- Release human action packet 的 security signoff 命令已显式列出所有机器证据输入；人工 signer 复制命令时不再依赖 `run-security-signoff.ps1` 当前默认值来选择 hosted CI、staging、self-assessment、Attack Chain automated 和 frontend evidence。
+- 新增架构测试固定上述 runbook 约束，降低未来脚本默认参数变更后人工执行包悄悄漂移的风险。
+- Security signoff 报告正文已改为动态引用证据状态：机器证据缺失时，正文对应项显示 FAIL，而不是只在 violations 里失败、正文仍写 PASS。
+- `_docs/_review/20260611-security-signoff-blocked-dynamic-evidence-status.md` 证明缺 staging evidence 时报告正文和 gate 结果一致为 FAIL。
+- Hosted CI gate 已收紧到 release 仓库和 release 分支：证据脚本输出 `Repository` / `Branch`，release gate audit 要求 `zenweb/AIMes` / `V1`。这避免 main 或其他仓库的 Actions 绿灯误关 v1.0.0 gate。
+- 当前真实 Hosted CI 证据已用新判定复跑，总审计仍只卡三个人工/墙钟项。
+- Hosted CI gate 已进一步绑定 release head SHA：证据脚本要求 `CommitSha` 且校验 `gh run view.headSha`，总审计要求报告中的 `HeadSha` 与 40 位 `CommitSha` 一致，避免旧 V1 成功 run 误关当前 release。
+- 当前正式 Hosted CI 报告已通过 head SHA 新判定；总审计仍 fail loud 于三个人工/墙钟项。
+- Hosted CI 的 Required evidence 文案已同步到实际 gate 判定，不再只写 RunUrl/RunId/job summary，而是明确包含 release repository、release branch 与 head SHA。
+- PostgreSQL/staging 的 Required evidence 文案已同步到实际 gate 判定，不再只写 migrations 和 health，而是明确包含 Production 环境、PostgreSQL 连接、Docker 依赖、EF migrations、API startup、`/live` 与 `/ready`。
+- Security signoff 的 Required evidence 文案已同步到实际 gate 判定，不再只写 signer 改 SIGNED，而是明确包含 human SIGNED decision、signer、SignedAt、evidence、self-assessment 与 Attack Chain A/B/C PASS。
+- Gray observation 的 Required evidence 文案已同步到实际 gate 判定，不再只写首次灰度和 P0/P1=0，而是明确包含 PASS 状态、gray release id、观察时间戳、14 天窗口、P0/P1=0 与 evidence。
+- Attack Chain A/B/C 的 Required evidence 文案已同步到实际 gate 判定，不再只写 verifier、timestamp、A/B/C evidence，而是明确包含 VERIFIED status、verifier、VerifiedAt、每链 Manual verification PASS 和非占位 evidence。
+- 默认当前 release gate audit 报告也已同步上述 Required evidence 文案；架构测试先红后绿证明旧 `_docs/_reports/release-gate-audit-20260611-default-current.md` 会被抓到，重生成后通过。
+- 本次修复只关闭“默认报告文案漂移”风险；当前 release gate audit 仍正确 FAIL 于 Attack Chain manual、security signoff、gray observation。
+- Sprint 0 五个核心模块持久化证据已增强：新增 file-backed SQLite restart-recovery 集成测试，覆盖 Anomaly/BOM/Employee/Inventory/Purchase 的 create、首个 API host 释放、第二个 API host 复开查询。
+- 架构测试已固定该专项证据，避免后续只剩静态扫描或 InMemory 测试时仍误报 Sprint 0 持久化 PASS。
+- 这项增强不改变发布边界；Attack Chain manual、security signoff、gray observation 仍需要人类/墙钟证据。
+- Sprint 3 sensitive audit redaction 证据已从 prepared staging probe 口径升级为直接测试证据：单元测试覆盖嵌套 Password/ApiKey/SecretToken 脱敏，Admin endpoint 集成测试覆盖创建用户审计 `NewValues` 不落明文初始密码。
+- 新增架构守护固定 `AuditEndpointFilter` 必须调用 `AuditRedaction.RedactAndSerialize`，并要求上述单元/集成测试存在。
+- Sprint 3 non-auth `/api/v1/*` authorization 证据已从两个抽样 endpoint 扩展到 16 个真实非 auth API group endpoint，匿名请求全部返回 401。
+- 新增架构守护固定这些匿名拒绝路径，避免未来矩阵声称全量授权边界但测试退回少量抽样。
+- Sprint 1 SignalR subscribe role boundary 证据已从宽泛 Attack Chain A 支持升级为直接策略证据：`NotificationHub` 的 `[Authorize]`、Subscribe/Unsubscribe policy check、role-prefix maps 与 `NotificationHubChannelPolicyTests` 的 allow/reject 单测均由新增架构守护固定。
+- Sprint 1 refresh token 存储证据已从宽泛 Attack Chain B 支持升级为直接集成证据：`AuthControllerTests.Login_ShouldPersistOnlyHashedRefreshToken` 证明数据库只含 bearer refresh token 的 SHA-256 hash，不含明文 token；新增架构守护固定实现、DB 约束、测试和矩阵锚点。
+- Sprint 1 登录限流证据已从宽泛 security self-assessment 升级为直接 partition 证据：middleware 在限流前捕获 username，Auth limiter 使用 `RemoteIpAddress + username` 分区，`AuthRateLimitPartitionKeyTests` 覆盖 IP+username、用户名规范化和缺失 username fallback；新增架构守护固定中间件顺序、实现、测试和矩阵锚点。
+- Sprint 1 seeder password hash 证据已从宽泛 security self-assessment 升级为直接实现/测试证据：`EfDemoDataSeeder` 使用 `PasswordHasher.Hash`，`PasswordHasher` 使用 salted PBKDF2/SHA-256，`SystemUser.Create` 现在拒绝空 password hash，登录集成测试证明 seeded admin 可登录且必须首次改密；新增架构守护固定上述链路。
+- Sprint 1 admin default password / first-login 证据已从宽泛真实浏览器说明升级为直接实现/测试证据：启动日志不再公开 `admin / admin123`，首次改密 middleware、领域状态转换、HTTP 改密流程、admin protected endpoint 403 均由目标测试和架构守护固定。
+- Sprint 1 ChatPanel markdown/XSS 证据已从宽泛 security self-assessment / real Chrome 说明升级为直接证据：`ChatPanel.vue` 保持 escape-first renderer，`chat-panel.test.ts` 证明 `<script>` / `<img onerror>` 只作为文本显示且 limited markdown 仍可用，`chat.spec.ts` 在真实 Chrome 中证明没有渲染 `script`/`img` 节点且 `window.__aimesXss` 未被设置；新增架构守护固定实现、unit、e2e 和矩阵锚点。
+- Sprint 1 Anomaly frontend double-prefix 证据已从宽泛 real Chrome frontend flows 升级为直接请求路径证据：`http.ts` 统一拥有 `/api/v1` baseURL，`anomaly.ts` 只传 `/anomaly` 相对路径，`anomaly-api.test.ts` 固定 list/detail/analyze 不预置 `/api/v1`，`anomaly.spec.ts` 在真实 Chrome 中证明请求为单层 `/api/v1/anomaly` 且不包含 `/api/v1/api/v1/`；新增架构守护固定实现、unit、e2e 和矩阵锚点。
+- Sprint 0 Dashboard KPI no Random.Shared 证据已从宽泛 endpoint `Random` 扫描升级为直接确定性证据：`DashboardKpiService` 从 repository 数据和 `ProductionKpiCalculator` 计算 KPI，`dashboard.spec.ts` 在真实 Chrome 中关闭 offline demo、mock `/api/v1/dashboard` 返回 `91.7%` / `88.4%` / `63.2%` / `17`，并证明页面原样展示这些后端值；新增架构守护固定服务、endpoint、e2e、frontend evidence 和矩阵锚点。
+- Sprint 0 JWT signing key fail-closed 证据已从宽泛 security self-assessment 升级为直接启动证据：`JwtOptions` 要求 Issuer/Audience/SigningKey 并校验 32 bytes，`Program.cs` 使用 `ValidateDataAnnotations()` / `ValidateOnStart()` 和 `JwtOptions.HasValidSigningKey`，`SigningKeyStore` 从已验证 options 构造，`JwtStartupValidationTests` 证明缺 key/短 key 均在 `CreateClient()` 时 fail closed；新增架构守护固定实现、测试和矩阵锚点。
+- Sprint 0 Production CORS not AllowAnyOrigin 证据已从宽泛 Attack Chain C / staging transcript 升级为直接配置证据：`CorsOptions` 要求 AllowedOrigins 并去空白/去重，`AddCorsServices` 的 Production policy 使用 `WithOrigins(allowedOrigins).AllowCredentials()` 且不调用 `AllowAnyOrigin()`，`CorsPolicyTests` 证明配置 origin 时 `AllowAnyOrigin=false` 且缺 origin 会启动校验失败；新增架构守护固定实现、测试和矩阵锚点。
+- Sprint 3 quality gray monitoring UI 证据已从宽泛 frontend coverage 升级为直接真实 Chrome 证据：`admin.spec.ts` 用例 `R3 灰度发布进入 Agent 灰度监控指标` 证明 Agent 治理页展示 R3 灰度监控、采纳率/复验率/误召回指标、audit id 和 trace id；新增架构守护固定 e2e、frontend evidence、矩阵锚点和“不能关闭 14 天灰度观察闸门”的边界文案。
+- Sprint 2 Anomaly create transaction rollback 证据已从宽泛 UoW/audit layering gate 升级为直接 fail-closed 行为证据：`AnomalyEndpoints.CreateAsync` 把 anomaly create、inline audit 和 notification 放在同一个 `IUnitOfWork.ExecuteAsync` 内；`AuditLogRepository.AddAsync` 不自提交；`Create_WhenNotificationFails_ShouldRollbackAnomalyAndAudit` 证明 notification 抛错时 API 500 且 anomaly/audit 都不落库；新增架构守护固定 endpoint 顺序、测试和矩阵锚点。
+- Sprint 2 Inventory StockOut 原子性证据已从宽泛 UoW/audit layering gate 升级为直接提交/回滚行为证据：`InventoryAppService.StockOutAsync` 把 material consume、material update、stock transaction add 和 `InventoryStockOut` audit 放在同一个 `IUnitOfWork.ExecuteAsync` 内；`MaterialRepository.UpdateAsync` 与 `StockTransactionRepository.AddAsync` 不自提交；成功集成测试证明 material/transaction/audit 一起提交，失败集成测试证明 transaction write failure 时 material decrement 不落库；新增架构守护固定服务顺序、仓储边界、测试和矩阵锚点。
+- Sprint 2 critical list pagination 证据已从宽泛静态分页 gate 升级为直接 page/pageSize 证据：Equipment、Admin、Scheduling app service 目标单测证明请求页码/页大小进入 repository paging 并返回 metadata，Scheduling controller 集成测试证明 HTTP query `page=2&pageSize=5` 被响应保留；新增架构守护固定服务 token、目标测试和矩阵锚点。
+- Sprint 3 Purchase state-change validation 证据已从宽泛 H9 gate 升级为直接 endpoint/filter/flow 证据：submit/confirm/cancel route 均挂 `ValidationEndpointFilter` 和 `Audit`，共享 filter 直接验证 `IValidator<T>` / `ValidateAsync` / `TypedResults.ValidationProblem` 行为，Purchase controller 集成测试证明状态流转到 `Submitted`、`Confirmed`、`Cancelled`；新增架构守护固定 endpoint、filter、测试和矩阵锚点。
+- Sprint 3 OperationCanceledException handling 证据已从宽泛 M11 gate 升级为直接 middleware/unit 证据：`ExceptionMiddleware.InvokeAsync` 先捕获取消异常再捕获 generic exception，`HandleOperationCanceledAsync` 设置 499 且不写 ProblemDetails，单测证明响应无 content type、body 为空；新增架构守护固定 middleware、单测和矩阵锚点。
+- Sprint 3 DomainRuleViolationException 证据已从宽泛 M12 gate 升级为直接领域单测证据：WorkOrder、Equipment、OperationExecution 和 Material 规则测试直接断言 `DomainRuleViolationException`，新增架构守护固定实现、单测和矩阵锚点，避免只因它继承 `InvalidOperationException` 而误报完成。
+- Sprint 2 concurrency token 证据已从模型元数据升级为直接 stale-update 行为证据：四个目标实体均通过 SQLite/SqlServer provider mode 证明 `version` 被外部 bump 后，旧快照 `SaveChangesAsync` 抛 `DbUpdateConcurrencyException`；新增架构守护固定配置、测试和矩阵锚点。
+- Sprint 2 ScheduleRepository split-query/stable paging 证据已从静态架构门升级为直接 SQLite 集成证据：测试证明两页结果稳定且不重复、Items 被加载、SQL 分裂为多条命令，并包含 `ORDER BY created_at, id` 与 `LIMIT`。
+- Docker Desktop 在当前 Codex 会话内恢复后，PostgreSQL/staging fresh rehearsal 已复跑并生成 `_docs/_reports/staging-rehearsal-20260611-docker-restored-current.md`，确认 Production 环境、PostgreSQL 连接、Docker dependencies、EF migrations、API startup、`/live` 与 `/ready` 均 PASS。
+- 使用 fresh staging 证据复跑 release gate audit 生成 `_docs/_reports/release-gate-audit-20260611-after-docker-current-staging-rerun.md`；结果仍 fail loud 于 Attack Chain manual、security signoff、gray observation，未发现 Hosted CI 或 PostgreSQL/staging 回退。
+- Sprint 2 repository `AsNoTracking()` 证据已从静态扫描升级为运行时证据：`RepositoryAsNoTrackingTests.CoreRepositoryReads_ShouldNotTrackEntitiesInQueryContext` 使用 SQLite/真实 `MesDbContext` 读取核心仓储代表路径，并在每次读取后断言 `ChangeTracker.Entries()` 为空；新增架构守护固定测试与矩阵锚点。
+- Sprint 3 target mutating endpoint audit 证据已从静态 H7 扫描升级为静态覆盖 + 真实 HTTP 落库证据：Employee create 证明 `AuditEndpointFilter` 写入 `employee`/`POST` 审计行并保留 request user/payload context，Admin create 证明审计 payload 脱敏；新增架构守护固定测试、partial evidence 和矩阵锚点。
+- Sprint 3 `AuditEndpointFilter` 分层证据已从静态 no-DbContext 扫描升级为直接 filter 单元证据：`AuditEndpointFilterTests.Post_ShouldWriteAuditThroughAppServiceInsideUnitOfWork` 证明 filter 在 POST 后经 `IUnitOfWork.ExecuteAsync` 调用 `IAuditLogAppService.WriteAuditLogAsync`，而不是在 endpoint filter 内直接写 EF。

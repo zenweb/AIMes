@@ -1,5 +1,6 @@
 using MES.Domain.Entities.Production;
 using MES.Domain.Interfaces.Repositories;
+using MES.Domain.ValueObjects;
 using MES.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,26 @@ public class OperationRepository : IOperationRepository
         return await _context.OperationExecutions
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.OperationCode == operationCode || e.Id == operationCode, ct);
+    }
+
+    public async Task<OperationExecution?> GetFirstExecutionByWorkOrderIdAsync(string workOrderId, CancellationToken ct = default)
+    {
+        var executions = await GetExecutionsByWorkOrderIdAsync(workOrderId, ct);
+        return executions.FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<OperationExecution>> GetExecutionsByWorkOrderIdAsync(string workOrderId, CancellationToken ct = default)
+    {
+        var executions = await _context.OperationExecutions
+            .AsNoTracking()
+            .Where(e => e.WorkOrderId == workOrderId)
+            .ToListAsync(ct);
+
+        return executions
+            .OrderBy(e => new OperationCode(e.OperationCode).NumericSequence)
+            .ThenBy(e => e.OperationCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.CreatedAt)
+            .ToList();
     }
 
     public Task<OperationExecution> AddExecutionAsync(OperationExecution execution, CancellationToken ct = default)

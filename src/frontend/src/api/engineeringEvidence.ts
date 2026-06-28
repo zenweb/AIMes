@@ -1,15 +1,22 @@
-import http from './http'
+import http, { type AimesRequestConfig } from './http'
 import type {
   AlternateMaterialApproval,
   EngineeringChangeImpactAnalysis,
   RouteCapabilityValidation,
 } from '../utils/engineering-change-sync'
 
-export async function getLatestAlternateMaterialApproval(): Promise<AlternateMaterialApproval | null> {
+interface EngineeringEvidenceReadOptions {
+  failLoud?: boolean
+}
+
+export async function getLatestAlternateMaterialApproval(options?: EngineeringEvidenceReadOptions): Promise<AlternateMaterialApproval | null> {
   try {
-    const { data } = await http.get<AlternateMaterialApproval>('/scheduling/alternate-material-approval/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<AlternateMaterialApproval>('/scheduling/alternate-material-approval/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -19,11 +26,14 @@ export async function upsertAlternateMaterialApproval(item: AlternateMaterialApp
   return data
 }
 
-export async function getLatestEngineeringChangeImpact(): Promise<EngineeringChangeImpactAnalysis | null> {
+export async function getLatestEngineeringChangeImpact(options?: EngineeringEvidenceReadOptions): Promise<EngineeringChangeImpactAnalysis | null> {
   try {
-    const { data } = await http.get<EngineeringChangeImpactAnalysis>('/scheduling/engineering-change-impact/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<EngineeringChangeImpactAnalysis>('/scheduling/engineering-change-impact/latest', config)
     return data
-  } catch {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
+    if (options?.failLoud) throw error
     return null
   }
 }
@@ -33,11 +43,13 @@ export async function upsertEngineeringChangeImpact(item: EngineeringChangeImpac
   return data
 }
 
-export async function getLatestRouteCapabilityValidation(options?: { failLoud?: boolean }): Promise<RouteCapabilityValidation | null> {
+export async function getLatestRouteCapabilityValidation(options?: EngineeringEvidenceReadOptions): Promise<RouteCapabilityValidation | null> {
   try {
-    const { data } = await http.get<RouteCapabilityValidation>('/scheduling/route-capability-validation/latest')
+    const config: AimesRequestConfig = { suppressErrorToast: true }
+    const { data } = await http.get<RouteCapabilityValidation>('/scheduling/route-capability-validation/latest', config)
     return data
-  } catch (error) {
+  } catch (error: unknown) {
+    if (isNotFoundResponse(error)) return null
     if (options?.failLoud) throw error
     return null
   }
@@ -46,4 +58,10 @@ export async function getLatestRouteCapabilityValidation(options?: { failLoud?: 
 export async function upsertRouteCapabilityValidation(item: RouteCapabilityValidation): Promise<RouteCapabilityValidation> {
   const { data } = await http.post<RouteCapabilityValidation>('/scheduling/route-capability-validation', item)
   return data
+}
+
+function isNotFoundResponse(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { response?: { status?: unknown } }
+  return candidate.response?.status === 404
 }

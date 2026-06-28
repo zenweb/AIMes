@@ -5,6 +5,7 @@ import {
   readBarcodeScanEvidenceRecords,
   readBarcodeScanEvidenceRecordsBackendFirst,
   type BarcodeScanEvidenceRecord,
+  writeBarcodeScanEvidenceRecordAndReadBack,
   writeBarcodeScanEvidenceRecord,
 } from '../../src/utils/barcode-scan-evidence-sync'
 import { readOtdEvidenceChainRecords } from '../../src/utils/otd-evidence-chain-sync'
@@ -103,6 +104,30 @@ describe('barcode scan evidence sync', () => {
     ])
   })
 
+  it('writes scan evidence then reads back the fresh backend record for release evidence', async () => {
+    const record = scanRecord()
+    const backendRecord = scanRecord({
+      title: '后端确认 WO-2026-0042 到站证据',
+      traceId: 'TRACE-BACKEND-WO-2026-0042',
+    })
+    httpPost.mockResolvedValueOnce({ data: backendRecord })
+    httpGet.mockResolvedValueOnce({ data: [backendRecord] })
+
+    await expect(writeBarcodeScanEvidenceRecordAndReadBack(record))
+      .resolves.toEqual(backendRecord)
+
+    expect(httpPost).toHaveBeenCalledWith('/scheduling/barcode-scan-evidence', record)
+    expect(httpGet).toHaveBeenCalledWith('/scheduling/barcode-scan-evidence', { params: { take: 20 } })
+    expect(readBarcodeScanEvidenceRecords()).toEqual([backendRecord])
+    expect(readOtdEvidenceChainRecords()).toEqual([
+      expect.objectContaining({
+        id: 'barcode-barcode-scan-workorder-WO-2026-0042',
+        title: '后端确认 WO-2026-0042 到站证据',
+        traceId: 'TRACE-BACKEND-WO-2026-0042',
+      }),
+    ])
+  })
+
   it('deduplicates by scan evidence id and caps local records at 20', () => {
     writeBarcodeScanEvidenceRecord(scanRecord({ summary: '旧扫码' }))
     writeBarcodeScanEvidenceRecord(scanRecord({ summary: '新扫码' }))
@@ -136,6 +161,15 @@ describe('barcode scan evidence sync', () => {
     httpGet.mockRejectedValueOnce(new Error('network'))
 
     await expect(readBarcodeScanEvidenceRecordsBackendFirst()).resolves.toEqual([localRecord])
+  })
+
+  it('surfaces backend lookup failures when fail-loud scanner evidence is requested', async () => {
+    const localRecord = scanRecord()
+    writeBarcodeScanEvidenceRecord(localRecord)
+    httpGet.mockRejectedValueOnce(new Error('barcode evidence backend unavailable'))
+
+    await expect(readBarcodeScanEvidenceRecordsBackendFirst({ failLoud: true }))
+      .rejects.toThrow('barcode evidence backend unavailable')
   })
 
   it('removes corrupt scan evidence JSON so execution boards do not render stale traces', () => {

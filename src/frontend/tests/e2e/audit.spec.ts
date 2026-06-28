@@ -4,7 +4,36 @@ test.describe('Audit 审计决策回放', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_refresh_token', 'mock-e2e-refresh')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+    })
+    await page.route('**/api/v1/**', async route => {
+      const url = route.request().url()
+      if (url.includes('/api/v1/auth/refresh')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            token: 'mock-e2e-token',
+            refreshToken: 'mock-e2e-refresh',
+            expiresAt: '2026-12-31T23:59:59Z',
+          }),
+        })
+        return
+      }
+      if (url.includes('/latest')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+        return
+      }
+      if (url.includes('/api/v1/scheduling/')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 }),
+      })
     })
     await page.goto('audit-logs')
     await page.waitForSelector('.audit-board', { timeout: 20000 })
@@ -146,7 +175,7 @@ test.describe('Audit 审计决策回放', () => {
     await expect(alert).toContainText('已显示本地演示日志')
     await expect(alert).toContainText('audit list unavailable from chromium')
     await expect(board.getByText('operator1')).toBeVisible()
-    await expect(board.getByText('Production')).toBeVisible()
+    await expect(board.getByRole('cell', { name: 'Production', exact: true })).toBeVisible()
     expect(auditLogRequests).toBeGreaterThan(0)
   })
 
@@ -192,7 +221,7 @@ test.describe('Audit 审计决策回放', () => {
     await expect(alert).toContainText('已显示本地演示日志')
     await expect(alert).toContainText('后端返回非数组审计日志载荷')
     await expect(board.getByText('operator1')).toBeVisible()
-    await expect(board.getByText('Production')).toBeVisible()
+    await expect(board.getByRole('cell', { name: 'Production', exact: true })).toBeVisible()
     expect(malformedListRequests).toBeGreaterThan(0)
   })
 
@@ -244,7 +273,7 @@ test.describe('Audit 审计决策回放', () => {
     await expect(alert).toContainText('已显示本地演示日志')
     await expect(alert).toContainText('audit-list-item-shape 后端返回非对象审计日志载荷')
     await expect(board.getByText('operator1')).toBeVisible()
-    await expect(board.getByText('Production')).toBeVisible()
+    await expect(board.getByRole('cell', { name: 'Production', exact: true })).toBeVisible()
     expect(malformedItemRequests).toBeGreaterThan(0)
   })
 
@@ -1604,6 +1633,102 @@ test.describe('Audit 审计决策回放', () => {
     await expect(page.locator('.audit-focus-banner').getByText('CNC-AGENT-01')).toBeVisible()
     await expect(page.locator('.audit-focus-banner').getByText('eq-agent-1')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'CNC-AGENT-01 审计定位设备' })).toBeVisible()
+  })
+
+  test('真实浏览器回放排产采纳反馈审计原因说明', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+
+    const scheduleFeedbackDetail = {
+      id: 'audit-schedule-feedback-1',
+      userId: 'planner.li',
+      initiatedBy: null,
+      action: 'ScheduleAdoptionFeedbackUpsert',
+      resource: 'schedule-adoption-feedback',
+      resourceId: 'feedback-1',
+      businessKey: 'SchedulePlan:plan-1',
+      traceId: 'TRACE-SCHEDULE-FEEDBACK-1',
+      oldValues: null,
+      newValues: JSON.stringify({
+        Id: 'feedback-1',
+        SchedulePlanId: 'plan-1',
+        WorkshopId: 'WS-001',
+        OptimizationObjective: 'balanced',
+        Decision: 'accepted',
+        DecisionLabel: '已采纳 Agent 排产建议',
+        ReasonCategory: 'UrgentInsertion',
+        CategoryLabel: '紧急插单',
+        ReasonDetail: '急单插入后采纳综合平衡方案',
+        ObjectiveLabel: '综合平衡',
+        OperatorUser: 'planner.li',
+        AiTraceId: 'TRACE-SCHEDULE-FEEDBACK-1',
+        AgentDecisionId: 'decision-1',
+        CreatedAt: '2026-06-14T10:15:00Z',
+      }),
+      promptHash: null,
+      contextHash: null,
+      ipAddress: null,
+      userAgent: null,
+      createdAt: '2026-06-14T10:15:00.000Z',
+    }
+
+    await page.route('**/api/v1/audit-logs**', async route => {
+      const url = new URL(route.request().url())
+      const parts = url.pathname.split('/')
+      const id = parts[parts.length - 1]
+      if (id === scheduleFeedbackDetail.id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(scheduleFeedbackDetail),
+        })
+        return
+      }
+
+      const action = url.searchParams.get('action')
+      const items = action === 'ScheduleAdoptionFeedbackUpsert'
+        ? [{
+            id: scheduleFeedbackDetail.id,
+            userId: scheduleFeedbackDetail.userId,
+            initiatedBy: scheduleFeedbackDetail.initiatedBy,
+            action: scheduleFeedbackDetail.action,
+            resource: scheduleFeedbackDetail.resource,
+            resourceId: scheduleFeedbackDetail.resourceId,
+            businessKey: scheduleFeedbackDetail.businessKey,
+            traceId: scheduleFeedbackDetail.traceId,
+            createdAt: scheduleFeedbackDetail.createdAt,
+          }]
+        : []
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          totalCount: items.length,
+          page: 1,
+          pageSize: 8,
+          totalPages: items.length > 0 ? 1 : 0,
+        }),
+      })
+    })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.audit-board', { timeout: 20000 })
+
+    const panel = page.locator('.audit-replay-panel')
+    await expect(panel.getByText('排产反馈回放')).toBeVisible()
+    const card = panel.locator('.decision-card').filter({ hasText: '排产采纳反馈：已采纳 Agent 排产建议' })
+    await expect(card).toBeVisible()
+    await expect(card.getByText(/紧急插单：急单插入后采纳综合平衡方案/)).toBeVisible()
+    await card.getByRole('button', { name: '回放决策链' }).click()
+
+    const detail = panel.locator('.replay-detail')
+    await expect(detail.getByText('TRACE-SCHEDULE-FEEDBACK-1', { exact: true })).toBeVisible()
+    await expect(detail.getByText(/原因分类 紧急插单，优化目标 综合平衡/)).toBeVisible()
+    await expect(detail.getByText(/调度员填写原因说明：急单插入后采纳综合平衡方案/)).toBeVisible()
+    await expect(detail.getByText(/排产采纳反馈、原因说明、优化目标和审计日志已归档/)).toBeVisible()
+    const scheduleLink = detail.getByRole('link', { name: '打开AI 排产' })
+    await expect(scheduleLink).toBeVisible()
+    await scheduleLink.click()
+    await expect(page).toHaveURL(/\/scheduling/)
   })
 
   test('回放关键配置审批通过链路', async ({ page }) => {

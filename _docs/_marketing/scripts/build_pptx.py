@@ -847,7 +847,7 @@ def slide_quickstart():
     # 左侧步骤
     steps = [
         ("1", "克隆并启动", "一条命令拉起 5 个容器（API · Postgres · Redis · RabbitMQ · Qdrant）。\n首次拉镜像约 3-5 分钟。"),
-        ("2", "等待 healthy", "看到所有容器 healthy 后，浏览器打开 http://localhost:5000，自动跳转到登录页。"),
+        ("2", "等待 healthy", "看到所有容器 healthy 后，浏览器打开 http://localhost:5002，自动跳转到登录页。"),
         ("3", "登录 · 看到甘特", "用 admin / admin@123 登录，立即看到带演示数据的排程甘特图。"),
     ]
     for i, (n, t, d) in enumerate(steps):
@@ -888,8 +888,8 @@ def slide_quickstart():
         ("", "  ✔ aimes-qdrant     Healthy", TEXT2, C_CYAN),
         ("", "  ✔ aimes-api        Healthy", TEXT2, C_CYAN),
         ("", "", TEXT2, TEXT2),
-        ("", " Login   → http://localhost:5000", TEXT2, C_CYAN),
-        ("", " Swagger → http://localhost:5000/swagger", TEXT2, C_CYAN),
+        ("", " Login   → http://localhost:5002", TEXT2, C_CYAN),
+        ("", " Swagger → http://localhost:5002/swagger", TEXT2, C_CYAN),
         ("", " 默认账号 admin / admin@123", TEXT2, TEXT2),
     ]
     for i, (pr, txt, pc, tc) in enumerate(lines):

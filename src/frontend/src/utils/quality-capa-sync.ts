@@ -86,7 +86,7 @@ function isQualityCapaClosure(value: unknown): value is QualityCapaClosure {
 export async function readQualityCapaClosureBackendFirst(): Promise<QualityCapaClosure | null> {
   try {
     const record = await getLatestQualityCapaClosure()
-    return record ?? readQualityCapaClosure()
+    return isQualityCapaClosure(record) ? record : readQualityCapaClosure()
   } catch {
     return readQualityCapaClosure()
   }

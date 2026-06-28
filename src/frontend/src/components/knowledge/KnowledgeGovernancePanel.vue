@@ -153,6 +153,7 @@
                 v-if="nextTrainingVersionFor(asset)?.status === 'merged'"
                 type="button"
                 class="review-button"
+                :aria-label="`批准 R3 训练集：${asset.title}`"
                 @click="approveNextTrainingSet(asset)"
               >
                 批准 R3 训练集
@@ -161,6 +162,7 @@
                 v-if="nextTrainingVersionFor(asset)?.status === 'approved' || nextTrainingReopenedPending(asset)"
                 type="button"
                 class="review-button"
+                :aria-label="`${nextTrainingReopenedPending(asset) ? '重新运行灰度前校验' : '运行灰度前校验'}：${asset.title}`"
                 @click="validateNextTrainingSet(asset)"
               >
                 {{ nextTrainingReopenedPending(asset) ? '重新运行灰度前校验' : '运行灰度前校验' }}
@@ -169,6 +171,7 @@
                 v-if="nextTrainingVersionFor(asset)?.status === 'validation_passed'"
                 type="button"
                 class="review-button publish"
+                :aria-label="`${nextTrainingReopened(asset) ? '重新灰度发布 R3' : '灰度发布 R3'}：${asset.title}`"
                 @click="grayPublishNextTrainingSet(asset)"
               >
                 {{ nextTrainingReopened(asset) ? '重新灰度发布 R3' : '灰度发布 R3' }}
@@ -359,10 +362,12 @@ function recommendationFeedbackIdFromAsset(asset: QualityKnowledgeAssetGovernanc
 function nextTrainingVersionFor(asset: QualityKnowledgeAssetGovernanceRecord) {
   const feedbackId = recommendationFeedbackIdFromAsset(asset)
   const versionLabel = asset.title.split(' ')[0]
-  return qualityRetrainingVersions.value.find(item =>
+  const exactVersion = qualityRetrainingVersions.value.find(item =>
     item.sourceReviewQueueId === `recommendation-feedback-${feedbackId}`
-    || item.trainingSetVersion === versionLabel
   )
+  if (exactVersion) return exactVersion
+  const matchingVersions = qualityRetrainingVersions.value.filter(item => item.trainingSetVersion === versionLabel)
+  return matchingVersions.length === 1 ? matchingVersions[0] : undefined
 }
 
 function reopenedGrayDecisionFor(asset: QualityKnowledgeAssetGovernanceRecord) {

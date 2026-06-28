@@ -1,0 +1,1919 @@
+diff --git a/_docs/_changelog/20260621-labor-retry-staged-only-e2e.md b/_docs/_changelog/20260621-labor-retry-staged-only-e2e.md
+new file mode 100644
+index 0000000..7982772
+--- /dev/null
++++ b/_docs/_changelog/20260621-labor-retry-staged-only-e2e.md
+@@ -0,0 +1,21 @@
++# 2026-06-21 schedule-labor-evidence-retry staged-only E2E
++
++- 完成 `schedule-labor-evidence-retry` 候选切片重整：staged 差异限定在人员证据启动读取失败、重试恢复、人员约束释放链路。
++- 新增排产启动人员证据 fail-loud 读取：后端人员资质阻断 / 替班证据读取失败时保留排产主数据，并在预警栏提供“重试人员证据 / Retry labor evidence”动作。
++- 补齐 `executionEvidence.ts` 与 `labor-assignment-sync.ts` 的 `failLoud` 透传，避免人员证据读取失败被 API/backend-first fallback 静默吞掉。
++- 修复 E2E mock 边界：目标测试自动切到 live backend mock，人员证据首读失败后重试返回释放证据；`/equipment` mock 不再误拦 `/equipment/bottlenecks`。
++
++验证：
++
++- `git diff --cached --check` PASS。
++- `scripts/test-release-candidate-slice-boundary.ps1 -DiffMode staged` PASS。
++- staged-only tree: `C:\AIWorks\_tmp\AIMes-v1-labor-retry-staged-verify-NEW3`
++- `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员证据启动读取失败后可重试"` PASS，1 passed。
++- 扩大验证：`npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts` PASS，3 files / 91 tests。
++- 扩大验证：`npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"` PASS，3 passed。
++- 刷新候选片边界证据：manifest 覆盖全部 5 个 staged code/script 文件；边界守卫新增缺失 manifest 文件 FAIL；hunk map 输出 `Diff Files Missing From Manifest: none`。
++- 人工复核 5 个 `NEUTRAL_REVIEW` hunks，确认均为人员证据 retry/fail-loud 或测试隔离依赖，不是无关主题。
++- 追加全量 scheduling E2E 探针：发现旧 Agent 工作台后端 API 用例仍有独立 offline/runtime fallback 问题，已记录 `_docs/_issue/20260621-scheduling-agent-e2e-offline-entry-regression.md`，不并入人员证据 retry 候选片完成声明。
++- 最终重拆 staged 切片：从过宽 staging 中剥离 dhtmlx、Assistant、多目标对比等旧主题，仅保留人员证据 retry 所需的 API / utils / ScheduleBoard / E2E hunks。
++- 最终边界证据：`_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md` PASS；`_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md` 显示 17 个 KEEP_CANDIDATE、6 个 NEUTRAL_REVIEW、0 个 excluded theme。
++- 最终验证：单测 3 files / 92 tests PASS；人员证据聚焦 E2E 3/3 PASS。
+diff --git a/_docs/_issue/20260621-labor-retry-staged-only-e2e.md b/_docs/_issue/20260621-labor-retry-staged-only-e2e.md
+new file mode 100644
+index 0000000..210f376
+--- /dev/null
++++ b/_docs/_issue/20260621-labor-retry-staged-only-e2e.md
+@@ -0,0 +1,26 @@
++# Issue: staged-only labor retry failed before API/utils dependencies
++
++## 现象
++
++staged-only E2E 初次失败：
++
++- `人员证据启动读取失败后可重试并释放排产人员约束`
++- 失败点：`.warnings-bar` 不存在。
++
++## 根因
++
++- `ScheduleBoard.vue` 调用了 `readLaborQualificationBlocksBackendFirst({ failLoud: true })` 与 `readLaborReassignmentsBackendFirst({ failLoud: true })`。
++- 但 staged-only tree 一开始没有包含 `executionEvidence.ts` 与 `labor-assignment-sync.ts` 的 `failLoud` 透传。
++- 结果后端 503 被 API/backend-first fallback 吞成空数组，组件认为人员证据读取成功但为空，因此不会展示启动失败预警。
++
++## 处理
++
++- 将人员替班 / 人员资质阻断两个 API 查询的 `failLoud` 参数纳入本切片。
++- 将 labor backend-first utils 的 `failLoud` 透传与重抛纳入本切片。
++- 重新导出 staged-only tree 后目标 E2E 通过。
++
++## 防复发
++
++- 对依赖 fail-loud 行为的 UI 切片，staged-only 验证必须包含 API 层、utils 层、组件层、E2E 层的完整链路。
++- 不用工作区通过替代 staged-only 通过。
++- release-candidate manifest 必须列出 staged diff 中全部 code/script 文件；边界脚本已改为发现缺失即 FAIL，避免只检查部分文件造成假阳性。
+diff --git a/_docs/_plan/20260621-labor-retry-staged-only-e2e.md b/_docs/_plan/20260621-labor-retry-staged-only-e2e.md
+new file mode 100644
+index 0000000..4c08594
+--- /dev/null
++++ b/_docs/_plan/20260621-labor-retry-staged-only-e2e.md
+@@ -0,0 +1,27 @@
++# Plan: schedule-labor-evidence-retry staged-only closure
++
++## 目标
++
++让排产页在人员证据启动读取失败时 fail loud，并提供重试恢复路径；同时保持切片边界干净、可审计。
++
++## 已完成
++
++1. 清理 staged 边界
++   - 从 `scheduling.spec.ts` 的整文件 staged 中剔除 dhtmlx、Assistant 交接、多目标反馈等无关主题。
++
++2. 补齐功能链路
++   - API 查询支持 `failLoud`。
++   - backend-first utils 支持 `failLoud` 重抛与远端/本地证据合并。
++   - ScheduleBoard 启动失败显示预警，重试成功后释放人员约束并刷新事件。
++
++3. 验证
++   - cached diff clean。
++   - release candidate slice boundary PASS。
++   - staged-only E2E PASS。
++   - 人员证据相邻 unit / E2E 子集 PASS。
++   - manifest 覆盖全部 5 个 staged code/script 文件，hunk map 显示没有 diff 文件缺失 manifest。
++
++## 下一步
++
++- 保留此候选切片状态，下一轮可考虑全量 scheduling E2E 或继续处理下一个 release-candidate slice。
++- 若需要提交，先复跑边界与目标 E2E，不做整文件 staging。
+diff --git a/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md
+new file mode 100644
+index 0000000..d060370
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md
+@@ -0,0 +1,93 @@
++﻿# Release Candidate Slice Boundary
++
++- GeneratedAt: 2026-06-21T23:43:22.3384993+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- Result: PASS
++
++## Inspected Files
++
++- src/frontend/scripts/e2e.mjs
++- src/frontend/src/api/executionEvidence.ts
++- src/frontend/src/components/schedule/ScheduleBoard.vue
++- src/frontend/src/utils/labor-assignment-sync.ts
++- src/frontend/tests/e2e/scheduling.spec.ts
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Included Slice Token Hits
++
++- LABOR_EVIDENCE_RETRY_TITLE
++- LEGACY_PERSONNEL_EVIDENCE_TITLES
++- mockLaborEvidenceRetryApis
++- 人员证据启动读取失败后可重试
++- 人员替班证据释放排产人员约束
++- 人员无有效替班候选时排产保持停工复核事件
++- loadStartupLaborEvidence
++- retryStartupLaborEvidence
++- currentLaborReassignment
++- currentActiveLaborQualificationBlock
++- queryLaborReassignments
++- queryLaborQualificationBlocks
++- readLaborReassignmentsBackendFirst
++- readLaborQualificationBlocksBackendFirst
++
++## Excluded Theme Token Hits
++
++- none
++
++## Included Slice Token Locations
++
++- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
++- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
++- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
++- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
++- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
++- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
++- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:31: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:33: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:47: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:54: mockLaborEvidenceRetryApis
++- src/frontend/tests/e2e/scheduling.spec.ts:2914: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:2940: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:2968: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:3891: mockLaborEvidenceRetryApis
++
++## Excluded Theme Token Locations
++
++- none
++
++## Gate
++
++- Boundary check passed: staged diff does not contain excluded-theme tokens from the manifest.
+diff --git a/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md
+new file mode 100644
+index 0000000..6e3af4b
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md
+@@ -0,0 +1,93 @@
++﻿# Release Candidate Slice Boundary
++
++- GeneratedAt: 2026-06-21T22:54:53.7477149+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- Result: PASS
++
++## Inspected Files
++
++- src/frontend/scripts/e2e.mjs
++- src/frontend/src/api/executionEvidence.ts
++- src/frontend/src/components/schedule/ScheduleBoard.vue
++- src/frontend/src/utils/labor-assignment-sync.ts
++- src/frontend/tests/e2e/scheduling.spec.ts
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Included Slice Token Hits
++
++- LABOR_EVIDENCE_RETRY_TITLE
++- LEGACY_PERSONNEL_EVIDENCE_TITLES
++- mockLaborEvidenceRetryApis
++- 人员证据启动读取失败后可重试
++- 人员替班证据释放排产人员约束
++- 人员无有效替班候选时排产保持停工复核事件
++- loadStartupLaborEvidence
++- retryStartupLaborEvidence
++- currentLaborReassignment
++- currentActiveLaborQualificationBlock
++- queryLaborReassignments
++- queryLaborQualificationBlocks
++- readLaborReassignmentsBackendFirst
++- readLaborQualificationBlocksBackendFirst
++
++## Excluded Theme Token Hits
++
++- none
++
++## Included Slice Token Locations
++
++- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
++- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
++- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
++- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
++- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
++- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
++- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:26: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:27: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:38: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:45: mockLaborEvidenceRetryApis
++- src/frontend/tests/e2e/scheduling.spec.ts:2905: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:2931: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:2959: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:3842: mockLaborEvidenceRetryApis
++
++## Excluded Theme Token Locations
++
++- none
++
++## Gate
++
++- Boundary check passed: staged diff does not contain excluded-theme tokens from the manifest.
+diff --git a/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-final.md b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-final.md
+new file mode 100644
+index 0000000..d799544
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-final.md
+@@ -0,0 +1,93 @@
++﻿# Release Candidate Slice Boundary
++
++- GeneratedAt: 2026-06-21T23:54:51.7587098+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- Result: PASS
++
++## Inspected Files
++
++- src/frontend/scripts/e2e.mjs
++- src/frontend/src/api/executionEvidence.ts
++- src/frontend/src/components/schedule/ScheduleBoard.vue
++- src/frontend/src/utils/labor-assignment-sync.ts
++- src/frontend/tests/e2e/scheduling.spec.ts
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Included Slice Token Hits
++
++- LABOR_EVIDENCE_RETRY_TITLE
++- LEGACY_PERSONNEL_EVIDENCE_TITLES
++- mockLaborEvidenceRetryApis
++- 人员证据启动读取失败后可重试
++- 人员替班证据释放排产人员约束
++- 人员无有效替班候选时排产保持停工复核事件
++- loadStartupLaborEvidence
++- retryStartupLaborEvidence
++- currentLaborReassignment
++- currentActiveLaborQualificationBlock
++- queryLaborReassignments
++- queryLaborQualificationBlocks
++- readLaborReassignmentsBackendFirst
++- readLaborQualificationBlocksBackendFirst
++
++## Excluded Theme Token Hits
++
++- none
++
++## Included Slice Token Locations
++
++- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
++- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
++- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
++- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
++- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
++- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
++- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:31: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:33: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:47: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:54: mockLaborEvidenceRetryApis
++- src/frontend/tests/e2e/scheduling.spec.ts:2914: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:2940: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:2968: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:3891: mockLaborEvidenceRetryApis
++
++## Excluded Theme Token Locations
++
++- none
++
++## Gate
++
++- Boundary check passed: staged diff does not contain excluded-theme tokens from the manifest.
+diff --git a/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-fix.md b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-fix.md
+new file mode 100644
+index 0000000..d137ea3
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-fix.md
+@@ -0,0 +1,93 @@
++﻿# Release Candidate Slice Boundary
++
++- GeneratedAt: 2026-06-21T23:50:46.9330001+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- Result: PASS
++
++## Inspected Files
++
++- src/frontend/scripts/e2e.mjs
++- src/frontend/src/api/executionEvidence.ts
++- src/frontend/src/components/schedule/ScheduleBoard.vue
++- src/frontend/src/utils/labor-assignment-sync.ts
++- src/frontend/tests/e2e/scheduling.spec.ts
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Included Slice Token Hits
++
++- LABOR_EVIDENCE_RETRY_TITLE
++- LEGACY_PERSONNEL_EVIDENCE_TITLES
++- mockLaborEvidenceRetryApis
++- 人员证据启动读取失败后可重试
++- 人员替班证据释放排产人员约束
++- 人员无有效替班候选时排产保持停工复核事件
++- loadStartupLaborEvidence
++- retryStartupLaborEvidence
++- currentLaborReassignment
++- currentActiveLaborQualificationBlock
++- queryLaborReassignments
++- queryLaborQualificationBlocks
++- readLaborReassignmentsBackendFirst
++- readLaborQualificationBlocksBackendFirst
++
++## Excluded Theme Token Hits
++
++- none
++
++## Included Slice Token Locations
++
++- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
++- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
++- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
++- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
++- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
++- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
++- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:31: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:33: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:47: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:54: mockLaborEvidenceRetryApis
++- src/frontend/tests/e2e/scheduling.spec.ts:2914: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:2940: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:2968: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:3891: mockLaborEvidenceRetryApis
++
++## Excluded Theme Token Locations
++
++- none
++
++## Gate
++
++- Boundary check passed: staged diff does not contain excluded-theme tokens from the manifest.
+diff --git a/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-rerun.md b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-rerun.md
+new file mode 100644
+index 0000000..f0c4674
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-rerun.md
+@@ -0,0 +1,93 @@
++﻿# Release Candidate Slice Boundary
++
++- GeneratedAt: 2026-06-21T22:53:12.9676281+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- Result: PASS
++
++## Inspected Files
++
++- src/frontend/scripts/e2e.mjs
++- src/frontend/src/api/executionEvidence.ts
++- src/frontend/src/components/schedule/ScheduleBoard.vue
++- src/frontend/src/utils/labor-assignment-sync.ts
++- src/frontend/tests/e2e/scheduling.spec.ts
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Included Slice Token Hits
++
++- LABOR_EVIDENCE_RETRY_TITLE
++- LEGACY_PERSONNEL_EVIDENCE_TITLES
++- mockLaborEvidenceRetryApis
++- 人员证据启动读取失败后可重试
++- 人员替班证据释放排产人员约束
++- 人员无有效替班候选时排产保持停工复核事件
++- loadStartupLaborEvidence
++- retryStartupLaborEvidence
++- currentLaborReassignment
++- currentActiveLaborQualificationBlock
++- queryLaborReassignments
++- queryLaborQualificationBlocks
++- readLaborReassignmentsBackendFirst
++- readLaborQualificationBlocksBackendFirst
++
++## Excluded Theme Token Hits
++
++- none
++
++## Included Slice Token Locations
++
++- src/frontend/scripts/e2e.mjs:14: 人员证据启动读取失败后可重试
++- src/frontend/src/api/executionEvidence.ts:6: queryLaborReassignments
++- src/frontend/src/api/executionEvidence.ts:24: queryLaborQualificationBlocks
++- src/frontend/src/components/schedule/ScheduleBoard.vue:136: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:288: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:290: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1867: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1870: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1871: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1892: retryStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1898: loadStartupLaborEvidence
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1909: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1915: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1922: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1944: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1971: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:1995: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2738: currentActiveLaborQualificationBlock
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2739: currentLaborReassignment
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2743: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:2744: readLaborReassignmentsBackendFirst
++- src/frontend/src/components/schedule/ScheduleBoard.vue:3065: loadStartupLaborEvidence
++- src/frontend/src/utils/labor-assignment-sync.ts:3: queryLaborQualificationBlocks
++- src/frontend/src/utils/labor-assignment-sync.ts:4: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:264: readLaborReassignmentsBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:266: queryLaborReassignments
++- src/frontend/src/utils/labor-assignment-sync.ts:297: readLaborQualificationBlocksBackendFirst
++- src/frontend/src/utils/labor-assignment-sync.ts:299: queryLaborQualificationBlocks
++- src/frontend/tests/e2e/scheduling.spec.ts:7: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:7: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:8: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:9: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:10: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:26: LEGACY_PERSONNEL_EVIDENCE_TITLES
++- src/frontend/tests/e2e/scheduling.spec.ts:27: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:38: LABOR_EVIDENCE_RETRY_TITLE
++- src/frontend/tests/e2e/scheduling.spec.ts:45: mockLaborEvidenceRetryApis
++- src/frontend/tests/e2e/scheduling.spec.ts:2905: 人员替班证据释放排产人员约束
++- src/frontend/tests/e2e/scheduling.spec.ts:2931: 人员证据启动读取失败后可重试
++- src/frontend/tests/e2e/scheduling.spec.ts:2959: 人员无有效替班候选时排产保持停工复核事件
++- src/frontend/tests/e2e/scheduling.spec.ts:3842: mockLaborEvidenceRetryApis
++
++## Excluded Theme Token Locations
++
++- none
++
++## Gate
++
++- Boundary check passed: staged diff does not contain excluded-theme tokens from the manifest.
+diff --git a/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md
+new file mode 100644
+index 0000000..9c4f457
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md
+@@ -0,0 +1,164 @@
++﻿# Release Candidate Slice Hunk Map
++
++- GeneratedAt: 2026-06-21T22:54:54.0883600+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- HunkCount: 23
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Summary
++
++- KEEP_CANDIDATE: 17
++- NEUTRAL_REVIEW: 6
++
++## Hunk Classifications
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -3,11 +3,15 @@ import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-s
++- IncludedHits: queryLaborReassignments
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -17,11 +21,15 @@ export async function upsertLaborReassignment(item: LaborReassignmentRecord): Pr
++- IncludedHits: queryLaborQualificationBlocks
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -106,6 +106,15 @@
++- IncludedHits: retryStartupLaborEvidence
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -254,7 +263,9 @@ import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-syn
++- IncludedHits: readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -305,6 +316,8 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -442,10 +455,16 @@ const rushOrderImpact = reactive<RushOrderImpact>({
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1679,8 +1698,62 @@ async function applyRouteCapabilityValidation() {
++- IncludedHits: loadStartupLaborEvidence; retryStartupLaborEvidence; currentLaborReassignment; currentActiveLaborQualificationBlock; readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1702,7 +1775,7 @@ function applyLaborReassignmentClosure() {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1729,7 +1802,7 @@ function applyLaborQualificationBlockClosure() {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1753,7 +1826,7 @@ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEv
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2402,7 +2475,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2417,7 +2490,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2656,6 +2729,7 @@ function onApplyObjective(objective: string) {
++- IncludedHits: loadStartupLaborEvidence
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2758,6 +2832,22 @@ onMounted(async () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -247,9 +247,29 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
++- IncludedHits: queryLaborReassignments; readLaborReassignmentsBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -260,9 +280,29 @@ export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[]
++- IncludedHits: queryLaborQualificationBlocks; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -1,15 +1,43 @@
++- IncludedHits: LABOR_EVIDENCE_RETRY_TITLE; LEGACY_PERSONNEL_EVIDENCE_TITLES; mockLaborEvidenceRetryApis; 人员证据启动读取失败后可重试; 人员替班证据释放排产人员约束; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -108,7 +136,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -148,7 +176,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -484,14 +512,14 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员替班证据释放排产人员约束
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -509,8 +537,36 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员证据启动读取失败后可重试; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -536,7 +592,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -876,3 +932,219 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
++- IncludedHits: mockLaborEvidenceRetryApis
++- ExcludedHits: none
++
++## Guidance
++
++- Stage KEEP_CANDIDATE hunks only after human review.
++- Do not stage EXCLUDE_THEME hunks for this first labor retry slice.
++- Split MIXED_REQUIRES_MANUAL_SPLIT hunks manually before staging.
++- Treat NEUTRAL_REVIEW hunks as dependencies; include only when needed by a reviewed keep hunk.
+diff --git a/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-post-review-final.md b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-post-review-final.md
+new file mode 100644
+index 0000000..752c71f
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-post-review-final.md
+@@ -0,0 +1,164 @@
++﻿# Release Candidate Slice Hunk Map
++
++- GeneratedAt: 2026-06-21T23:54:51.6108559+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- HunkCount: 23
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Summary
++
++- KEEP_CANDIDATE: 17
++- NEUTRAL_REVIEW: 6
++
++## Hunk Classifications
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -3,11 +3,15 @@ import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-s
++- IncludedHits: queryLaborReassignments
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -17,11 +21,15 @@ export async function upsertLaborReassignment(item: LaborReassignmentRecord): Pr
++- IncludedHits: queryLaborQualificationBlocks
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -106,6 +106,15 @@
++- IncludedHits: retryStartupLaborEvidence
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -254,7 +263,9 @@ import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-syn
++- IncludedHits: readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -305,6 +316,8 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -442,10 +455,16 @@ const rushOrderImpact = reactive<RushOrderImpact>({
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1679,8 +1698,62 @@ async function applyRouteCapabilityValidation() {
++- IncludedHits: loadStartupLaborEvidence; retryStartupLaborEvidence; currentLaborReassignment; currentActiveLaborQualificationBlock; readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1702,7 +1775,7 @@ function applyLaborReassignmentClosure() {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1729,7 +1802,7 @@ function applyLaborQualificationBlockClosure() {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1753,7 +1826,7 @@ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEv
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2402,7 +2475,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2417,7 +2490,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2656,6 +2729,7 @@ function onApplyObjective(objective: string) {
++- IncludedHits: loadStartupLaborEvidence
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2758,6 +2832,22 @@ onMounted(async () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -247,9 +247,29 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
++- IncludedHits: queryLaborReassignments; readLaborReassignmentsBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -260,9 +280,29 @@ export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[]
++- IncludedHits: queryLaborQualificationBlocks; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -1,15 +1,43 @@
++- IncludedHits: LABOR_EVIDENCE_RETRY_TITLE; LEGACY_PERSONNEL_EVIDENCE_TITLES; mockLaborEvidenceRetryApis; 人员证据启动读取失败后可重试; 人员替班证据释放排产人员约束; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -108,7 +136,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -148,7 +176,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -484,14 +512,14 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员替班证据释放排产人员约束
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -509,8 +537,36 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员证据启动读取失败后可重试; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -536,7 +592,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -876,3 +932,219 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
++- IncludedHits: mockLaborEvidenceRetryApis
++- ExcludedHits: none
++
++## Guidance
++
++- Stage KEEP_CANDIDATE hunks only after human review.
++- Do not stage EXCLUDE_THEME hunks for this first labor retry slice.
++- Split MIXED_REQUIRES_MANUAL_SPLIT hunks manually before staging.
++- Treat NEUTRAL_REVIEW hunks as dependencies; include only when needed by a reviewed keep hunk.
+diff --git a/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-rerun.md b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-rerun.md
+new file mode 100644
+index 0000000..8725fb0
+--- /dev/null
++++ b/_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-rerun.md
+@@ -0,0 +1,164 @@
++﻿# Release Candidate Slice Hunk Map
++
++- GeneratedAt: 2026-06-21T22:53:12.8420576+08:00
++- ManifestPath: _docs/_reports/release-candidate-slice-20260621-schedule-labor-evidence-retry.manifest.json
++- Candidate: schedule-labor-evidence-retry
++- FirstSlice: labor-evidence-retry-offline-fallback
++- DiffMode: staged
++- HunkCount: 23
++
++## Diff Files Missing From Manifest
++
++- none
++
++## Summary
++
++- KEEP_CANDIDATE: 17
++- NEUTRAL_REVIEW: 6
++
++## Hunk Classifications
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -3,11 +3,15 @@ import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-s
++- IncludedHits: queryLaborReassignments
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/api/executionEvidence.ts
++
++- Header: @@ -17,11 +21,15 @@ export async function upsertLaborReassignment(item: LaborReassignmentRecord): Pr
++- IncludedHits: queryLaborQualificationBlocks
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -106,6 +106,15 @@
++- IncludedHits: retryStartupLaborEvidence
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -254,7 +263,9 @@ import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-syn
++- IncludedHits: readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -305,6 +316,8 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -442,10 +455,16 @@ const rushOrderImpact = reactive<RushOrderImpact>({
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1679,8 +1698,62 @@ async function applyRouteCapabilityValidation() {
++- IncludedHits: loadStartupLaborEvidence; retryStartupLaborEvidence; currentLaborReassignment; currentActiveLaborQualificationBlock; readLaborReassignmentsBackendFirst; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1702,7 +1775,7 @@ function applyLaborReassignmentClosure() {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1729,7 +1802,7 @@ function applyLaborQualificationBlockClosure() {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -1753,7 +1826,7 @@ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEv
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2402,7 +2475,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentActiveLaborQualificationBlock
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2417,7 +2490,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
++- IncludedHits: currentLaborReassignment
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2656,6 +2729,7 @@ function onApplyObjective(objective: string) {
++- IncludedHits: loadStartupLaborEvidence
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/src/components/schedule/ScheduleBoard.vue
++
++- Header: @@ -2758,6 +2832,22 @@ onMounted(async () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -247,9 +247,29 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
++- IncludedHits: queryLaborReassignments; readLaborReassignmentsBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/src/utils/labor-assignment-sync.ts
++
++- Header: @@ -260,9 +280,29 @@ export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[]
++- IncludedHits: queryLaborQualificationBlocks; readLaborQualificationBlocksBackendFirst
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -1,15 +1,43 @@
++- IncludedHits: LABOR_EVIDENCE_RETRY_TITLE; LEGACY_PERSONNEL_EVIDENCE_TITLES; mockLaborEvidenceRetryApis; 人员证据启动读取失败后可重试; 人员替班证据释放排产人员约束; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -108,7 +136,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -148,7 +176,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -484,14 +512,14 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员替班证据释放排产人员约束
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -509,8 +537,36 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: 人员证据启动读取失败后可重试; 人员无有效替班候选时排产保持停工复核事件
++- ExcludedHits: none
++
++### NEUTRAL_REVIEW - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -536,7 +592,7 @@ test.describe('Scheduling 排产甘特图', () => {
++- IncludedHits: none
++- ExcludedHits: none
++
++### KEEP_CANDIDATE - src/frontend/tests/e2e/scheduling.spec.ts
++
++- Header: @@ -876,3 +932,219 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
++- IncludedHits: mockLaborEvidenceRetryApis
++- ExcludedHits: none
++
++## Guidance
++
++- Stage KEEP_CANDIDATE hunks only after human review.
++- Do not stage EXCLUDE_THEME hunks for this first labor retry slice.
++- Split MIXED_REQUIRES_MANUAL_SPLIT hunks manually before staging.
++- Treat NEUTRAL_REVIEW hunks as dependencies; include only when needed by a reviewed keep hunk.
+diff --git a/_docs/_review/20260621-labor-retry-final-staged-audit-index.md b/_docs/_review/20260621-labor-retry-final-staged-audit-index.md
+new file mode 100644
+index 0000000..280c5f6
+--- /dev/null
++++ b/_docs/_review/20260621-labor-retry-final-staged-audit-index.md
+@@ -0,0 +1,52 @@
++# Labor retry final staged audit index
++
++## Candidate
++
++- Name: `schedule-labor-evidence-retry`
++- Scope: 排产人员证据启动读取失败 fail-loud、重试、后端优先读取、证据释放后刷新排产人员约束。
++- Boundary: staged-only candidate.
++
++## Staged Code Files
++
++- `src/frontend/src/api/executionEvidence.ts`
++- `src/frontend/src/components/schedule/ScheduleBoard.vue`
++- `src/frontend/src/utils/labor-assignment-sync.ts`
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++
++## Staged Evidence Documents
++
++- `_docs/_changelog/20260621-labor-retry-staged-only-e2e.md`
++- `_docs/_issue/20260621-labor-retry-staged-only-e2e.md`
++- `_docs/_plan/20260621-labor-retry-staged-only-e2e.md`
++- `_docs/_review/20260621-labor-retry-staged-only-e2e.md`
++- `_docs/_todo/20260621-labor-retry-staged-only-e2e-next-actions.md`
++
++## Boundary Reports
++
++- `_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md`: PASS.
++- `_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md`: 17 KEEP_CANDIDATE, 6 NEUTRAL_REVIEW, 0 EXCLUDE/MIXED.
++- `_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md`: PASS after removing incomplete Agent docs from staged.
++- `_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-fix.md`: PASS after fixing staged mojibake copy.
++- `_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-post-review-final.md`: PASS after final staged review refresh.
++- `_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-post-review-final.md`: 17 KEEP_CANDIDATE, 6 NEUTRAL_REVIEW, 0 EXCLUDE/MIXED.
++
++## Verification
++
++- `git diff --cached --check`: PASS.
++- Staged mojibake scan for labor retry copy: PASS, no `姝|浜哄|绾︽|锛|鏈|閲嶈` hits in cached `ScheduleBoard.vue` diff.
++- `npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts`: 92 tests PASS.
++- `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"`: 3/3 PASS.
++- Staged-only clean worktree verification:
++  - Applied `git diff --cached --binary` to detached `HEAD 47d65547557a8a6cf035327ae94455a1a1285daf` at `tmp/labor-retry-staged-worktree`.
++  - `npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts --maxWorkers=1 --no-file-parallelism`: 29 tests PASS in the clean worktree.
++  - `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"`: 3/3 PASS in the clean worktree.
++
++## Explicit Non-Scope
++
++- Agent Workbench backend API E2E repair is not included in this staged candidate.
++- Full `tests/e2e/scheduling.spec.ts` is not certified green by this candidate.
++- `src/frontend/tests/e2e/scheduling.spec.ts` remains mixed (`MM`) in the worktree; do not run whole-file staging without a fresh hunk map and boundary report.
++
++## Review Decision
++
++This candidate is internally consistent and ready for human review as a staged-only release candidate slice. The next implementation slice should treat Agent Workbench E2E as separate code + docs work.
+diff --git a/_docs/_review/20260621-labor-retry-staged-only-e2e.md b/_docs/_review/20260621-labor-retry-staged-only-e2e.md
+new file mode 100644
+index 0000000..cd706fd
+--- /dev/null
++++ b/_docs/_review/20260621-labor-retry-staged-only-e2e.md
+@@ -0,0 +1,73 @@
++# Review: schedule-labor-evidence-retry staged-only E2E
++
++## 结论
++
++- 本候选切片当前 staged-only 验证通过。
++- 边界报告通过，未再混入真实 dhtmlx、Assistant 交接、多目标反馈等无关主题。
++- 本轮发现并修正两个真实缺口：仅改 `ScheduleBoard.vue` 不足以 fail loud，API 层和 backend-first utils 层也必须透传 `failLoud`。
++- 扩大验证已覆盖人员证据 utils、排产组件、人员替班面板，以及 3 条人员证据相关浏览器场景。
++
++## 审计点
++
++- `src/frontend/src/components/schedule/ScheduleBoard.vue`
++  - 启动时并行读取人员资质阻断与替班证据。
++  - 失败时只追加人员证据预警，不阻断正式排产主数据。
++  - 重试成功后重新应用替班/资质阻断闭环并刷新风险事件。
++
++- `src/frontend/src/api/executionEvidence.ts`
++  - `queryLaborReassignments` 与 `queryLaborQualificationBlocks` 支持 `failLoud`。
++  - 非 fail-loud 调用仍保持旧 fallback 行为，降低现有调用面风险。
++
++- `src/frontend/src/utils/labor-assignment-sync.ts`
++  - backend-first 读取支持 `failLoud` 重抛。
++  - 远端与本地证据按 id 去重、按 createdAt 倒序合并，避免后端恢复后丢掉本地证据。
++
++- `src/frontend/tests/e2e/scheduling.spec.ts`
++  - 覆盖首读失败、预警展示、重试、证据释放、事件闭环、Gantt 主数据继续可见。
++
++## 剩余风险
++
++- 当前验证覆盖目标 E2E 与相邻人员证据 E2E；未重跑全量 scheduling E2E。
++- 工作区仍有大量无关改动，后续继续候选切片时必须保持 staged 边界检查。
++
++## 追加验证
++
++- `npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts`
++  - PASS，3 files / 91 tests。
++- `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"`
++  - PASS，3 passed。
++
++## 边界刷新复核
++
++- release-candidate manifest 已覆盖本切片全部 5 个 staged code/script 文件：`e2e.mjs`、`executionEvidence.ts`、`ScheduleBoard.vue`、`labor-assignment-sync.ts`、`scheduling.spec.ts`。
++- 边界守卫新增“diff code/script 文件缺失 manifest”检查；以后 staged diff 里只要出现未声明的 code/script 文件会直接 FAIL。
++- hunk map 新增 `Diff Files Missing From Manifest` 输出；当前报告为 none。
++- 5 个 `NEUTRAL_REVIEW` hunks 已人工复核：`ScheduleBoard.vue` 的状态/预警聚合 hunk 是 retry/fail-loud 依赖；`scheduling.spec.ts` 的设备路由收窄与 offline demo 入口 hunk 是测试隔离依赖，避免宽 mock 吞掉人员重试路由。
++
++## 最终 staged 复核
++
++- `git diff --cached --check` PASS。
++- `_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-final.md`：PASS，excluded theme token hits 为 none。
++- `_docs/_reports/release-candidate-slice-hunk-map-20260621-schedule-labor-evidence-retry-staged-final.md`：17 个 KEEP_CANDIDATE、6 个 NEUTRAL_REVIEW、0 个 EXCLUDE/MIXED。
++- 最终聚焦验证：`labor-assignment-sync.test.ts`、`schedule-board.test.ts`、`skill-matrix-panel.test.ts` 合计 92 tests PASS；`scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"` 3/3 PASS。
++
++## Agent 文档移出后复核
++
++- 曾短暂 staged Agent E2E regression 文档，但 Agent 代码 hunk 仍处于 unstaged，直接保留会让候选片出现“文档已修、代码未入片”的审计矛盾。
++- 已将 Agent E2E regression 五类文档移回 unstaged，保留工作区文件，后续作为独立切片处理。
++- 重新运行 staged 边界守卫：`_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md`：PASS。
++- 当前 staged 候选片重新回到 `schedule-labor-evidence-retry` 边界。
++
++## Staged code review follow-up
++
++- 审计发现 staged `ScheduleBoard.vue` 中人员证据重试按钮和预警文案存在 mojibake 乱码。
++- 已仅修正 staged 版本中的人员证据相关中文文案，不引入工作区其它排产改动。
++- 复核：`git diff --cached -- src/frontend/src/components/schedule/ScheduleBoard.vue | rg "姝|浜哄|绾︽|锛|鏈|閲嶈"` 无命中；`git diff --cached --check` PASS。
++- 追加复核人员证据重试核心路径：首读失败走本地 fallback 且保留主排产数据；重试成功后 released block 不再生成阻断事件，approved reassignment 进入人员替班闭环事件；未发现新的 merge blocker。
++
++## Staged-only clean worktree verification
++
++- 已从当前 index 导出 staged patch，并应用到 detached `HEAD 47d65547557a8a6cf035327ae94455a1a1285daf` 的临时 clean worktree：`tmp/labor-retry-staged-worktree`。
++- 该环境不包含当前主工作区的 unstaged 改动，用来证明候选片本身可复现。
++- Clean worktree 单测：`npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts --maxWorkers=1 --no-file-parallelism`，29 tests PASS。
++- Clean worktree E2E：`npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"`，3/3 PASS。
+diff --git a/_docs/_todo/20260621-labor-retry-staged-only-e2e-next-actions.md b/_docs/_todo/20260621-labor-retry-staged-only-e2e-next-actions.md
+new file mode 100644
+index 0000000..4f0d133
+--- /dev/null
++++ b/_docs/_todo/20260621-labor-retry-staged-only-e2e-next-actions.md
+@@ -0,0 +1,17 @@
++# Next Actions: schedule-labor-evidence-retry
++
++- 保持当前 staged 切片边界，不要对 `src/frontend/tests/e2e/scheduling.spec.ts` 执行整文件 `git add`。
++- 已完成更宽验证：
++  - `npm run test:unit -- tests/unit/labor-assignment-sync.test.ts tests/unit/schedule-board.test.ts tests/unit/skill-matrix-panel.test.ts`
++  - `npm run test:e2e -- tests/e2e/scheduling.spec.ts -g "人员替班|人员证据|人员无有效替班"`
++- 下一步可继续跑全量 `tests/e2e/scheduling.spec.ts`，但需预期它会覆盖多个未切分主题，若失败要按主题拆分审计。
++- 如要进入 PR/提交，先复跑：
++  - `git diff --cached --check`
++  - `scripts/write-release-candidate-slice-hunk-map.ps1 -DiffMode staged`
++  - `scripts/test-release-candidate-slice-boundary.ps1 -DiffMode staged`
++- 本轮最终复跑已完成并通过；若 staged diff 再变化，以上三项必须重新跑。
++- 保持 release-candidate manifest 与 staged code/script 文件一一对应；边界守卫现在会在缺失 manifest 文件时 FAIL。
++- 全量 `tests/e2e/scheduling.spec.ts` 目前不能作为绿色证据；旧 Agent 工作台后端 API 两条用例需按 `_docs/_issue/20260621-scheduling-agent-e2e-offline-entry-regression.md` 单独切片。
++- 后续切片继续按“精品现有功能”原则推进排产人员证据链，不扩新范围。
++- 已将不完整 Agent E2E regression 文档从 staged 移出；Agent 代码与文档后续必须作为独立切片一起封。
++- Agent 文档移出后已复跑 staged boundary：`_docs/_reports/release-candidate-slice-boundary-20260621-schedule-labor-evidence-retry-staged-after-agent-doc-unstage.md` PASS。
+diff --git a/src/frontend/src/api/executionEvidence.ts b/src/frontend/src/api/executionEvidence.ts
+index abbfd15..82877f0 100644
+--- a/src/frontend/src/api/executionEvidence.ts
++++ b/src/frontend/src/api/executionEvidence.ts
+@@ -3,11 +3,15 @@ import type { BarcodeScanEvidenceRecord } from '../utils/barcode-scan-evidence-s
+ import type { LaborQualificationBlockRecord, LaborReassignmentRecord } from '../utils/labor-assignment-sync'
+ import type { QualityCapaClosure } from '../utils/quality-capa-sync'
+ 
+-export async function queryLaborReassignments(take = 12): Promise<LaborReassignmentRecord[]> {
++export async function queryLaborReassignments(
++  take = 12,
++  options?: { failLoud?: boolean },
++): Promise<LaborReassignmentRecord[]> {
+   try {
+     const { data } = await http.get<LaborReassignmentRecord[]>('/scheduling/labor-reassignments', { params: { take } })
+     return data
+-  } catch {
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
+     return []
+   }
+ }
+@@ -17,11 +21,15 @@ export async function upsertLaborReassignment(item: LaborReassignmentRecord): Pr
+   return data
+ }
+ 
+-export async function queryLaborQualificationBlocks(take = 12): Promise<LaborQualificationBlockRecord[]> {
++export async function queryLaborQualificationBlocks(
++  take = 12,
++  options?: { failLoud?: boolean },
++): Promise<LaborQualificationBlockRecord[]> {
+   try {
+     const { data } = await http.get<LaborQualificationBlockRecord[]>('/scheduling/labor-qualification-blocks', { params: { take } })
+     return data
+-  } catch {
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
+     return []
+   }
+ }
+diff --git a/src/frontend/src/components/schedule/ScheduleBoard.vue b/src/frontend/src/components/schedule/ScheduleBoard.vue
+index ab86099..afe1b21 100644
+--- a/src/frontend/src/components/schedule/ScheduleBoard.vue
++++ b/src/frontend/src/components/schedule/ScheduleBoard.vue
+@@ -106,6 +106,15 @@
+         <div v-if="displayWarnings.length > 0" class="warnings-bar" role="status" aria-live="polite" aria-label="排产预警">
+           <span class="warnings-icon">⚠</span>
+           <span v-for="(w, i) in displayWarnings" :key="i" class="warning-item">{{ w }}</span>
++          <button
++            v-if="laborEvidenceStartupFailed"
++            type="button"
++            class="warning-action"
++            :disabled="laborEvidenceRetrying"
++            @click="retryStartupLaborEvidence"
++          >
++            {{ laborEvidenceRetrying ? '正在重试人员证据...' : '重试人员证据 / Retry labor evidence' }}
++          </button>
+         </div>
+ 
+         <div v-if="useDemoTaskShortcuts" class="task-explain-shortcuts" aria-label="演示排产任务">
+@@ -254,7 +263,9 @@ import { readPocPilotRunRecordBackendFirst } from '../../utils/poc-pilot-run-syn
+ import { readRiskSlaReviewRecord, readRiskSlaReviewRecordBackendFirst, type RiskSlaReviewRecord } from '../../utils/risk-sla-review-sync'
+ import {
+   readLaborQualificationBlock,
++  readLaborQualificationBlocksBackendFirst,
+   readLaborReassignment,
++  readLaborReassignmentsBackendFirst,
+   type LaborQualificationBlockRecord,
+   type LaborReassignmentRecord,
+ } from '../../utils/labor-assignment-sync'
+@@ -305,6 +316,8 @@ const engineeringChangeImpact = ref<EngineeringChangeImpactAnalysis | null>(null
+ const routeCapabilityValidation = ref<RouteCapabilityValidation | null>(null)
+ const laborReassignment = ref<LaborReassignmentRecord | null>(null)
+ const laborQualificationBlock = ref<LaborQualificationBlockRecord | null>(null)
++const laborEvidenceBackendLoaded = ref(false)
++const laborEvidenceRetrying = ref(false)
+ const barcodeScheduleReleaseRecord = ref<OtdEvidenceChainItem | null>(null)
+ const otdKpiCommitmentRecord = ref<OtdKpiCommitmentPackage | null>(null)
+ const outsourcingCommitmentRecord = ref<OutsourcingCommitmentPackage | null>(null)
+@@ -442,10 +455,16 @@ const rushOrderImpact = reactive<RushOrderImpact>({
+ })
+ const warnings = ref<string[]>([])
+ const abReportWarning = ref('')
++const laborEvidenceStartupWarnings = ref<string[]>([])
+ const displayWarnings = computed(() => [
++  ...laborEvidenceStartupWarnings.value,
+   ...warnings.value,
+   ...(abReportWarning.value ? [abReportWarning.value] : []),
+ ])
++const laborEvidenceWarningPrefix = '人员约束启动证据加载失败'
++const laborEvidenceStartupFailed = computed(() =>
++  laborEvidenceStartupWarnings.value.some(warning => warning.startsWith(laborEvidenceWarningPrefix))
++)
+ 
+ type ScenarioTemplate = Omit<ScheduleAgentScenario, 'id' | 'selected'>
+ 
+@@ -1679,8 +1698,62 @@ async function applyRouteCapabilityValidation() {
+   }
+ }
+ 
++async function loadStartupLaborEvidence() {
++  try {
++    const [backendBlocks, backendReassignments] = await Promise.all([
++      readLaborQualificationBlocksBackendFirst({ failLoud: true }),
++      readLaborReassignmentsBackendFirst({ failLoud: true }),
++    ])
++    laborEvidenceBackendLoaded.value = true
++    laborQualificationBlock.value = backendBlocks.find(record => record.status !== 'released') ?? null
++    laborReassignment.value = backendReassignments[0] ?? null
++  } catch (e: unknown) {
++    laborEvidenceBackendLoaded.value = false
++    laborQualificationBlock.value = readLaborQualificationBlock()
++    laborReassignment.value = readLaborReassignment()
++    if (!isOfflineDemoError(e)) {
++      const warning = laborEvidenceWarningPrefix + '，已继续加载排产主数据：' + errorMessage(e, '未知错误')
++      if (!laborEvidenceStartupWarnings.value.includes(warning)) {
++        laborEvidenceStartupWarnings.value = [
++          ...laborEvidenceStartupWarnings.value,
++          warning,
++        ]
++      }
++    }
++  }
++}
++
++async function retryStartupLaborEvidence() {
++  laborEvidenceRetrying.value = true
++  laborEvidenceStartupWarnings.value = laborEvidenceStartupWarnings.value.filter(
++    warning => !warning.startsWith(laborEvidenceWarningPrefix),
++  )
++  try {
++    await loadStartupLaborEvidence()
++    if (laborEvidenceBackendLoaded.value) {
++      applyLaborReassignmentClosure()
++      applyLaborQualificationBlockClosure()
++      await loadRiskTriggeredEvents()
++    }
++  } finally {
++    laborEvidenceRetrying.value = false
++  }
++}
++
++function currentLaborReassignment() {
++  return laborEvidenceBackendLoaded.value
++    ? laborReassignment.value
++    : (laborReassignment.value ?? readLaborReassignment())
++}
++
++function currentActiveLaborQualificationBlock() {
++  return laborEvidenceBackendLoaded.value
++    ? laborQualificationBlock.value
++    : (laborQualificationBlock.value ?? readLaborQualificationBlock())
++}
++
+ function applyLaborReassignmentClosure() {
+-  const reassignment = readLaborReassignment()
++  const reassignment = currentLaborReassignment()
+   laborReassignment.value = reassignment
+   if (!reassignment) return
+ 
+@@ -1702,7 +1775,7 @@ function applyLaborReassignmentClosure() {
+ }
+ 
+ function applyLaborQualificationBlockClosure() {
+-  const block = readLaborQualificationBlock()
++  const block = currentActiveLaborQualificationBlock()
+   laborQualificationBlock.value = block
+   if (!block) return
+   const isReviewing = block.status === 'reviewing'
+@@ -1729,7 +1802,7 @@ function applyLaborQualificationBlockClosure() {
+ }
+ 
+ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
+-  const reassignment = laborReassignment.value ?? readLaborReassignment()
++  const reassignment = currentLaborReassignment()
+   if (!reassignment) return events
+   if (events.some(event => event.id === `evt-labor-${reassignment.id}`)) return events
+ 
+@@ -1753,7 +1826,7 @@ function applyLaborReassignmentToEvents(events: ScheduleEventItem[]): ScheduleEv
+ }
+ 
+ function applyLaborQualificationBlockToEvents(events: ScheduleEventItem[]): ScheduleEventItem[] {
+-  const block = laborQualificationBlock.value ?? readLaborQualificationBlock()
++  const block = currentActiveLaborQualificationBlock()
+   if (!block) return events
+   const isReviewing = block.status === 'reviewing'
+   const filteredEvents = events.filter(event =>
+@@ -2402,7 +2475,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+     }
+     return
+   }
+-  const activeLaborBlock = laborQualificationBlock.value ?? readLaborQualificationBlock()
++  const activeLaborBlock = currentActiveLaborQualificationBlock()
+   if (activeLaborBlock && event.type === 'labor' && event.id === `evt-labor-block-${activeLaborBlock.id}`) {
+     const isReviewing = activeLaborBlock.status === 'reviewing'
+     activeAgentSuggestion.value = {
+@@ -2417,7 +2490,7 @@ function generateAgentSuggestion(event: ScheduleEventItem) {
+     }
+     return
+   }
+-  const approvedLaborReassignment = laborReassignment.value ?? readLaborReassignment()
++  const approvedLaborReassignment = currentLaborReassignment()
+   if (approvedLaborReassignment && event.type === 'labor') {
+     activeAgentSuggestion.value = {
+       eventId: event.id,
+@@ -2656,6 +2729,7 @@ function onApplyObjective(objective: string) {
+ onMounted(async () => {
+   await applyEngineeringChangeApprovals()
+   await applyRouteCapabilityValidation()
++  await loadStartupLaborEvidence()
+   applyLaborReassignmentClosure()
+   applyLaborQualificationBlockClosure()
+   assistantEngineeringConstraintPackageRecords.value = await readAssistantEngineeringConstraintPackagesBackendFirst()
+@@ -2758,6 +2832,22 @@ onMounted(async () => {
+   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+ }
+ 
++.warning-action {
++  border: 1px solid #f59e0b;
++  background: #fff7ed;
++  color: #92400e;
++  border-radius: 4px;
++  padding: 4px 8px;
++  font-size: 12px;
++  cursor: pointer;
++  white-space: nowrap;
++}
++
++.warning-action:disabled {
++  cursor: not-allowed;
++  opacity: 0.6;
++}
++
+ .task-explain-shortcuts {
+   position: fixed;
+   top: 76px;
+diff --git a/src/frontend/src/utils/labor-assignment-sync.ts b/src/frontend/src/utils/labor-assignment-sync.ts
+index e7daf3c..647df30 100644
+--- a/src/frontend/src/utils/labor-assignment-sync.ts
++++ b/src/frontend/src/utils/labor-assignment-sync.ts
+@@ -247,9 +247,29 @@ export function readLaborReassignments(): LaborReassignmentRecord[] {
+   return readRawLaborReassignments()
+ }
+ 
+-export async function readLaborReassignmentsBackendFirst(): Promise<LaborReassignmentRecord[]> {
+-  const records = await queryLaborReassignments()
+-  return records.length > 0 ? records : readLaborReassignments()
++function mergeLaborReassignments(
++  remoteRecords: LaborReassignmentRecord[],
++  localRecords: LaborReassignmentRecord[],
++): LaborReassignmentRecord[] {
++  const merged = [...remoteRecords, ...localRecords].reduce<LaborReassignmentRecord[]>((acc, record) => {
++    if (acc.some(item => item.id === record.id)) return acc
++    acc.push(record)
++    return acc
++  }, [])
++  return merged
++    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
++    .slice(0, 12)
++}
++
++export async function readLaborReassignmentsBackendFirst(options?: { failLoud?: boolean }): Promise<LaborReassignmentRecord[]> {
++  try {
++    const records = await queryLaborReassignments(12, options)
++    if (!Array.isArray(records)) throw new Error('后端返回非数组人员替班审计载荷')
++    return mergeLaborReassignments(records.filter(isLaborReassignmentRecord), readLaborReassignments())
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
++    return readLaborReassignments()
++  }
+ }
+ 
+ export function readLaborReassignment(): LaborReassignmentRecord | null {
+@@ -260,9 +280,29 @@ export function readLaborQualificationBlocks(): LaborQualificationBlockRecord[]
+   return readRawLaborQualificationBlocks()
+ }
+ 
+-export async function readLaborQualificationBlocksBackendFirst(): Promise<LaborQualificationBlockRecord[]> {
+-  const records = await queryLaborQualificationBlocks()
+-  return records.length > 0 ? records : readLaborQualificationBlocks()
++function mergeLaborQualificationBlocks(
++  remoteRecords: LaborQualificationBlockRecord[],
++  localRecords: LaborQualificationBlockRecord[],
++): LaborQualificationBlockRecord[] {
++  const merged = [...remoteRecords, ...localRecords].reduce<LaborQualificationBlockRecord[]>((acc, record) => {
++    if (acc.some(item => item.id === record.id)) return acc
++    acc.push(record)
++    return acc
++  }, [])
++  return merged
++    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
++    .slice(0, 12)
++}
++
++export async function readLaborQualificationBlocksBackendFirst(options?: { failLoud?: boolean }): Promise<LaborQualificationBlockRecord[]> {
++  try {
++    const records = await queryLaborQualificationBlocks(12, options)
++    if (!Array.isArray(records)) throw new Error('后端返回非数组人员资质阻断审计载荷')
++    return mergeLaborQualificationBlocks(records.filter(isLaborQualificationBlockRecord), readLaborQualificationBlocks())
++  } catch (error: unknown) {
++    if (options?.failLoud) throw error
++    return readLaborQualificationBlocks()
++  }
+ }
+ 
+ export function readLaborQualificationBlock(): LaborQualificationBlockRecord | null {
+diff --git a/src/frontend/tests/e2e/scheduling.spec.ts b/src/frontend/tests/e2e/scheduling.spec.ts
+index 82703ad..d65b185 100644
+--- a/src/frontend/tests/e2e/scheduling.spec.ts
++++ b/src/frontend/tests/e2e/scheduling.spec.ts
+@@ -1,15 +1,43 @@
+ import { test, expect } from '@playwright/test'
+ 
++const LABOR_EVIDENCE_RETRY_TITLE = '人员证据启动读取失败后可重试'
++const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
++  '人员替班证据释放排产人员约束',
++  '人员无有效替班候选时排产保持停工复核事件',
++]
++
++const laborEvidenceRetryReads = {
++  blocks: 0,
++  reassignments: 0,
++}
++
+ test.describe.configure({ timeout: 90000 })
+ 
+ test.describe('Scheduling 排产甘特图', () => {
+-  test.beforeEach(async ({ page }) => {
+-    await page.addInitScript(() => {
+-      localStorage.setItem('aimes_token', 'mock-e2e-token')
++  test.beforeEach(async ({ page }, testInfo) => {
++    const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
++    await page.addInitScript((offlineDemoSession) => {
++      localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
++      localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
++      localStorage.setItem('aimes_refresh_token', offlineDemoSession ? 'demo-refresh-admin' : 'mock-e2e-refresh')
+       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+-    })
+-    await page.goto('scheduling', { waitUntil: 'commit', timeout: 45000 })
+-    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
++    }, usesLegacyPersonnelOfflineDemo)
++    if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
++      await page.addInitScript(() => {
++        localStorage.setItem('aimes_offline_demo', 'false')
++        localStorage.removeItem('aimes_labor_qualification_block')
++        localStorage.removeItem('aimes_labor_reassignment')
++      })
++      await mockLaborRetrySchedulingPlanApis(page)
++      await mockLaborEvidenceRetryApis(page)
++    }
++    const entry = testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
++      ? 'scheduling?offlineDemo=0'
++      : 'scheduling'
++    if (!usesLegacyPersonnelOfflineDemo) {
++      await page.goto(entry, { waitUntil: 'commit', timeout: 45000 })
++      await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
++    }
+   })
+ 
+   test('页面加载 — 指标卡片', async ({ page }) => {
+@@ -108,7 +136,7 @@ test.describe('Scheduling 排产甘特图', () => {
+         onTimeDeliveryRate: 0.91,
+       }),
+     }))
+-    await page.route('**/api/v1/equipment**', route => route.fulfill({
++    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+       status: 200,
+       contentType: 'application/json',
+       body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 50 }),
+@@ -148,7 +176,7 @@ test.describe('Scheduling 排产甘特图', () => {
+ 
+   test('设备列表返回 HTML fallback 时真实浏览器展示 fail-loud fallback', async ({ page }) => {
+     await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+-    await page.route('**/api/v1/equipment**', route => route.fulfill({
++    await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
+       status: 200,
+       contentType: 'text/html',
+       body: '<!doctype html><html><body>equipment SPA fallback from chromium</body></html>',
+@@ -484,14 +512,14 @@ test.describe('Scheduling 排产甘特图', () => {
+   })
+ 
+   test('人员替班证据释放排产人员约束', async ({ page }) => {
+-    await page.goto('employee', { waitUntil: 'commit' })
++    await page.goto('employee?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.emp-board', { timeout: 20000 })
+     const skillPanel = page.locator('.skill-matrix-panel')
+     await expect(skillPanel.getByText(/推荐 EMP-006 孙八/)).toBeVisible({ timeout: 20000 })
+     await skillPanel.getByRole('button', { name: '生成替班建议' }).click()
+     await expect(skillPanel.getByText('替班建议已同步生产开工与 OTD 复盘')).toBeVisible({ timeout: 10000 })
+ 
+-    await page.goto('scheduling', { waitUntil: 'commit' })
++    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+     const constraintPanel = page.locator('.engineering-constraint-panel')
+     await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
+@@ -509,8 +537,36 @@ test.describe('Scheduling 排产甘特图', () => {
+     await expect(eventPanel.getByText(/生产开工按替班复核执行/)).toBeVisible()
+   })
+ 
++  test('人员证据启动读取失败后可重试并释放排产人员约束', async ({ page }) => {
++    const warning = page.locator('.warnings-bar')
++    await expect(warning).toBeVisible()
++    await expect(warning).toContainText('人员约束启动证据加载失败')
++    await expect(warning).toContainText('chromium startup labor block read unavailable')
++    const retryButton = warning.getByRole('button', { name: '重试人员证据 / Retry labor evidence' })
++    await expect(retryButton).toBeVisible()
++
++    await retryButton.click()
++    await expect.poll(() => laborEvidenceRetryReads.blocks).toBeGreaterThanOrEqual(2)
++    await expect.poll(() => laborEvidenceRetryReads.reassignments).toBeGreaterThanOrEqual(2)
++    await expect(page.getByText('人员约束启动证据加载失败')).toHaveCount(0)
++
++    const constraintPanel = page.locator('.engineering-constraint-panel')
++    await expect(constraintPanel.getByText('EMP-003 资质临期已生成 EMP-006 替班复核')).toBeVisible()
++    await expect(constraintPanel.getByText(/生产开工可直接读取该证据/)).toBeVisible()
++    await expect(constraintPanel.getByText('AUD-LABOR-RELEASE-20260520-001', { exact: true })).toBeVisible()
++    await expect(constraintPanel.getByText('TRACE-LABOR-RELEASE-WO-013-OP-10', { exact: true })).toBeVisible()
++
++    const eventPanel = page.locator('.event-queue-panel')
++    const laborEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-013 热处理替班已确认' })
++    await expect(laborEvent.getByText('人员替班事件')).toBeVisible()
++    await expect(laborEvent.getByText('已闭环')).toBeVisible()
++    await expect(laborEvent.getByText('人员约束已由替班建议转为开工校验')).toBeVisible()
++    await expect(page.locator('.agent-workbench-panel')).toBeVisible()
++    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
++  })
++
+   test('人员无有效替班候选时排产保持停工复核事件', async ({ page }) => {
+-    await page.evaluate(() => {
++    await page.addInitScript(() => {
+       localStorage.setItem('aimes_labor_qualification_block', JSON.stringify([
+         {
+           id: 'labor-qualification-block-WO-013-heat-treatment',
+@@ -536,7 +592,7 @@ test.describe('Scheduling 排产甘特图', () => {
+         },
+       ]))
+     })
+-    await page.reload({ waitUntil: 'commit' })
++    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
+     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+ 
+     const constraintPanel = page.locator('.engineering-constraint-panel')
+@@ -876,3 +932,219 @@ async function mockAgentApi(page: import('@playwright/test').Page, options: { ad
+     })
+   })
+ }
++
++async function mockLaborRetrySchedulingPlanApis(page: import('@playwright/test').Page) {
++  const plan = {
++    id: 'plan-labor-retry-e2e',
++    planName: '人员证据重试排产计划',
++    planStartDate: '2026-05-20T08:00:00.000Z',
++    planEndDate: '2026-05-20T20:00:00.000Z',
++    overallUtilizationRate: 0.82,
++    onTimeDeliveryRate: 0.9,
++    totalChangeoverMinutes: 35,
++    groupCount: 1,
++    createdAt: '2026-05-20T08:00:00.000Z',
++    items: [
++      {
++        id: 'labor-retry-item-wo-013-op-10',
++        workOrderId: 'wo-013',
++        workOrderNumber: 'WO-013',
++        equipmentId: 'eq-heat-01',
++        equipmentName: '热处理炉 01',
++        plannedStartTime: '2026-05-20T10:00:00.000Z',
++        plannedEndTime: '2026-05-20T14:00:00.000Z',
++        sequence: 1,
++        setupTime: '20 分钟',
++        dependentItems: [],
++      },
++    ],
++  }
++
++  const equipment = {
++    items: [
++      {
++        id: 'eq-heat-01',
++        equipmentCode: 'HEAT-01',
++        equipmentName: '热处理炉 01',
++        equipmentType: 'HeatTreatment',
++        status: 'running',
++        capacity: 60,
++        utilizationRate: 0.82,
++      },
++    ],
++    totalCount: 1,
++    page: 1,
++    pageSize: 50,
++  }
++
++  await page.route('**/api/v1/scheduling/current', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(plan),
++  }))
++  await page.route('**/api/v1/equipment/bottlenecks**', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(['eq-heat-01']),
++  }))
++  await page.route(/\/api\/v1\/equipment(?:\?|$)/, route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify(equipment),
++  }))
++}
++
++async function mockLaborEvidenceRetryApis(page: import('@playwright/test').Page) {
++  laborEvidenceRetryReads.blocks = 0
++  laborEvidenceRetryReads.reassignments = 0
++
++  await page.route('**/api/v1/auth/refresh', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      token: 'mock-e2e-token',
++      refreshToken: 'mock-e2e-refresh',
++      expiresAt: '2026-12-31T23:59:59Z',
++    }),
++  }))
++  await page.route('**/api/v1/llm/status', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({ available: false, provider: 'mock-e2e' }),
++  }))
++  await page.route('**/api/v1/dashboard', route => route.fulfill({
++    status: 200,
++    contentType: 'application/json',
++    body: JSON.stringify({
++      equipmentStatus: [],
++      todaySchedules: [],
++      materialAlerts: [],
++      qualitySummary: {
++        inspectionCount: 0,
++        passCount: 0,
++        defectCount: 0,
++        pendingAnomalies: 0,
++      },
++    }),
++  }))
++  await page.route('**/api/v1/risk/dashboard', route => route.fulfill({
++    status: 503,
++    contentType: 'application/json',
++    body: JSON.stringify({ message: 'chromium risk dashboard unavailable for labor retry evidence' }),
++  }))
++  await page.route('**/api/v1/scheduling/**', route => {
++    const request = route.request()
++    const pathname = new URL(request.url()).pathname
++    if (
++      pathname.endsWith('/api/v1/scheduling/current')
++      || pathname.endsWith('/api/v1/scheduling/labor-qualification-blocks')
++      || pathname.endsWith('/api/v1/scheduling/labor-reassignments')
++    ) {
++      return route.fallback()
++    }
++    const method = request.method()
++    if (method !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: request.postData() || '{}',
++      })
++    }
++    return route.fulfill({
++      status: 503,
++      contentType: 'application/json',
++      body: JSON.stringify({ message: `chromium scheduling evidence unavailable: ${pathname}` }),
++    })
++  })
++  await page.route('**/api/v1/scheduling/labor-qualification-blocks**', route => {
++    if (route.request().method() !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: route.request().postData() || '{}',
++      })
++    }
++    laborEvidenceRetryReads.blocks += 1
++    if (laborEvidenceRetryReads.blocks === 1) {
++      return route.fulfill({
++        status: 503,
++        contentType: 'application/json',
++        body: JSON.stringify({ message: 'chromium startup labor block read unavailable' }),
++      })
++    }
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify([
++        {
++          id: 'labor-qualification-block-WO-013-heat-treatment',
++          workOrderNumber: 'WO-013',
++          operationCode: 'OP-10',
++          operationCodes: ['OP-10', 'OP-20'],
++          operationName: '淬火 / 回火',
++          blockedEmployeeNumber: 'EMP-003',
++          blockedEmployeeName: '王五',
++          blockedCertification: '热处理上岗证',
++          blockedExpiresAt: '2026-05-25',
++          requiredSkill: '热处理',
++          requiredTeam: '乙班',
++          requiredShift: '夜班',
++          reviewerEmployeeNumber: 'EMP-004',
++          reviewerName: '赵六',
++          reviewerRole: '工程放行',
++          reason: 'EMP-003 王五的热处理上岗证已通过补证改派重新放行。',
++          auditId: 'AUD-LABOR-BLOCK-20260520-001',
++          traceId: 'TRACE-LABOR-BLOCK-WO-013-OP-10',
++          createdAt: '2026-05-20T09:00:00.000Z',
++          status: 'released',
++          releasedAt: '2026-05-20T10:00:00.000Z',
++          releaseAuditId: 'AUD-LABOR-RELEASE-20260520-001',
++          releaseTraceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
++          releaseReason: '补证改派后释放热处理开工。',
++        },
++      ]),
++    })
++  })
++  await page.route('**/api/v1/scheduling/labor-reassignments**', route => {
++    if (route.request().method() !== 'GET') {
++      return route.fulfill({
++        status: 200,
++        contentType: 'application/json',
++        body: route.request().postData() || '{}',
++      })
++    }
++    laborEvidenceRetryReads.reassignments += 1
++    return route.fulfill({
++      status: 200,
++      contentType: 'application/json',
++      body: JSON.stringify(laborEvidenceRetryReads.reassignments === 1 ? [] : [
++        {
++          id: 'labor-reassignment-release-WO-013-heat-treatment',
++          workOrderNumber: 'WO-013',
++          operationCode: 'OP-10',
++          operationCodes: ['OP-10', 'OP-20'],
++          operationName: '淬火 / 回火',
++          blockedEmployeeNumber: 'EMP-003',
++          blockedEmployeeName: '王五',
++          blockedCertification: '热处理上岗证',
++          blockedExpiresAt: '2026-05-25',
++          replacementEmployeeNumber: 'EMP-006',
++          replacementEmployeeName: '孙八',
++          replacementTeam: '甲班',
++          replacementShift: '白班',
++          replacementSkill: '补证改派 / 热处理替班复核',
++          replacementCertification: '热处理上岗证',
++          replacementExpiresAt: '2026-12-31',
++          reviewerEmployeeNumber: 'EMP-004',
++          reviewerName: '赵六',
++          reviewerRole: '工程放行',
++          reason: '补证改派后，EMP-006 接管 WO-013 热处理开工复核。',
++          auditId: 'AUD-LABOR-RELEASE-20260520-001',
++          traceId: 'TRACE-LABOR-RELEASE-WO-013-OP-10',
++          createdAt: '2026-05-20T10:00:00.000Z',
++          status: 'approved',
++        },
++      ]),
++    })
++  })
++}

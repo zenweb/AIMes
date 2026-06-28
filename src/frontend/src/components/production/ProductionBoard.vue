@@ -167,6 +167,8 @@
                 <button v-if="barcodeContextOperation?.status === 'pending'" type="button" @click="openBarcodeStartDialog">按扫码上下文开工</button>
                 <button v-if="barcodeContextOperation?.status === 'in_progress'" type="button" class="secondary" @click="openBarcodeCompleteDialog">扫码完工报数</button>
                 <button v-if="barcodeContextOperation?.status === 'in_progress'" type="button" class="danger" @click="openBarcodeExceptionDialog">扫码异常上报</button>
+                <span v-if="barcodeContextOperation?.status === 'paused'">扫码质量冻结，需返工复验后再释放交接</span>
+                <span v-if="barcodeContextOperation?.status === 'completed'">扫码工序已完成，不能重复开工或完工</span>
                 <span v-if="barcodeStartEvidenceTraceId">{{ barcodeStartEvidenceTraceId }} 已写入生产开工证据</span>
               </div>
               <div v-if="barcodeCompletionEvidenceTraceId || barcodeMaterialEvidenceTraceId || barcodeAnomalyEvidenceTraceId || barcodeQualityGateTraceId || barcodeHandoffTraceId || barcodeReworkEvidenceTraceId || barcodeHandoffFreezeTraceId || barcodeCapaEvidenceTraceId || barcodeIsolationEvidenceTraceId || barcodeReworkCostTraceId || barcodeLabelStatusTraceId" class="barcode-context-evidence">
@@ -300,7 +302,7 @@
             </div>
             <div class="dialog-actions">
               <button class="dialog-cancel" aria-label="取消完工报告" @click="dialog.type = ''">取消</button>
-              <button class="dialog-confirm" @click="confirmComplete" :disabled="!dialog.quantity">确认完工</button>
+              <button class="dialog-confirm" @click="confirmComplete" :disabled="isCompleteConfirmationDisabled">确认完工</button>
             </div>
           </div>
         </div>
@@ -359,6 +361,7 @@ import { getWorkOrders, scanOperation, startOperation, completeOperation, report
 import type { WorkOrderDto, OperationInfoDto } from '../../types/production'
 import { formatDate } from '../../utils/date'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 import ProductionExecutionTracePanel, {
   type ProductionExecutionTrace,
 } from './ProductionExecutionTracePanel.vue'
@@ -368,7 +371,13 @@ import StartQualificationPanel, {
 import { writeProductionAnomalyEvent } from '../../utils/production-anomaly-sync'
 import { upsertOtdEvidenceChainRecord } from '../../utils/otd-evidence-chain-sync'
 import {
+  isLaborQualificationBlockForOperation,
+  isLaborReassignmentForOperation,
+  readLaborQualificationBlocksBackendFirst,
   readLaborQualificationBlockForOperation,
+  type LaborQualificationBlockRecord,
+  type LaborReassignmentRecord,
+  readLaborReassignmentsBackendFirst,
   readLaborReassignmentForOperation,
   writeLaborReassignmentExecutionEvidence,
 } from '../../utils/labor-assignment-sync'
@@ -416,6 +425,8 @@ const barcodeCapaEvidenceTraceId = ref('')
 const barcodeIsolationEvidenceTraceId = ref('')
 const barcodeReworkCostTraceId = ref('')
 const barcodeLabelStatusTraceId = ref('')
+const laborQualificationBlockRecords = ref<LaborQualificationBlockRecord[]>([])
+const laborReassignmentRecords = ref<LaborReassignmentRecord[]>([])
 const startQualificationCheck = ref<StartQualificationCheck>({
   status: 'pass',
   statusLabel: '校验通过',
@@ -473,9 +484,17 @@ const dialog = reactive({
   inspectionResult: 'Pass',
   reason: '',
 })
+const completionSubmittingIds = ref<Set<string>>(new Set())
 
 const isStartConfirmationDisabled = computed(() =>
   !dialog.stationId || startQualificationCheck.value.status === 'blocked'
+)
+
+const isCompleteConfirmationDisabled = computed(() =>
+  !dialog.quantity
+    || !dialog.op
+    || dialog.op.status === 'completed'
+    || completionSubmittingIds.value.has(dialog.op.operationId)
 )
 
 const dialogBarcodeContext = computed(() => {
@@ -524,7 +543,26 @@ const summary = computed(() => {
 function goToPage(page: number) {
   if (page < 1 || page > totalPages.value) return
   currentPage.value = page
+  clearSelectedWorkOrderContext()
   loadWorkOrders()
+}
+
+function clearSelectedWorkOrderContext() {
+  selectedWo.value = null
+  currentOperations.value = []
+  barcodeProductionContext.value = null
+  barcodeStartEvidenceTraceId.value = ''
+  barcodeCompletionEvidenceTraceId.value = ''
+  barcodeMaterialEvidenceTraceId.value = ''
+  barcodeAnomalyEvidenceTraceId.value = ''
+  barcodeQualityGateTraceId.value = ''
+  barcodeHandoffTraceId.value = ''
+  barcodeReworkEvidenceTraceId.value = ''
+  barcodeHandoffFreezeTraceId.value = ''
+  barcodeCapaEvidenceTraceId.value = ''
+  barcodeIsolationEvidenceTraceId.value = ''
+  barcodeReworkCostTraceId.value = ''
+  barcodeLabelStatusTraceId.value = ''
 }
 
 // 监听状态筛选变更，重置到第一页
@@ -773,6 +811,10 @@ function findNextBarcodeOperation(op: OperationInfoDto) {
   return index >= 0 ? sameWorkOrderOps[index + 1] ?? null : null
 }
 
+function operationChainFromScan(op: OperationInfoDto) {
+  return op.nextOperation ? [op, op.nextOperation] : [op]
+}
+
 function writeBarcodeQualityGateEvidence(op: OperationInfoDto, context: BarcodeProductionContext, onTime: boolean) {
   const qualityTraceId = barcodeOperationTraceId(context, 'QUALITY')
   const passed = dialog.inspectionResult === 'Pass' && dialog.defectQty === 0
@@ -966,8 +1008,8 @@ function writeProductionCloseoutReviewEvidence(op: OperationInfoDto, onTime: boo
 
 function operationConstraints(op: OperationInfoDto) {
   if (isHeatTreatmentOperation(op)) {
-    const block = readLaborQualificationBlockForOperation(op.workOrderNumber, op.operationCode, op.operationName)
-    const reassignment = readLaborReassignmentForOperation(op.workOrderNumber, op.operationCode, op.operationName)
+    const block = findActiveLaborQualificationBlockForOperation(op)
+    const reassignment = findLaborReassignmentForOperation(op)
     const baseConstraints = ['SOP: 热处理作业 V1.8', '质检: 硬度 HB95+', '设备: HT-001', '物料: 炉批待确认']
     if (block) return [...baseConstraints, `人员: ${block.blockedEmployeeNumber} 停工复核`]
     return reassignment
@@ -1030,7 +1072,10 @@ async function handleScan() {
     if (matched) {
       selectedWo.value = matched
     }
-    currentOperations.value = [op]
+    currentOperations.value = operationChainFromScan(op)
+    if (/^WO[-_]/i.test(code)) {
+      buildBarcodeProductionContext(op.workOrderNumber.toUpperCase())
+    }
     scanCode.value = ''
     notify(`已定位工序：${op.workOrderNumber} / ${op.operationCode}`)
     return
@@ -1044,6 +1089,10 @@ async function handleScan() {
     wo => wo.orderNumber.toLowerCase().includes(code.toLowerCase()) || wo.id === code
   )
   if (matched) {
+    if (scanError && !isOfflineDemoError(scanError) && /^WO[-_]/i.test(code)) {
+      notify(`扫码查询失败，未使用本地演示工序兜底：${errorMessage(scanError, '请稍后重试')}`, 'error')
+      return
+    }
     await selectWorkOrder(matched)
     if (/^WO[-_]/i.test(code)) {
       buildBarcodeProductionContext(matched.orderNumber.toUpperCase())
@@ -1082,9 +1131,13 @@ async function selectWorkOrder(wo: WorkOrderDto) {
   try {
     const result = await scanOperation(wo.orderNumber)
     if (requestId !== latestWorkOrderSelectionRequestId) return
-    currentOperations.value = [result]
-  } catch {
+    currentOperations.value = operationChainFromScan(result)
+  } catch (e: unknown) {
     if (requestId !== latestWorkOrderSelectionRequestId) return
+    if (!isOfflineDemoError(e)) {
+      notify(`工序加载失败，未使用本地演示工序兜底：${errorMessage(e, '请稍后重试')}`, 'error')
+      return
+    }
     // 演示工序数据
     const opMap: Record<string, OperationInfoDto[]> = {
       'WO-001': [
@@ -1129,11 +1182,7 @@ async function confirmStart() {
     notify('人员资质未找到有效替班候选，需停工复核后才能开工', 'error')
     return
   }
-  const reassignment = readLaborReassignmentForOperation(
-    dialog.op.workOrderNumber,
-    dialog.op.operationCode,
-    dialog.op.operationName
-  )
+  const reassignment = findLaborReassignmentForOperation(dialog.op)
   const barcodeContext = getBarcodeStartContextForOperation(dialog.op)
   try {
     await startOperation(dialog.op.operationId, {
@@ -1181,8 +1230,8 @@ async function confirmStart() {
 function buildQualificationCheck(op: OperationInfoDto): StartQualificationCheck {
   const matchedWorker = matchWorkforce(op)
   const workerSkill = matchedWorker.skills[0] || matchedWorker.roleHint
-  const block = readLaborQualificationBlockForOperation(op.workOrderNumber, op.operationCode, op.operationName)
-  const reassignment = readLaborReassignmentForOperation(op.workOrderNumber, op.operationCode, op.operationName)
+  const block = findActiveLaborQualificationBlockForOperation(op)
+  const reassignment = findLaborReassignmentForOperation(op)
 
   if (isHeatTreatmentOperation(op) && block) {
     const isReviewing = block.status === 'reviewing'
@@ -1359,6 +1408,7 @@ function matchWorkforce(op: OperationInfoDto) {
 }
 
 function showCompleteDialog(op: OperationInfoDto) {
+  if (op.status === 'completed' || completionSubmittingIds.value.has(op.operationId)) return
   dialog.type = 'complete'
   dialog.op = op
   dialog.quantity = op.plannedQuantity - op.completedQuantity
@@ -1366,8 +1416,16 @@ function showCompleteDialog(op: OperationInfoDto) {
   dialog.inspectionResult = 'Pass'
 }
 
+function releaseCompletionSubmittingId(operationId: string) {
+  const nextSubmittingIds = new Set(completionSubmittingIds.value)
+  nextSubmittingIds.delete(operationId)
+  completionSubmittingIds.value = nextSubmittingIds
+}
+
 async function confirmComplete() {
   if (!dialog.op) return
+  if (dialog.op.status === 'completed' || completionSubmittingIds.value.has(dialog.op.operationId)) return
+  completionSubmittingIds.value = new Set([...completionSubmittingIds.value, dialog.op.operationId])
   try {
     await completeOperation(dialog.op.operationId, {
       quantity: dialog.quantity,
@@ -1376,13 +1434,29 @@ async function confirmComplete() {
       reportedBy: user.value?.username,
     })
   } catch (e: unknown) {
+    releaseCompletionSubmittingId(dialog.op.operationId)
     notify(`完工失败：${errorMessage(e, '请稍后重试')}`, 'error')
     return
   }
 
+  const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
+  const previousOperationState = op
+    ? {
+        status: op.status,
+        completedQuantity: op.completedQuantity,
+      }
+    : null
+  const previousWorkOrderState = selectedWo.value
+    ? {
+        completedQuantity: selectedWo.value.completedQuantity,
+        progressPercentage: selectedWo.value.progressPercentage,
+        status: selectedWo.value.status,
+        actualEndDate: selectedWo.value.actualEndDate,
+      }
+    : null
+
   try {
     const qualityPassed = dialog.inspectionResult === 'Pass' && dialog.defectQty === 0
-    const op = currentOperations.value.find(o => o.operationId === dialog.op!.operationId)
     if (op) {
       op.status = qualityPassed ? 'completed' : 'paused'
       op.completedQuantity = Math.min(op.plannedQuantity, op.completedQuantity + dialog.quantity)
@@ -1438,6 +1512,17 @@ async function confirmComplete() {
       createdAt: new Date().toISOString(),
     })
   } catch (e: unknown) {
+    if (op && previousOperationState) {
+      op.status = previousOperationState.status
+      op.completedQuantity = previousOperationState.completedQuantity
+    }
+    if (selectedWo.value && previousWorkOrderState) {
+      selectedWo.value.completedQuantity = previousWorkOrderState.completedQuantity
+      selectedWo.value.progressPercentage = previousWorkOrderState.progressPercentage
+      selectedWo.value.status = previousWorkOrderState.status
+      selectedWo.value.actualEndDate = previousWorkOrderState.actualEndDate
+    }
+    releaseCompletionSubmittingId(dialog.op.operationId)
     notify(`完工证据写入失败，后端完工已提交但 OTD/质量证据未归档：${errorMessage(e, '请稍后重试')}`, 'error')
     return
   }
@@ -1527,8 +1612,42 @@ async function loadWorkOrders() {
   } catch (e: unknown) {
     if (requestId !== latestWorkOrdersRequestId) return
     loadDemoData()
-    notify(`生产工单加载失败，已显示本地演示工单：${errorMessage(e, '请稍后重试')}`, 'error')
+    if (!isOfflineDemoError(e)) {
+      notify(`生产工单加载失败，已显示本地演示工单：${errorMessage(e, '请稍后重试')}`, 'error')
+    }
   }
+}
+
+async function loadLaborExecutionEvidence() {
+  try {
+    const [reassignments, qualificationBlocks] = await Promise.all([
+      readLaborReassignmentsBackendFirst({ failLoud: true }),
+      readLaborQualificationBlocksBackendFirst({ failLoud: true }),
+    ])
+    laborReassignmentRecords.value = reassignments
+    laborQualificationBlockRecords.value = qualificationBlocks
+  } catch (e: unknown) {
+    if (!isOfflineDemoError(e)) {
+      notify(`人员替班/停工复核证据加载失败：${errorMessage(e, '请稍后重试')}`, 'error')
+    }
+  }
+}
+
+function findLaborReassignmentForOperation(op: OperationInfoDto) {
+  return readLaborReassignmentForOperation(op.workOrderNumber, op.operationCode, op.operationName)
+    ?? laborReassignmentRecords.value.find(record =>
+      isLaborReassignmentForOperation(record, op.workOrderNumber, op.operationCode, op.operationName)
+    )
+    ?? null
+}
+
+function findActiveLaborQualificationBlockForOperation(op: OperationInfoDto) {
+  return readLaborQualificationBlockForOperation(op.workOrderNumber, op.operationCode, op.operationName)
+    ?? laborQualificationBlockRecords.value.find(record =>
+      record.status !== 'released'
+      && isLaborQualificationBlockForOperation(record, op.workOrderNumber, op.operationCode, op.operationName)
+    )
+    ?? null
 }
 
 function syncSelectedWorkOrderWithLoadedItems() {
@@ -1599,7 +1718,10 @@ async function applyBarcodeRouteContext() {
 }
 
 onMounted(async () => {
-  await loadWorkOrders()
+  await Promise.all([
+    loadWorkOrders(),
+    loadLaborExecutionEvidence(),
+  ])
   await applyPocPilotRunTrace()
   await applyBarcodeRouteContext()
 })

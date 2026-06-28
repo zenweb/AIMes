@@ -7,7 +7,7 @@ declare module '*.vue' {
 }
 
 declare module 'dhtmlx-gantt' {
-  import type { GanttData, GanttTask } from './types/scheduling'
+  import type { GanttLink, GanttTask } from './types/scheduling'
 
   type GanttScaleUnit = 'day' | 'week' | 'month'
   type GanttSubscaleUnit = 'hour' | 'day'
@@ -15,6 +15,8 @@ declare module 'dhtmlx-gantt' {
 
   interface GanttConfig {
     date_format: string
+    root_id: string | number
+    duration_unit: 'hour' | 'day'
     drag_project: boolean
     drag_links: boolean
     round_dnd_dates: boolean
@@ -52,6 +54,11 @@ declare module 'dhtmlx-gantt' {
     text: string
   }
 
+  interface DhtmlxGanttData {
+    data: GanttTask[]
+    links: GanttLink[]
+  }
+
   interface GanttApi {
     config: GanttConfig
     templates: GanttTemplates
@@ -66,7 +73,7 @@ declare module 'dhtmlx-gantt' {
     getTaskByTime(): GanttTask[]
     init(container: HTMLElement): void
     message(message: GanttMessage): void
-    parse(data: GanttData): void
+    parse(data: DhtmlxGanttData): void
     render(): void
   }
 

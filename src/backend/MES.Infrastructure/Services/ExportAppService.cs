@@ -61,6 +61,25 @@ public class ExportAppService : IExportAppService
         ws.Cell(5, 1).Value = "平均响应(h)";
         ws.Cell(5, 2).Value = report.Anomaly.AvgResolveHours;
 
+        if (report.ScheduleFeedback is not null)
+        {
+            ws = wb.Worksheets.Add("排产采纳反馈");
+            ws.Cell(1, 1).Value = "指标";
+            ws.Cell(1, 2).Value = "值";
+            ws.Cell(2, 1).Value = "采纳结果";
+            ws.Cell(2, 2).Value = report.ScheduleFeedback.DecisionLabel;
+            ws.Cell(3, 1).Value = "原因分类";
+            ws.Cell(3, 2).Value = report.ScheduleFeedback.CategoryLabel;
+            ws.Cell(4, 1).Value = "原因说明";
+            ws.Cell(4, 2).Value = report.ScheduleFeedback.ReasonDetail;
+            ws.Cell(5, 1).Value = "优化目标";
+            ws.Cell(5, 2).Value = report.ScheduleFeedback.ObjectiveLabel;
+            ws.Cell(6, 1).Value = "Trace ID";
+            ws.Cell(6, 2).Value = report.ScheduleFeedback.TraceId ?? string.Empty;
+            ws.Cell(7, 1).Value = "Agent Decision ID";
+            ws.Cell(7, 2).Value = report.ScheduleFeedback.AgentDecisionId ?? string.Empty;
+        }
+
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         return ms.ToArray();
@@ -137,6 +156,27 @@ public class ExportAppService : IExportAppService
                         table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("平均响应(h)");
                         table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.Anomaly.AvgResolveHours.ToString("F1"));
                     });
+
+                    if (report.ScheduleFeedback is not null)
+                    {
+                        col.Item().PaddingTop(10).Text("排产采纳反馈").FontSize(14).Bold();
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c => { c.RelativeColumn(); c.RelativeColumn(); });
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("采纳结果");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.DecisionLabel);
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("原因分类");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.CategoryLabel);
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("原因说明");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.ReasonDetail);
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("优化目标");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.ObjectiveLabel);
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("Trace ID");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.TraceId ?? string.Empty);
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text("Agent Decision ID");
+                            table.Cell().Border(1).BorderColor("#ddd").Padding(4).Text(report.ScheduleFeedback.AgentDecisionId ?? string.Empty);
+                        });
+                    }
                 });
             });
         });

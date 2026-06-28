@@ -122,12 +122,63 @@ describe('outsourcing commitment sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/outsourcing-commitments', { params: { take: 8 } })
   })
 
+  it('ignores incomplete backend outsourcing commitments so partner promise and release actions stay auditable', async () => {
+    const localRecord = writeCommitment()
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'outsourcing-commitment-product-flange',
+          sourceKpiId: 'product-flange',
+          traceId: 'TRACE-OUTSOURCING-PARTIAL',
+          partnerName: '苏南热处理外协',
+        },
+      ],
+    })
+
+    await expect(readOutsourcingCommitmentPackagesBackendFirst()).resolves.toEqual([localRecord])
+  })
+
+  it('fails loud when outsourcing commitments backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readOutsourcingCommitmentPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组外协承诺审计载荷')
+  })
+
+  it('fails loud for outsourcing commitment refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('outsourcing commitment backend unavailable'))
+
+    await expect(readOutsourcingCommitmentPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('outsourcing commitment backend unavailable')
+  })
+
   it('falls back to the latest local outsourcing commitment when backend latest is empty', async () => {
     const localRecord = writeCommitment()
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readLatestOutsourcingCommitmentPackageBackendFirst()).resolves.toEqual(localRecord)
     expect(httpGet).toHaveBeenCalledWith('/scheduling/outsourcing-commitments/latest')
+  })
+
+  it('ignores incomplete backend latest outsourcing commitment so customer-facing release evidence stays complete', async () => {
+    const localRecord = writeCommitment()
+    httpGet.mockResolvedValueOnce({
+      data: {
+        id: 'outsourcing-commitment-product-flange',
+        sourceKpiId: 'product-flange',
+        traceId: 'TRACE-OUTSOURCING-PARTIAL',
+        partnerName: '苏南热处理外协',
+      },
+    })
+
+    await expect(readLatestOutsourcingCommitmentPackageBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for latest outsourcing commitment refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('latest outsourcing backend unavailable'))
+
+    await expect(readLatestOutsourcingCommitmentPackageBackendFirst({ failLoud: true }))
+      .rejects.toThrow('latest outsourcing backend unavailable')
   })
 
   it('caps local outsourcing commitments at 8 records', () => {

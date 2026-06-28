@@ -101,6 +101,7 @@ const props = defineProps<{
   comparison: ScheduleImpactComparison
   latestFeedback: ScheduleFeedbackRecord | null
   activeSuggestion: ScheduleAgentSuggestion | null
+  formalScheduleWriteback: 'pending' | 'saved'
 }>()
 
 const orderPools = [
@@ -215,8 +216,8 @@ const executionSteps = computed(() => [
   },
   {
     label: '执行回写',
-    detail: props.latestFeedback ? '排产反馈已写入本地复盘记录' : '采纳后回写生产执行状态',
-    state: props.latestFeedback ? 'done' : 'pending',
+    detail: executionWritebackDetail.value,
+    state: props.latestFeedback ? (requiresFormalScheduleSave.value ? 'current' : 'done') : 'pending',
   },
   {
     label: '审计复盘',
@@ -224,6 +225,23 @@ const executionSteps = computed(() => [
     state: props.latestFeedback ? 'current' : 'pending',
   },
 ])
+
+const requiresFormalScheduleSave = computed(() =>
+  props.latestFeedback?.decision === 'accepted'
+  && props.latestFeedback.reasonCategory.endsWith('_event_agent')
+  && props.formalScheduleWriteback !== 'saved'
+)
+
+const executionWritebackDetail = computed(() => {
+  if (!props.latestFeedback) return '采纳后回写生产执行状态'
+  if (props.formalScheduleWriteback === 'saved') {
+    return '排产反馈已写入本地复盘记录；正式排产计划已更新'
+  }
+  if (requiresFormalScheduleSave.value) {
+    return '排产反馈已写入本地复盘记录；正式计划待优化或保存'
+  }
+  return '排产反馈已写入本地复盘记录'
+})
 
 function formatPercent(value: number) {
   return Number.isFinite(value) ? Math.round(value) : 0

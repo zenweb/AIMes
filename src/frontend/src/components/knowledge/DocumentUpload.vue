@@ -3,6 +3,20 @@
     <h2 class="page-title">文档上传</h2>
 
     <div class="upload-container">
+      <section class="upload-guidance" aria-labelledby="knowledge-upload-guidance-title">
+        <div>
+          <span class="eyebrow">知识入库提示</span>
+          <h3 id="knowledge-upload-guidance-title">上传前请确认分类、有效期和引用范围</h3>
+          <p>Before upload, confirm category, validity window, and citation scope.</p>
+        </div>
+        <nav class="guidance-links" aria-label="知识入库关联入口">
+          <a href="#knowledge-governance">知识治理队列</a>
+          <a href="/quality">质量证据复核</a>
+          <a href="/report">报表证据中心</a>
+          <a href="#knowledge-upload-help" aria-label="打开知识入库帮助">帮助：知识入库支持</a>
+        </nav>
+      </section>
+
       <!-- 拖拽上传区 -->
       <div
         class="drop-zone"
@@ -63,7 +77,14 @@
           </div>
           <div class="queue-status">
             <span v-if="f.status === 'done'" class="status-done">已上传</span>
-            <span v-else-if="f.status === 'error'" class="status-err" role="alert" aria-live="assertive">{{ f.errorMsg }}</span>
+            <div v-else-if="f.status === 'error'" class="queue-error">
+              <span class="status-err" role="alert" aria-live="assertive">{{ f.errorMsg }}</span>
+              <p class="queue-recovery">
+                保留原文件，可直接重试。Keep the file and retry after confirming the category and evidence scope.
+                <a href="#knowledge-upload-help">查看帮助</a>
+              </p>
+              <button type="button" class="btn-retry-upload" @click="retryFile(idx)">重试上传</button>
+            </div>
             <div v-else-if="f.status === 'uploading'" class="status-progress">
               <div class="progress-track">
                 <div class="progress-fill" :style="{ width: f.progress + '%' }"></div>
@@ -106,25 +127,38 @@
       </button>
     </section>
 
-    <KnowledgeGovernancePanel
-      :documents="governanceDocuments"
-      :quality-assets="qualityKnowledgeAssets"
-      :quality-retraining-versions="qualityRetrainingVersions"
-      :quality-gray-release-decisions="qualityGrayReleaseDecisionRecords"
-      @document-reviewed="handleKnowledgeReview"
-      @quality-retraining-approved="handleQualityRetrainingApproval"
-      @quality-retraining-validated="handleQualityRetrainingValidation"
-      @quality-retraining-validation-passed="handleQualityRetrainingValidationPass"
-      @quality-retraining-published="handleQualityRetrainingPublish"
-      @quality-retraining-rolled-back="handleQualityRetrainingRollback"
-      @quality-next-training-merged="handleQualityNextTrainingMerge"
-      @quality-next-training-approved="handleQualityNextTrainingApproval"
-      @quality-next-training-validated="handleQualityNextTrainingValidation"
-      @quality-next-training-gray-published="handleQualityNextTrainingGrayPublish"
-      @quality-experiment-candidate-merged="handleQualityExperimentCandidateMerge"
-      @quality-experiment-shadow-validated="handleQualityExperimentShadowValidation"
-      @quality-experiment-shadow-gray-published="handleQualityExperimentShadowGrayPublish"
-    />
+    <section id="knowledge-governance" class="governance-anchor" aria-label="知识治理队列">
+      <KnowledgeGovernancePanel
+        :documents="governanceDocuments"
+        :quality-assets="qualityKnowledgeAssets"
+        :quality-retraining-versions="qualityRetrainingVersions"
+        :quality-gray-release-decisions="qualityGrayReleaseDecisionRecords"
+        @document-reviewed="handleKnowledgeReview"
+        @quality-retraining-approved="handleQualityRetrainingApproval"
+        @quality-retraining-validated="handleQualityRetrainingValidation"
+        @quality-retraining-validation-passed="handleQualityRetrainingValidationPass"
+        @quality-retraining-published="handleQualityRetrainingPublish"
+        @quality-retraining-rolled-back="handleQualityRetrainingRollback"
+        @quality-next-training-merged="handleQualityNextTrainingMerge"
+        @quality-next-training-approved="handleQualityNextTrainingApproval"
+        @quality-next-training-validated="handleQualityNextTrainingValidation"
+        @quality-next-training-gray-published="handleQualityNextTrainingGrayPublish"
+        @quality-experiment-candidate-merged="handleQualityExperimentCandidateMerge"
+        @quality-experiment-shadow-validated="handleQualityExperimentShadowValidation"
+        @quality-experiment-shadow-gray-published="handleQualityExperimentShadowGrayPublish"
+      />
+    </section>
+
+    <section id="knowledge-upload-help" class="upload-help" aria-labelledby="knowledge-upload-help-title">
+      <span class="eyebrow">帮助：知识入库支持</span>
+      <h3 id="knowledge-upload-help-title">知识入库帮助</h3>
+      <ul>
+        <li>选择分类后再上传，避免文档进入错误的治理队列。</li>
+        <li>Choose a category before upload so the document enters the right governance queue.</li>
+        <li>遇到索引或证据刷新失败时，保留当前页面证据并联系知识库管理员。</li>
+        <li>If indexing or evidence refresh fails, keep the current evidence visible and contact the knowledge owner.</li>
+      </ul>
+    </section>
 
     <!-- 上传记录 -->
     <div class="history-section">
@@ -342,7 +376,7 @@ async function startUpload() {
       clearInterval(progressInterval)
       item.progress = 100
       item.status = 'done'
-      history.value.unshift({ ...result, category: category.value || '通用' })
+      history.value.unshift({ ...result, category: categoryLabel(category.value) })
       governanceDocuments.value.unshift({
         id: result.documentId,
         title: result.fileName,
@@ -487,6 +521,14 @@ function handleQualityRetrainingPublish(versionId: string) {
     return
   }
   qualityRetrainingVersions.value = readQualityKnowledgeRetrainingVersionRecords()
+  readQualityKnowledgeRetrainingVersionRecordsBackendFirst()
+    .then(records => {
+      qualityRetrainingVersions.value = records
+      if (error.value.startsWith('质量知识正式发布读回失败')) error.value = ''
+    })
+    .catch((e: unknown) => {
+      error.value = `质量知识正式发布读回失败，已保留本地发布历史：${errorMessage(e, '请稍后重试')}`
+    })
   history.value.unshift({
     documentId: published.publishAuditId ?? published.approvalAuditId,
     fileName: `${published.trainingSetVersion}_发布到_AI_推荐链路`,
@@ -693,6 +735,14 @@ function removeFile(idx: number) {
   queue.value.splice(idx, 1)
 }
 
+function retryFile(idx: number) {
+  const item = queue.value[idx]
+  if (!item || item.status !== 'error') return
+  item.status = 'pending'
+  item.progress = 0
+  item.errorMsg = undefined
+}
+
 function clearQueue() {
   queue.value = queue.value.filter(f => f.status === 'uploading')
 }
@@ -784,6 +834,82 @@ onMounted(refreshQualityKnowledgeEvidence)
 .page-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
 
 .upload-container { max-width: 640px; }
+
+.upload-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.upload-guidance h3,
+.upload-guidance p {
+  margin: 0;
+}
+
+.upload-guidance h3 {
+  color: #111827;
+  font-size: 14px;
+}
+
+.upload-guidance p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.guidance-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guidance-links a {
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.guidance-links a:hover {
+  border-color: #60a5fa;
+  color: #1e40af;
+}
+
+.governance-anchor {
+  scroll-margin-top: 16px;
+}
+
+.upload-help {
+  max-width: 900px;
+  margin: 18px 0;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.upload-help h3 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.upload-help ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.6;
+}
 
 .customer-import-panel {
   display: grid;
@@ -952,6 +1078,34 @@ onMounted(refreshQualityKnowledgeEvidence)
 .queue-status { display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: flex-end; }
 .status-done { color: #52c41a; font-size: 12px; }
 .status-err { color: #ff4d4f; font-size: 12px; }
+.queue-error {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  max-width: min(420px, 54vw);
+  text-align: right;
+}
+.queue-recovery {
+  margin: 0;
+  color: #8c6d1f;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.queue-recovery a {
+  color: #096dd9;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn-retry-upload {
+  width: fit-content;
+  padding: 4px 10px;
+  border: 1px solid #ffd666;
+  border-radius: 4px;
+  background: #fffbe6;
+  color: #ad6800;
+  font-size: 12px;
+  cursor: pointer;
+}
 .progress-track { width: 80px; height: 6px; background: #f0f0f0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: #1890ff; border-radius: 3px; transition: width 0.3s; }
 .btn-del { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 2px; }

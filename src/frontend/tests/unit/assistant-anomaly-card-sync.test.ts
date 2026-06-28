@@ -83,6 +83,36 @@ describe('assistant anomaly card sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/assistant-anomaly-packages', { params: { take: 8 } })
   })
 
+  it('fails loud for anomaly package refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('assistant anomaly backend unavailable'))
+
+    await expect(readAssistantAnomalyDispositionPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('assistant anomaly backend unavailable')
+  })
+
+  it('fails loud when anomaly package backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readAssistantAnomalyDispositionPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组异常处置包审计载荷')
+  })
+
+  it('keeps local complete anomaly package when backend returns incomplete package evidence', async () => {
+    const localRecord = writeAssistantAnomalyDispositionPackage({ actor: 'admin', role: 'Planner' })
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: localRecord.id,
+          title: localRecord.title,
+          traceId: 'TRACE-BACKEND-PARTIAL-ANOMALY',
+          createdAt: '2026-06-20T10:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(readAssistantAnomalyDispositionPackagesBackendFirst()).resolves.toEqual([localRecord])
+  })
+
   it('caps local anomaly packages at 8 records', () => {
     for (let index = 0; index < 9; index += 1) {
       writeAssistantAnomalyDispositionPackage({ actor: `actor-${index}`, role: 'Planner' })

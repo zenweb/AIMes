@@ -4,6 +4,8 @@ param(
     [string]$RunId = "",
     [string]$CommitSha = "",
     [string]$RemoteName = "origin",
+    [string]$Repository = "zenweb/AIMes",
+    [string]$Branch = "V1",
     [string]$Evidence = ""
 )
 
@@ -111,6 +113,10 @@ if (-not (Test-RealEvidence $Evidence)) {
     $violations.Add("Hosted CI job summary evidence is required to close the hosted CI release gate. Evidence cannot be a placeholder.")
 }
 
+if (-not (Test-HasValue $CommitSha)) {
+    $violations.Add("CommitSha is required to close the hosted CI release gate.")
+}
+
 $gitRemote = Invoke-Capture { git ls-remote --heads $RemoteName }
 $ghRun = Invoke-Capture { gh run list --limit 5 }
 $ghRunView = if (Test-NumericRunId $RunId) {
@@ -137,6 +143,18 @@ if ($ghRunView.ExitCode -ne 0) {
     if (-not ($ghRunViewText.Contains('"status":"completed"') -and $ghRunViewText.Contains('"conclusion":"success"'))) {
         $violations.Add("Hosted CI run must be completed with conclusion success.")
     }
+
+    if ((Test-HasValue $Repository) -and (Test-GitHubActionsRunUrl $RunUrl) -and -not $RunUrl.StartsWith("https://github.com/$Repository/actions/runs/", [StringComparison]::OrdinalIgnoreCase)) {
+        $violations.Add("Hosted CI run must be for the release repository.")
+    }
+
+    if ((Test-HasValue $Branch) -and -not $ghRunViewText.Contains('"headBranch":"' + $Branch + '"')) {
+        $violations.Add("Hosted CI run must be for the V1 release branch.")
+    }
+
+    if ((Test-HasValue $CommitSha) -and -not $ghRunViewText.Contains('"headSha":"' + $CommitSha + '"')) {
+        $violations.Add("Hosted CI run headSha must match CommitSha.")
+    }
 }
 
 $status = if ($violations.Count -eq 0) { "READY_FOR_RELEASE_REVIEW" } else { "MISSING_REMOTE_RUN" }
@@ -148,7 +166,10 @@ Add-Line ""
 Add-Line "- GeneratedAt: $(Get-Date -Format o)"
 Add-Line "- Status: $status"
 Add-Line "- RemoteName: $RemoteName"
+Add-Line "- Repository: $Repository"
+Add-Line "- Branch: $Branch"
 Add-Line "- CommitSha: $CommitSha"
+Add-Line "- HeadSha: $CommitSha"
 Add-Line "- RunUrl: $RunUrl"
 Add-Line "- RunId: $RunId"
 Add-Line "- Evidence: $Evidence"
@@ -187,7 +208,7 @@ Add-Line '```'
 Add-Line ""
 Add-Line "## Gate"
 Add-Line ""
-Add-Line "- Required evidence: hosted runner RunUrl, RunId, and job summary."
+Add-Line "- Required evidence: hosted runner RunUrl, RunId, release repository, release branch, head SHA, and job summary."
 Add-Line "- Result: $result"
 
 if ($violations.Count -gt 0) {

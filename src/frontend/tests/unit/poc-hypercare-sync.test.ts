@@ -97,12 +97,31 @@ describe('poc hypercare sync', () => {
     await expect(readPocHypercareAcceptanceRecordBackendFirst()).resolves.toEqual(localRecord)
   })
 
+  it('ignores incomplete backend hypercare acceptance so gates monitors and owners stay auditable', async () => {
+    const localRecord = writePocHypercareAcceptanceRecord(pilotRun())
+    getLatestPocHypercareAcceptance.mockResolvedValueOnce({
+      id: 'poc-hypercare-acceptance-20260521',
+      title: 'POC 正式上线验收与 Hypercare 稳定运行监控包',
+      status: 'active',
+      createdAt: '2099-01-01T00:00:00.000Z',
+    })
+
+    await expect(readPocHypercareAcceptanceRecordBackendFirst()).resolves.toEqual(localRecord)
+  })
+
   it('throws hypercare backend failures when fail-loud evidence is required', async () => {
     const localRecord = writePocHypercareAcceptanceRecord(pilotRun())
     getLatestPocHypercareAcceptance.mockRejectedValueOnce(new Error('hypercare backend unavailable'))
 
     await expect(readPocHypercareAcceptanceRecordBackendFirst({ failLoud: true })).rejects.toThrow('hypercare backend unavailable')
     expect(readPocHypercareAcceptanceRecord()).toEqual(localRecord)
+  })
+
+  it('keeps local hypercare acceptance when backend latest returns a missing-record empty state', async () => {
+    const localRecord = writePocHypercareAcceptanceRecord(pilotRun())
+    getLatestPocHypercareAcceptance.mockResolvedValueOnce(null)
+
+    await expect(readPocHypercareAcceptanceRecordBackendFirst({ failLoud: true })).resolves.toEqual(localRecord)
   })
 
   it('removes corrupt hypercare JSON so dashboards do not render stale acceptance', () => {

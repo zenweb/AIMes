@@ -91,11 +91,22 @@
                   <span>{{ routeCapability.batchWindow }}</span>
                   <span>缺口 {{ routeCapability.capacityGapHours }}h</span>
                 </div>
+                <div class="validation-guidance" id="route-capability-help">
+                  <strong>操作提示 / Operation guide</strong>
+                  <p>先运行能力校验，确认瓶颈、夜班窗口和外协兜底后，再确认分流/合批方案。</p>
+                  <p>Run capability validation first, then confirm split or batch release with trace evidence.</p>
+                </div>
+                <div class="validation-links" aria-label="工艺能力关联证据">
+                  <router-link to="/scheduling">AI 排产复核</router-link>
+                  <router-link to="/audit-logs">审计回放</router-link>
+                  <router-link to="/report">报表证据</router-link>
+                </div>
               </div>
               <div class="validation-actions">
                 <span class="validation-status" :class="routeCapabilityDecision">{{ routeCapabilityStatusText }}</span>
                 <button type="button" @click="handleValidateRouteCapability">运行能力校验</button>
                 <button type="button" :disabled="routeCapabilityDecision !== 'validated'" @click="handleReleaseRouteCapability">确认分流/合批方案</button>
+                <a class="validation-help" href="#route-capability-help" aria-label="打开工艺能力校验帮助">帮助：能力校验支持</a>
               </div>
               <div v-if="routeCapabilityRecord" class="validation-trace">
                 <span>{{ routeCapabilityRecord.auditId }}</span>
@@ -148,6 +159,7 @@ import {
   type RouteCapabilityValidation,
 } from '../../utils/engineering-change-sync'
 import { errorMessage } from '../../utils/error-message'
+import { isOfflineDemoError } from '../../utils/offline-demo-mode'
 
 const loading = ref(false)
 const routes = ref<ProcessRoute[]>([])
@@ -172,6 +184,7 @@ function goToPage(p: number | string) {
   if (typeof p === "string") return
   if (p < 1 || p > totalPages.value) return
   currentPage.value = p
+  selected.value = null
   loadRoutes()
 }
 const selected = ref<RouteDetail | null>(null)
@@ -295,12 +308,25 @@ async function loadRoutes() {
   } catch (err: unknown) {
     routes.value = demoRoutes
     totalCount.value = demoRoutes.length
-    routingError.value = `工艺路线列表加载失败：${errorMessage(err, '请稍后重试')}。已显示本地演示路线，真实路线数据可能不是最新。`
+    if (!isOfflineDemoError(err)) {
+      routingError.value = `工艺路线列表加载失败：${errorMessage(err, '请稍后重试')}。已显示本地演示路线，真实路线数据可能不是最新。`
+    }
   }
   loading.value = false
 }
 
-function handleValidateRouteCapability() {
+async function confirmRouteCapabilityReadback(fallback: RouteCapabilityValidation, failureLabel: string) {
+  try {
+    const record = await readRouteCapabilityValidationBackendFirst({ failLoud: true })
+    capabilityValidationError.value = ''
+    routeCapabilityRecord.value = record ?? fallback
+    routeCapabilityDecision.value = (record ?? fallback).decision
+  } catch (err: unknown) {
+    capabilityValidationError.value = `${failureLabel}：${errorMessage(err, '请稍后重试')}。已保留本地写入证据，需复核后端读回状态。`
+  }
+}
+
+async function handleValidateRouteCapability() {
   const record = writeRouteCapabilityValidation({
     ...routeCapability,
     decision: 'validated',
@@ -313,9 +339,10 @@ function handleValidateRouteCapability() {
   capabilityValidationError.value = ''
   routeCapabilityRecord.value = record
   routeCapabilityDecision.value = 'validated'
+  await confirmRouteCapabilityReadback(record, '能力校验证据读回失败')
 }
 
-function handleReleaseRouteCapability() {
+async function handleReleaseRouteCapability() {
   const record = writeRouteCapabilityValidation({
     ...routeCapability,
     decision: 'released',
@@ -328,6 +355,7 @@ function handleReleaseRouteCapability() {
   capabilityValidationError.value = ''
   routeCapabilityRecord.value = record
   routeCapabilityDecision.value = 'released'
+  await confirmRouteCapabilityReadback(record, '分流/合批证据读回失败')
 }
 
 async function applyStoredRouteCapabilityValidation() {
@@ -342,7 +370,9 @@ async function applyStoredRouteCapabilityValidation() {
     routeCapabilityRecord.value = record
     routeCapabilityDecision.value = record.decision
   } catch (err: unknown) {
-    capabilityValidationError.value = `能力校验记录加载失败：${errorMessage(err, '请稍后重试')}。已保持待校验状态，避免使用不可信的历史校验结论。`
+    if (!isOfflineDemoError(err)) {
+      capabilityValidationError.value = `能力校验记录加载失败：${errorMessage(err, '请稍后重试')}。已保持待校验状态，避免使用不可信的历史校验结论。`
+    }
     routeCapabilityRecord.value = null
     routeCapabilityDecision.value = 'open'
   }
@@ -402,10 +432,17 @@ onMounted(() => {
 .validation-main strong { display: block; color: #1f2937; font-size: 14px; margin-bottom: 6px; }
 .validation-main p { margin: 0; color: #4b5563; font-size: 12px; line-height: 1.5; }
 .validation-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.validation-guidance { margin-top: 10px; padding: 10px; border: 1px solid #dbeafe; border-radius: 6px; background: #eff6ff; }
+.validation-guidance strong { display: block; color: #1d4ed8; font-size: 12px; margin-bottom: 4px; }
+.validation-guidance p + p { margin-top: 4px; }
+.validation-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.validation-links a,
+.validation-help { color: #1d4ed8; font-size: 12px; font-weight: 700; text-decoration: none; }
 .validation-meta span, .validation-status, .validation-trace span { padding: 2px 6px; border-radius: 4px; background: #f6ffed; color: #389e0d; font-size: 12px; font-weight: 700; }
 .validation-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 168px; }
 .validation-actions button { width: 100%; min-height: 30px; padding: 0 10px; border: 1px solid #52c41a; border-radius: 4px; background: #fff; color: #237804; cursor: pointer; font-size: 12px; font-weight: 700; }
 .validation-actions button:disabled { border-color: #d9d9d9; color: #bfbfbf; cursor: not-allowed; }
+.validation-help { display: inline-flex; align-items: center; min-height: 24px; }
 .validation-status.open { background: #f5f5f5; color: #667085; }
 .validation-status.validated { background: #fff7e6; color: #ad6800; }
 .validation-status.released { background: #dcfce7; color: #15803d; }

@@ -33,7 +33,7 @@ describe('QualityReworkImpactPanel', () => {
       },
     })
 
-    expect(wrapper.get('button').attributes('aria-label')).toBe('生成 WO-003 INS-003 返工排产事件')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('生成返工排产事件：WO-003 INS-003')
   })
 
   it('announces rework sync evidence as a polite status update', () => {

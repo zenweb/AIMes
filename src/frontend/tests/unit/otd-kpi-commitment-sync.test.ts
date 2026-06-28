@@ -82,12 +82,61 @@ describe('otd kpi commitment sync', () => {
     expect(httpGet).toHaveBeenCalledWith('/scheduling/otd-kpi-commitments', { params: { take: 8 } })
   })
 
+  it('ignores incomplete backend commitment packages so OTD lift and owner actions stay auditable', async () => {
+    const localRecord = writeCommitment()
+    httpGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'otd-kpi-commitment-customer-huadong',
+          sourceKpiId: 'customer-huadong',
+          traceId: 'TRACE-KPI-COMMITMENT-PARTIAL',
+        },
+      ],
+    })
+
+    await expect(readOtdKpiCommitmentPackagesBackendFirst()).resolves.toEqual([localRecord])
+  })
+
+  it('fails loud when OTD KPI commitment backend returns a non-array payload', async () => {
+    httpGet.mockResolvedValueOnce({ data: { items: [] } })
+
+    await expect(readOtdKpiCommitmentPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('后端返回非数组 OTD KPI 承诺审计载荷')
+  })
+
+  it('fails loud for OTD KPI commitment refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('otd kpi commitment backend unavailable'))
+
+    await expect(readOtdKpiCommitmentPackagesBackendFirst({ failLoud: true }))
+      .rejects.toThrow('otd kpi commitment backend unavailable')
+  })
+
   it('falls back to the latest local commitment when backend latest is empty', async () => {
     const localRecord = writeCommitment()
     httpGet.mockResolvedValueOnce({ data: null })
 
     await expect(readLatestOtdKpiCommitmentPackageBackendFirst()).resolves.toEqual(localRecord)
     expect(httpGet).toHaveBeenCalledWith('/scheduling/otd-kpi-commitments/latest')
+  })
+
+  it('ignores incomplete backend latest commitment so customer promise evidence stays complete', async () => {
+    const localRecord = writeCommitment()
+    httpGet.mockResolvedValueOnce({
+      data: {
+        id: 'otd-kpi-commitment-customer-huadong',
+        sourceKpiId: 'customer-huadong',
+        traceId: 'TRACE-KPI-COMMITMENT-PARTIAL',
+      },
+    })
+
+    await expect(readLatestOtdKpiCommitmentPackageBackendFirst()).resolves.toEqual(localRecord)
+  })
+
+  it('fails loud for latest OTD KPI commitment refresh when requested', async () => {
+    httpGet.mockRejectedValueOnce(new Error('latest otd kpi commitment backend unavailable'))
+
+    await expect(readLatestOtdKpiCommitmentPackageBackendFirst({ failLoud: true }))
+      .rejects.toThrow('latest otd kpi commitment backend unavailable')
   })
 
   it('caps local commitment packages at 8 records', () => {

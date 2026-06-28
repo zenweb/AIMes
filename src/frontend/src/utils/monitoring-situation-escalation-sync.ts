@@ -107,11 +107,28 @@ export function readMonitoringSituationEscalations(): MonitoringSituationEscalat
   return readRawEscalations()
 }
 
+function mergeMonitoringSituationEscalations(
+  remoteRecords: MonitoringSituationEscalation[],
+  localRecords: MonitoringSituationEscalation[],
+): MonitoringSituationEscalation[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<MonitoringSituationEscalation[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_ESCALATIONS)
+}
+
 export async function readMonitoringSituationEscalationsBackendFirst(options?: { failLoud?: boolean }): Promise<MonitoringSituationEscalation[]> {
   try {
     const { queryMonitoringSituationEscalations } = await import('../api/riskEvidence')
     const records = await queryMonitoringSituationEscalations(MAX_ESCALATIONS, options)
-    return records.length > 0 ? records : readMonitoringSituationEscalations()
+    return mergeMonitoringSituationEscalations(
+      records.filter(isMonitoringSituationEscalation),
+      readMonitoringSituationEscalations(),
+    )
   } catch (error) {
     if (options?.failLoud) throw error
     return readMonitoringSituationEscalations()

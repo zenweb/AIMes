@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { addToast } from '../stores/notifications'
 import { getLocalAccessToken } from '../utils/auth-token'
-import { createOfflineDemoApiError, isOfflineDemoError, isOfflineDemoMode } from '../utils/offline-demo-mode'
+import { createOfflineDemoApiError, isOfflineDemoError, shouldSkipBackendForOfflineDemo } from '../utils/offline-demo-mode'
 
 const TOKEN_KEY = 'aimes_token'
 const REFRESH_TOKEN_KEY = 'aimes_refresh_token'
@@ -13,13 +13,17 @@ const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+export interface AimesRequestConfig<D = unknown> extends AxiosRequestConfig<D> {
+  suppressErrorToast?: boolean
+}
+
 // 请求拦截器：自动附加 Authorization header
 http.interceptors.request.use((config) => {
-  if (isOfflineDemoMode()) {
+  const token = getLocalAccessToken()
+  if (shouldSkipBackendForOfflineDemo(token)) {
     throw createOfflineDemoApiError(config)
   }
 
-  const token = getLocalAccessToken()
   if (token) {
     config.headers = config.headers ?? {}
     config.headers.Authorization = `Bearer ${token}`
@@ -78,12 +82,15 @@ function getOrStartRefresh(): Promise<string> {
 
 interface RetriableConfig extends InternalAxiosRequestConfig {
   _retry?: boolean
+  suppressErrorToast?: boolean
 }
 
 function isHtmlFallbackResponse(data: unknown, contentType: unknown): boolean {
   const contentTypeText = typeof contentType === 'string' ? contentType.toLowerCase() : ''
+  const responseText = typeof data === 'string' ? data.trimStart().toLowerCase() : ''
   return contentTypeText.includes('text/html')
-    || (typeof data === 'string' && data.trimStart().toLowerCase().startsWith('<!doctype html'))
+    || responseText.startsWith('<!doctype html')
+    || responseText.startsWith('<html')
 }
 
 // 响应拦截器：401 → /auth/refresh → retry；其他错误 → toast
@@ -135,7 +142,9 @@ http.interceptors.response.use(
       error.message ||
       '请求失败'
 
-    addToast('error', '请求错误', msg)
+    if (!config?.suppressErrorToast) {
+      addToast('error', '请求错误', msg)
+    }
     return Promise.reject(error)
   },
 )

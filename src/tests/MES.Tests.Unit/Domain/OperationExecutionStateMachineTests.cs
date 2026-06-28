@@ -1,5 +1,6 @@
 using FluentAssertions;
 using MES.Domain.Entities.Production;
+using MES.Domain.Exceptions;
 using Xunit;
 
 namespace MES.Tests.Unit.Domain;
@@ -38,7 +39,7 @@ public class OperationExecutionStateMachineTests
         e.Start();
 
         var act = () => e.Start();
-        act.Should().Throw<InvalidOperationException>()
+        act.Should().Throw<DomainRuleViolationException>()
            .WithMessage("Only pending or paused operations can be started.");
     }
 
@@ -51,7 +52,7 @@ public class OperationExecutionStateMachineTests
 
         var act = () => e.Start();
         // WHY: 已完成的 OP 被重启 → 后续 Complete 会 throw 阻止 CompletedQuantity 重复累加
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -70,7 +71,7 @@ public class OperationExecutionStateMachineTests
     {
         var e = NewPending();
         var act = () => e.Pause("any");
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -102,7 +103,7 @@ public class OperationExecutionStateMachineTests
     {
         var e = NewPending();
         var act = () => e.Complete(10);
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public class OperationExecutionStateMachineTests
 
         var act = () => e.ReportException("late failure");
         // WHY: 已完成不能反向标记失败 — 否则审计链断裂、报表数据腐化
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]

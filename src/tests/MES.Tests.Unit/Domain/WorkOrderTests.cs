@@ -1,6 +1,7 @@
 using FluentAssertions;
 using MES.Domain.Entities.Production;
 using MES.Domain.Enums;
+using MES.Domain.Exceptions;
 using Xunit;
 
 namespace MES.Tests.Unit.Domain;
@@ -119,7 +120,7 @@ public class WorkOrderTests
 
         var act = () => wo.Start();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -131,7 +132,7 @@ public class WorkOrderTests
 
         var act = () => wo.Start();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -154,7 +155,7 @@ public class WorkOrderTests
 
         var act = () => wo.Complete(100);
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -176,7 +177,7 @@ public class WorkOrderTests
 
         var act = () => wo.Cancel();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -187,7 +188,7 @@ public class WorkOrderTests
 
         var act = () => wo.Cancel();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -208,7 +209,7 @@ public class WorkOrderTests
 
         var act = () => wo.Pause();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -241,7 +242,7 @@ public class WorkOrderTests
 
         var act = () => wo.Hold();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -275,7 +276,7 @@ public class WorkOrderTests
 
         var act = () => wo.Resume();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -312,7 +313,7 @@ public class WorkOrderTests
 
         var act = () => wo.AddCompletedQuantity(10);
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]
@@ -363,7 +364,7 @@ public class WorkOrderTests
 
         var act = () => wo.TransitionTo((WorkOrderStatus)99);
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<DomainRuleViolationException>();
     }
 
     [Fact]

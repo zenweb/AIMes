@@ -1,0 +1,29 @@
+diff --git a/src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue b/src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue
+index a0e8f24..e906c80 100644
+--- a/src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue
++++ b/src/frontend/src/components/schedule/ScheduleAgentWorkbenchPanel.vue
+@@ -103,0 +104 @@ const props = defineProps<{
++  formalScheduleWriteback: 'pending' | 'saved'
+@@ -218,2 +219,2 @@ const executionSteps = computed(() => [
+-    detail: props.latestFeedback ? '排产反馈已写入本地复盘记录' : '采纳后回写生产执行状态',
+-    state: props.latestFeedback ? 'done' : 'pending',
++    detail: executionWritebackDetail.value,
++    state: props.latestFeedback ? (requiresFormalScheduleSave.value ? 'current' : 'done') : 'pending',
+@@ -227,0 +229,17 @@ const executionSteps = computed(() => [
++const requiresFormalScheduleSave = computed(() =>
++  props.latestFeedback?.decision === 'accepted'
++  && props.latestFeedback.reasonCategory.endsWith('_event_agent')
++  && props.formalScheduleWriteback !== 'saved'
++)
++
++const executionWritebackDetail = computed(() => {
++  if (!props.latestFeedback) return '采纳后回写生产执行状态'
++  if (props.formalScheduleWriteback === 'saved') {
++    return '排产反馈已写入本地复盘记录；正式排产计划已更新'
++  }
++  if (requiresFormalScheduleSave.value) {
++    return '排产反馈已写入本地复盘记录；正式计划待优化或保存'
++  }
++  return '排产反馈已写入本地复盘记录'
++})
++

@@ -1,0 +1,33 @@
+# 2026-06-22 Todo: Current execution status next actions
+
+- Review the current staged multi-slice bundle with `git diff --cached`, or split it before commit.
+- Do not broad-stage `MM` files; only add intentional hunks or generated status docs.
+- If continuing implementation, use a clean temporary worktree or index-only workflow and keep the new slice separate from the current mixed staged bundle.
+- Re-run focused tests after any split: `schedule-board`, `schedule-agent-workbench-panel`, employee/auth/router/offline-demo tests as applicable.
+- Current staged frontend focused validation command set now includes targeted ESLint, 8-file unit run / 150 tests, focused scheduling E2E / 4 tests, and employee recovery-link E2E / 1 test. Re-run the applicable subset after any staged split or source edit.
+- Frontend full unit baseline is currently green: `npm run test:unit` passed 118 files and 1253 tests. Re-run it after broad frontend changes or before packaging a larger frontend bundle.
+- Current backend baseline command set now includes `MES.Tests.Unit` / 452 tests, `MES.ArchitectureTests` / 129 tests, and `MES.Tests.Integration` / 216 tests. Re-run the applicable project after backend slice edits.
+- Backend baseline now also includes `MES.Tests.Evaluation` / 3 tests and solution Debug build / 0 warnings / 0 errors. Re-run solution build before packaging backend-heavy slices.
+- Re-run `git diff --cached --check` and `git diff --check` after any new source/doc edits; both currently pass, with only LF-to-CRLF normalization warnings on the full worktree check.
+- If employee page still shows offline demo skips in a user browser, clear stale state with a live URL (`/scheduling/employee?offlineDemo=0`) or remove `aimes_offline_demo`/demo tokens from localStorage before rechecking.
+- Product hardening follow-up: consider a visible "switch to live backend" recovery affordance on offline-demo fallback screens so users do not need to know the `offlineDemo=0` query flag.
+- Employee recovery-link follow-up is now implemented for the employee slice; keep the staged E2E hunk separate from broader unstaged `employee.spec.ts` personnel capability candidates.
+- If more contextual links are added, verify they preserve the `/scheduling` app entry and do not use root-relative paths by accident.
+- Admin contextual-link follow-up is closed for the top guidance links: `/scheduling/audit-logs` and `/scheduling/knowledge/documents` are covered by the Admin unit test. Continue using this same base-path check for any future Admin links.
+- Admin real-browser closure is currently focused-green: Admin unit passes 32 tests and the latest full Admin E2E closure passed 33 Chromium tests. Re-run full Admin E2E after any further Admin route/auth edit.
+- Audit real-browser closure is currently focused-green: Audit unit coverage passes 66 focused tests and full `tests/e2e/audit.spec.ts` passes 36 Chromium tests.
+- Anomaly real-browser closure is currently focused-green: full `tests/e2e/anomaly.spec.ts` passes 9 Chromium tests.
+- Barcode real-browser closure is currently focused-green: Barcode unit coverage passes 10 tests and full `tests/e2e/barcode.spec.ts` passes 2 Chromium tests.
+- Chat real-browser closure is currently focused-green: full `tests/e2e/chat.spec.ts` passes 37 Chromium tests after empty-state LLM status mock hardening.
+- Dashboard real-browser closure is currently focused-green: full `tests/e2e/dashboard.spec.ts` passes 13 Chromium tests after default auth/API mock hardening and OTD evidence readback stabilization.
+- Demo asset capture closure is currently focused-green: full `tests/e2e/demo-asset-capture.spec.ts` passes 5 Chromium tests after explicit offline-demo entry and landmark waits.
+- Engineering data real-browser closure is currently focused-green: full `tests/e2e/engineering-data.spec.ts` passes 16 Chromium tests after auth/API mock stabilization and Report fallback readback hardening.
+- Full frontend E2E remains unproven: the latest `npm run test:e2e` timed out after 10 minutes before a full-suite summary. Next retry should continue from the next artifact/red cluster after Dashboard/Demo asset capture/Engineering data rather than reworking Admin/Audit/Anomaly/Barcode/Chat/Dashboard/Demo asset capture/Engineering data again unless new evidence regresses them.
+- If full E2E times out again, stop residual test processes by command-line scope, then inspect `test-results` for the newest failing spec before making code changes.
+- When reviewing the Schedule slice, include the current-worktree fixes for `scheduleRoutePath(...)` and `formatScheduleSaveDate(...)`; both are now covered by focused unit/E2E evidence.
+- Include the current-worktree Schedule post-closure hardening hunks in the same Schedule slice review: batch objective append, outsourcing release trace retention, and Assistant recovery secondary refresh fail-loud.
+- Treat remaining `feedbackSyncNote.value = ...` assignments as startup restore-only unless a future audit proves otherwise; post-decision paths should use `appendFeedbackSyncNote(...)`.
+- Continue auditing staged Assistant handoff paths for secondary refresh calls that can still interrupt an already persisted local closure.
+- Continue auditing post-adoption paths where a specific business confirmation can be overwritten or hidden by generic feedback sync copy.
+- After staged bundle split or review, recheck other modules with shared status-note patterns for overwrite-vs-append regressions.
+- Keep strict v1.0.0 status open until release requirements are proven by their own evidence.

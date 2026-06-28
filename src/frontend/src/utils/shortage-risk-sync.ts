@@ -138,11 +138,13 @@ export function readShortageRiskResolution(): ShortageRiskResolution | null {
   }
 }
 
-export async function readShortageRiskResolutionBackendFirst(): Promise<ShortageRiskResolution | null> {
+export async function readShortageRiskResolutionBackendFirst(options?: { failLoud?: boolean }): Promise<ShortageRiskResolution | null> {
   try {
     const { getLatestShortageRiskResolution } = await import('../api/shortageEvidence')
-    return await getLatestShortageRiskResolution() ?? readShortageRiskResolution()
-  } catch {
+    const latest = await getLatestShortageRiskResolution(options)
+    return isShortageRiskResolution(latest) ? latest : readShortageRiskResolution()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readShortageRiskResolution()
   }
 }
@@ -173,11 +175,13 @@ export function readShortageKittingEvent(): ShortageKittingEvent | null {
   }
 }
 
-export async function readShortageKittingEventBackendFirst(): Promise<ShortageKittingEvent | null> {
+export async function readShortageKittingEventBackendFirst(options?: { failLoud?: boolean }): Promise<ShortageKittingEvent | null> {
   try {
     const { getLatestShortageKitting } = await import('../api/shortageEvidence')
-    return await getLatestShortageKitting() ?? readShortageKittingEvent()
-  } catch {
+    const latest = await getLatestShortageKitting(options)
+    return isShortageKittingEvent(latest) ? latest : readShortageKittingEvent()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readShortageKittingEvent()
   }
 }
@@ -365,11 +369,13 @@ function isSupplierNetworkDecision(item: unknown): item is SupplierNetworkDecisi
     && isNonEmptyString(candidate.createdAt)
 }
 
-export async function readBomKittingPackageBackendFirst(): Promise<BomKittingPackage | null> {
+export async function readBomKittingPackageBackendFirst(options?: { failLoud?: boolean }): Promise<BomKittingPackage | null> {
   try {
     const { getLatestBomKittingPackage } = await import('../api/shortageEvidence')
-    return await getLatestBomKittingPackage() ?? readBomKittingPackage()
-  } catch {
+    const latest = await getLatestBomKittingPackage(options)
+    return isBomKittingPackage(latest) ? latest : readBomKittingPackage()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readBomKittingPackage()
   }
 }
@@ -400,11 +406,13 @@ export function readSupplyRiskEscalation(): SupplyRiskEscalation | null {
   }
 }
 
-export async function readSupplyRiskEscalationBackendFirst(): Promise<SupplyRiskEscalation | null> {
+export async function readSupplyRiskEscalationBackendFirst(options?: { failLoud?: boolean }): Promise<SupplyRiskEscalation | null> {
   try {
     const { getLatestSupplyRiskEscalation } = await import('../api/shortageEvidence')
-    return await getLatestSupplyRiskEscalation() ?? readSupplyRiskEscalation()
-  } catch {
+    const latest = await getLatestSupplyRiskEscalation(options)
+    return isSupplyRiskEscalation(latest) ? latest : readSupplyRiskEscalation()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readSupplyRiskEscalation()
   }
 }
@@ -435,11 +443,13 @@ export function readSupplierNetworkDecision(): SupplierNetworkDecision | null {
   }
 }
 
-export async function readSupplierNetworkDecisionBackendFirst(): Promise<SupplierNetworkDecision | null> {
+export async function readSupplierNetworkDecisionBackendFirst(options?: { failLoud?: boolean }): Promise<SupplierNetworkDecision | null> {
   try {
     const { getLatestSupplierNetworkDecision } = await import('../api/shortageEvidence')
-    return await getLatestSupplierNetworkDecision() ?? readSupplierNetworkDecision()
-  } catch {
+    const latest = await getLatestSupplierNetworkDecision(options)
+    return isSupplierNetworkDecision(latest) ? latest : readSupplierNetworkDecision()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readSupplierNetworkDecision()
   }
 }

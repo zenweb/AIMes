@@ -31,6 +31,22 @@ public sealed class CorsPolicyTests
     }
 
     [Fact]
+    public async Task AllowAllPolicy_ShouldSupportStandalonePreviewSignalRCredentials()
+    {
+        using var provider = BuildServiceProvider(new Dictionary<string, string?>
+        {
+            ["AllowedOrigins:0"] = "https://mes.example.com"
+        });
+        var corsPolicyProvider = provider.GetRequiredService<ICorsPolicyProvider>();
+
+        var policy = await corsPolicyProvider.GetPolicyAsync(new DefaultHttpContext(), "AllowAll");
+
+        policy.Should().NotBeNull();
+        policy!.SupportsCredentials.Should().BeTrue("the 4173 standalone preview connects SignalR directly to the 5003 API with access tokens");
+        policy.IsOriginAllowed("http://127.0.0.1:4173").Should().BeTrue();
+    }
+
+    [Fact]
     public void ProductionPolicy_WithoutAllowedOrigins_ShouldRejectStartup()
     {
         using var provider = BuildServiceProvider(new Dictionary<string, string?>());

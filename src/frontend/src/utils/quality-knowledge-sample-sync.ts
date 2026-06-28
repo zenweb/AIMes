@@ -1,6 +1,7 @@
 import { upsertOtdEvidenceChainRecord } from './otd-evidence-chain-sync'
 import { readQualityExperimentExpansionGatePolicy, type QualityExperimentExpansionGatePolicy } from './agent-config-approval-sync'
 import { queryQualityKnowledgeEvidence, upsertQualityKnowledgeEvidence } from '../api/qualityKnowledgeEvidence'
+import { isOfflineDemoError } from './offline-demo-mode'
 
 const STORAGE_KEY = 'aimes_quality_knowledge_samples'
 const REUSE_DRAFT_STORAGE_KEY = 'aimes_quality_knowledge_reuse_drafts'
@@ -453,6 +454,7 @@ async function readQualityKnowledgeRecordsBackendFirst<T>(
   } catch (error: unknown) {
     const localRecords = readLocalRecords()
     if (localRecords.length > 0) return localRecords
+    if (isOfflineDemoError(error)) return []
     throw error
   }
 }
@@ -813,17 +815,10 @@ export function selectActiveQualityKnowledgeRecommendationVersion(
   grayReleaseDecisions: QualityKnowledgeGrayReleaseDecisionRecord[] = readQualityKnowledgeGrayReleaseDecisionRecords()
 ) {
   const rolledBackVersions = new Set(
-    grayReleaseDecisions
-      .filter((decision) => {
-        if (
-          decision.decision !== 'rolled_back'
-          || decision.approvalStatus === 'pending'
-          || decision.targetWorkOrderId !== targetWorkOrderId
-          || decision.operationCode !== operationCode
-        ) {
-          return false
-        }
-        const version = versions.find(item => item.trainingSetVersion === decision.trainingSetVersion)
+    versions
+      .filter((version) => {
+        const decision = latestQualityGrayReleaseDecisionForVersion(version, grayReleaseDecisions)
+        if (!decision) return false
         if (
           decision.reviewIssueStatus === 'prevalidation_reopened'
           && version?.status === 'gray_published'
@@ -831,9 +826,12 @@ export function selectActiveQualityKnowledgeRecommendationVersion(
         ) {
           return false
         }
-        return true
+        return decision.decision === 'rolled_back'
+          && decision.approvalStatus !== 'pending'
+          && decision.targetWorkOrderId === targetWorkOrderId
+          && decision.operationCode === operationCode
       })
-      .map(decision => decision.trainingSetVersion)
+      .map(version => version.trainingSetVersion)
   )
   const unapprovedShadowGrayVersions = new Set(
     versions
@@ -879,12 +877,14 @@ function latestQualityGrayReleaseDecisionForVersion(
 ) {
   if (!version) return undefined
   const releaseCycleLabel = qualityKnowledgeGrayReleaseCycleLabel(version)
-  return grayReleaseDecisions.find(decision =>
-    decision.trainingSetVersion === version.trainingSetVersion
-    && decision.targetWorkOrderId === version.targetWorkOrderId
-    && decision.operationCode === version.operationCode
-    && decision.releaseCycleLabel === releaseCycleLabel
-  )
+  return grayReleaseDecisions
+    .filter(decision =>
+      decision.trainingSetVersion === version.trainingSetVersion
+      && decision.targetWorkOrderId === version.targetWorkOrderId
+      && decision.operationCode === version.operationCode
+      && decision.releaseCycleLabel === releaseCycleLabel
+    )
+    .sort((left, right) => new Date(right.decidedAt).getTime() - new Date(left.decidedAt).getTime())[0]
 }
 
 function qualityRecommendationVersionDecisionRank(
@@ -905,27 +905,23 @@ export function selectPrioritizedQualityKnowledgeRecommendationVersion(
   grayReleaseDecisions: QualityKnowledgeGrayReleaseDecisionRecord[] = readQualityKnowledgeGrayReleaseDecisionRecords()
 ) {
   const rolledBackVersions = new Set(
-    grayReleaseDecisions
-      .filter((decision) => {
-        if (
-          decision.decision !== 'rolled_back'
-          || decision.approvalStatus === 'pending'
-          || decision.targetWorkOrderId !== targetWorkOrderId
-          || decision.operationCode !== operationCode
-        ) {
-          return false
-        }
-        const version = versions.find(item => item.trainingSetVersion === decision.trainingSetVersion)
+    versions
+      .filter((version) => {
+        const decision = latestQualityGrayReleaseDecisionForVersion(version, grayReleaseDecisions)
+        if (!decision) return false
         if (
           decision.reviewIssueStatus === 'prevalidation_reopened'
-          && version?.status === 'gray_published'
+          && version.status === 'gray_published'
           && isQualityKnowledgeGrayRepublishEvidence(version)
         ) {
           return false
         }
-        return true
+        return decision.decision === 'rolled_back'
+          && decision.approvalStatus !== 'pending'
+          && decision.targetWorkOrderId === targetWorkOrderId
+          && decision.operationCode === operationCode
       })
-      .map(decision => decision.trainingSetVersion)
+      .map(version => version.trainingSetVersion)
   )
   const unapprovedShadowGrayVersions = new Set(
     versions
@@ -1341,16 +1337,21 @@ export function buildQualityKnowledgeReuseRanking(
     : closure?.effectScoreBefore ?? draft?.effectScore ?? 88
   const activeRetrainingVersion = selectPrioritizedQualityKnowledgeRecommendationVersion(retrainingVersions, 'WO-DEMO-1018', 'OP-20', grayReleaseDecisions)
   const activeGrayDecision = latestQualityGrayReleaseDecisionForVersion(activeRetrainingVersion, grayReleaseDecisions)
-  const latestGrayDecision = grayReleaseDecisions.find(record =>
+  const latestGrayDecision = grayReleaseDecisions
+    .filter(record =>
     record.targetWorkOrderId === 'WO-DEMO-1018'
     && record.operationCode === 'OP-20'
-  )
-  const excludedExperimentDecisions = grayReleaseDecisions.filter(record =>
-    record.decision === 'rolled_back'
-    && record.approvalStatus !== 'pending'
-    && record.targetWorkOrderId === 'WO-DEMO-1018'
-    && record.operationCode === 'OP-20'
-  )
+    )
+    .sort((left, right) => new Date(right.decidedAt).getTime() - new Date(left.decidedAt).getTime())[0]
+  const excludedExperimentDecisions = retrainingVersions
+    .map(version => latestQualityGrayReleaseDecisionForVersion(version, grayReleaseDecisions))
+    .filter((record): record is QualityKnowledgeGrayReleaseDecisionRecord =>
+      !!record
+      && record.decision === 'rolled_back'
+      && record.approvalStatus !== 'pending'
+      && record.targetWorkOrderId === 'WO-DEMO-1018'
+      && record.operationCode === 'OP-20'
+    )
   const feedbackForActiveRecommendation = recommendationFeedbackRecords.find(record =>
     record.decision === 'accepted'
     && record.trainingSetVersion === activeRetrainingVersion?.trainingSetVersion
@@ -2170,7 +2171,9 @@ export function buildQualityKnowledgeRecommendationExperimentComparisonRecords(
         && decision.operationCode === version.operationCode
         && decision.releaseCycleLabel === releaseCycleLabel
       )
-      const latestDecision = matchingDecisions[0]
+      const latestDecision = matchingDecisions.sort((left, right) =>
+        new Date(right.decidedAt).getTime() - new Date(left.decidedAt).getTime()
+      )[0]
       const gatePassLabel = qualityExperimentGatePassLabel(adoptionRate, recheckPassRateLabel, falseRecallLabel, gatePolicy)
       const statusClass: QualityKnowledgeRecommendationExperimentComparisonRecord['statusClass'] = latestDecision?.decision === 'rolled_back'
         ? 'guarded'

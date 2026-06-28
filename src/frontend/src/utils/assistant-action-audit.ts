@@ -92,6 +92,20 @@ export function readAssistantActionAudits(): AssistantActionAuditRecord[] {
   return readRawRecords().slice(0, MAX_RECORDS)
 }
 
+function mergeAssistantActionAudits(
+  remoteRecords: AssistantActionAuditRecord[],
+  localRecords: AssistantActionAuditRecord[],
+): AssistantActionAuditRecord[] {
+  const merged = [...remoteRecords, ...localRecords].reduce<AssistantActionAuditRecord[]>((acc, record) => {
+    if (acc.some(item => item.id === record.id)) return acc
+    acc.push(record)
+    return acc
+  }, [])
+  return merged
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_RECORDS)
+}
+
 export async function readAssistantActionAuditsBackendFirst(options?: { failLoud?: boolean }): Promise<AssistantActionAuditRecord[]> {
   try {
     const { queryAssistantActionAudits } = await import('../api/assistantEvidence')
@@ -99,7 +113,7 @@ export async function readAssistantActionAuditsBackendFirst(options?: { failLoud
     if (!Array.isArray(records)) {
       throw new Error('后端返回非数组审计载荷')
     }
-    return records.length > 0 ? records : readAssistantActionAudits()
+    return mergeAssistantActionAudits(records.filter(isAssistantActionAuditRecord), readAssistantActionAudits())
   } catch (error: unknown) {
     if (options?.failLoud) throw error
     return readAssistantActionAudits()

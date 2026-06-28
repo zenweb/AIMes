@@ -19,8 +19,22 @@ public sealed class EndpointAuthorizationTests : IClassFixture<TestWebApplicatio
     }
 
     [Theory]
-    [InlineData("/api/v1/equipment")]
+    [InlineData("/api/v1/admin/users")]
+    [InlineData("/api/v1/anomaly")]
+    [InlineData("/api/v1/audit-logs")]
+    [InlineData("/api/v1/bom")]
     [InlineData("/api/v1/dashboard")]
+    [InlineData("/api/v1/employee")]
+    [InlineData("/api/v1/equipment")]
+    [InlineData("/api/v1/inventory")]
+    [InlineData("/api/v1/knowledge/chat-history/auth-boundary")]
+    [InlineData("/api/v1/purchase")]
+    [InlineData("/api/v1/quality/inspections")]
+    [InlineData("/api/v1/report/dashboard")]
+    [InlineData("/api/v1/risk/dashboard")]
+    [InlineData("/api/v1/routing")]
+    [InlineData("/api/v1/scan/AUTH-BOUNDARY")]
+    [InlineData("/api/v1/scheduling/current")]
     public async Task ApiV1EndpointsExceptAuth_ShouldRejectAnonymousRequests(string path)
     {
         using var client = _factory.CreateClient();

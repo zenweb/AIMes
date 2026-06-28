@@ -141,12 +141,17 @@ export function readOutsourcingCommitmentPackages(): OutsourcingCommitmentPackag
   return readRawPackages()
 }
 
-export async function readOutsourcingCommitmentPackagesBackendFirst(): Promise<OutsourcingCommitmentPackage[]> {
+export async function readOutsourcingCommitmentPackagesBackendFirst(options?: { failLoud?: boolean }): Promise<OutsourcingCommitmentPackage[]> {
   try {
     const { queryOutsourcingCommitments } = await import('../api/outsourcingEvidence')
-    const records = await queryOutsourcingCommitments(MAX_RECORDS)
-    return records.length > 0 ? records : readOutsourcingCommitmentPackages()
-  } catch {
+    const records = await queryOutsourcingCommitments(MAX_RECORDS, options)
+    if (!Array.isArray(records)) {
+      throw new Error('后端返回非数组外协承诺审计载荷')
+    }
+    const backendRecords = records.filter(isCommitmentPackage)
+    return backendRecords.length > 0 ? backendRecords : readOutsourcingCommitmentPackages()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readOutsourcingCommitmentPackages()
   }
 }
@@ -155,11 +160,13 @@ export function readLatestOutsourcingCommitmentPackage(): OutsourcingCommitmentP
   return readRawPackages()[0] ?? null
 }
 
-export async function readLatestOutsourcingCommitmentPackageBackendFirst(): Promise<OutsourcingCommitmentPackage | null> {
+export async function readLatestOutsourcingCommitmentPackageBackendFirst(options?: { failLoud?: boolean }): Promise<OutsourcingCommitmentPackage | null> {
   try {
     const { getLatestOutsourcingCommitment } = await import('../api/outsourcingEvidence')
-    return await getLatestOutsourcingCommitment() ?? readLatestOutsourcingCommitmentPackage()
-  } catch {
+    const record = await getLatestOutsourcingCommitment(options)
+    return isCommitmentPackage(record) ? record : readLatestOutsourcingCommitmentPackage()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readLatestOutsourcingCommitmentPackage()
   }
 }

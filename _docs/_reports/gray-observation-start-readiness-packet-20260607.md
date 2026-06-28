@@ -8,12 +8,14 @@
 
 ## Preconditions Before First Gray
 
-- Hosted CI: PASS at remote main `0e839720b32cb3fbbdc8befe8d14139b9e2ec0d2`.
-- PostgreSQL/staging: still FAIL because Docker Desktop Linux engine is unavailable.
+- Hosted CI: PASS at GitHub `V1` `d8bb6e484f86a6fbd6673317385caf34ba774ee2`; evidence `_docs/_reports/hosted-ci-20260611-v1-pass.md`.
+- PostgreSQL/staging: PASS; evidence `_docs/_reports/staging-rehearsal-20260611-docker-restored.md`.
 - Attack Chain A/B/C manual verification: still pending.
 - Security signoff: still `UNSIGNED`.
 
-The first gray release should not start until staging, Attack Chain manual verification, and security signoff are closed.
+The first gray release should not start until Attack Chain manual verification and security signoff are closed.
+
+Use `_docs/_reports/release-human-action-packet-20260611.md` as the current execution packet. It includes the post-signoff, post-gray-start, and final release gate audit commands.
 
 ## Required Start Evidence
 
@@ -37,7 +39,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation
   -ObservationStartedAt "<ISO-8601 observation start timestamp>" `
   -P0IncidentCount -1 `
   -P1IncidentCount -1 `
-  -Evidence "<dated gray release evidence>"
+  -Evidence "<dated gray release evidence>" `
+  -SecuritySignoffPath _docs/_review/20260607-security-signoff.md
 ```
 
 ## PASS Command Template
@@ -54,7 +57,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation
   -ObservationEndedAt "<ISO-8601 observation end timestamp>" `
   -P0IncidentCount 0 `
   -P1IncidentCount 0 `
-  -Evidence "<incident query / monitoring evidence proving P0=0 and P1=0>"
+  -Evidence "<incident query / monitoring evidence proving P0=0 and P1=0>" `
+  -SecuritySignoffPath _docs/_review/20260607-security-signoff.md
 ```
 
 ## Current Result

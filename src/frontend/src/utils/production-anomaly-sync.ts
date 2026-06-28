@@ -56,11 +56,13 @@ export function readProductionAnomalyEvent(): ProductionAnomalyEvent | null {
   }
 }
 
-export async function readProductionAnomalyEventBackendFirst(): Promise<ProductionAnomalyEvent | null> {
+export async function readProductionAnomalyEventBackendFirst(options?: { failLoud?: boolean }): Promise<ProductionAnomalyEvent | null> {
   try {
     const { getLatestProductionAnomalyEvent } = await import('../api/riskEvidence')
-    return await getLatestProductionAnomalyEvent() ?? readProductionAnomalyEvent()
-  } catch {
+    const record = await getLatestProductionAnomalyEvent(options)
+    return isProductionAnomalyEvent(record) ? record : readProductionAnomalyEvent()
+  } catch (error: unknown) {
+    if (options?.failLoud) throw error
     return readProductionAnomalyEvent()
   }
 }

@@ -8,7 +8,8 @@ param(
     [string]$ObservationEndedAt = "",
     [int]$P0IncidentCount = -1,
     [int]$P1IncidentCount = -1,
-    [string]$Evidence = ""
+    [string]$Evidence = "",
+    [string]$SecuritySignoffPath = "_docs/_review/20260607-security-signoff.md"
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,11 +32,70 @@ function Test-RealEvidence([string]$Value) {
 
     $trimmed = $Value.Trim()
     $tail = if ($trimmed.Contains(":")) { $trimmed.Substring($trimmed.LastIndexOf(":") + 1).Trim() } else { $trimmed }
-    $placeholders = @("TBD", "TODO", "PENDING", "待补", "待定")
+    $placeholders = @("TBD", "TODO", "PENDING", "UNSIGNED", "FAIL", "待补", "待定")
     return -not ($placeholders | Where-Object {
         [string]::Equals($trimmed, $_, [StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($tail, $_, [StringComparison]::OrdinalIgnoreCase)
     } | Select-Object -First 1)
+}
+
+function Read-TextOrEmpty([string]$Path) {
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    return Get-Content -Raw -Path $Path
+}
+
+function Test-AnchoredReportPass([string]$Text) {
+    $lines = $Text -split "`r?`n"
+    return ($lines | Where-Object {
+        $_ -match '^- Result: PASS\s*$' -or $_ -match '^Result: PASS\s*$'
+    } | Select-Object -First 1) -ne $null
+}
+
+function Get-AnchoredLineValues([string[]]$Lines, [string]$Label) {
+    $escapedLabel = [regex]::Escape($Label)
+    return @($Lines | ForEach-Object {
+        if ($_ -match "^- $escapedLabel\s*:\s*(.+?)\s*$" -or $_ -match "^$escapedLabel\s*:\s*(.+?)\s*$") {
+            $matches[1]
+        }
+    })
+}
+
+function Test-SecuritySignoffSigned([string]$Text) {
+    $lines = $Text -split "`r?`n"
+    $hasSignedStatus = (Get-AnchoredLineValues $lines "Status" | Where-Object {
+        [string]::Equals($_, "SIGNED", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+    $hasSignedDecision = (Get-AnchoredLineValues $lines "Decision" | Where-Object {
+        [string]::Equals($_, "SIGNED", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+    $hasSigner = (Get-AnchoredLineValues $lines "Signer" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $signedAt = Get-AnchoredLineValues $lines "SignedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+    $hasValidSignedAt = $false
+
+    if (-not [string]::IsNullOrWhiteSpace($signedAt)) {
+        try {
+            $signedAtTimestamp = [DateTimeOffset]::Parse($signedAt)
+            $hasValidSignedAt = $signedAtTimestamp -le [DateTimeOffset]::UtcNow
+        } catch {
+            $hasValidSignedAt = $false
+        }
+    }
+
+    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $hasAttackChainPass = (Get-AnchoredLineValues $lines "Attack Chain A/B/C" | Where-Object {
+        [string]::Equals($_, "PASS", [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1) -ne $null
+
+    return $hasSignedStatus `
+        -and $hasSignedDecision `
+        -and $hasSigner `
+        -and $hasValidSignedAt `
+        -and $hasEvidence `
+        -and $hasAttackChainPass `
+        -and (Test-AnchoredReportPass $Text)
 }
 
 $reportDirectory = Split-Path -Parent $ReportPath
@@ -44,6 +104,7 @@ if (-not [string]::IsNullOrWhiteSpace($reportDirectory)) {
 }
 
 $violations = New-Object System.Collections.Generic.List[string]
+$securitySignoffText = Read-TextOrEmpty $SecuritySignoffPath
 
 if ($Status -eq "NOT_STARTED") {
     $violations.Add("First gray release has not started.")
@@ -53,12 +114,26 @@ if ($Status -eq "OBSERVING") {
     $violations.Add("Gray observation is still running.")
 }
 
+if ($Status -ne "NOT_STARTED" -and -not (Test-SecuritySignoffSigned $securitySignoffText)) {
+    $violations.Add("Security signoff must be SIGNED and PASS with signer, SignedAt, evidence, and Attack Chain PASS before gray release starts.")
+}
+
 if ($Status -ne "NOT_STARTED" -and -not (Test-RealEvidence $GrayReleaseId)) {
     $violations.Add("GrayReleaseId is required after gray release starts. GrayReleaseId cannot be a placeholder.")
 }
 
 if ($Status -ne "NOT_STARTED" -and -not (Test-HasValue $GrayStartedAt)) {
     $violations.Add("GrayStartedAt is required after gray release starts.")
+}
+
+if ($Status -eq "OBSERVING") {
+    if (-not (Test-HasValue $ObservationStartedAt)) {
+        $violations.Add("ObservationStartedAt is required while gray observation is running.")
+    }
+
+    if (-not (Test-RealEvidence $Evidence)) {
+        $violations.Add("OBSERVING requires gray start evidence. Evidence cannot be a placeholder.")
+    }
 }
 
 if ($Status -eq "PASS") {
@@ -112,6 +187,7 @@ Add-Line "- ObservationEndedAt: $ObservationEndedAt"
 Add-Line "- Required observation window: 14 calendar days"
 Add-Line "- P0/P1 incident counts: P0=$P0IncidentCount; P1=$P1IncidentCount"
 Add-Line "- Evidence: $Evidence"
+Add-Line "- SecuritySignoffPath: $SecuritySignoffPath"
 Add-Line ""
 Add-Line "## Gate"
 Add-Line ""
