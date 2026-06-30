@@ -8,6 +8,7 @@
 - 将 Docker Compose API 暴露到宿主 `5002`，用于 live staging 验证。
 - 对齐 `ReportBoard` / `ScannerBoard` unit guard：报表 fail-loud 断言覆盖 API 来源提示，扫码跳转测试 mock 新增 `isOfflineDemoMode`。
 - 修复 GitHub hosted CI backend format gate：去掉 `ExpandAgentEvidenceSummaryText` migration UTF-8 BOM，并调整 `TestDataSeedFilter` using 顺序。
+- 同步 Employee live-backend “latest evidence” 架构守护：脚本默认报告与 Sprint 0 baseline index 从 `20260622/5003` 更新到 `20260630/5002`。
 
 ## Verified
 
@@ -21,6 +22,7 @@
 - Frontend lint：passed。
 - Frontend unit：118 files / 1255 tests passed。
 - Backend format gate：`dotnet format src/backend/AIMes.slnx --verify-no-changes --no-restore` passed。
+- Architecture guard focused rerun：`Sprint0CurrentBaselineIndex_ShouldCiteEmployeeLiveBackendRecoveryEvidence` passed。
 - Release gate audit：exit code 0，`PASS_WITH_DEFERRED_GRAY_OBSERVATION`，产出 `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md`。
 
 ## Notes

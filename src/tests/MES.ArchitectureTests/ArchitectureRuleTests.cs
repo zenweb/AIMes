@@ -4014,7 +4014,7 @@ public sealed class ArchitectureRuleTests
             var source = File.ReadAllText(scriptPath);
             foreach (var requiredToken in new[]
             {
-                "employee-live-backend-evidence-20260622-current.md",
+                "employee-live-backend-evidence-20260630-5002-current.md",
                 "Backend health preflight",
                 "tests/unit/offline-demo-mode.test.ts tests/unit/employee-board.test.ts tests/unit/router-auth.test.ts tests/unit/nuxt-auth-middleware.test.ts",
                 "tests/e2e/employee.spec.ts -g",
@@ -4096,9 +4096,9 @@ public sealed class ArchitectureRuleTests
             var source = File.ReadAllText(path);
             foreach (var requiredToken in new[]
             {
-                "employee-live-backend-evidence-20260622-current.md",
+                "employee-live-backend-evidence-20260630-5002-current.md",
                 "employee-live-backend",
-                "5003",
+                "5002",
                 "/api/v1/employee"
             })
             {

@@ -13,6 +13,7 @@
 - Frontend lint：passed。
 - Frontend unit：118 files / 1255 tests passed。
 - Backend format gate：passed。
+- Architecture focused guard：passed。
 - Release gate audit：`PASS_WITH_DEFERRED_GRAY_OBSERVATION`，报告已写入 `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md`。
 - Repo-local CC plan bridge 已更新到 2026-06-30 当前证据。
 - Report/Scanner unit guard 已对齐本轮 fail-loud 来源提示与离线跳转行为。
@@ -21,4 +22,4 @@
 
 - 将 `5002` live backend 运行方式纳入交接说明；证据脚本已避免全局 `VITE_API_TARGET` 污染模式。
 - 发布轨道继续单独跟踪首次灰度与观察窗口，不和前端 E2E 绿色状态混在一起。
-- 当前 GitHub Actions 需要重新跑到全绿后，再补 hosted CI PASS 证据与 release-gate audit。
+- 当前 GitHub Actions 需要第三轮重新跑到全绿后，再补 hosted CI PASS 证据与 release-gate audit。

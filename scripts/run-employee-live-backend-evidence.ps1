@@ -1,6 +1,6 @@
 param(
-    [string]$ReportPath = "_docs/_reports/employee-live-backend-evidence-20260622-current.md",
-    [string]$ApiBaseUrl = "http://127.0.0.1:5003",
+    [string]$ReportPath = "_docs/_reports/employee-live-backend-evidence-20260630-5002-current.md",
+    [string]$ApiBaseUrl = "http://127.0.0.1:5002",
     [string]$BackendHealthUrl = ""
 )
 

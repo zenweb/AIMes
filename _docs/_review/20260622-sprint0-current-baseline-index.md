@@ -19,7 +19,7 @@ Current baseline evidence:
 | Frontend Unit Coverage | `_docs/_review/20260620-frontend-unit-coverage-full-baseline.md` | PASS: 113 files / 1211 tests passed; line coverage 92.99% |
 | Frontend E2E Recovery | `_docs/_review/20260611-sprint0-frontend-e2e-evidence-recovery.md` | PASS evidence for recovered real-browser packs |
 | Frontend E2E Employee | `_docs/_reports/frontend-e2e-employee-20260621-pass.md` | PASS focused employee browser pack |
-| Frontend E2E Employee Live Backend Recovery | `_docs/_reports/employee-live-backend-evidence-20260622-current.md` | PASS: backend health preflight on port 5003, 62 focused unit tests, and Chromium `[employee-live-backend]` recovery to authenticated `/api/v1/employee` read; rerun after Employee recovery base-path hardening |
+| Frontend E2E Employee Live Backend Recovery | `_docs/_reports/employee-live-backend-evidence-20260630-5002-current.md` | PASS: backend health preflight on port 5002, 64 focused unit tests, and Chromium `[employee-live-backend]` recovery to authenticated `/api/v1/employee` read; rerun after Employee recovery base-path hardening and live API route isolation |
 | Frontend E2E Modules Offline Demo | `_docs/_reports/frontend-e2e-modules-offline-demo-20260621-pass.md` | PASS focused modules offline-demo browser pack |
 | Frontend E2E Production | `_docs/_reports/frontend-e2e-production-20260621-pass.md` | PASS focused production browser pack |
 | Hosted CI / V1 head | `_docs/_reports/hosted-ci-20260621-v1-head-pass.md` | PASS on committed V1 head `47d65547557a8a6cf035327ae94455a1a1285daf` |
@@ -32,7 +32,7 @@ Current local candidate overlay:
 Known limitations:
 - This is an index over existing evidence, not a fresh full rerun on 2026-06-22.
 - Full frontend E2E is represented by focused/recovered packs, not by a single all-spec green command in this index.
-- Employee live-backend recovery evidence depends on backend port `5003` and is a local browser smoke, not hosted CI or staging proof.
+- Employee live-backend recovery evidence depends on backend port `5002` for the current local live API and is a local browser smoke, not hosted CI or staging proof.
 - The dirty local worktree contains staged and unstaged candidate work; hosted CI evidence covers committed head only.
 - Strict v1.0.0 release PASS remains blocked by the original gray observation requirement unless formally re-scoped.
 
