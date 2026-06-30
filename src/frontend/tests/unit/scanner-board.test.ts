@@ -13,6 +13,7 @@ const writeBarcodeScanEvidenceRecord = vi.hoisted(() => vi.fn())
 const isOfflineDemoError = vi.hoisted(() =>
   vi.fn((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError')
 )
+const isOfflineDemoMode = vi.hoisted(() => vi.fn(() => false))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush }),
@@ -43,6 +44,7 @@ vi.mock('../../src/utils/barcode-scan-evidence-sync', () => ({
 
 vi.mock('../../src/utils/offline-demo-mode', () => ({
   isOfflineDemoError,
+  isOfflineDemoMode,
 }))
 
 vi.mock('../../src/utils/local-user', () => ({
@@ -62,6 +64,7 @@ describe('ScannerBoard', () => {
     readBarcodeScanEvidenceRecords.mockClear()
     readBarcodeScanEvidenceRecordsBackendFirst.mockClear()
     isOfflineDemoError.mockImplementation((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError')
+    isOfflineDemoMode.mockReturnValue(false)
     createBarcodeScanEvidenceRecord.mockReturnValue({
       id: 'barcode-scan-workorder-WO-RUSH-9001',
       code: 'WO-RUSH-9001',

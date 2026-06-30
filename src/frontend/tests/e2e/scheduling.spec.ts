@@ -11,6 +11,14 @@ const AGENT_BACKEND_EVIDENCE_TITLES = [
   '调度员 Agent 工作台 API 不可用',
 ]
 const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
+const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
+  '后端返回空排产计划',
+  '排产计划返回 HTML fallback',
+  '设备列表返回 HTML fallback',
+  '排产优化失败',
+  '风险看板读取失败',
+  '批量方案反馈同步失败',
+]
 
 const laborEvidenceRetryReads = {
   blocks: 0,
@@ -24,7 +32,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesLegacyPersonnelOfflineDemo = LEGACY_PERSONNEL_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
     const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
     const usesFormalWritebackMock = testInfo.title.includes(FORMAL_WRITEBACK_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesFailLoudBackendMock = FAIL_LOUD_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -365,8 +374,22 @@ test.describe('Scheduling 排产甘特图', () => {
             groupCount: 1,
             estimatedCompletionRate: 0.95,
             totalWorkOrders: 1,
+            recommendationScore: 0.8112,
+            recommendationScoreBreakdown: {
+              utilizationContribution: 0.258,
+              onTimeDeliveryContribution: 0.465,
+              changeoverContribution: 0.0882,
+            },
           },
         ],
+        recommendationScoreFormula: {
+          version: 'e2e-v1',
+          utilizationWeight: 0.3,
+          onTimeDeliveryWeight: 0.5,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 50,
+          description: 'E2E 批量方案反馈同步失败验证公式',
+        },
       }),
     }))
     await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
@@ -687,7 +710,7 @@ test.describe('Scheduling 排产甘特图', () => {
     expect(snapshot.reasonDetail).toContain('未选方案：强插当前窗口')
     expect(snapshot.reasonDetail).toContain('换设备插入')
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
@@ -717,7 +740,7 @@ test.describe('Scheduling 排产甘特图', () => {
     const snapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_schedule_feedback_snapshot') || 'null'))
     expect(snapshot.reasonDetail).toContain('急单插入重排建议')
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidenceChain = page.locator('.otd-evidence-chain')
     const scheduleEvidence = evidenceChain.locator('.evidence-chain-card').filter({ hasText: '急单插入重排建议' })
@@ -773,7 +796,10 @@ test.describe('Scheduling 排产甘特图', () => {
       })
     })
 
-    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.evaluate(() => {
+      window.history.replaceState(null, '', '/scheduling/scheduling?offlineDemo=0')
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
     await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
     await page.locator('.gantt_task_line').first().focus()
     await page.keyboard.press('Enter')
@@ -799,10 +825,10 @@ test.describe('Scheduling 排产甘特图', () => {
     await page.keyboard.press('Enter')
     await expect(page.locator('.detail-panel')).toHaveClass(/open/)
 
-    await page.goto('report', { waitUntil: 'commit' })
+    await page.goto('report?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.report-board', { timeout: 60000 })
 
-    await page.goto('scheduling', { waitUntil: 'commit' })
+    await page.goto('scheduling?offlineDemo=1', { waitUntil: 'commit' })
     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
     await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
     await page.locator('.gantt_task_line').first().focus()

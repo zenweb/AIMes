@@ -652,9 +652,9 @@ describe('ReportBoard', () => {
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
     expect(alerts[0].text()).toContain('报表证据加载失败')
-    expect(alerts[0].text()).toContain('客户工单导入证据加载失败：customer import evidence unavailable')
-    expect(alerts[0].text()).toContain('客户设备故障证据加载失败：equipment fault evidence unavailable')
-    expect(alerts[0].text()).toContain('OTD 证据链加载失败：otd evidence chain unavailable')
+    expect(alerts[0].text()).toContain('客户工单导入证据加载失败（/api/v1/scheduling/customer-order-import/latest）：customer import evidence unavailable')
+    expect(alerts[0].text()).toContain('客户设备故障证据加载失败（/api/v1/scheduling/customer-equipment-fault/latest / aimes_customer_equipment_fault_evidence）：equipment fault evidence unavailable')
+    expect(alerts[0].text()).toContain('OTD 证据链加载失败（/api/v1/scheduling/otd-evidence-chain / aimes_otd_evidence_chain）：otd evidence chain unavailable')
     expect(wrapper.text()).toContain('工单总数')
     expect(wrapper.text()).toContain('48')
   })
@@ -716,7 +716,7 @@ describe('ReportBoard', () => {
     expect(downloadCsv).toHaveBeenCalled()
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain('报表证据加载失败')
-    expect(alert.text()).toContain('客户工单导入证据加载失败：customer import evidence unavailable')
+    expect(alert.text()).toContain('客户工单导入证据加载失败（/api/v1/scheduling/customer-order-import/latest）：customer import evidence unavailable')
   })
 
   it('surfaces quality rework impact evidence in the OTD review report', async () => {

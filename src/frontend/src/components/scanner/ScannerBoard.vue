@@ -131,7 +131,7 @@ import {
 } from '../../utils/barcode-scan-evidence-sync'
 import { errorMessage } from '../../utils/error-message'
 import { getLocalUserDisplayName } from '../../utils/local-user'
-import { isOfflineDemoError } from '../../utils/offline-demo-mode'
+import { isOfflineDemoError, isOfflineDemoMode } from '../../utils/offline-demo-mode'
 
 interface ScanResult {
   type: string
@@ -382,7 +382,11 @@ async function confirmScanEvidence() {
 }
 
 function goContext(action: { route: string; query?: Record<string, string> }) {
-  router.push(action.query ? { path: action.route, query: action.query } : action.route)
+  const query = {
+    ...(action.query ?? {}),
+    ...(isOfflineDemoMode() ? { offlineDemo: '1' } : {}),
+  }
+  router.push(Object.keys(query).length ? { path: action.route, query } : action.route)
 }
 
 async function lookup() {
@@ -450,7 +454,7 @@ onMounted(async () => {
 .btn-lookup:disabled { background: #91d5ff; cursor: not-allowed; }
 .scan-error { color: #ff4d4f; font-size: 13px; margin: 4px 0 0; }
 
-.scan-result { margin-top: 16px; }
+.scan-result { position: relative; z-index: 1; margin-top: 16px; }
 .scan-result h3 { font-size: 14px; margin: 0 0 8px; }
 .result-card { background: #fff; border-radius: 8px; padding: 16px; border-left: 4px solid #1890ff; }
 .result-card.material { border-left-color: #52c41a; }
@@ -463,7 +467,7 @@ onMounted(async () => {
 .field-row dt { width: 90px; color: #999; flex-shrink: 0; }
 .field-row dd { margin: 0; font-weight: 500; }
 .context-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.context-actions button { padding: 7px 12px; border: 1px solid #1890ff; border-radius: 4px; background: #fff; color: #1677ff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.context-actions button { position: relative; z-index: 2; padding: 7px 12px; border: 1px solid #1890ff; border-radius: 4px; background: #fff; color: #1677ff; cursor: pointer; font-size: 12px; font-weight: 700; }
 .context-actions button:hover { background: #e6f4ff; }
 .field-evidence-panel { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-top: 12px; padding: 12px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; }
 .field-evidence-panel.synced { border-color: #bbf7d0; background: #f0fdf4; }
@@ -474,7 +478,7 @@ onMounted(async () => {
 .field-evidence-panel button { flex: 0 0 auto; padding: 7px 12px; border: 1px solid #f97316; border-radius: 4px; background: #fff; color: #c2410c; cursor: pointer; font-size: 12px; font-weight: 700; }
 .field-evidence-panel.synced button { border-color: #22c55e; color: #15803d; }
 
-.scan-history { margin-top: 24px; }
+.scan-history { position: relative; z-index: 0; margin-top: 24px; }
 .scan-history h3 { font-size: 14px; margin: 0 0 8px; }
 .history-list { display: flex; flex-direction: column; gap: 4px; }
 .history-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #fafafa; border-radius: 4px; cursor: pointer; font-size: 13px; }

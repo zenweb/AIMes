@@ -147,7 +147,7 @@ test.describe('Dashboard 生产概览', () => {
       return records.filter(record => record.id === 'demo-rehearsal-20260521')
     })
     expect(rehearsalRecords).toHaveLength(1)
-    await page.route('**/api/v1/scheduling/otd-evidence', async route => {
+    await page.route('**/api/v1/scheduling/otd-evidence**', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -155,7 +155,13 @@ test.describe('Dashboard 生产概览', () => {
       })
     })
 
+    const otdEvidenceResponse = page.waitForResponse(response =>
+      response.url().includes('/api/v1/scheduling/otd-evidence')
+      && response.request().method() === 'GET'
+      && response.status() === 200
+    )
     await page.goto('report', { waitUntil: 'commit' })
+    await otdEvidenceResponse
     await page.waitForSelector('.report-board', { timeout: 60000 })
     const evidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: '5 分钟 Demo 彩排已确认' })
     await expect(evidence.locator('.evidence-topline span').getByText('演示彩排', { exact: true })).toBeVisible({ timeout: 15000 })

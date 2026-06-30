@@ -239,7 +239,7 @@ test.describe('Report 报表中心', () => {
     expect(csv).toContain('decision-batch-balanced-001')
 
     await page.getByRole('button', { name: 'Excel' }).click()
-    await expect(page.getByRole('alert')).toContainText('报表 Excel 已请求后端快照导出；本地批量采纳证据请使用 CSV 导出。')
+    await expect(page.locator('.report-board [role="alert"]')).toContainText('报表 Excel 已请求后端快照导出；本地批量采纳证据请使用 CSV 导出。')
   })
   test('OTD 经营复盘支持按证据钻取解释和跳转', async ({ page }) => {
     await page.evaluate(() => {

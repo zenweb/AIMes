@@ -1,12 +1,17 @@
 param(
     [string]$ReportPath = "_docs/_reports/employee-live-backend-evidence-20260622-current.md",
-    [string]$BackendHealthUrl = "http://127.0.0.1:5003/health"
+    [string]$ApiBaseUrl = "http://127.0.0.1:5003",
+    [string]$BackendHealthUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
 $script:RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $script:FrontendRoot = Join-Path $script:RepositoryRoot "src/frontend"
 $script:ReportLines = @()
+
+if ([string]::IsNullOrWhiteSpace($BackendHealthUrl)) {
+    $BackendHealthUrl = "$ApiBaseUrl/health"
+}
 
 function Add-Line([string]$Line = "") {
     $script:ReportLines += $Line
@@ -49,6 +54,7 @@ Add-Line ""
 Add-Line "- GeneratedAt: $(Get-Date -Format o)"
 Add-Line "- Scope: Employee stale offline-demo recovery through live login and authenticated backend employee read."
 Add-Line "- Boundary: this is a focused real-browser smoke check, not the full frontend e2e suite or release gate."
+Add-Line "- ApiBaseUrl: $ApiBaseUrl"
 Add-Line "- BackendHealthUrl: $BackendHealthUrl"
 
 Push-Location $script:RepositoryRoot
@@ -68,8 +74,9 @@ try {
 
     Invoke-AndCapture "Employee live backend real browser entry" {
         $env:AIMES_E2E_LIVE_BACKEND = "true"
-        $env:AIMES_E2E_OFFLINE_DEMO = "false"
-        $env:VITE_API_TARGET = "http://127.0.0.1:5003"
+        $env:AIMES_LIVE_API_BASE_URL = $ApiBaseUrl
+        Remove-Item Env:AIMES_E2E_OFFLINE_DEMO -ErrorAction SilentlyContinue
+        Remove-Item Env:VITE_API_TARGET -ErrorAction SilentlyContinue
         npm run test:e2e -- tests/e2e/employee.spec.ts -g "employee-live-backend"
     }
 

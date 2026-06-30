@@ -175,7 +175,7 @@ test.describe('Quality 质量闭环', () => {
     await expect(inspectionRow.getByText('WO-ROOT-FAIL')).toBeVisible()
     await inspectionRow.getByRole('button', { name: '查看 INS-ROOT-FAIL 根因分析' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: '根因分析加载失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('根因分析加载失败')
     await expect(alert).toContainText('Request failed with status code 503')
@@ -281,7 +281,7 @@ test.describe('Quality 质量闭环', () => {
     await page.waitForSelector('.quality-board', { timeout: 60000 })
 
     const qualityBoard = page.locator('.quality-board')
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: '质量异常告警加载失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('质量异常告警加载失败')
     await expect(alert).toContainText('Request failed with status code 503')
@@ -358,7 +358,7 @@ test.describe('Quality 质量闭环', () => {
 
     const qualityBoard = page.locator('.quality-board')
     const spcCard = qualityBoard.locator('.spc-card')
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: 'SPC 趋势分析加载失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('SPC 趋势分析加载失败')
     await expect(alert).toContainText('Request failed with status code 503')
@@ -367,7 +367,7 @@ test.describe('Quality 质量闭环', () => {
 
     await spcCard.locator('.param-select').selectOption('hardness')
 
-    await expect(qualityBoard.getByRole('alert')).toBeHidden()
+    await expect(qualityBoard.getByRole('alert').filter({ hasText: 'SPC 趋势分析加载失败' })).toBeHidden()
     await expect(spcCard.locator('.spc-chart circle')).toHaveCount(3)
   })
 
@@ -471,7 +471,7 @@ test.describe('Quality 质量闭环', () => {
 
     await mrbPanel.getByRole('button', { name: '生成 WO-004 INS-004 MRB 报废补料决策' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: 'MRB 处置证据写入失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('MRB 处置证据写入失败')
     await expect(alert).toContainText('MRB disposition storage unavailable from chromium')
@@ -569,7 +569,7 @@ test.describe('Quality 质量闭环', () => {
 
     await mrbPanel.getByRole('button', { name: '确认 WO-004 MRB 处置闭环' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: 'MRB 处置闭环写入失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('MRB 处置闭环写入失败')
     await expect(alert).toContainText('MRB closure storage unavailable from chromium')
@@ -753,7 +753,7 @@ test.describe('Quality 质量闭环', () => {
 
     await releasePanel.getByRole('button', { name: '复验通过并释放交接' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: '扫码质量门释放写入失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('扫码质量门释放写入失败')
     await expect(alert).toContainText('barcode release storage unavailable from chromium')
@@ -922,7 +922,7 @@ test.describe('Quality 质量闭环', () => {
 
     await samplePanel.getByRole('button', { name: '沉淀为 CAPA 知识样本' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: '质量知识样本写入失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('质量知识样本写入失败')
     await expect(alert).toContainText('quality knowledge sample storage unavailable from chromium')
@@ -1005,7 +1005,7 @@ test.describe('Quality 质量闭环', () => {
 
     await draftCard.getByRole('button', { name: '生成同类缺陷处置草案' }).click()
 
-    const alert = qualityBoard.getByRole('alert')
+    const alert = qualityBoard.getByRole('alert').filter({ hasText: '质量知识复用草案写入失败' })
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('质量知识复用草案写入失败')
     await expect(alert).toContainText('quality reuse draft storage unavailable from chromium')

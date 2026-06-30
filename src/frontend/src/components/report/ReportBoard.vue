@@ -1926,22 +1926,27 @@ function handleReportFileExport(label: string, href: string, download: string) {
   }
 }
 
-async function readOptionalReportEvidence<T>(label: string, read: () => Promise<T>, fallback: T) {
+function evidenceFailureMessage(label: string, error: unknown, sourceHint?: string) {
+  const source = sourceHint ? `（${sourceHint}）` : ''
+  return `${label}加载失败${source}：${errorMessage(error, '请稍后重试')}`
+}
+
+async function readOptionalReportEvidence<T>(label: string, read: () => Promise<T>, fallback: T, sourceHint?: string) {
   try {
     return await read()
   } catch (error: unknown) {
     if (isOfflineDemoError(error)) return fallback
-    reportEvidenceLoadFailures.push(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
+    reportEvidenceLoadFailures.push(evidenceFailureMessage(label, error, sourceHint))
     return fallback
   }
 }
 
-async function readScheduleFeedbackReportEvidence() {
+async function readScheduleFeedbackReportEvidence(sourceHint?: string) {
   try {
     return await getLatestAdoptionFeedback() ?? readScheduleFeedbackSnapshot()
   } catch (error: unknown) {
     if (isOfflineDemoError(error)) return readScheduleFeedbackSnapshot()
-    reportEvidenceLoadFailures.push(`排产采纳反馈证据加载失败：${errorMessage(error, '请稍后重试')}`)
+    reportEvidenceLoadFailures.push(evidenceFailureMessage('排产采纳反馈证据', error, sourceHint))
     return readScheduleFeedbackSnapshot()
   }
 }
@@ -1960,24 +1965,24 @@ onMounted(async () => {
   } catch {
     latestAbReport.value = null
   }
-  qualityReworkImpact.value = await readOptionalReportEvidence('质量返工影响证据', readQualityReworkImpactBackendFirst, null)
-  qualityCapaClosure.value = await readOptionalReportEvidence('质量 CAPA 闭环证据', readQualityCapaClosureBackendFirst, null)
-  qualityMrbDisposition.value = await readOptionalReportEvidence('质量 MRB 处置证据', readQualityMrbDispositionRecordBackendFirst, null)
-  customerOrderImport.value = await readOptionalReportEvidence('客户工单导入证据', readCustomerOrderImportEvidenceBackendFirst, null)
-  customerEquipmentFault.value = await readOptionalReportEvidence('客户设备故障证据', readCustomerEquipmentFaultEvidenceBackendFirst, null)
-  pocReviewSignoff.value = await readOptionalReportEvidence('POC 复盘签署证据', readPocReviewSignoffRecordBackendFirst, null)
-  pocRolloutPackage.value = await readOptionalReportEvidence('POC 上线交付包', readPocRolloutPackageRecordBackendFirst, null)
-  pocPilotRun.value = await readOptionalReportEvidence('POC 试点运行证据', readPocPilotRunRecordBackendFirst, null)
-  pocHypercareAcceptance.value = await readOptionalReportEvidence('POC Hypercare 验收证据', readPocHypercareAcceptanceRecordBackendFirst, null)
-  riskSlaReview.value = await readOptionalReportEvidence('风险 SLA 复核证据', readRiskSlaReviewRecordBackendFirst, null)
-  scheduleFeedback.value = await readScheduleFeedbackReportEvidence()
-  riskActionTraces.value = await readOptionalReportEvidence('风险责任动作证据', readRiskActionTracesBackendFirst, [])
-  otdEvidenceRecords.value = await readOptionalReportEvidence('OTD 证据链', readOtdEvidenceChainRecordsBackendFirst, [])
-  otdKpiCommitmentPackages.value = await readOptionalReportEvidence('OTD KPI 承诺包', readOtdKpiCommitmentPackagesBackendFirst, [])
-  outsourcingCommitmentPackages.value = await readOptionalReportEvidence('外协承诺包', readOutsourcingCommitmentPackagesBackendFirst, [])
-  qualityRecommendationFeedbackRecords.value = await readOptionalReportEvidence('质量推荐反馈证据', readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst, [])
-  qualityRetrainingVersionRecords.value = await readOptionalReportEvidence('质量推荐再训练版本证据', readQualityKnowledgeRetrainingVersionRecordsBackendFirst, [])
-  qualityGrayReleaseDecisionRecords.value = await readOptionalReportEvidence('质量灰度决策证据', readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst, [])
+  qualityReworkImpact.value = await readOptionalReportEvidence('质量返工影响证据', readQualityReworkImpactBackendFirst, null, '/api/v1/scheduling/quality-rework-impact/latest')
+  qualityCapaClosure.value = await readOptionalReportEvidence('质量 CAPA 闭环证据', readQualityCapaClosureBackendFirst, null, '/api/v1/scheduling/quality-capa-closure/latest')
+  qualityMrbDisposition.value = await readOptionalReportEvidence('质量 MRB 处置证据', readQualityMrbDispositionRecordBackendFirst, null, '/api/v1/scheduling/quality-mrb-disposition/latest')
+  customerOrderImport.value = await readOptionalReportEvidence('客户工单导入证据', readCustomerOrderImportEvidenceBackendFirst, null, '/api/v1/scheduling/customer-order-import/latest')
+  customerEquipmentFault.value = await readOptionalReportEvidence('客户设备故障证据', readCustomerEquipmentFaultEvidenceBackendFirst, null, '/api/v1/scheduling/customer-equipment-fault/latest / aimes_customer_equipment_fault_evidence')
+  pocReviewSignoff.value = await readOptionalReportEvidence('POC 复盘签署证据', readPocReviewSignoffRecordBackendFirst, null, '/api/v1/scheduling/poc-review-signoff/latest')
+  pocRolloutPackage.value = await readOptionalReportEvidence('POC 上线交付包', readPocRolloutPackageRecordBackendFirst, null, '/api/v1/scheduling/poc-rollout-package/latest')
+  pocPilotRun.value = await readOptionalReportEvidence('POC 试点运行证据', readPocPilotRunRecordBackendFirst, null, '/api/v1/scheduling/poc-pilot-run/latest')
+  pocHypercareAcceptance.value = await readOptionalReportEvidence('POC Hypercare 验收证据', readPocHypercareAcceptanceRecordBackendFirst, null, '/api/v1/scheduling/poc-hypercare-acceptance/latest')
+  riskSlaReview.value = await readOptionalReportEvidence('风险 SLA 复核证据', readRiskSlaReviewRecordBackendFirst, null, '/api/v1/scheduling/risk-sla-review/latest')
+  scheduleFeedback.value = await readScheduleFeedbackReportEvidence('/api/v1/scheduling/adoption-feedback/latest')
+  riskActionTraces.value = await readOptionalReportEvidence('风险责任动作证据', readRiskActionTracesBackendFirst, [], '/api/v1/scheduling/risk-action-traces')
+  otdEvidenceRecords.value = await readOptionalReportEvidence('OTD 证据链', readOtdEvidenceChainRecordsBackendFirst, [], '/api/v1/scheduling/otd-evidence-chain / aimes_otd_evidence_chain')
+  otdKpiCommitmentPackages.value = await readOptionalReportEvidence('OTD KPI 承诺包', readOtdKpiCommitmentPackagesBackendFirst, [], '/api/v1/scheduling/otd-kpi-commitments/latest')
+  outsourcingCommitmentPackages.value = await readOptionalReportEvidence('外协承诺包', readOutsourcingCommitmentPackagesBackendFirst, [], '/api/v1/scheduling/outsourcing-commitments/latest')
+  qualityRecommendationFeedbackRecords.value = await readOptionalReportEvidence('质量推荐反馈证据', readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst, [], '/api/v1/scheduling/quality-knowledge-recommendation-feedback/latest')
+  qualityRetrainingVersionRecords.value = await readOptionalReportEvidence('质量推荐再训练版本证据', readQualityKnowledgeRetrainingVersionRecordsBackendFirst, [], '/api/v1/scheduling/quality-knowledge-retraining-versions/latest')
+  qualityGrayReleaseDecisionRecords.value = await readOptionalReportEvidence('质量灰度决策证据', readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst, [], '/api/v1/scheduling/quality-knowledge-gray-release-decisions/latest')
   flushReportEvidenceLoadFailures()
   try { r.value = await getReportDashboard() }
   catch {

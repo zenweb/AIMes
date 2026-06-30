@@ -28,7 +28,8 @@
 - Frontend Unit baseline: `_docs/_review/20260620-frontend-unit-tests-full-baseline.md` records 113 files / 1211 tests passed.
 - Frontend Unit Coverage baseline: `_docs/_review/20260620-frontend-unit-coverage-full-baseline.md` records 92.99% overall line coverage.
 - Frontend E2E evidence is split by focused browser packs, including `_docs/_review/20260611-sprint0-frontend-e2e-evidence-recovery.md`, `_docs/_review/20260621-frontend-e2e-employee-pass.md`, `_docs/_review/20260621-frontend-e2e-modules-offline-demo-pass.md`, and `_docs/_review/20260621-frontend-e2e-production-pass.md`.
-- Employee live-backend recovery evidence: `_docs/_reports/employee-live-backend-evidence-20260622-current.md` records backend health on port 5003, focused auth/offline-demo/employee unit regressions, and Chromium `[employee-live-backend]` recovery from stale offline-demo state to authenticated `/api/v1/employee` read.
+- Current full frontend real-browser E2E: `_docs/_reports/20260630-live-staging-full-e2e-no-skip-closure.md` records `390 passed / 0 skipped / 0 failed` with `AIMES_RUN_LIVE_STAGING_E2E=true`, `AIMES_E2E_LIVE_BACKEND=true`, and live API on `http://127.0.0.1:5002`.
+- Employee live-backend recovery evidence: `_docs/_reports/employee-live-backend-evidence-20260630-5002-current.md` records backend health on port 5002, focused auth/offline-demo/employee unit regressions, and Chromium `[employee-live-backend]` recovery from stale offline-demo state to authenticated `/api/v1/employee` read.
 - Current staged labor retry candidate evidence is indexed by `_docs/_review/20260622-labor-retry-staged-commit-package-index.md`; it is not a full baseline replacement.
 
 ## Current B-Track Release Gate Evidence
@@ -42,7 +43,7 @@
 - Security signoff: `_docs/_review/20260607-security-signoff.md` is `Result: PASS`; human signer and signed decision are present.
 - Gray observation: `_docs/_reports/gray-observation-latest.md` is still `OBSERVING` and strict `Result: FAIL`; owner deferred the 14-day wait for current follow-up work, but this remains required for strict final v1.0.0 release PASS.
 - Phase-one acceptance matrix: `_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md` maps Sprint 0-3 acceptance criteria to current evidence and explicitly marks remaining human/wall-clock gates.
-- Aggregate release gate: `_docs/_reports/release-gate-audit-20260621-v1-head-staging-ef-tools-aligned-deferred-gray.md` is the latest committed-head + current-staging recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260621-v1-head-staging-current-deferred-gray.md` and `_docs/_reports/release-gate-audit-20260621-v1-head-deferred-gray-recheck.md` are earlier matching packets. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
+- Aggregate release gate: `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md` is the latest B-track recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260621-v1-head-staging-ef-tools-aligned-deferred-gray.md` is the prior committed-head + staging packet. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
 - Worktree inventory: `_docs/_reports/worktree-inventory-20260621-current.md` records the local dirty review surface for release-candidate slicing. It explicitly states that hosted CI evidence covers committed heads only and does not prove the dirty worktree.
 
 ## Execution Rule

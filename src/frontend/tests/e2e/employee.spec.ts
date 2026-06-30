@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { test, expect, type Page } from '@playwright/test'
 
+const LIVE_API_BASE_URL = process.env.AIMES_LIVE_API_BASE_URL ?? 'http://localhost:5003'
+
 test.describe.configure({ timeout: 90000 })
 
 async function seedOfflineDemoSession(page: Page) {
@@ -70,6 +72,22 @@ async function routeEvidenceWrites(page: Page) {
     }
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   })
+}
+
+async function routeLiveApi(page: Page) {
+  for (const pattern of ['**/api/v1/auth/login', '**/api/v1/employee**']) {
+    await page.route(pattern, async route => {
+      const requestUrl = new URL(route.request().url())
+      const apiPath = requestUrl.pathname.split('/api/v1')[1]
+      const liveUrl = `${LIVE_API_BASE_URL}/api/v1${apiPath}${requestUrl.search}`
+      const response = await route.fetch({ url: liveUrl })
+      await route.fulfill({
+        status: response.status(),
+        headers: response.headers(),
+        body: await response.body(),
+      })
+    })
+  }
 }
 
 async function routeNoCandidateEmployees(page: Page) {
@@ -264,6 +282,8 @@ test.describe('Employee pagination live mock', () => {
 test.describe('Employee offline demo entry', () => {
   test('[employee-live-backend] 真实在线员工后端恢复会清理离线残留并读取员工 API', async ({ page }) => {
     test.skip(process.env.AIMES_E2E_LIVE_BACKEND !== 'true', 'requires live backend on the configured API target')
+
+    await routeLiveApi(page)
 
     await page.addInitScript(() => {
       localStorage.setItem('aimes_offline_demo', 'true')

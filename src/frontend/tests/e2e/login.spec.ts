@@ -190,6 +190,6 @@ test.describe('Login 登录页', () => {
 
   test('未登录访问受保护页面跳转到登录页', async ({ page }) => {
     await page.goto('scheduling')
-    await page.waitForURL('**/login', { timeout: 5000 })
+    await page.waitForURL(/\/login(?:\?.*)?$/, { timeout: 5000 })
   })
 })

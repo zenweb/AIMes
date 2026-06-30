@@ -3,10 +3,12 @@ import { test, expect } from '@playwright/test'
 test.describe('Scanner 条码现场入口', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('aimes_token', 'mock-e2e-token')
+      localStorage.setItem('aimes_offline_demo', 'true')
+      localStorage.setItem('aimes_token', 'demo-token-admin')
+      localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
       localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
     })
-    await page.goto('scanner')
+    await page.goto('scanner?offlineDemo=1')
     await page.waitForSelector('.scanner-board', { timeout: 20000 })
   })
 
@@ -52,7 +54,7 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(page).toHaveURL(/\/scheduling\/inventory/)
     await expect(page.locator('.inventory-board, .page-title')).toBeVisible()
 
-    await page.goto('scanner')
+    await page.goto('scanner?offlineDemo=1')
     await page.locator('.code-input').fill('M-AL-6061')
     await page.getByRole('button', { name: '查询' }).click()
     await page.locator('.scan-result').getByRole('button', { name: '查看 BOM 用量' }).click()
@@ -76,13 +78,13 @@ test.describe('Scanner 条码现场入口', () => {
     })
     expect(hasOtdEvidence).toBeTruthy()
 
-    await page.goto('report')
+    await page.goto('report?offlineDemo=1')
     const reportEvidence = page.locator('.otd-evidence-chain')
     await expect(reportEvidence.getByText('扫码执行')).toBeVisible()
     await expect(reportEvidence.getByText('WO-RUSH-9001 工单扫码到站已确认')).toBeVisible()
     await expect(reportEvidence.getByText('TRACE-QR-WO-RUSH-9001-ARRIVAL')).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto('audit-logs?offlineDemo=1')
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '扫码执行回放' }).getByText('1')).toBeVisible()
     const auditCard = auditPanel.locator('.decision-card').filter({ hasText: '扫码执行：WO-RUSH-9001 工单扫码到站已确认' })
@@ -188,7 +190,7 @@ test.describe('Scanner 条码现场入口', () => {
     })
     expect(hasCompletionEvidence).toBeTruthy()
 
-    await page.goto('quality')
+    await page.goto('quality?offlineDemo=1')
     const qualityGatePanel = page.locator('.barcode-quality-gate-panel')
     await expect(qualityGatePanel.getByText('首件巡检与工序交接')).toBeVisible()
     const qualityGateCard = qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 首件巡检放行' })
@@ -196,7 +198,7 @@ test.describe('Scanner 条码现场入口', () => {
     const handoffCard = qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 OP-10 到 OP-20 扫码交接' })
     await expect(handoffCard.getByText('TRACE-QR-WO-RUSH-9001-OP-10-HANDOFF-OP-20', { exact: true })).toBeVisible()
 
-    await page.goto('report')
+    await page.goto('report?offlineDemo=1')
     const reportEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 扫码开工已确认' })
     await expect(reportEvidence.getByText('生产开工')).toBeVisible()
     await expect(reportEvidence.locator('.evidence-topline em')).toHaveText('扫码开工已确认')
@@ -214,7 +216,7 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(handoffEvidence.locator('.evidence-topline span')).toHaveText('工序交接')
     await expect(handoffEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-HANDOFF-OP-20')).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto('audit-logs?offlineDemo=1')
     const auditPanel = page.locator('.audit-replay-panel')
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '扫码完工回放' }).getByText('1')).toBeVisible()
     await expect(auditPanel.locator('.metric-chip').filter({ hasText: '扫码物料回放' }).getByText('1')).toBeVisible()
@@ -284,12 +286,12 @@ test.describe('Scanner 条码现场入口', () => {
     })
     expect(hasAnomalyEvidence).toBeTruthy()
 
-    await page.goto('report')
+    await page.goto('report?offlineDemo=1')
     const anomalyEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 扫码异常分流' })
     await expect(anomalyEvidence.locator('.evidence-topline span')).toHaveText('扫码异常')
     await expect(anomalyEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-ANOMALY')).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto('audit-logs?offlineDemo=1')
     const auditCard = page.locator('.audit-replay-panel .decision-card').filter({ hasText: '扫码异常：WO-RUSH-9001 CNC 精加工 扫码异常分流' })
     await expect(auditCard).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
@@ -341,7 +343,7 @@ test.describe('Scanner 条码现场入口', () => {
     })
     expect(hasFrozenQualityEvidence).toBeTruthy()
 
-    await page.goto('quality')
+    await page.goto('quality?offlineDemo=1')
     const qualityGatePanel = page.locator('.barcode-quality-gate-panel')
     await expect(qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 首件巡检待复核' }).locator('.quality-card-topline span').getByText('质量门', { exact: true })).toBeVisible()
     await expect(qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结' }).locator('.quality-card-topline span').getByText('扫码返工', { exact: true })).toBeVisible()
@@ -350,12 +352,12 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 AL-202605 批次隔离' }).locator('.quality-card-topline span').getByText('质量隔离', { exact: true })).toBeVisible()
     await expect(qualityGatePanel.locator('.barcode-quality-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 返工工时成本预估' }).locator('.quality-card-topline span').getByText('返工成本', { exact: true })).toBeVisible()
 
-    await page.goto('barcode')
+    await page.goto('barcode?offlineDemo=1')
     const workOrderLabel = page.locator('.trace-card').filter({ hasText: 'WO-RUSH-9001' })
     await expect(workOrderLabel.getByText('质量冻结标签已更新')).toBeVisible()
     await expect(workOrderLabel.getByText('TRACE-QR-WO-RUSH-9001-OP-10-LABEL-HOLD', { exact: true })).toBeVisible()
 
-    await page.goto('report')
+    await page.goto('report?offlineDemo=1')
     const reworkEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 扫码返工冻结' })
     await expect(reworkEvidence.locator('.evidence-topline span')).toHaveText('扫码返工')
     await expect(reworkEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-REWORK')).toBeVisible()
@@ -369,7 +371,7 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(costEvidence.locator('.evidence-topline span')).toHaveText('返工成本')
     await expect(costEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-REWORK-COST')).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto('audit-logs?offlineDemo=1')
     const auditCard = page.locator('.audit-replay-panel .decision-card').filter({ hasText: '扫码返工：WO-RUSH-9001 CNC 精加工 扫码返工冻结' })
     await expect(auditCard).toBeVisible()
     await auditCard.getByRole('button', { name: '回放决策链' }).click()
@@ -379,7 +381,7 @@ test.describe('Scanner 条码现场入口', () => {
     await isolationAuditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(page.locator('.replay-detail').getByText('TRACE-QR-WO-RUSH-9001-OP-10-ISOLATION', { exact: true })).toBeVisible()
 
-    await page.goto('quality')
+    await page.goto('quality?offlineDemo=1')
     const releasePanel = page.locator('.barcode-quality-gate-panel')
     await expect(releasePanel.getByText('返工复验待放行')).toBeVisible()
     await releasePanel.getByRole('button', { name: '复验通过并释放交接' }).click()
@@ -399,12 +401,12 @@ test.describe('Scanner 条码现场入口', () => {
     })
     expect(hasReleaseEvidence).toBeTruthy()
 
-    await page.goto('barcode')
+    await page.goto('barcode?offlineDemo=1')
     const releasedWorkOrderLabel = page.locator('.trace-card').filter({ hasText: 'WO-RUSH-9001' })
     await expect(releasedWorkOrderLabel.getByText('质量冻结已解除')).toBeVisible()
     await expect(releasedWorkOrderLabel.getByText('TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE', { exact: true })).toBeVisible()
 
-    await page.goto('report')
+    await page.goto('report?offlineDemo=1')
     const recheckEvidence = page.locator('.otd-evidence-chain .evidence-chain-card').filter({ hasText: 'WO-RUSH-9001 CNC 精加工 返工复验放行' })
     await expect(recheckEvidence.locator('.evidence-topline span')).toHaveText('质量复验')
     await expect(recheckEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-RECHECK')).toBeVisible()
@@ -418,14 +420,14 @@ test.describe('Scanner 条码现场入口', () => {
     await expect(labelReleaseEvidence.locator('.evidence-topline span')).toHaveText('标签状态')
     await expect(labelReleaseEvidence.getByText('TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE')).toBeVisible()
 
-    await page.goto('audit-logs')
+    await page.goto('audit-logs?offlineDemo=1')
     const releaseAuditCard = page.locator('.audit-replay-panel .decision-card').filter({ hasText: '交接释放：WO-RUSH-9001 OP-20 接收已释放' })
     await expect(releaseAuditCard).toBeVisible()
     await releaseAuditCard.getByRole('button', { name: '回放决策链' }).click()
     await expect(page.locator('.replay-detail').getByText('TRACE-QR-WO-RUSH-9001-OP-10-RELEASE-OP-20', { exact: true })).toBeVisible()
     await expect(page.locator('.replay-detail').getByText(/已解冻 OP-20 接收并恢复下道交接/)).toBeVisible()
 
-    await page.goto('scheduling')
+    await page.goto('scheduling?offlineDemo=1')
     const eventPanel = page.locator('.event-queue-panel')
     await expect(eventPanel.getByText('扫码返工释放')).toBeVisible()
     const scheduleReleaseEvent = eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 OP-20 排产窗口恢复' })
