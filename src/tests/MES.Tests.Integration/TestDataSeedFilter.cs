@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MES.Api.Services;
 using MES.Domain.Entities.Admin;
 using MES.Domain.Entities.Agent;
@@ -8,7 +9,6 @@ using MES.Infrastructure.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
 
 namespace MES.Tests.Integration;
 

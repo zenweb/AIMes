@@ -14,6 +14,7 @@
 - Scheduling live staging 仍直接校验 API read model 与 PostgreSQL readback，同步覆盖保存成功和 locked plan 拒绝路径。
 - 完整 E2E 已从 `387 passed / 3 skipped` 提升到 `390 passed / 0 skipped`。
 - Frontend lint 与全量 unit 已重新验证通过：`118 files / 1255 tests passed`。
+- Hosted CI 首轮在 backend `dotnet format --verify-no-changes` 暴露两个历史格式红点：migration BOM 与 integration test using 顺序；已按 formatter 最小修复并本地复跑通过。
 - Release gate audit 仍是 `PASS_WITH_DEFERRED_GRAY_OBSERVATION`，没有把 deferred gray 误报成 strict release PASS。
 - Repo-local CC plan bridge 已更新到 2026-06-30 证据路径，避免继续引用旧 employee 5003 证据作为当前入口。
 
@@ -27,4 +28,4 @@
 
 - 这不是发布灰度观察结果；14 天无 P0/P1 仍需独立跟踪。
 - Docker Desktop 必须处于运行状态，否则 live staging 证据无法复现。
-- Hosted CI 证据仍覆盖已提交 head；当前 dirty worktree 只能由本地 E2E/脚本证据证明，不能冒充 hosted CI。
+- Hosted CI 已进入当前提交验证循环；只有 GitHub Actions 全部通过后，才能把当前 head 记录为 hosted CI PASS。
