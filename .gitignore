@@ -49,6 +49,7 @@ TestResults/
 src/frontend/test-results/
 /output/
 /_todo/
+/tmp/
 
 # Build
 packages/

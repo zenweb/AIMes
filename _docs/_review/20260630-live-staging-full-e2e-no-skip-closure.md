@@ -16,6 +16,9 @@
 - Frontend lint 与全量 unit 已重新验证通过：`118 files / 1255 tests passed`。
 - Hosted CI 首轮在 backend `dotnet format --verify-no-changes` 暴露两个历史格式红点：migration BOM 与 integration test using 顺序；已按 formatter 最小修复并本地复跑通过。
 - Hosted CI 第二轮在 `Sprint0CurrentBaselineIndex_ShouldCiteEmployeeLiveBackendRecoveryEvidence` 暴露旧 `20260622/5003` evidence token；已同步为当前 `20260630/5002` evidence，并保留历史 phase-one matrix 不混改。
+- Hosted CI 第三轮已全绿：CI run `28448378818`，Agent Evaluation run `28448378837`，同一 head `a2e60121029e093db102dc9ca63d09f8cb2485f3`。
+- Release gate audit 已用当前 hosted CI 证据重跑：`_docs/_reports/release-gate-audit-20260630-current-hosted-ci-a2e6012-deferred-gray.md`，结果仍为 `PASS_WITH_DEFERRED_GRAY_OBSERVATION`。
+- CI annotation 仍提示 invalid submodule cleanup：`tmp/agent-e2e-slice-20260622` 与 `tmp/combo-labor-agent-20260622` 是无 `.gitmodules` URL 的 gitlink；已从索引移除并 ignore `/tmp/`，避免后续 hosted runner cleanup 噪音。
 - Release gate audit 仍是 `PASS_WITH_DEFERRED_GRAY_OBSERVATION`，没有把 deferred gray 误报成 strict release PASS。
 - Repo-local CC plan bridge 已更新到 2026-06-30 证据路径，避免继续引用旧 employee 5003 证据作为当前入口。
 
@@ -30,4 +33,4 @@
 
 - 这不是发布灰度观察结果；14 天无 P0/P1 仍需独立跟踪。
 - Docker Desktop 必须处于运行状态，否则 live staging 证据无法复现。
-- Hosted CI 已进入当前提交验证循环；只有 GitHub Actions 全部通过后，才能把当前 head 记录为 hosted CI PASS。
+- Git over HTTPS 到 `github.com:443` 在本机仍不稳定；本次远端 ref 与 CI 证据通过 `api.github.com` / `gh run` 校验。后续常规 `git push` 需要网络恢复。

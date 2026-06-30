@@ -9,6 +9,8 @@
 - 对齐 `ReportBoard` / `ScannerBoard` unit guard：报表 fail-loud 断言覆盖 API 来源提示，扫码跳转测试 mock 新增 `isOfflineDemoMode`。
 - 修复 GitHub hosted CI backend format gate：去掉 `ExpandAgentEvidenceSummaryText` migration UTF-8 BOM，并调整 `TestDataSeedFilter` using 顺序。
 - 同步 Employee live-backend “latest evidence” 架构守护：脚本默认报告与 Sprint 0 baseline index 从 `20260622/5003` 更新到 `20260630/5002`。
+- 补齐当前 `V1` hosted CI PASS 证据：CI run `28448378818`、Agent Evaluation run `28448378837` 均在 head `a2e60121029e093db102dc9ca63d09f8cb2485f3` 成功。
+- 清理 CI annotation 噪音：移除两个无 `.gitmodules` URL 的 `tmp/*` gitlink，并将 `/tmp/` 纳入 `.gitignore`。
 
 ## Verified
 
@@ -23,6 +25,9 @@
 - Frontend unit：118 files / 1255 tests passed。
 - Backend format gate：`dotnet format src/backend/AIMes.slnx --verify-no-changes --no-restore` passed。
 - Architecture guard focused rerun：`Sprint0CurrentBaselineIndex_ShouldCiteEmployeeLiveBackendRecoveryEvidence` passed。
+- Hosted CI：backend/frontend/security/container success；Agent Evaluation success。
+- Release gate audit：`PASS_WITH_DEFERRED_GRAY_OBSERVATION` with hosted CI head `a2e60121029e093db102dc9ca63d09f8cb2485f3`。
+- Git index check：`tmp/agent-e2e-slice-20260622` 与 `tmp/combo-labor-agent-20260622` 不再作为 gitlink 被跟踪。
 - Release gate audit：exit code 0，`PASS_WITH_DEFERRED_GRAY_OBSERVATION`，产出 `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md`。
 
 ## Notes
