@@ -18,6 +18,26 @@ test.describe('Barcode 条码打印追溯标签', () => {
     await expect(page.getByRole('heading', { name: '条码 / QR 打印' })).toBeVisible({ timeout: 30000 })
   })
 
+  test('离线演示条码入口不会触达库存后端接口', async ({ page }) => {
+    let inventoryBackendRequests = 0
+    await page.route('**/api/v1/inventory**', async route => {
+      inventoryBackendRequests += 1
+      await route.fulfill({
+        status: 599,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'offline demo inventory backend leak from barcode' }),
+      })
+    })
+
+    await page.goto(offlineDemoPath('barcode'), { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '条码 / QR 打印' })).toBeVisible({ timeout: 30000 })
+
+    await expect(page.locator('.label-card').filter({ hasText: 'M-AL-6061' })).toBeVisible()
+    await expect(page.locator('.print-error')).toHaveCount(0)
+    await expect(page.locator('body')).not.toContainText('offline demo inventory backend leak from barcode')
+    expect(inventoryBackendRequests).toBe(0)
+  })
+
   test('展示工单、设备、物料标签批次和扫描后业务入口', async ({ page }) => {
     const panel = page.locator('.trace-batch')
     await expect(panel.getByText('现场追溯标签批次')).toBeVisible()
