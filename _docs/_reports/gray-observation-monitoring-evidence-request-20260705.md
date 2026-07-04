@@ -55,12 +55,18 @@ Then rerun strict release gate with the current hosted CI packet:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-release-gate-audit.ps1 `
   -ReportPath _docs/_reports/release-gate-audit-20260705-strict-gray-pass.md `
-  -HostedCiReportPath _docs/_reports/hosted-ci-20260705-v1-cc45df7-pass.md `
+  -HostedCiReportPath _docs/_reports/hosted-ci-20260705-v1-36ff338-pass.md `
   -StagingReportPath _docs/_reports/staging-rehearsal-20260621-5003-ef-tools-aligned-pass.md `
   -AttackChainReportPath _docs/_reports/attack-chain-verification-20260611-manual-verified.md `
   -SecuritySignoffPath _docs/_review/20260607-security-signoff.md `
   -GrayObservationReportPath _docs/_reports/gray-observation-20260705-pass.md
 ```
+
+Current hosted CI tip context:
+
+- Functional/evidence sweep packet: `_docs/_reports/hosted-ci-20260705-v1-36ff338-pass.md`.
+- Follow-up documentation refresh tip evidence: `_docs/_reports/release-gate-audit-20260705-tip-af57f35-doc-refresh-pass.md`.
+- Current GitHub `V1` tip after sealing the doc-refresh marker: `df06437b439045162bbea139999ad83150b1ba00`.
 
 ## Current Fail-Loud Evidence
 
