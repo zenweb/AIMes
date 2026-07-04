@@ -34,7 +34,7 @@
 
 ## Current B-Track Release Gate Evidence
 
-- Hosted CI: `_docs/_reports/hosted-ci-20260630-v1-a2e6012-pass.md` is `Result: PASS`; GitHub `V1` is at `a2e60121029e093db102dc9ca63d09f8cb2485f3`, CI run `28448378818` passed, and Agent Evaluation run `28448378837` passed on the same branch/head.
+- Hosted CI: `_docs/_reports/hosted-ci-20260705-v1-cc45df7-pass.md` is `Result: PASS`; GitHub `V1` is at `cc45df7cfa3f343ceb2036722215aa04f83b40aa`, CI run `28719432617` passed, and Agent Evaluation run `28719432629` passed on the same branch/head after `Microsoft.OpenApi` was pinned to `2.7.5`.
 - PostgreSQL/staging: `_docs/_reports/staging-rehearsal-20260621-5003-ef-tools-aligned-pass.md` is `Result: PASS`; Docker Desktop Linux engine is available, PostgreSQL/Redis/RabbitMQ/Qdrant/API containers are healthy, EF migrations are up to date with no EF tools/runtime version-skew warning, API uses `http://localhost:5003`, `/live` + `/ready` returned HTTP 200, and reschedule plus commitment PostgreSQL persistence probes passed.
 - Security self-assessment: `_docs/_reports/security-self-assessment-20260611-current.md` is `Result: PASS`.
 - Attack Chain automated support: `_docs/_reports/attack-chain-automated-evidence-20260611-current.md` is `Result: PASS`.
@@ -43,7 +43,7 @@
 - Security signoff: `_docs/_review/20260607-security-signoff.md` is `Result: PASS`; human signer and signed decision are present.
 - Gray observation: `_docs/_reports/gray-observation-latest.md` is still `OBSERVING` and strict `Result: FAIL`; owner deferred the 14-day wait for current follow-up work, but this remains required for strict final v1.0.0 release PASS.
 - Phase-one acceptance matrix: `_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md` maps Sprint 0-3 acceptance criteria to current evidence and explicitly marks remaining human/wall-clock gates.
-- Aggregate release gate: `_docs/_reports/release-gate-audit-20260630-current-hosted-ci-a2e6012-deferred-gray.md` is the latest B-track recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md` is the prior local live E2E packet. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
+- Aggregate release gate: `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-cc45df7-deferred-gray.md` is the latest B-track recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md` is the prior local live E2E packet. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
 - Worktree inventory: `_docs/_reports/worktree-inventory-20260621-current.md` records the local dirty review surface for release-candidate slicing. It explicitly states that hosted CI evidence covers committed heads only and does not prove the dirty worktree.
 
 ## Execution Rule
