@@ -7,6 +7,7 @@ const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
 ]
 const AGENT_BACKEND_EVIDENCE_TITLES = [
   '调度员 Agent 工作台通过后端 API',
+  '调度员 Agent 工作台通过后端 API 生成并拒绝推荐',
   '调度员 Agent 工作台后端 403',
   '调度员 Agent 工作台 API 不可用',
 ]
@@ -121,6 +122,19 @@ test.describe('Scheduling 排产甘特图', () => {
     await clickAgentWorkbenchButton(page, '采纳推荐')
     await expect(panel.getByText('推荐方案已采纳，后端已写入 Agent action、审计和采纳反馈。')).toBeVisible()
     await expect(panel.getByText('后端决策 / Adopted')).toBeVisible()
+  })
+
+  test('调度员 Agent 工作台通过后端 API 生成并拒绝推荐', async ({ page }) => {
+    const panel = page.locator('.agent-workbench-panel')
+    await clickAgentWorkbenchButton(page, '生成后端建议')
+    await expect(panel.getByText('后端已生成 2 个方案，推荐 WeightedComposite。')).toBeVisible()
+    await expect(panel.getByText('后端推荐采用 WeightedComposite')).toBeVisible()
+
+    await clickAgentWorkbenchButton(page, '拒绝建议')
+    await expect(panel.getByText('推荐方案已拒绝，后端已写入 Agent action 和审计记录。')).toBeVisible()
+    await expect(panel.getByText('后端决策 / Rejected')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '采纳推荐' })).toBeDisabled()
+    await expect(panel.getByRole('button', { name: '拒绝建议' })).toBeDisabled()
   })
 
   test('调度员 Agent 工作台后端 403 时保留 fallback 并提示权限', async ({ page }) => {
@@ -1067,6 +1081,16 @@ async function mockSchedulingPlanApis(
           ...pendingDecision,
           status: 'Adopted',
           adoptedScenarioId: 'scenario-weighted',
+        }),
+      })
+    }
+    if (url.includes('/api/v1/scheduling/agent/agent-decision-e2e-001/reject')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...pendingDecision,
+          status: 'Rejected',
         }),
       })
     }
