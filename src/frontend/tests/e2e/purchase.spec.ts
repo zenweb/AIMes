@@ -36,6 +36,26 @@ test.describe('Purchase 采购协同', () => {
     await page.waitForSelector('.po-board', { timeout: 20000 })
   })
 
+  test('离线演示采购入口不会触达采购后端接口', async ({ page }) => {
+    let purchaseBackendRequests = 0
+    await page.route('**/api/v1/purchase**', async route => {
+      purchaseBackendRequests += 1
+      await route.fulfill({
+        status: 599,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'offline demo purchase backend leak' }),
+      })
+    })
+
+    await page.goto(offlineDemoPath('purchase'), { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.po-board', { timeout: 20000 })
+
+    await expect(page.getByRole('option', { name: /PO-20260501/ })).toBeVisible()
+    await expect(page.locator('.purchase-notification')).toHaveCount(0)
+    await expect(page.locator('body')).not.toContainText('offline demo purchase backend leak')
+    expect(purchaseBackendRequests).toBe(0)
+  })
+
   test('新建采购订单接口失败时保留弹窗并告警', async ({ page }) => {
     const orderNumber = 'PO-CHROMIUM-FAIL-001'
     let createRequestCount = 0
