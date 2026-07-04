@@ -1,5 +1,30 @@
 import { test, expect } from '@playwright/test'
 
+test('离线演示扫码入口不会触达扫码证据后端接口', async ({ page }) => {
+  let scanEvidenceBackendRequests = 0
+  await page.route('**/api/v1/scheduling/barcode-scan-evidence**', async route => {
+    scanEvidenceBackendRequests += 1
+    await route.fulfill({
+      status: 599,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'offline demo scanner backend leak' }),
+    })
+  })
+
+  await page.addInitScript(() => {
+    localStorage.setItem('aimes_offline_demo', 'true')
+    localStorage.setItem('aimes_token', 'demo-token-admin')
+    localStorage.setItem('aimes_refresh_token', 'demo-refresh-admin')
+    localStorage.setItem('aimes_user', JSON.stringify({ username: 'admin', displayName: '管理员', role: 'Admin', mustChangePassword: false }))
+  })
+
+  await page.goto('scanner?offlineDemo=1', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('.scanner-board')).toBeVisible({ timeout: 30000 })
+  await expect(page.locator('[role="alert"]')).toHaveCount(0)
+  await expect(page.locator('body')).not.toContainText('offline demo scanner backend leak')
+  expect(scanEvidenceBackendRequests).toBe(0)
+})
+
 test.describe('Scanner 条码现场入口', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
