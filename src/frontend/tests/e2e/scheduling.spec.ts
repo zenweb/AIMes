@@ -12,6 +12,7 @@ const AGENT_BACKEND_EVIDENCE_TITLES = [
   '调度员 Agent 工作台 API 不可用',
 ]
 const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
+const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后关闭'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
   '后端返回空排产计划',
   '排产计划返回 HTML fallback',
@@ -34,7 +35,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesAgentBackendMock = AGENT_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
     const usesFormalWritebackMock = testInfo.title.includes(FORMAL_WRITEBACK_EVIDENCE_TITLE)
     const usesFailLoudBackendMock = FAIL_LOUD_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesFeedbackModalMock = testInfo.title.includes(FEEDBACK_MODAL_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -48,6 +50,9 @@ test.describe('Scheduling 排产甘特图', () => {
       })
     }
     if (usesFormalWritebackMock) {
+      await mockSchedulingPlanApis(page)
+    }
+    if (usesFeedbackModalMock) {
       await mockSchedulingPlanApis(page)
     }
     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
@@ -859,6 +864,30 @@ test.describe('Scheduling 排产甘特图', () => {
 
     await expect(page.getByText('排产优化').first()).toBeVisible()
     await expect(page.getByText('刷新').first()).toBeVisible()
+  })
+
+  test('排产采纳反馈表单提交成功后关闭', async ({ page }) => {
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'feedback-modal-close-e2e' }),
+      })
+    })
+
+    await page.getByRole('button', { name: '采纳反馈' }).click()
+    const modal = page.locator('.modal-container').filter({ hasText: '排产方案采纳反馈' })
+    await expect(modal).toBeVisible()
+
+    await modal.locator('select').selectOption('urgentInsertion')
+    await modal.locator('textarea').fill('真实浏览器验证：提交成功后反馈弹窗关闭。')
+    await modal.getByRole('button', { name: '提交反馈' }).click()
+
+    await expect.poll(() => feedbackRequests).toBe(1)
+    await expect(modal).toBeHidden()
+    await expect(page.locator('.schedule-board')).toBeVisible()
   })
 
   test('优化目标下拉框可用', async ({ page }) => {
