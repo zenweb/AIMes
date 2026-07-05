@@ -62,6 +62,51 @@ function Test-EvidenceReferenceExists([string]$Value) {
     return $true
 }
 
+function Test-IncidentQueryEvidenceContentPass(
+    [string]$Value,
+    [string]$ExpectedGrayReleaseId,
+    [DateTimeOffset]$ExpectedObservationStartedAt,
+    [DateTimeOffset]$ExpectedObservationEndedAt
+) {
+    if (-not (Test-RealEvidence $ExpectedGrayReleaseId)) {
+        return $false
+    }
+
+    $evidenceReferences = Get-EvidenceReferencePaths $Value
+    if ($evidenceReferences.Count -eq 0) {
+        return $false
+    }
+
+    $startDateToken = $ExpectedObservationStartedAt.ToString("yyyy-MM-dd")
+    $endDateToken = $ExpectedObservationEndedAt.ToString("yyyy-MM-dd")
+
+    foreach ($evidencePath in $evidenceReferences) {
+        if ($evidencePath -notmatch '\.(?:md|json|txt|log|csv|html)$') {
+            continue
+        }
+
+        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $candidate = Join-Path $script:repositoryRoot $relativePath
+        if (-not (Test-Path $candidate)) {
+            continue
+        }
+
+        $text = Get-Content -Raw -Path $candidate
+        $hasGrayReleaseId = $text.IndexOf($ExpectedGrayReleaseId, [StringComparison]::Ordinal) -ge 0
+        $hasWindowStart = $text.IndexOf($startDateToken, [StringComparison]::Ordinal) -ge 0
+        $hasWindowEnd = $text.IndexOf($endDateToken, [StringComparison]::Ordinal) -ge 0
+        $hasZeroP0 = $text -match '(?i)(?:P0\s*(?:=|:)\s*0|P0\s+incident(?:s| count)?\s*:\s*0)'
+        $hasZeroP1 = $text -match '(?i)(?:P1\s*(?:=|:)\s*0|P1\s+incident(?:s| count)?\s*:\s*0)'
+        $hasMonitoringVocabulary = $text -match '(?i)(monitoring|incident query|incident search|on-call|gray observation|production incidents)'
+
+        if ($hasGrayReleaseId -and $hasWindowStart -and $hasWindowEnd -and $hasZeroP0 -and $hasZeroP1 -and $hasMonitoringVocabulary) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Get-EvidenceReferencePaths([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) {
         return @()
@@ -125,11 +170,15 @@ function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
         } | Select-Object -First 1) -ne $null
         $hasPassResult = Test-AnchoredReportPass $text
         $hasReviewer = (Get-AnchoredLineValues $lines "Reviewer" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+        $grayReleaseId = Get-AnchoredLineValues $lines "GrayReleaseId" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1
         $reviewedAt = Get-AnchoredLineValues $lines "ReviewedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
         $observationStartedAt = Get-AnchoredLineValues $lines "ObservationStartedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
         $observationEndedAt = Get-AnchoredLineValues $lines "ObservationEndedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+        $incidentQueryEvidence = Get-AnchoredLineValues $lines "IncidentQueryEvidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1
         $hasReviewedAt = $false
         $hasObservationWindow = $false
+        $started = [DateTimeOffset]::MinValue
+        $ended = [DateTimeOffset]::MinValue
 
         try {
             $reviewedAtTimestamp = [DateTimeOffset]::Parse($reviewedAt)
@@ -148,8 +197,10 @@ function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
 
         $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
         $hasMonitoringSource = (Get-AnchoredLineValues $lines "MonitoringSource" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+        $hasIncidentQueryEvidence = Test-RealEvidence $incidentQueryEvidence
+        $hasIncidentQueryEvidenceContent = $hasObservationWindow -and (Test-IncidentQueryEvidenceContentPass $incidentQueryEvidence $grayReleaseId $started $ended)
 
-        if ($hasReviewedStatus -and $hasPassResult -and $hasReviewer -and $hasReviewedAt -and $hasObservationWindow -and $hasZeroP0P1 -and $hasMonitoringSource) {
+        if ($hasReviewedStatus -and $hasPassResult -and $hasReviewer -and $hasReviewedAt -and $hasObservationWindow -and $hasZeroP0P1 -and $hasMonitoringSource -and $hasIncidentQueryEvidence -and $hasIncidentQueryEvidenceContent) {
             return $true
         }
     }
@@ -269,7 +320,7 @@ if ($Status -eq "PASS") {
     } elseif (-not (Test-EvidenceReferenceExists $Evidence)) {
         $violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist.")
     } elseif (-not (Test-GrayMonitoringEvidenceReferencePass $Evidence)) {
-        $violations.Add("Gray observation repo-local evidence must be a reviewed monitoring or incident-review PASS packet.")
+        $violations.Add("Gray observation repo-local evidence must be a reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content.")
     }
 }
 
