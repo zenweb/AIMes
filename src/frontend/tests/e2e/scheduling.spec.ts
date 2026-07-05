@@ -16,6 +16,7 @@ const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与�
 const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后关闭'
 const COMPARE_APPLY_EVIDENCE_TITLE = '多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈'
 const ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE = 'Assistant 恢复交接闭环后真实浏览器保留本地闭环建议'
+const RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE = '急单采纳反馈缺少计划 ID 时真实浏览器 fail-loud'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
   '后端返回空排产计划',
   '排产计划返回 HTML fallback',
@@ -41,7 +42,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesFeedbackModalMock = testInfo.title.includes(FEEDBACK_MODAL_EVIDENCE_TITLE)
     const usesCompareApplyMock = testInfo.title.includes(COMPARE_APPLY_EVIDENCE_TITLE)
     const usesAssistantRecoveryHandoffMock = testInfo.title.includes(ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesRushFeedbackMissingPlanIdMock = testInfo.title.includes(RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || usesRushFeedbackMissingPlanIdMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -65,6 +67,9 @@ test.describe('Scheduling 排产甘特图', () => {
     }
     if (usesAssistantRecoveryHandoffMock) {
       await mockSchedulingPlanApis(page)
+    }
+    if (usesRushFeedbackMissingPlanIdMock) {
+      await mockSchedulingPlanApis(page, { missingPlanId: true })
     }
     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
       await page.addInitScript(() => {
@@ -958,6 +963,32 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(scheduleEvidence.getByText(/急单插入重排建议/)).toBeVisible()
   })
 
+  test('急单采纳反馈缺少计划 ID 时真实浏览器 fail-loud', async ({ page }) => {
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'unexpected-missing-plan-id-feedback-sync' }),
+      })
+    })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
+    await clickEventQueueButton(page, '采纳此建议')
+
+    const note = page.locator('.sync-note').filter({ hasText: '当前排产计划缺少 ID' })
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('反馈已写入本地复盘记录')
+    await expect(note).toContainText('当前排产计划缺少 ID')
+    await expect(note).toContainText('暂未同步后台')
+    await expect(note).toContainText('尚未写入正式排产计划')
+    await expect(page.locator('.feedback-record').getByText('已采纳 Agent 推荐')).toBeVisible()
+    expect(feedbackRequests).toBe(0)
+  })
+
   test('急单 Agent 采纳后区分反馈与正式排产回写', async ({ page }) => {
     const eventPanel = page.locator('.event-queue-panel')
     await eventPanel.locator('.event-card').filter({ hasText: 'WO-RUSH-9001 客户插单' }).getByRole('button', { name: '生成重排建议' }).click()
@@ -1170,12 +1201,24 @@ async function clickAgentWorkbenchButton(page: import('@playwright/test').Page, 
   expect(clicked, `Agent workbench button is missing or disabled: ${label}`).toBe(true)
 }
 
+async function clickEventQueueButton(page: import('@playwright/test').Page, label: string) {
+  const clicked = await page.evaluate((buttonLabel) => {
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.event-queue-panel button'))
+    const button = buttons.find(candidate => candidate.textContent?.trim() === buttonLabel)
+    if (!button || button.disabled) return false
+    button.scrollIntoView({ block: 'center', inline: 'center' })
+    button.click()
+    return true
+  }, label)
+  expect(clicked, `Event queue button is missing or disabled: ${label}`).toBe(true)
+}
+
 async function mockSchedulingPlanApis(
   page: import('@playwright/test').Page,
-  options: { agentApiUnavailable?: boolean; agentAdoptStatus?: 200 | 403 } = {},
+  options: { agentApiUnavailable?: boolean; agentAdoptStatus?: 200 | 403; missingPlanId?: boolean } = {},
 ) {
   const plan = {
-    id: 'plan-agent-e2e',
+    id: options.missingPlanId ? '' : 'plan-agent-e2e',
     planName: 'Agent E2E 排产计划',
     planStartDate: '2026-05-20T08:00:00.000Z',
     planEndDate: '2026-05-20T20:00:00.000Z',
