@@ -17,6 +17,7 @@ const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后�
 const COMPARE_APPLY_EVIDENCE_TITLE = '多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈'
 const ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE = 'Assistant 恢复交接闭环后真实浏览器保留本地闭环建议'
 const RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE = '急单采纳反馈缺少计划 ID 时真实浏览器 fail-loud'
+const OUTSOURCING_RISK_REFRESH_EVIDENCE_TITLE = '外协排产释放后风险事件刷新失败时真实浏览器保留释放确认'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
   '后端返回空排产计划',
   '排产计划返回 HTML fallback',
@@ -43,7 +44,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesCompareApplyMock = testInfo.title.includes(COMPARE_APPLY_EVIDENCE_TITLE)
     const usesAssistantRecoveryHandoffMock = testInfo.title.includes(ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE)
     const usesRushFeedbackMissingPlanIdMock = testInfo.title.includes(RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || usesRushFeedbackMissingPlanIdMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesOutsourcingRiskRefreshMock = testInfo.title.includes(OUTSOURCING_RISK_REFRESH_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || usesRushFeedbackMissingPlanIdMock || usesOutsourcingRiskRefreshMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -661,6 +663,55 @@ test.describe('Scheduling 排产甘特图', () => {
     const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]'))
     expect(packageSnapshot[0].scheduleReleaseTraceId).toBeUndefined()
     expect(packageSnapshot[0].scheduleReleaseAuditId).toBeUndefined()
+  })
+
+  test('外协排产释放后风险事件刷新失败时真实浏览器保留释放确认', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
+    await seedReceivedOutsourcingCommitment(page)
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const outsourcingEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
+    await expect(outsourcingEvent.locator('.event-severity').getByText('已到货', { exact: true })).toBeVisible()
+
+    await outsourcingEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.locator('.agent-suggestion').getByText('外协到货后的排产释放复核')).toBeVisible()
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 'outsourcing-risk-refresh-fail-loud-e2e' }),
+    }))
+    await page.route('**/api/v1/risk/dashboard**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'risk refresh unavailable after release from chromium' }),
+    }))
+
+    await eventPanel.locator('.agent-suggestion').getByRole('button', { name: '采纳此建议' }).click()
+
+    const note = page.locator('.sync-note').filter({ hasText: '外协排产释放已归档' })
+    await expect(note).toBeVisible()
+    await expect(note).toContainText('外协排产释放已归档')
+    await expect(note).toContainText('风险事件刷新失败')
+    await expect(note).toContainText('释放确认仍保留')
+    await expect(note).toContainText('risk refresh unavailable after release from chromium')
+    await expect(note).toContainText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+
+    const riskNote = page.locator('.risk-event-sync-note')
+    await expect(riskNote).toBeVisible()
+    await expect(riskNote).toContainText('风险事件加载失败')
+    await expect(riskNote).toContainText('risk refresh unavailable after release from chromium')
+
+    const suggestion = eventPanel.locator('.agent-suggestion')
+    await expect(suggestion.getByText('外协排产释放已确认')).toBeVisible()
+    await expect(suggestion.getByText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBeVisible()
+
+    const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]'))
+    expect(packageSnapshot[0].scheduleReleaseTraceId).toBe('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+    expect(packageSnapshot[0].scheduleReleaseAuditId).toBe('AUD-OUTSOURCING-SCHEDULE-RELEASE-FLANGE-20260521-001')
   })
 
   test('Assistant 恢复交接闭环后真实浏览器保留本地闭环建议', async ({ page }) => {
