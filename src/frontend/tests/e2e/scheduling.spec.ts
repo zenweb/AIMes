@@ -111,6 +111,28 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(panel.getByText('优先保护临近交期工单')).toBeVisible()
   })
 
+  test('排产复杂操作提供双语指引、关联证据链接和帮助入口', async ({ page }) => {
+    const guidance = page.locator('.schedule-workbench-guidance')
+    await expect(guidance).toBeVisible()
+    await expect(guidance).toContainText('优化或采纳前，请确认目标、锁定期、证据链和回写路径。')
+    await expect(guidance).toContainText('Before optimizing or adopting a plan, confirm objective, lock window, evidence trail, and writeback path.')
+
+    const auditLink = guidance.getByRole('link', { name: '审计回放 / Audit trail' })
+    const reportLink = guidance.getByRole('link', { name: '交付报表 / Delivery report' })
+    const helpLink = guidance.getByRole('link', { name: '帮助 / Help' })
+    await expect(auditLink).toHaveAttribute('href', './audit-logs')
+    await expect(reportLink).toHaveAttribute('href', './report')
+    await expect(helpLink).toHaveAttribute('href', '#schedule-workbench-help')
+
+    await helpLink.click()
+    await expect(page).toHaveURL(/#schedule-workbench-help$/)
+    const help = page.locator('#schedule-workbench-help')
+    await expect(help).toBeVisible()
+    await expect(help).toHaveAttribute('aria-label', '排产帮助')
+    await expect(help).toContainText('先复核影响范围，再执行优化、采纳或拖拽回写。')
+    await expect(help).toContainText('Review impact scope before optimization, adoption, or drag writeback.')
+  })
+
   test('展示调度员 Agent 工作台', async ({ page }) => {
     const panel = page.locator('.agent-workbench-panel')
     await expect(panel).toBeVisible()
