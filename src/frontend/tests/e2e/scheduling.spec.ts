@@ -567,53 +567,7 @@ test.describe('Scheduling 排产甘特图', () => {
 
   test('外协到货建议被采纳后真实浏览器归档排产释放证据', async ({ page }) => {
     await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
-    await page.evaluate(() => {
-      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
-        {
-          id: 'outsourcing-commitment-product-flange',
-          sourceKpiId: 'product-flange',
-          dimensionLabel: '产品族',
-          targetName: '法兰盘 DN100',
-          title: '法兰盘 DN100 外协承诺包',
-          auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
-          traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
-          actor: '经营复盘 王经理',
-          baselineOtd: 84,
-          agentOtd: 91,
-          lift: 7,
-          delayedReduced: 3,
-          statusLabel: '外协到货已确认',
-          commitment: '法兰盘 DN100 外协到货口径：华东精密外协厂已按 2026-05-23 到货，厂外等待可关闭但仍需排产释放复核。',
-          owner: '采购 / 计划联合确认',
-          dueAt: '2026-05-23',
-          summary: '外协等待未闭环转为外协承诺口径，外协到货后等待 AI 排产采纳释放。',
-          actions: [
-            {
-              module: '外协协同',
-              owner: '采购 / 计划',
-              action: '向 华东精密外协厂 锁定 法兰盘 DN100 的外协承诺日期 2026-05-23',
-              evidence: 'TRACE-OUTSOURCING-FLANGE-20260521',
-            },
-            {
-              module: '采购协同',
-              owner: '采购员 周工',
-              action: '确认 华东精密外协厂 的 法兰盘 DN100 外协到货并触发排产释放复核',
-              evidence: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
-            },
-          ],
-          partnerName: '华东精密外协厂',
-          promiseDate: '2026-05-23',
-          affectedOrders: 'WO-DEMO-1013',
-          sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
-          createdAt: '2026-05-21T08:00:00.000Z',
-          receivedAt: '2026-05-23T09:30:00.000Z',
-          receivedBy: '采购员 周工',
-          receiptAuditId: 'AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001',
-          receiptTraceId: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
-          receiptMessage: '华东精密外协厂 已按 2026-05-23 完成 法兰盘 DN100 外协到货，WO-DEMO-1013 可从厂外等待转为排产释放复核。',
-        },
-      ]))
-    })
+    await seedReceivedOutsourcingCommitment(page)
 
     await page.reload({ waitUntil: 'commit' })
     await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
@@ -645,6 +599,46 @@ test.describe('Scheduling 排产甘特图', () => {
 
     const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
     expect(evidenceSnapshot.some((item: { traceId?: string }) => item.traceId === 'TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBe(true)
+  })
+
+  test('外协排产释放返回空审计时真实浏览器 fail-loud 且不虚假归档', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/outsourcing-commitments**', route => route.abort())
+    await seedReceivedOutsourcingCommitment(page)
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const eventPanel = page.locator('.event-queue-panel')
+    const outsourcingEvent = eventPanel.locator('.event-card').filter({ hasText: '法兰盘 DN100 外协到货已确认' })
+    await expect(outsourcingEvent.locator('.event-severity').getByText('已到货', { exact: true })).toBeVisible()
+    await expect(outsourcingEvent.getByText('TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521')).toBeVisible()
+
+    await outsourcingEvent.getByRole('button', { name: '复核排产影响' }).click()
+    await expect(eventPanel.locator('.agent-suggestion').getByText('外协到货后的排产释放复核')).toBeVisible()
+    await page.evaluate(() => {
+      const packages = JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]')
+      delete packages[0].receiptTraceId
+      delete packages[0].receiptAuditId
+      localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify(packages))
+    })
+
+    await eventPanel.locator('.agent-suggestion').getByRole('button', { name: '采纳此建议' }).click()
+
+    const note = page.locator('.sync-note').filter({ hasText: '外协排产释放同步失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toContainText('采纳反馈已保留')
+    await expect(note).toContainText('未拿到释放审计记录')
+    await expect(note).toContainText('product-flange')
+    await expect(note).not.toContainText('外协排产释放已归档')
+
+    const suggestion = eventPanel.locator('.agent-suggestion')
+    await expect(suggestion.getByText('外协到货后的排产释放复核')).toBeVisible()
+    await expect(suggestion).not.toContainText('外协排产释放已确认')
+    await expect(suggestion).not.toContainText('TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')
+
+    const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_outsourcing_commitment_packages') || '[]'))
+    expect(packageSnapshot[0].scheduleReleaseTraceId).toBeUndefined()
+    expect(packageSnapshot[0].scheduleReleaseAuditId).toBeUndefined()
   })
 
   test('Assistant 恢复交接闭环后真实浏览器保留本地闭环建议', async ({ page }) => {
@@ -1211,6 +1205,56 @@ async function clickEventQueueButton(page: import('@playwright/test').Page, labe
     return true
   }, label)
   expect(clicked, `Event queue button is missing or disabled: ${label}`).toBe(true)
+}
+
+async function seedReceivedOutsourcingCommitment(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    localStorage.setItem('aimes_outsourcing_commitment_packages', JSON.stringify([
+      {
+        id: 'outsourcing-commitment-product-flange',
+        sourceKpiId: 'product-flange',
+        dimensionLabel: '产品族',
+        targetName: '法兰盘 DN100',
+        title: '法兰盘 DN100 外协承诺包',
+        auditId: 'AUD-OUTSOURCING-COMMITMENT-FLANGE-20260521-001',
+        traceId: 'TRACE-OUTSOURCING-FLANGE-20260521',
+        actor: '经营复盘 王经理',
+        baselineOtd: 84,
+        agentOtd: 91,
+        lift: 7,
+        delayedReduced: 3,
+        statusLabel: '外协到货已确认',
+        commitment: '法兰盘 DN100 外协到货口径：华东精密外协厂已按 2026-05-23 到货，厂外等待可关闭但仍需排产释放复核。',
+        owner: '采购 / 计划联合确认',
+        dueAt: '2026-05-23',
+        summary: '外协等待未闭环转为外协承诺口径，外协到货后等待 AI 排产采纳释放。',
+        actions: [
+          {
+            module: '外协协同',
+            owner: '采购 / 计划',
+            action: '向 华东精密外协厂 锁定 法兰盘 DN100 的外协承诺日期 2026-05-23',
+            evidence: 'TRACE-OUTSOURCING-FLANGE-20260521',
+          },
+          {
+            module: '采购协同',
+            owner: '采购员 周工',
+            action: '确认 华东精密外协厂 的 法兰盘 DN100 外协到货并触发排产释放复核',
+            evidence: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+          },
+        ],
+        partnerName: '华东精密外协厂',
+        promiseDate: '2026-05-23',
+        affectedOrders: 'WO-DEMO-1013',
+        sourceTraceId: 'TRACE-KPI-PRODUCT-FLANGE-OTD-20260521',
+        createdAt: '2026-05-21T08:00:00.000Z',
+        receivedAt: '2026-05-23T09:30:00.000Z',
+        receivedBy: '采购员 周工',
+        receiptAuditId: 'AUD-OUTSOURCING-RECEIPT-FLANGE-20260521-001',
+        receiptTraceId: 'TRACE-OUTSOURCING-FLANGE-RECEIVED-20260521',
+        receiptMessage: '华东精密外协厂 已按 2026-05-23 完成 法兰盘 DN100 外协到货，WO-DEMO-1013 可从厂外等待转为排产释放复核。',
+      },
+    ]))
+  })
 }
 
 async function mockSchedulingPlanApis(
