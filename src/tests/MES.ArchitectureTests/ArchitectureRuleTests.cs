@@ -4757,7 +4757,12 @@ public sealed class ArchitectureRuleTests
                 "-SecuritySelfAssessmentPath _docs/_reports/security-self-assessment-20260611-current.md",
                 "-AttackChainAutomatedPath _docs/_reports/attack-chain-automated-evidence-20260611-current.md",
                 "-AttackChainReportPath _docs/_reports/attack-chain-verification-20260611-manual-verified.md",
-                "-FrontendEvidencePath _docs/_reports/frontend-real-browser-evidence-20260611.md"
+                "-FrontendEvidencePath _docs/_reports/frontend-real-browser-evidence-20260611.md",
+                "scripts/run-gray-incident-review.ps1",
+                "-Status REVIEWED",
+                "-MonitoringSource",
+                "-IncidentQueryEvidence",
+                "-Evidence \"_docs/_reports/gray-incident-review-20260611-pass.md\""
             };
 
             violations.AddRange(requiredTokens
@@ -4766,6 +4771,41 @@ public sealed class ArchitectureRuleTests
         }
 
         violations.Should().BeEmpty("the human security signoff command must pin every machine evidence input instead of relying on script defaults that can drift later");
+    }
+
+    [Fact]
+    public void GrayObservationEvidenceRequest_ShouldRouteThroughIncidentReviewGenerator()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var packetPath = Path.Combine(repositoryRoot, "_docs/_reports/gray-observation-monitoring-evidence-request-20260705.md");
+        var violations = new List<string>();
+
+        if (!File.Exists(packetPath))
+        {
+            violations.Add("_docs/_reports/gray-observation-monitoring-evidence-request-20260705.md is required to request strict gray monitoring evidence.");
+        }
+        else
+        {
+            var packet = File.ReadAllText(packetPath);
+            var requiredTokens = new[]
+            {
+                "scripts/run-gray-incident-review.ps1",
+                "-Status REVIEWED",
+                "-Reviewer",
+                "-ReviewedAt",
+                "-MonitoringSource",
+                "-IncidentQueryEvidence",
+                "-P0IncidentCount 0",
+                "-P1IncidentCount 0",
+                "-Evidence \"_docs/_reports/gray-incident-review-20260705-pass.md\""
+            };
+
+            violations.AddRange(requiredTokens
+                .Where(token => !packet.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"Gray observation evidence request must route strict PASS evidence through incident review generator: {token}"));
+        }
+
+        violations.Should().BeEmpty("strict gray evidence requests should produce a reviewed monitoring packet before run-gray-observation can close the gate");
     }
 
     [Fact]

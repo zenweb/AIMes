@@ -104,7 +104,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-release-gate-aud
 
 ## Gray PASS Command
 
-Use only after at least 14 calendar days and real incident evidence proves P0=0 and P1=0:
+Use only after at least 14 calendar days and real incident evidence proves P0=0 and P1=0.
+First generate a reviewed incident packet:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-incident-review.ps1 `
+  -ReportPath _docs/_reports/gray-incident-review-20260611-pass.md `
+  -Status REVIEWED `
+  -Reviewer "<human reviewer name>" `
+  -ReviewedAt "<ISO timestamp>" `
+  -MonitoringSource "<monitoring source name and query/export path>" `
+  -ObservationStartedAt "<ISO timestamp>" `
+  -ObservationEndedAt "<ISO timestamp at least 14 days later>" `
+  -P0IncidentCount 0 `
+  -P1IncidentCount 0 `
+  -IncidentQueryEvidence "<repo-local incident query / monitoring evidence proving P0=0 and P1=0>" `
+  -GrayReleaseId "<real gray release id>" `
+  -Notes "<human review note>"
+```
+
+Then use that reviewed packet as the gray observation evidence:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation.ps1 `
@@ -116,7 +135,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation
   -ObservationEndedAt "<ISO timestamp at least 14 days later>" `
   -P0IncidentCount 0 `
   -P1IncidentCount 0 `
-  -Evidence "<incident query / monitoring evidence proving P0=0 and P1=0>" `
+  -Evidence "_docs/_reports/gray-incident-review-20260611-pass.md" `
   -SecuritySignoffPath _docs/_review/20260607-security-signoff.md
 ```
 

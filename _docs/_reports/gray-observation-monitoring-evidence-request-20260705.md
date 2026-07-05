@@ -35,7 +35,25 @@ Monitoring export <path or ticket>: queried production incidents for gray releas
 
 ## Command To Generate Strict PASS Candidate
 
-After real monitoring evidence exists, run:
+After real monitoring evidence exists, first generate a reviewed incident packet:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-incident-review.ps1 `
+  -ReportPath _docs/_reports/gray-incident-review-20260705-pass.md `
+  -Status REVIEWED `
+  -Reviewer "<human reviewer name>" `
+  -ReviewedAt "<ISO timestamp>" `
+  -MonitoringSource "<monitoring source name and query/export path>" `
+  -ObservationStartedAt "2026-06-13T21:38:09+08:00" `
+  -ObservationEndedAt "2026-06-27T21:38:09+08:00" `
+  -P0IncidentCount 0 `
+  -P1IncidentCount 0 `
+  -IncidentQueryEvidence "<repo-local monitoring export, incident query transcript, or signed review evidence>" `
+  -GrayReleaseId gray-v1.0.0-20260613-001 `
+  -Notes "<human review note>"
+```
+
+Then use that reviewed packet as the gray observation evidence:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation.ps1 `
@@ -47,7 +65,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation
   -ObservationEndedAt "2026-06-27T21:38:09+08:00" `
   -P0IncidentCount 0 `
   -P1IncidentCount 0 `
-  -Evidence "<real monitoring evidence reference>"
+  -Evidence "_docs/_reports/gray-incident-review-20260705-pass.md"
 ```
 
 Then rerun strict release gate with the current hosted CI packet:
