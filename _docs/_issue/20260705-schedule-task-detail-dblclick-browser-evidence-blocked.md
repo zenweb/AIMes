@@ -6,11 +6,13 @@
 
 ## Status
 
-`BLOCKED_E2E_INTERACTION_TARGET`
+`RESOLVED`
 
 ## Summary
 
 The planned Scheduling slice was to add real-browser evidence for opening work-order details by double-clicking a Gantt task. The slice was not closed because the current E2E surface could not produce a stable double-click interaction against the Gantt task path.
+
+Resolved on 2026-07-05 by adding lightweight Gantt double-click parity and stabilizing the lightweight marker layout so real pointer double-clicks can target visible task markers.
 
 ## What Was Tried
 
@@ -44,20 +46,20 @@ Reason: detail panel did not open, then lightweight marker target was not visibl
 
 ## Final Handling
 
-- The unverified test and temporary Gantt marker code were removed.
-- No production behavior change is being shipped from this failed slice.
-- This issue is recorded so the next attempt starts from the interaction-target problem instead of repeating blind selector changes.
+- The initial unverified test and temporary marker experiment were not shipped as PASS evidence.
+- The final fix keeps the production dhtmlx path unchanged and adds parity for the existing lightweight Gantt fallback:
+  - lightweight task markers now emit `taskDblClick`;
+  - hidden lightweight markers no longer intercept pointer events;
+  - visible lightweight markers render in normal document flow and opt out of dhtmlx absolute task positioning.
+- Real-browser evidence now proves double-clicking a visible lightweight Gantt task opens backend work-order details.
 
 ## Required Next Step
 
-Pick one explicit strategy before retrying this evidence:
-
-- expose a stable test-only marker that mirrors `taskDblClick` and is visible in production E2E builds;
-- add a component-level test for lightweight marker `dblclick` parity and keep browser E2E on the already-proven keyboard success path;
-- run a headed dhtmlx-specific browser probe to identify the actual double-click target and coordinates before adding another E2E.
+No retry is required for this blocked item. Continue with the remaining release boundaries that are not part of this slice.
 
 ## Boundary
 
 - Existing keyboard-open detail evidence remains valid.
 - Existing failure fallback detail evidence remains valid.
-- The double-click success browser evidence remains open and must not be marked PASS.
+- The double-click success browser evidence is now closed by `_docs/_review/20260705-schedule-task-detail-dblclick-browser-evidence.md`.
+- DeviceData field deployment verification, `ShouldQuarantine` timing behavior debt, `SubmitLockHandle` concurrency behavior debt, and strict gray-observation evidence remain separate.

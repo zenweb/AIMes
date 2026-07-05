@@ -31,6 +31,7 @@
         tabindex="0"
         :aria-label="`甘特任务：${task.text}`"
         @click="emitLightweightTaskClick(task.id)"
+        @dblclick="emitLightweightTaskDblClick(task.id)"
         @keydown.enter.prevent="emitLightweightTaskClick(task.id)"
       >
         {{ task.text }}
@@ -92,6 +93,10 @@ type GanttTaskWithCss = GanttTask & { $css?: string }
 
 function emitLightweightTaskClick(taskId: GanttTask['id']) {
   emit('taskClick', String(taskId))
+}
+
+function emitLightweightTaskDblClick(taskId: GanttTask['id']) {
+  emit('taskDblClick', String(taskId))
 }
 
 // 更新当前时间，每 60 秒刷新一次锁定期边界
@@ -561,13 +566,18 @@ defineExpose({ setScale })
   max-width: calc(100% - 16px);
   height: auto;
   opacity: 0;
-  pointer-events: auto;
+  pointer-events: none;
   overflow: visible;
   z-index: 3;
 }
 
 .gantt-e2e-markers.visible {
+  position: relative;
+  top: auto;
+  left: auto;
+  margin: 8px;
   opacity: 1;
+  pointer-events: auto;
 }
 
 .gantt-error {
@@ -587,6 +597,9 @@ defineExpose({ setScale })
 
 .gantt-e2e-markers span {
   display: block;
+  position: static;
+  width: auto;
+  height: auto;
   min-width: 16px;
   min-height: 16px;
   padding: 0 8px;
@@ -597,6 +610,7 @@ defineExpose({ setScale })
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 700;
+  line-height: 18px;
 }
 
 @media (max-width: 900px) {
@@ -608,7 +622,7 @@ defineExpose({ setScale })
     justify-content: flex-start;
   }
 
-  .gantt-e2e-markers {
+  .gantt-e2e-markers:not(.visible) {
     top: 96px;
   }
 }

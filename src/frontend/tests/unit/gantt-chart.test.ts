@@ -150,6 +150,14 @@ describe('GanttChart', () => {
     expect(wrapper.emitted('taskClick')).toEqual([['task-1'], ['task-1']])
   })
 
+  it('emits task double-clicks from lightweight markers with the same task detail semantics as dhtmlx', async () => {
+    const wrapper = await mountGanttChart('true')
+
+    await wrapper.get('.gantt_task_line').trigger('dblclick')
+
+    expect(wrapper.emitted('taskDblClick')).toEqual([['task-1']])
+  })
+
   it('honors explicit live mode so demo hints do not block real dhtmlx evidence', async () => {
     offlineDemoMode.value = false
     vi.stubGlobal('localStorage', {
