@@ -27,7 +27,7 @@ Sealed three Scheduling TODO evidence gaps that were still listed as browser-ope
 ## Validation
 
 - `npm run test:e2e -- --grep "工具栏导出 CSV 时真实浏览器下载当前排产计划|外协排产释放返回空审计时真实浏览器 fail-loud 且不虚假归档|外协排产释放后风险事件刷新失败时真实浏览器保留释放确认"`: `3 passed`.
-- Hosted CI and Agent Evaluation: pending GitHub `V1` submission.
+- GitHub `V1` commit `ad9a804a771737a89359f3d1c81fac48ccfc122c`: CI run `28730216664` passed and Agent Evaluation run `28730216618` passed.
 
 ## Boundary
 
