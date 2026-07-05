@@ -5222,6 +5222,53 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
+    public void GrayIncidentReview_ShouldGenerateStrictReviewedMonitoringEvidencePacket()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts/run-gray-incident-review.ps1");
+        var violations = new List<string>();
+
+        if (!File.Exists(scriptPath))
+        {
+            violations.Add("scripts/run-gray-incident-review.ps1 is required to generate signed gray monitoring or incident-review evidence.");
+        }
+        else
+        {
+            var script = File.ReadAllText(scriptPath);
+            var requiredTokens = new[]
+            {
+                "Gray incident review",
+                "DRAFT",
+                "REVIEWED",
+                "PASS",
+                "Reviewer",
+                "ReviewedAt",
+                "MonitoringSource",
+                "ObservationStartedAt",
+                "ObservationEndedAt",
+                "P0/P1 incident counts: P0=$P0IncidentCount; P1=$P1IncidentCount",
+                "IncidentQueryEvidence",
+                "GrayReleaseId cannot be a placeholder.",
+                "Test-RealEvidence",
+                "Test-EvidenceReferenceExists",
+                "Evidence reference does not exist",
+                "ReviewedAt must be a parseable timestamp and must not be in the future.",
+                "ObservationEndedAt must be a parseable timestamp and must not be in the future.",
+                "Incident review PASS requires an observation window of at least 14 calendar days.",
+                "Incident review PASS requires zero P0/P1 incidents during the observation window.",
+                "reviewed monitoring or incident-review PASS packet",
+                "strict v1.0.0 gray observation gate"
+            };
+
+            violations.AddRange(requiredTokens
+                .Where(token => !script.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"Gray incident review script missing required token: {token}"));
+        }
+
+        violations.Should().BeEmpty("strict gray PASS needs a reusable generator for reviewed monitoring evidence instead of free-form hand-written packets");
+    }
+
+    [Fact]
     public void ReleaseGateAudit_ShouldAggregateAllBlockingBTrackEvidence()
     {
         var repositoryRoot = FindRepositoryRoot();
