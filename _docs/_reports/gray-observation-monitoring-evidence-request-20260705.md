@@ -19,18 +19,20 @@ It does not claim PASS.
 
 ## Required Evidence
 
-Provide one or more concrete evidence references proving all of the following:
+Provide one or more concrete repo-local evidence references proving all of the following:
 
 1. Monitoring source name and query/export path.
 2. Incident search window covers at least `2026-06-13T21:38:09+08:00` through `2026-06-27T21:38:09+08:00`.
 3. P0 incident count during the window is exactly `0`.
 4. P1 incident count during the window is exactly `0`.
-5. Evidence is not a placeholder. It must cite an actual monitoring export, dashboard snapshot, incident query transcript, on-call report, or signed human review packet.
+5. Evidence is not a placeholder. External-only ticket IDs, dashboard URLs, or prose are not sufficient.
+6. The raw incident evidence must be checked into a repo-local text artifact under `_docs/` or `output/`, such as a monitoring export, incident query transcript, on-call report, or signed human review packet.
+7. The repo-local raw evidence must contain the gray release id, the observation window dates, monitoring or incident-query context, `P0=0`, and `P1=0`.
 
 Suggested evidence wording:
 
 ```text
-Monitoring export <path or ticket>: queried production incidents for gray release gray-v1.0.0-20260613-001 from 2026-06-13T21:38:09+08:00 through 2026-06-27T21:38:09+08:00; P0=0; P1=0; reviewer <name>; reviewedAt <timestamp>.
+Repo-local monitoring export <_docs/... or output/...>: queried production incidents for gray release gray-v1.0.0-20260613-001 from 2026-06-13T21:38:09+08:00 through 2026-06-27T21:38:09+08:00; P0=0; P1=0; reviewer <name>; reviewedAt <timestamp>.
 ```
 
 ## Command To Generate Strict PASS Candidate
@@ -93,3 +95,10 @@ Current hosted CI tip context:
 - `_docs/_reports/release-gate-audit-20260705-strict-gray-monitoring-missing.md`
 
 These prove that time has elapsed but strict release completion is still unproven until real monitoring evidence is supplied.
+
+Current strict evidence shape:
+
+- External-only strings are rejected.
+- The gray observation `Evidence` value must point to a repo-local reviewed monitoring or incident-review PASS packet.
+- That reviewed packet must include `IncidentQueryEvidence`.
+- `IncidentQueryEvidence` must point to repo-local text evidence containing gray release id, observation dates, monitoring context, `P0=0`, and `P1=0`.

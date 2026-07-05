@@ -104,7 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-release-gate-aud
 
 ## Gray PASS Command
 
-Use only after at least 14 calendar days and real incident evidence proves P0=0 and P1=0.
+Use only after at least 14 calendar days and repo-local incident evidence proves P0=0 and P1=0.
 First generate a reviewed incident packet:
 
 ```powershell
@@ -118,12 +118,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-incident-re
   -ObservationEndedAt "<ISO timestamp at least 14 days later>" `
   -P0IncidentCount 0 `
   -P1IncidentCount 0 `
-  -IncidentQueryEvidence "<repo-local incident query / monitoring evidence proving P0=0 and P1=0>" `
+  -IncidentQueryEvidence "<repo-local _docs/ or output/ incident query / monitoring evidence proving P0=0 and P1=0>" `
   -GrayReleaseId "<real gray release id>" `
   -Notes "<human review note>"
 ```
 
-Then use that reviewed packet as the gray observation evidence:
+Then use that reviewed packet as the gray observation evidence. External-only strings, ticket IDs, dashboard URLs, or prose are not sufficient for strict PASS:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation.ps1 `

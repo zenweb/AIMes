@@ -4762,6 +4762,8 @@ public sealed class ArchitectureRuleTests
                 "-Status REVIEWED",
                 "-MonitoringSource",
                 "-IncidentQueryEvidence",
+                "repo-local _docs/ or output/ incident query",
+                "External-only strings, ticket IDs, dashboard URLs, or prose are not sufficient for strict PASS.",
                 "-Evidence \"_docs/_reports/gray-incident-review-20260611-pass.md\""
             };
 
@@ -4795,6 +4797,9 @@ public sealed class ArchitectureRuleTests
                 "-ReviewedAt",
                 "-MonitoringSource",
                 "-IncidentQueryEvidence",
+                "External-only ticket IDs, dashboard URLs, or prose are not sufficient.",
+                "repo-local text artifact under `_docs/` or `output/`",
+                "gray release id, the observation window dates, monitoring or incident-query context, `P0=0`, and `P1=0`",
                 "-P0IncidentCount 0",
                 "-P1IncidentCount 0",
                 "-Evidence \"_docs/_reports/gray-incident-review-20260705-pass.md\""
