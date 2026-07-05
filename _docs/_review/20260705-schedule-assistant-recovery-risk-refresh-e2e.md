@@ -33,6 +33,7 @@ Added real-browser evidence that the Scheduling Assistant recovery closure keeps
 - `npm run test:e2e -- --grep "Assistant 恢复交接闭环后真实浏览器保留本地闭环建议|Assistant 恢复交接闭环后风险事件刷新失败时真实浏览器保留闭环建议"`: `2 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
 - `git diff --check -- src/frontend/tests/e2e/scheduling.spec.ts`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warning.
+- GitHub `V1` commit `150f5ef766626330f6b4e3661da07c293fcd05a4`: CI run `28728791985` passed and Agent Evaluation run `28728791984` passed.
 
 ## Boundary
 
