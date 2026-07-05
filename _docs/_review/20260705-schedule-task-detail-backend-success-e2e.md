@@ -40,6 +40,7 @@ The final evidence uses the stable lightweight Gantt task interaction, then disa
 - `npm run test:e2e -- --grep "点击任务条展示任务级排产解释|工单详情接口失败时真实浏览器展示本地排产解释兜底|工单详情接口成功时真实浏览器展示后端工单详情|点击设备行时真实浏览器不打开工单详情|甘特图路由往返后仍可用键盘打开工单详情"`: `5 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
 - `git diff --check -- src/frontend/tests/e2e/scheduling.spec.ts`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warning.
+- GitHub `V1` commit `5a9333e495956d69fe91ebc81a073286e9a846ba`: CI run `28730819938` passed and Agent Evaluation run `28730819940` passed.
 
 ## Boundary
 
