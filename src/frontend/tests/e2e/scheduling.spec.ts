@@ -14,6 +14,7 @@ const AGENT_BACKEND_EVIDENCE_TITLES = [
 const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
 const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后关闭'
 const COMPARE_APPLY_EVIDENCE_TITLE = '多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈'
+const ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE = 'Assistant 恢复交接闭环后真实浏览器保留本地闭环建议'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
   '后端返回空排产计划',
   '排产计划返回 HTML fallback',
@@ -38,7 +39,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesFailLoudBackendMock = FAIL_LOUD_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
     const usesFeedbackModalMock = testInfo.title.includes(FEEDBACK_MODAL_EVIDENCE_TITLE)
     const usesCompareApplyMock = testInfo.title.includes(COMPARE_APPLY_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesAssistantRecoveryHandoffMock = testInfo.title.includes(ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -58,6 +60,9 @@ test.describe('Scheduling 排产甘特图', () => {
       await mockSchedulingPlanApis(page)
     }
     if (usesCompareApplyMock) {
+      await mockSchedulingPlanApis(page)
+    }
+    if (usesAssistantRecoveryHandoffMock) {
       await mockSchedulingPlanApis(page)
     }
     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
@@ -634,6 +639,87 @@ test.describe('Scheduling 排产甘特图', () => {
 
     const evidenceSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_otd_evidence_chain') || '[]'))
     expect(evidenceSnapshot.some((item: { traceId?: string }) => item.traceId === 'TRACE-OUTSOURCING-FLANGE-SCHEDULE-RELEASE-20260521')).toBe(true)
+  })
+
+  test('Assistant 恢复交接闭环后真实浏览器保留本地闭环建议', async ({ page }) => {
+    await page.route('**/api/v1/scheduling/assistant-recovery-packages**', route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'assistant recovery refresh unavailable from chromium' }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: route.request().postData() || '{}',
+      })
+    })
+    await page.evaluate(() => {
+      localStorage.setItem('aimes_assistant_recovery_packages', JSON.stringify([
+        {
+          id: 'assistant-recovery-e2e-1',
+          title: 'Assistant 恢复交接',
+          auditCode: 'AUD-AST-RECOVERY-E2E-001',
+          traceId: 'TRACE-AST-RECOVERY-E2E-001',
+          actor: '调度员 李工',
+          role: 'Scheduler',
+          workOrders: 'WO-RUSH-9001',
+          priority: 'critical',
+          owner: '生产经理审批',
+          dueAt: '今日 15:30',
+          scheduleWindow: 'CNC-003 夜班窗口',
+          scheduleAction: '插入 WO-RUSH-9001 并保留 OP-20 复核。',
+          riskImpact: '急单恢复窗口依赖替代料和质量复核。',
+          riskSuggestion: '闭环后复核排产窗口。',
+          otdImpact: '+6%',
+          delayImpact: '-1 单',
+          changeoverImpact: '+8min',
+          status: 'active',
+          statusLabel: '待跨模块复核',
+          summary: 'Assistant 恢复交接包需要排产、采购、风险和质量责任动作同步闭环。',
+          dispatchSteps: [
+            {
+              module: 'AI 排产',
+              owner: '调度员 李工',
+              action: '复核恢复窗口',
+              evidence: 'TRACE-AST-RECOVERY-E2E-001',
+              status: 'pending',
+            },
+          ],
+          createdAt: '2026-06-22T09:30:00.000Z',
+        },
+      ]))
+    })
+
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForSelector('.agent-workbench-panel', { timeout: 45000 })
+
+    const handoff = page.locator('.recovery-handoff-panel')
+    await expect(handoff).toBeVisible()
+    await expect(handoff).toContainText('Assistant 恢复交接')
+    await expect(handoff).toContainText('待跨模块复核')
+
+    await handoff.getByRole('button', { name: '确认执行交接闭环' }).click()
+
+    await expect(handoff).toContainText('执行交接已闭环')
+    await expect(handoff).toContainText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')
+    await expect(handoff.getByRole('button', { name: '确认执行交接闭环' })).toHaveCount(0)
+
+    const note = page.locator('.sync-note').filter({ hasText: 'Assistant 恢复交接闭环刷新失败' })
+    await expect(note).toBeVisible()
+    await expect(note).toHaveAttribute('role', 'status')
+    await expect(note).toHaveAttribute('aria-live', 'polite')
+    await expect(note).toContainText('assistant recovery refresh unavailable from chromium')
+
+    const suggestion = page.locator('.agent-suggestion')
+    await expect(suggestion.getByText('Assistant 恢复交接闭环复核建议')).toBeVisible()
+    await expect(suggestion.getByText('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')).toBeVisible()
+
+    const packageSnapshot = await page.evaluate(() => JSON.parse(localStorage.getItem('aimes_assistant_recovery_packages') || '[]'))
+    expect(packageSnapshot[0].status).toBe('closed')
+    expect(packageSnapshot[0].closureTraceId).toBe('TRACE-CHAT-RECOVERY-WO-RUSH-9001-CLOSED-20260521')
   })
 
   test('展示急单插单前影响分析', async ({ page }) => {
