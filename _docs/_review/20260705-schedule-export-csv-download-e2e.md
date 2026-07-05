@@ -34,6 +34,10 @@ Result: PASS
 
 npm run test:e2e -- --grep "工具栏导出 CSV 时真实浏览器下载当前排产计划"
 Result: 1 passed
+
+GitHub Actions for commit 924bd5a693d7de86b8623dfc4b2bbb19bb76dc47
+CI: success (run 28725364165)
+Agent Evaluation: success (run 28725364169)
 ```
 
 ## Notes
