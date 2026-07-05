@@ -152,7 +152,7 @@ function Get-AnchoredLineValues([string[]]$Lines, [string]$Label) {
 function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
     $evidenceReferences = Get-EvidenceReferencePaths $EvidenceValue
     if ($evidenceReferences.Count -eq 0) {
-        return $true
+        return $false
     }
 
     foreach ($evidencePath in $evidenceReferences) {
@@ -320,7 +320,7 @@ if ($Status -eq "PASS") {
     } elseif (-not (Test-EvidenceReferenceExists $Evidence)) {
         $violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist.")
     } elseif (-not (Test-GrayMonitoringEvidenceReferencePass $Evidence)) {
-        $violations.Add("Gray observation repo-local evidence must be a reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content.")
+        $violations.Add("Gray observation evidence must include a repo-local reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content.")
     }
 }
 

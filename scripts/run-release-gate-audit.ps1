@@ -139,7 +139,7 @@ function Get-EvidenceReferencePaths([string]$Value) {
 function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
     $evidenceReferences = Get-EvidenceReferencePaths $EvidenceValue
     if ($evidenceReferences.Count -eq 0) {
-        return $true
+        return $false
     }
 
     foreach ($evidencePath in $evidenceReferences) {
@@ -512,7 +512,7 @@ function Test-GrayObservationEvidencePass([string]$Text) {
     }
     $invalidMonitoringEvidenceReferences = @($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) -and -not (Test-GrayMonitoringEvidenceReferencePass $_) })
     foreach ($invalidReference in $invalidMonitoringEvidenceReferences) {
-        $script:violations.Add("Gray observation repo-local evidence must be a reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content: $invalidReference")
+        $script:violations.Add("Gray observation evidence must include a repo-local reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content: $invalidReference")
     }
     $hasEvidence = ($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) -and (Test-GrayMonitoringEvidenceReferencePass $_) } | Select-Object -First 1) -ne $null
 

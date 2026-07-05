@@ -5183,6 +5183,9 @@ public sealed class ArchitectureRuleTests
                 "Test-RealEvidence",
                 "Test-EvidenceReferenceExists",
                 "Test-GrayMonitoringEvidenceReferencePass",
+                "if ($evidenceReferences.Count -eq 0)",
+                "return $false",
+                "must include a repo-local reviewed monitoring or incident-review PASS packet",
                 "Evidence cannot be a placeholder",
                 "Evidence reference does not exist",
                 "reviewed monitoring or incident-review PASS packet",
@@ -5896,6 +5899,9 @@ public sealed class ArchitectureRuleTests
             "Test-RealEvidence",
             "Test-EvidenceReferenceExists",
             "Test-GrayMonitoringEvidenceReferencePass",
+            "if ($evidenceReferences.Count -eq 0)",
+            "return $false",
+            "must include a repo-local reviewed monitoring or incident-review PASS packet",
             "Evidence cannot be a placeholder",
             "Evidence reference does not exist",
             "reviewed monitoring or incident-review PASS packet",
@@ -5928,7 +5934,7 @@ public sealed class ArchitectureRuleTests
             || !script.Contains("Test-EvidenceReferenceExists $_", StringComparison.Ordinal)
             || !script.Contains("Test-GrayMonitoringEvidenceReferencePass $_", StringComparison.Ordinal))
         {
-            violations.Add("Release gate audit must reject placeholder gray observation evidence, missing repo-local evidence references, and repo-local references that are not reviewed monitoring evidence.");
+            violations.Add("Release gate audit must reject placeholder gray observation evidence, missing repo-local evidence references, external-only evidence strings, and repo-local references that are not reviewed monitoring evidence.");
         }
 
         violations.Should().BeEmpty("Gray observation cannot close from Result: PASS unless first gray release, 14-day window, zero P0/P1, and evidence fields are also present");
