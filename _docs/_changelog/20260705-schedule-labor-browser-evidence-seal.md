@@ -9,7 +9,7 @@
 ## Verified
 
 - `npm run test:e2e -- --grep "人员无有效替班候选时排产保持停工复核事件|人员证据启动读取失败后可重试并释放排产人员约束"`: `2 passed`.
-- Hosted CI and Agent Evaluation: pending GitHub `V1` submission.
+- GitHub `V1` commit `d19d3ce7d5022d52d15ed22314b588eb59ac9322`: CI run `28729807580` passed and Agent Evaluation run `28729807543` passed.
 
 ## Notes
 
