@@ -27,6 +27,13 @@ The Scheduling feedback modal now has real-browser evidence that a successful ad
 ```text
 npm run test:e2e -- --grep "排产采纳反馈表单提交成功后关闭"
 Result: 1 passed
+
+npm run lint -- tests/e2e/scheduling.spec.ts
+Result: PASS
+
+GitHub Actions for commit 4032300ac314e3d196bd2621ebb7f90bad577da6
+CI: success (run 28723661912)
+Agent Evaluation: success (run 28723661918)
 ```
 
 ## Boundary
