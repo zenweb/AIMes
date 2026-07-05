@@ -5,7 +5,7 @@
 - Verified focused assistant recovery risk refresh failure handling.
 - Verified the full `schedule-board.test.ts` file.
 - Verified the full frontend unit suite.
+- Added browser-level evidence for assistant recovery closure risk refresh failure in `src/frontend/tests/e2e/scheduling.spec.ts`.
 
 ## Remaining
-- Add browser-level evidence for assistant recovery closure once the current scheduling E2E slice is packaged for clean execution.
 - Continue selecting ScheduleBoard slices by lowest-coverage, user-critical branches rather than further refining already-covered workbench subcomponents.
