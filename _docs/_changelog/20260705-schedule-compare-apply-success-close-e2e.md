@@ -11,6 +11,9 @@
   - first run failed because the test entered through `offlineDemo=1`;
   - final run passed after routing the test through the live-mock startup path.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
+- GitHub Actions on `02e76cdbd0fb3614d5192aa22a3198f9312658ae`:
+  - CI `28724163864`: success.
+  - Agent Evaluation `28724163859`: success.
 
 ## Result
 
