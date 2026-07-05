@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 const LABOR_EVIDENCE_RETRY_TITLE = '人员证据启动读取失败后可重试'
 const LEGACY_PERSONNEL_EVIDENCE_TITLES = [
@@ -1053,6 +1054,23 @@ test.describe('Scheduling 排产甘特图', () => {
 
     await expect(page.getByText('排产优化').first()).toBeVisible()
     await expect(page.getByText('刷新').first()).toBeVisible()
+  })
+
+  test('工具栏导出 CSV 时真实浏览器下载当前排产计划', async ({ page }) => {
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: '导出 CSV' }).click(),
+    ])
+
+    expect(download.suggestedFilename()).toMatch(/^排产计划-\d{8}-\d{4}\.csv$/)
+    const downloadPath = await download.path()
+    expect(downloadPath).toBeTruthy()
+    const content = await readFile(downloadPath!, 'utf8')
+    expect(content).toContain('"工单号","产品","设备","开始时间","结束时间","状态","进度"')
+    expect(content).toContain('WO-DEMO-1001')
+    expect(content).toMatch(/"\d+%"/)
   })
 
   test('排产采纳反馈表单提交成功后关闭', async ({ page }) => {
