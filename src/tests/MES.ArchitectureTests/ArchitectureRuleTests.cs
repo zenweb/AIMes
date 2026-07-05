@@ -5141,7 +5141,10 @@ public sealed class ArchitectureRuleTests
                 "P0/P1",
                 "14",
                 "Test-RealEvidence",
+                "Test-EvidenceReferenceExists",
                 "Evidence cannot be a placeholder",
+                "Evidence reference does not exist",
+                "Split-Path",
                 "Get-AnchoredLineValues",
                 "Test-AnchoredReportPass",
                 "UNSIGNED",
@@ -5789,7 +5792,9 @@ public sealed class ArchitectureRuleTests
             "Test-AnchoredLiteralLine $lines \"P0/P1 incident counts: P0=0; P1=0\"",
             "Evidence",
             "Test-RealEvidence",
+            "Test-EvidenceReferenceExists",
             "Evidence cannot be a placeholder",
+            "Evidence reference does not exist",
             "GrayStartedAt must not be after ObservationStartedAt.",
             "ObservationEndedAt must not be in the future.",
             "UtcNow",
@@ -5807,9 +5812,10 @@ public sealed class ArchitectureRuleTests
             violations.Add("Release gate audit must use the gray-observation-specific evidence predicate instead of generic Result: PASS only.");
         }
 
-        if (!script.Contains("Get-AnchoredLineValues $lines \"Evidence\" | Where-Object { Test-RealEvidence $_ }", StringComparison.Ordinal))
+        if (!script.Contains("Get-AnchoredLineValues $lines \"Evidence\"", StringComparison.Ordinal)
+            || !script.Contains("Test-EvidenceReferenceExists $_", StringComparison.Ordinal))
         {
-            violations.Add("Release gate audit must reject placeholder gray observation evidence.");
+            violations.Add("Release gate audit must reject placeholder gray observation evidence and missing repo-local evidence references.");
         }
 
         violations.Should().BeEmpty("Gray observation cannot close from Result: PASS unless first gray release, 14-day window, zero P0/P1, and evidence fields are also present");

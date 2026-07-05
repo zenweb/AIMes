@@ -14,6 +14,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $failResultToken = "Result: FAIL"
+$script:repositoryRoot = Split-Path -Parent $PSScriptRoot
 
 function Add-Line([string]$Line = "") {
     $script:reportLines += $Line
@@ -37,6 +38,29 @@ function Test-RealEvidence([string]$Value) {
         [string]::Equals($trimmed, $_, [StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($tail, $_, [StringComparison]::OrdinalIgnoreCase)
     } | Select-Object -First 1)
+}
+
+function Test-EvidenceReferenceExists([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    # Repo-local evidence references are accepted under _docs/ and output/.
+    $evidenceMatches = @($Value | Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' | ForEach-Object { $_.Matches } | ForEach-Object { $_ })
+    if ($evidenceMatches.Count -eq 0) {
+        return $true
+    }
+
+    foreach ($evidenceMatch in $evidenceMatches) {
+        $evidencePath = $evidenceMatch.Value.TrimEnd(',', ';', '.', ':', ')', ']')
+        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $candidate = Join-Path $script:repositoryRoot $relativePath
+        if (-not (Test-Path $candidate)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Read-TextOrEmpty([string]$Path) {
@@ -133,6 +157,8 @@ if ($Status -eq "OBSERVING") {
 
     if (-not (Test-RealEvidence $Evidence)) {
         $violations.Add("OBSERVING requires gray start evidence. Evidence cannot be a placeholder.")
+    } elseif (-not (Test-EvidenceReferenceExists $Evidence)) {
+        $violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist.")
     }
 }
 
@@ -170,6 +196,8 @@ if ($Status -eq "PASS") {
 
     if (-not (Test-RealEvidence $Evidence)) {
         $violations.Add("PASS requires evidence links or incident query references. Evidence cannot be a placeholder.")
+    } elseif (-not (Test-EvidenceReferenceExists $Evidence)) {
+        $violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist.")
     }
 }
 

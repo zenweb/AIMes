@@ -391,7 +391,12 @@ function Test-GrayObservationEvidencePass([string]$Text) {
 
     $hasRequiredWindowText = $Text.Contains("14 calendar days")
     $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
-    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $evidenceValues = Get-AnchoredLineValues $lines "Evidence"
+    $missingEvidenceReferences = @($evidenceValues | Where-Object { (Test-RealEvidence $_) -and -not (Test-EvidenceReferenceExists $_) })
+    foreach ($missingReference in $missingEvidenceReferences) {
+        $script:violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist: $missingReference")
+    }
+    $hasEvidence = ($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) } | Select-Object -First 1) -ne $null
 
     return $hasPassStatus `
         -and $hasGrayReleaseId `
