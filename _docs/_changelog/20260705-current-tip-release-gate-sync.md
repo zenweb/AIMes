@@ -2,8 +2,8 @@
 
 ## Changed
 
-- Added `_docs/_reports/hosted-ci-20260705-v1-e7eff755-pass.md` for GitHub `V1` tip `e7eff755bff4b465b4e659b569bfe00cdd32f26c`.
-- Added `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-e7eff755-deferred-gray.md`.
+- Added `_docs/_reports/hosted-ci-20260705-v1-ecdd6d05-pass.md` for GitHub `V1` tip `ecdd6d05bf9bbe8ec729837259957de837546be1`.
+- Added `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-ecdd6d05-deferred-gray.md`.
 - Updated `_docs/_plan/20260514-cc-remediation-plan.md` so the repo-local CC plan bridge points to the current hosted CI and deferred-gray release-gate packets.
 - Added `_docs/_review/20260705-current-tip-release-gate-sync.md`.
 
@@ -11,8 +11,8 @@
 
 - `scripts/run-hosted-ci-evidence.ps1`: `Result: PASS`.
 - `scripts/run-release-gate-audit.ps1 -DeferGrayObservation`: `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`.
-- GitHub Actions CI run `28733003837`: `success`.
-- Agent Evaluation run `28733003829`: `success`.
+- GitHub Actions CI run `28734854164`: `success`.
+- Agent Evaluation run `28734854168`: `success`.
 
 ## Boundary
 
