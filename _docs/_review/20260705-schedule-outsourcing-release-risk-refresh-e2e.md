@@ -34,6 +34,7 @@ Added real-browser evidence that the Scheduling outsourcing release path preserv
 - `npm run test:e2e -- --grep "外协到货建议被采纳后真实浏览器归档排产释放证据|外协排产释放返回空审计时真实浏览器 fail-loud|外协排产释放后风险事件刷新失败时真实浏览器保留释放确认"`: `3 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
 - `git diff --check -- src/frontend/tests/e2e/scheduling.spec.ts`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warning.
+- GitHub `V1` commit `ef151283226ab3542e5230d3a3c8fd4980ed4aa7`: CI run `28728290918` passed and Agent Evaluation run `28728290926` passed.
 
 ## Boundary
 
