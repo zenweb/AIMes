@@ -31,6 +31,7 @@ Added real-browser evidence for the ScheduleBoard outsourcing schedule release p
 - `npm run test:e2e -- --grep "外协到货建议被采纳后真实浏览器归档排产释放证据|外协排产释放返回空审计时真实浏览器 fail-loud"`: `2 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
 - `git diff --check -- src/frontend/tests/e2e/scheduling.spec.ts`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warning.
+- GitHub `V1` commit `587c6409e9752b4bfe8a76e9769209faec8ac59b`: CI run `28727099444` passed and Agent Evaluation run `28727099458` passed.
 
 ## Boundary
 
