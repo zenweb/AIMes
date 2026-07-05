@@ -19,3 +19,7 @@
 - Real browser login through `http://127.0.0.1:4173/scheduling/login`
   - SignalR negotiate requests went to `http://127.0.0.1:5002/hubs/...`
   - Browser console reported `0` errors and `0` warnings
+- Affected E2E regression after remote `V1` commit:
+  - `npm run test:e2e -- tests/e2e/monitoring.spec.ts -g "SignalR 启动失败"`: `1 passed`
+  - `$env:AIMES_E2E_PORT='4183'; npm run test:e2e -- tests/e2e/dashboard.spec.ts`: `13 passed`
+  - Earlier parallel Dashboard execution hit local port contention on `127.0.0.1:4174` (`EADDRINUSE`); rerun on explicit port `4183` passed, so this was not recorded as a product regression.

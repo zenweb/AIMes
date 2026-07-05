@@ -62,6 +62,20 @@ Screenshot:
 _docs/_reports/signalr-configured-backend-target-20260705.png
 ```
 
+Affected E2E regression after the remote `V1` commit:
+
+```text
+npm run test:e2e -- tests/e2e/monitoring.spec.ts -g "SignalR 启动失败"
+1 passed
+```
+
+```text
+$env:AIMES_E2E_PORT='4183'; npm run test:e2e -- tests/e2e/dashboard.spec.ts
+13 passed
+```
+
+Note: an earlier parallel Dashboard run hit local preview port contention on `127.0.0.1:4174` (`EADDRINUSE`). It was treated as an execution setup issue, not a product regression, and the same suite passed when rerun serially on explicit port `4183`.
+
 ## Verdict
 
 PASS. The live browser no longer hardcodes `5003` for SignalR when a configured backend target points to `5002`.
