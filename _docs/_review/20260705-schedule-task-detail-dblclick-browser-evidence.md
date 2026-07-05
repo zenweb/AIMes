@@ -35,6 +35,7 @@ The blocked attempt had two separate causes:
 - `npm run test:e2e -- --grep "点击任务条展示任务级排产解释|工单详情接口失败时真实浏览器展示本地排产解释兜底|工单详情接口成功时真实浏览器展示后端工单详情|双击甘特任务后真实浏览器展示后端工单详情|点击设备行时真实浏览器不打开工单详情|甘特图路由往返后仍可用键盘打开工单详情"`: `6 passed`.
 - `npm run test:unit -- tests/unit/gantt-chart.test.ts`: `33 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts tests/unit/gantt-chart.test.ts src/components/gantt/GanttChart.vue`: passed.
+- GitHub `V1` commit `ff1a1635ae46a9bfc1ddd30b88a4335475b87156`: CI run `28731592321` passed and Agent Evaluation run `28731592337` passed.
 
 ## Boundary
 
