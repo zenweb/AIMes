@@ -1230,6 +1230,57 @@ test.describe('Scheduling 排产甘特图', () => {
     expect(detailRequests).toBeGreaterThan(0)
   })
 
+  test('工单详情接口成功时真实浏览器展示后端工单详情', async ({ page }) => {
+    let detailRequests = 0
+    await page.route('**/api/v1/scheduling/workorders/**', route => {
+      detailRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'wo-agent-e2e-001',
+          orderNumber: 'WO-AGENT-E2E-BACKEND',
+          productCode: 'PRD-BROWSER-BACKEND',
+          productName: '真实浏览器后端工单',
+          plannedQuantity: 120,
+          completedQuantity: 48,
+          plannedStartDate: '2026-05-20T08:00:00.000Z',
+          plannedEndDate: '2026-05-20T10:00:00.000Z',
+          actualStartDate: '2026-05-20T08:10:00.000Z',
+          status: 'in_progress',
+          workshopId: 'ws-e2e',
+          routeCode: 'R-BROWSER-BACKEND',
+          priority: 1,
+          progressPercentage: 40,
+          createdAt: '2026-05-19T08:00:00.000Z',
+          updatedAt: '2026-05-20T09:00:00.000Z',
+        }),
+      })
+    })
+
+    await page.evaluate(() => {
+      window.history.replaceState(null, '', '/scheduling/scheduling?offlineDemo=0')
+      localStorage.setItem('aimes_offline_demo', 'false')
+    })
+    await page.waitForSelector('.gantt_task_line', { timeout: 10000 })
+    await page.locator('.gantt_task_line').first().focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.locator('.detail-panel')
+    await expect(panel).toHaveClass(/open/)
+    await expect(panel).toHaveAttribute('role', 'dialog')
+    await expect(panel).toHaveAttribute('aria-modal', 'true')
+    await expect.poll(() => detailRequests).toBe(1)
+    await expect(panel).toHaveAttribute('aria-label', '工单详情：WO-AGENT-E2E-BACKEND')
+    await expect(panel.locator('.panel-body.error')).toHaveCount(0)
+    await expect(panel.getByText('WO-AGENT-E2E-BACKEND')).toBeVisible()
+    await expect(panel.getByText('真实浏览器后端工单')).toBeVisible()
+    await expect(panel.getByText('PRD-BROWSER-BACKEND')).toBeVisible()
+    await expect(panel.getByText('40%')).toBeVisible()
+    await expect(panel.getByText('生产中')).toBeVisible()
+    await expect(panel).not.toContainText('工单详情加载失败')
+  })
+
   test('点击设备行时真实浏览器不打开工单详情', async ({ page }) => {
     let detailRequests = 0
     await page.route('**/api/v1/scheduling/workorders/**', route => {
