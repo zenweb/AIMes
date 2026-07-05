@@ -46,13 +46,12 @@ function Test-EvidenceReferenceExists([string]$Value) {
     }
 
     # Repo-local evidence references are accepted under _docs/ and output/.
-    $evidenceMatches = @($Value | Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' | ForEach-Object { $_.Matches } | ForEach-Object { $_ })
-    if ($evidenceMatches.Count -eq 0) {
+    $evidenceReferences = Get-EvidenceReferencePaths $Value
+    if ($evidenceReferences.Count -eq 0) {
         return $true
     }
 
-    foreach ($evidenceMatch in $evidenceMatches) {
-        $evidencePath = $evidenceMatch.Value.TrimEnd(',', ';', '.', ':', ')', ']')
+    foreach ($evidencePath in $evidenceReferences) {
         $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
         $candidate = Join-Path $script:repositoryRoot $relativePath
         if (-not (Test-Path $candidate)) {
@@ -61,6 +60,17 @@ function Test-EvidenceReferenceExists([string]$Value) {
     }
 
     return $true
+}
+
+function Get-EvidenceReferencePaths([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return @()
+    }
+
+    return @($Value |
+        Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' |
+        ForEach-Object { $_.Matches } |
+        ForEach-Object { $_.Value.TrimEnd(',', ';', '.', ':', ')', ']') })
 }
 
 function Read-TextOrEmpty([string]$Path) {
@@ -78,6 +88,13 @@ function Test-AnchoredReportPass([string]$Text) {
     } | Select-Object -First 1) -ne $null
 }
 
+function Test-AnchoredLiteralLine([string[]]$Lines, [string]$Text) {
+    $escapedText = [regex]::Escape($Text)
+    return ($Lines | Where-Object {
+        $_ -match "^- $escapedText\s*$" -or $_ -match "^$escapedText\s*$"
+    } | Select-Object -First 1) -ne $null
+}
+
 function Get-AnchoredLineValues([string[]]$Lines, [string]$Label) {
     $escapedLabel = [regex]::Escape($Label)
     return @($Lines | ForEach-Object {
@@ -85,6 +102,59 @@ function Get-AnchoredLineValues([string[]]$Lines, [string]$Label) {
             $matches[1]
         }
     })
+}
+
+function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
+    $evidenceReferences = Get-EvidenceReferencePaths $EvidenceValue
+    if ($evidenceReferences.Count -eq 0) {
+        return $true
+    }
+
+    foreach ($evidencePath in $evidenceReferences) {
+        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $candidate = Join-Path $script:repositoryRoot $relativePath
+        if (-not (Test-Path $candidate)) {
+            continue
+        }
+
+        $text = Get-Content -Raw -Path $candidate
+        $lines = $text -split "`r?`n"
+        $hasReviewedStatus = (Get-AnchoredLineValues $lines "Status" | Where-Object {
+            [string]::Equals($_, "REVIEWED", [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($_, "PASS", [StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1) -ne $null
+        $hasPassResult = Test-AnchoredReportPass $text
+        $hasReviewer = (Get-AnchoredLineValues $lines "Reviewer" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+        $reviewedAt = Get-AnchoredLineValues $lines "ReviewedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+        $observationStartedAt = Get-AnchoredLineValues $lines "ObservationStartedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+        $observationEndedAt = Get-AnchoredLineValues $lines "ObservationEndedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+        $hasReviewedAt = $false
+        $hasObservationWindow = $false
+
+        try {
+            $reviewedAtTimestamp = [DateTimeOffset]::Parse($reviewedAt)
+            $hasReviewedAt = $reviewedAtTimestamp -le [DateTimeOffset]::UtcNow
+        } catch {
+            $hasReviewedAt = $false
+        }
+
+        try {
+            $started = [DateTimeOffset]::Parse($observationStartedAt)
+            $ended = [DateTimeOffset]::Parse($observationEndedAt)
+            $hasObservationWindow = ($ended - $started).TotalDays -ge 14 -and $ended -le [DateTimeOffset]::UtcNow
+        } catch {
+            $hasObservationWindow = $false
+        }
+
+        $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
+        $hasMonitoringSource = (Get-AnchoredLineValues $lines "MonitoringSource" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+
+        if ($hasReviewedStatus -and $hasPassResult -and $hasReviewer -and $hasReviewedAt -and $hasObservationWindow -and $hasZeroP0P1 -and $hasMonitoringSource) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Test-SecuritySignoffSigned([string]$Text) {
@@ -198,6 +268,8 @@ if ($Status -eq "PASS") {
         $violations.Add("PASS requires evidence links or incident query references. Evidence cannot be a placeholder.")
     } elseif (-not (Test-EvidenceReferenceExists $Evidence)) {
         $violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist.")
+    } elseif (-not (Test-GrayMonitoringEvidenceReferencePass $Evidence)) {
+        $violations.Add("Gray observation repo-local evidence must be a reviewed monitoring or incident-review PASS packet.")
     }
 }
 

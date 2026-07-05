@@ -5142,8 +5142,13 @@ public sealed class ArchitectureRuleTests
                 "14",
                 "Test-RealEvidence",
                 "Test-EvidenceReferenceExists",
+                "Test-GrayMonitoringEvidenceReferencePass",
                 "Evidence cannot be a placeholder",
                 "Evidence reference does not exist",
+                "reviewed monitoring or incident-review PASS packet",
+                "MonitoringSource",
+                "Reviewer",
+                "ReviewedAt",
                 "Split-Path",
                 "Get-AnchoredLineValues",
                 "Test-AnchoredReportPass",
@@ -5793,8 +5798,13 @@ public sealed class ArchitectureRuleTests
             "Evidence",
             "Test-RealEvidence",
             "Test-EvidenceReferenceExists",
+            "Test-GrayMonitoringEvidenceReferencePass",
             "Evidence cannot be a placeholder",
             "Evidence reference does not exist",
+            "reviewed monitoring or incident-review PASS packet",
+            "MonitoringSource",
+            "Reviewer",
+            "ReviewedAt",
             "GrayStartedAt must not be after ObservationStartedAt.",
             "ObservationEndedAt must not be in the future.",
             "UtcNow",
@@ -5813,9 +5823,10 @@ public sealed class ArchitectureRuleTests
         }
 
         if (!script.Contains("Get-AnchoredLineValues $lines \"Evidence\"", StringComparison.Ordinal)
-            || !script.Contains("Test-EvidenceReferenceExists $_", StringComparison.Ordinal))
+            || !script.Contains("Test-EvidenceReferenceExists $_", StringComparison.Ordinal)
+            || !script.Contains("Test-GrayMonitoringEvidenceReferencePass $_", StringComparison.Ordinal))
         {
-            violations.Add("Release gate audit must reject placeholder gray observation evidence and missing repo-local evidence references.");
+            violations.Add("Release gate audit must reject placeholder gray observation evidence, missing repo-local evidence references, and repo-local references that are not reviewed monitoring evidence.");
         }
 
         violations.Should().BeEmpty("Gray observation cannot close from Result: PASS unless first gray release, 14-day window, zero P0/P1, and evidence fields are also present");
