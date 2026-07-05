@@ -17,6 +17,7 @@ const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后�
 const COMPARE_APPLY_EVIDENCE_TITLE = '多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈'
 const ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE = 'Assistant 恢复交接闭环后真实浏览器保留本地闭环建议'
 const ASSISTANT_RECOVERY_RISK_REFRESH_EVIDENCE_TITLE = 'Assistant 恢复交接闭环后风险事件刷新失败时真实浏览器保留闭环建议'
+const EQUIPMENT_ROW_CLICK_GUARD_EVIDENCE_TITLE = '点击设备行时真实浏览器不打开工单详情'
 const RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE = '急单采纳反馈缺少计划 ID 时真实浏览器 fail-loud'
 const OUTSOURCING_RISK_REFRESH_EVIDENCE_TITLE = '外协排产释放后风险事件刷新失败时真实浏览器保留释放确认'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
@@ -45,9 +46,10 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesCompareApplyMock = testInfo.title.includes(COMPARE_APPLY_EVIDENCE_TITLE)
     const usesAssistantRecoveryHandoffMock = testInfo.title.includes(ASSISTANT_RECOVERY_HANDOFF_EVIDENCE_TITLE)
     const usesAssistantRecoveryRiskRefreshMock = testInfo.title.includes(ASSISTANT_RECOVERY_RISK_REFRESH_EVIDENCE_TITLE)
+    const usesEquipmentRowClickGuardMock = testInfo.title.includes(EQUIPMENT_ROW_CLICK_GUARD_EVIDENCE_TITLE)
     const usesRushFeedbackMissingPlanIdMock = testInfo.title.includes(RUSH_FEEDBACK_MISSING_PLAN_ID_EVIDENCE_TITLE)
     const usesOutsourcingRiskRefreshMock = testInfo.title.includes(OUTSOURCING_RISK_REFRESH_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || usesAssistantRecoveryRiskRefreshMock || usesRushFeedbackMissingPlanIdMock || usesOutsourcingRiskRefreshMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || usesAssistantRecoveryHandoffMock || usesAssistantRecoveryRiskRefreshMock || usesEquipmentRowClickGuardMock || usesRushFeedbackMissingPlanIdMock || usesOutsourcingRiskRefreshMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -73,6 +75,9 @@ test.describe('Scheduling 排产甘特图', () => {
       await mockSchedulingPlanApis(page)
     }
     if (usesAssistantRecoveryRiskRefreshMock) {
+      await mockSchedulingPlanApis(page)
+    }
+    if (usesEquipmentRowClickGuardMock) {
       await mockSchedulingPlanApis(page)
     }
     if (usesRushFeedbackMissingPlanIdMock) {
@@ -1223,6 +1228,28 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(error).toContainText('已显示本地排产解释兜底')
     await expect(error).toContainText('work order detail unavailable from chromium')
     expect(detailRequests).toBeGreaterThan(0)
+  })
+
+  test('点击设备行时真实浏览器不打开工单详情', async ({ page }) => {
+    let detailRequests = 0
+    await page.route('**/api/v1/scheduling/workorders/**', route => {
+      detailRequests += 1
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'equipment row must not request work order detail' }),
+      })
+    })
+
+    await page.waitForSelector('.gantt_grid_data .gantt_row', { timeout: 10000 })
+    const equipmentRow = page.locator('.gantt_grid_data .gantt_row').filter({ hasText: 'eq-agent-e2e-001' }).first()
+    await expect(equipmentRow).toBeVisible()
+
+    await equipmentRow.click()
+
+    await expect(page.locator('.detail-panel')).not.toHaveClass(/open/)
+    await expect(page.locator('.detail-panel')).toHaveAttribute('aria-modal', 'false')
+    expect(detailRequests).toBe(0)
   })
 
   test('甘特图路由往返后仍可用键盘打开工单详情', async ({ page }) => {
