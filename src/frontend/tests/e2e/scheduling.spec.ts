@@ -13,6 +13,7 @@ const AGENT_BACKEND_EVIDENCE_TITLES = [
 ]
 const FORMAL_WRITEBACK_EVIDENCE_TITLE = '急单 Agent 采纳后区分反馈与正式排产回写'
 const FEEDBACK_MODAL_EVIDENCE_TITLE = '排产采纳反馈表单提交成功后关闭'
+const COMPARE_APPLY_EVIDENCE_TITLE = '多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈'
 const FAIL_LOUD_BACKEND_EVIDENCE_TITLES = [
   '后端返回空排产计划',
   '排产计划返回 HTML fallback',
@@ -36,7 +37,8 @@ test.describe('Scheduling 排产甘特图', () => {
     const usesFormalWritebackMock = testInfo.title.includes(FORMAL_WRITEBACK_EVIDENCE_TITLE)
     const usesFailLoudBackendMock = FAIL_LOUD_BACKEND_EVIDENCE_TITLES.some(title => testInfo.title.includes(title))
     const usesFeedbackModalMock = testInfo.title.includes(FEEDBACK_MODAL_EVIDENCE_TITLE)
-    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
+    const usesCompareApplyMock = testInfo.title.includes(COMPARE_APPLY_EVIDENCE_TITLE)
+    const usesLiveBackendMock = usesAgentBackendMock || usesFormalWritebackMock || usesFailLoudBackendMock || usesFeedbackModalMock || usesCompareApplyMock || testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)
     await page.addInitScript((offlineDemoSession) => {
       localStorage.setItem('aimes_offline_demo', offlineDemoSession ? 'true' : 'false')
       localStorage.setItem('aimes_token', offlineDemoSession ? 'demo-token-admin' : 'mock-e2e-token')
@@ -53,6 +55,9 @@ test.describe('Scheduling 排产甘特图', () => {
       await mockSchedulingPlanApis(page)
     }
     if (usesFeedbackModalMock) {
+      await mockSchedulingPlanApis(page)
+    }
+    if (usesCompareApplyMock) {
       await mockSchedulingPlanApis(page)
     }
     if (testInfo.title.includes(LABOR_EVIDENCE_RETRY_TITLE)) {
@@ -447,6 +452,104 @@ test.describe('Scheduling 排产甘特图', () => {
     await expect(note).toContainText('批量方案采纳反馈同步失败')
     await expect(note).toContainText('当前仅保留本地目标切换')
     await expect(note).toContainText('chromium batch feedback unavailable')
+    await expect(page.locator('.toolbar')).toContainText('综合平衡方案')
+    await expect(page.locator('.warnings-bar')).toContainText('综合平衡方案已应用')
+  })
+
+  test('多目标方案对比采用成功后真实浏览器关闭对话框并同步反馈', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('aimes_offline_demo', 'false'))
+    const comparedPlan = {
+      id: 'batch-balanced-success-plan-e2e',
+      planName: '综合平衡方案',
+      planStartDate: '2026-06-01T08:00:00.000Z',
+      planEndDate: '2026-06-01T12:00:00.000Z',
+      overallUtilizationRate: 0.86,
+      onTimeDeliveryRate: 0.93,
+      totalChangeoverMinutes: 28,
+      groupCount: 1,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      items: [
+        {
+          id: 'batch-balanced-success-item-1',
+          workOrderId: 'batch-balanced-success-wo-1',
+          workOrderNumber: 'WO-BATCH-BALANCED-SUCCESS-001',
+          equipmentId: 'batch-balanced-success-eq-1',
+          equipmentName: 'CNC 批量对比成功机台',
+          plannedStartTime: '2026-06-01T08:00:00.000Z',
+          plannedEndTime: '2026-06-01T12:00:00.000Z',
+          sequence: 1,
+          setupTime: '20 分钟',
+          dependentItems: [],
+        },
+      ],
+    }
+    await page.route('**/api/v1/scheduling/optimize-compare', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        bestOverallObjective: 'balanced',
+        items: [
+          {
+            objective: 'balanced',
+            objectiveLabel: '综合平衡',
+            plan: comparedPlan,
+            utilizationRate: 0.86,
+            onTimeDeliveryRate: 0.93,
+            totalChangeoverMinutes: 28,
+            groupCount: 1,
+            estimatedCompletionRate: 0.95,
+            totalWorkOrders: 1,
+            recommendationScore: 0.8112,
+            recommendationScoreBreakdown: {
+              utilizationContribution: 0.258,
+              onTimeDeliveryContribution: 0.465,
+              changeoverContribution: 0.0882,
+            },
+          },
+        ],
+        recommendationScoreFormula: {
+          version: 'e2e-v1',
+          utilizationWeight: 0.3,
+          onTimeDeliveryWeight: 0.5,
+          changeoverWeight: 0.2,
+          changeoverNormalizationMinutes: 50,
+          description: 'E2E 批量方案反馈同步成功验证公式',
+        },
+      }),
+    }))
+    await page.route('**/api/v1/scheduling/optimize', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        plan: comparedPlan,
+        assignments: [],
+        estimatedCompletionRate: 0.95,
+        utilizationRate: 0.86,
+        warnings: ['综合平衡方案已应用'],
+      }),
+    }))
+    let feedbackRequests = 0
+    await page.route('**/api/v1/scheduling/adoption-feedback', route => {
+      feedbackRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'batch-compare-apply-success-e2e' }),
+      })
+    })
+
+    await page.getByRole('button', { name: '多目标对比' }).click()
+    const dialog = page.getByRole('dialog', { name: '多目标方案对比' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('.recommend-card')).toContainText('综合平衡')
+
+    await dialog.getByRole('button', { name: '采用此方案' }).click()
+
+    await expect(dialog).toBeHidden()
+    await expect.poll(() => feedbackRequests).toBe(1)
+    const note = page.locator('.sync-note').filter({ hasText: '批量方案采纳反馈已同步后台' })
+    await expect(note).toBeVisible()
+    await expect(note).toContainText('批量方案采纳反馈已同步后台')
     await expect(page.locator('.toolbar')).toContainText('综合平衡方案')
     await expect(page.locator('.warnings-bar')).toContainText('综合平衡方案已应用')
   })
