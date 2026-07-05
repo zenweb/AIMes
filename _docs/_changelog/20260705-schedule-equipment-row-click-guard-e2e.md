@@ -12,7 +12,7 @@
 - `npm run test:e2e -- --grep "点击任务条展示任务级排产解释|工单详情接口失败时真实浏览器展示本地排产解释兜底|点击设备行时真实浏览器不打开工单详情|甘特图路由往返后仍可用键盘打开工单详情"`: `4 passed`.
 - `npm run lint -- tests/e2e/scheduling.spec.ts`: passed.
 - `git diff --check -- src/frontend/tests/e2e/scheduling.spec.ts`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warning.
-- Hosted CI and Agent Evaluation: pending GitHub `V1` submission.
+- GitHub `V1` commit `6f934cc512e0fbc9d9d37521eab91ccd1e7b5ace`: CI run `28729400561` passed and Agent Evaluation run `28729400556` passed.
 
 ## Notes
 
