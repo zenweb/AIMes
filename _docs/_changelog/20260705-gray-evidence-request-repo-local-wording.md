@@ -5,3 +5,4 @@
 - Added architecture guard tokens for the repo-local wording.
 
 Strict v1.0.0 remains blocked until real repo-local gray monitoring or signed incident-review evidence proves `P0=0` and `P1=0`.
+- Fixed follow-up CI wording mismatch so the release human action packet matches the architecture guard token exactly.

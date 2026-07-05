@@ -123,7 +123,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-incident-re
   -Notes "<human review note>"
 ```
 
-Then use that reviewed packet as the gray observation evidence. External-only strings, ticket IDs, dashboard URLs, or prose are not sufficient for strict PASS:
+Then use that reviewed packet as the gray observation evidence. External-only strings, ticket IDs, dashboard URLs, or prose are not sufficient for strict PASS.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-gray-observation.ps1 `
