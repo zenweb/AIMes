@@ -10,7 +10,7 @@
 - v1.0.0 scope: 阶段一 `Sprint 0-3` + 首次灰度 + 14 天无 P0/P1。
 - v1.1 scope: 阶段二 `Sprint 4-6 + E1`。
 - Scope rule: 范围保留；带宽不足时按 cut line 顺延阶段二，不删除任务。
-- Current release-gate mode: owner explicitly deferred the 14-day gray observation wait for current follow-up work; strict final v1.0.0 release PASS still requires the original gray observation evidence.
+- Current release-gate mode: demo/test B-track uses the script-supported owner-deferred gray observation path and is currently `PASS_WITH_DEFERRED_GRAY_OBSERVATION`; strict production final v1.0.0 release PASS still requires real gray observation evidence unless the owner makes an explicit production-equivalent deferral.
 
 ## Authoritative Sources
 
@@ -41,9 +41,9 @@
 - Real Chrome frontend evidence: `_docs/_reports/frontend-real-browser-evidence-20260611.md` is `Result: PASS`; 78 Chrome e2e tests covered login/auth guard, audit replay, monitoring escalation, quality evidence flows, and fail-loud no-forged-evidence paths. Visual screenshots are indexed at `output/playwright/20260611-real-browser/manifest.md`.
 - Attack Chain manual verification: `_docs/_reports/attack-chain-verification-20260611-manual-verified.md` is `Result: PASS`; Attack Chain A/B/C are `VERIFIED` with human verifier and non-placeholder evidence references.
 - Security signoff: `_docs/_review/20260607-security-signoff.md` is `Result: PASS`; human signer and signed decision are present.
-- Gray observation: `_docs/_reports/gray-observation-latest.md` is still `OBSERVING` and strict `Result: FAIL`; owner deferred the 14-day wait for current follow-up work, but this remains required for strict final v1.0.0 release PASS.
+- Gray observation: `_docs/_reports/release-gate-audit-20260706-owner-deferred-gray-demo-env.md` records the demo/test owner decision as `DEFERRED_BY_OWNER`; `_docs/_reports/gray-observation-latest.md` remains historical strict production evidence and must not be treated as strict final production PASS.
 - Phase-one acceptance matrix: `_docs/_reports/phase-one-sprint0-3-acceptance-matrix-20260611.md` maps Sprint 0-3 acceptance criteria to current evidence and explicitly marks remaining human/wall-clock gates.
-- Aggregate release gate: `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-ecdd6d05-deferred-gray.md` is the current B-track recheck and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-e7eff755-deferred-gray.md`, `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-36ff338-deferred-gray.md`, `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-cc45df7-deferred-gray.md`, and `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md` are prior packets. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER`.
+- Aggregate release gate: `_docs/_reports/release-gate-audit-20260706-owner-deferred-gray-demo-env.md` is the current authoritative demo/test B-track gate packet and reports `Result: PASS_WITH_DEFERRED_GRAY_OBSERVATION`; `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-ecdd6d05-deferred-gray.md`, `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-e7eff755-deferred-gray.md`, `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-36ff338-deferred-gray.md`, `_docs/_reports/release-gate-audit-20260705-current-hosted-ci-cc45df7-deferred-gray.md`, and `_docs/_reports/release-gate-audit-20260630-live-e2e-no-skip-deferred-gray.md` are prior packets. Hosted CI, PostgreSQL/staging, Attack Chain A/B/C, and Security signoff are PASS, while Gray observation is explicitly `DEFERRED_BY_OWNER` for the demo/test environment.
 - Worktree inventory: `_docs/_reports/worktree-inventory-20260621-current.md` records the local dirty review surface for release-candidate slicing. It explicitly states that hosted CI evidence covers committed heads only and does not prove the dirty worktree.
 
 ## Execution Rule
