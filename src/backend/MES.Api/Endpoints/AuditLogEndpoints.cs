@@ -20,6 +20,9 @@ public static class AuditLogEndpoints
         int page = 1,
         int pageSize = 20)
     {
+        if (page < 1 || pageSize is < 1 or > 200)
+            return TypedResults.BadRequest(new { message = "page 必须大于等于 1，pageSize 必须在 1 到 200 之间" });
+
         var result = await auditLogService.GetAuditLogsAsync(action, traceId, page, pageSize, ct);
         return TypedResults.Ok(result);
     }

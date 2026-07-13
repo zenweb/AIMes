@@ -30,10 +30,9 @@ public sealed class AuditEndpointFilter(string resource) : IEndpointFilter
             .ToList();
         var newValues = newValuesArgs.Count != 0 ? AuditRedaction.RedactAndSerialize(newValuesArgs) : null;
 
-        var initiatedBy = context.HttpContext.Request.Headers.TryGetValue("X-Initiated-By", out var initiatedByHeader)
-            && Enum.TryParse<AuditInitiatedBy>(initiatedByHeader.ToString(), ignoreCase: true, out var parsed)
-            ? parsed
-            : AuditInitiatedBy.User;
+        // 客户端可伪造请求头；端点审计的来源只能按认证上下文视为用户操作。
+        // Agent 写入由服务端受控工作流直接创建相应的 Agent 审计记录。
+        var initiatedBy = AuditInitiatedBy.User;
 
         var unitOfWork = context.HttpContext.RequestServices.GetRequiredService<IUnitOfWork>();
         await unitOfWork.ExecuteAsync(innerCt =>
@@ -47,7 +46,9 @@ public sealed class AuditEndpointFilter(string resource) : IEndpointFilter
                 context.HttpContext.Connection.RemoteIpAddress?.ToString(),
                 request.Headers.UserAgent.ToString(),
                 initiatedBy,
-                innerCt),
+                ct: innerCt,
+                businessKey: idValue is null ? resource : $"{resource}:{idValue}",
+                traceId: context.HttpContext.TraceIdentifier),
             context.HttpContext.RequestAborted);
 
         return result;
