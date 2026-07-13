@@ -19,3 +19,5 @@ PR #4 已合并到 `V1@3ef45fa`。最终 V1 CI `29271142661` 和 Agent Evaluatio
 本轮复核补充了审计功能完整性：PATCH 可筛选，详情保留所有关键证据元数据并可按 Trace 回筛；通用写操作审计持久化业务键和请求 Trace；分页非法输入显式 400；回放指标不再宣称固定 100% 覆盖。前端、后端单测、集成、架构、lint 和 format 均通过，未发现本轮回归。
 
 PR #5 首轮 CI 暴露前端 artifact 路径仍指向不存在的 `dist`，导致 Build 绿但没有上传发布制品。现已统一 CI 与 Docker 使用 static preset，并增加 `.output/public/index.html` 和 artifact 缺失硬失败；本地契约测试 3/3、静态构建及入口检查通过。
+
+最终 CI 仍有官方 Actions Node 20 弃用注解。已按各官方仓库 2026-07-14 最新稳定主版本升级全部 workflow，并用前端 CI 契约与 Gray workflow 契约防止回退到 v4。

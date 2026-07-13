@@ -13,7 +13,7 @@ foreach ($token in @(
     "AIMES_GRAY_RELEASE_ID",
     "run-gray-health-observation.ps1",
     "StrictGrayGateClosed",
-    "upload-artifact@v4"
+    "upload-artifact@v7"
 )) {
     if (-not $workflow.Contains($token)) {
         throw "Gray observation workflow is missing required token: $token"
