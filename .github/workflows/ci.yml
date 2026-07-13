@@ -49,6 +49,12 @@ jobs:
       - name: Build
         run: dotnet build src/backend/MES.Api/MES.Api.csproj --no-restore --configuration Release
 
+      - name: Open-source build
+        run: dotnet build src/backend/AIMes.slnx --no-restore --configuration Release /p:AimesOpenSource=true /p:SkipFrontendBuildCopy=true
+
+      - name: Open-source runtime tests
+        run: dotnet test src/tests/MES.Tests.Unit/MES.Tests.Unit.csproj --no-restore --configuration Release /p:AimesOpenSource=true /p:SkipFrontendBuildCopy=true --filter "FullyQualifiedName~OpenSourceTraceValidatorTests"
+
       - name: Format Check
         run: dotnet format src/backend/AIMes.slnx --verify-no-changes --no-restore
 

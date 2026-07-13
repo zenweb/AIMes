@@ -45,7 +45,8 @@ public record ScheduleOptimizationResult(
     string? BottleneckInfo,
     string OptimizationNotes,
     IReadOnlyList<string> Warnings,
-    IReadOnlyList<string> SkippedOrderIds);
+    IReadOnlyList<string> SkippedOrderIds,
+    MES.Domain.ValueObjects.AiDecisionTrace? AiDecisionTrace = null);
 
 public interface IScheduleOptimizationService
 {

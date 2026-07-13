@@ -7,7 +7,8 @@ public record QualityRootCauseItem(string Cause, double Probability, string Evid
 public record QualityAnalysisResult(
     List<QualityRootCauseItem> RootCauses,
     List<string> CorrectiveActions,
-    List<string> PreventiveMeasures);
+    List<string> PreventiveMeasures,
+    MES.Domain.ValueObjects.AiDecisionTrace? AiDecisionTrace = null);
 
 public record SpcAnalysisResult(
     bool HasTrend,
@@ -15,7 +16,8 @@ public record SpcAnalysisResult(
     bool HasCycle,
     bool IsNearLimit,
     string TrendDirection,
-    string RecommendedAction);
+    string RecommendedAction,
+    MES.Domain.ValueObjects.AiDecisionTrace? AiDecisionTrace = null);
 
 public interface IQualityAnalysisService
 {
