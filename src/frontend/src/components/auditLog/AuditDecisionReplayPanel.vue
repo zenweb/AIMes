@@ -1,11 +1,13 @@
 <template>
-  <section class="audit-replay-panel" aria-label="AI 决策回放">
+  <section class="audit-replay-panel" :aria-label="replayText('aria')">
     <div class="replay-heading">
       <div>
-        <span class="eyebrow">AI 决策审计</span>
-        <h3>建议、采纳、重排动作与配置审批可回放</h3>
+        <span class="eyebrow">{{ replayText('eyebrow') }}</span>
+        <h3>{{ replayText('heading') }}</h3>
       </div>
-      <span class="approval-badge" role="status" aria-live="polite">{{ pendingApprovalCount }} 个配置待审批</span>
+      <span class="approval-badge" role="status" aria-live="polite">{{
+        replayMessage('pending', { count: pendingApprovalCount })
+      }}</span>
     </div>
     <div v-if="replaySyncErrors.length" class="replay-sync-alert" role="alert" aria-live="assertive">
       <p v-for="message in replaySyncErrors" :key="message">{{ message }}</p>
@@ -13,14 +15,14 @@
 
     <div id="audit-replay-help" class="audit-replay-guidance">
       <div>
-        <strong>回放前请核对决策对象、执行人、证据编号、风险口径和留痕状态。</strong>
-        <span>Before replay, verify decision object, actor, evidence id, risk wording, and audit state.</span>
+        <strong>{{ replayText('guidance') }}</strong>
+        <span>{{ replayText('guidanceSecondary') }}</span>
       </div>
-      <nav aria-label="审计回放关联入口">
-        <a href="/production">生产报工 / Production</a>
-        <a href="/report">报表中心 / Reports</a>
-        <a href="#audit-config-approvals">配置审批 / Approvals</a>
-        <a href="#audit-replay-help">帮助 / Help</a>
+      <nav :aria-label="replayText('related')">
+        <a href="/scheduling/production">{{ replayText('production') }}</a>
+        <a href="/scheduling/report">{{ replayText('reports') }}</a>
+        <a href="#audit-config-approvals">{{ replayText('approvals') }}</a>
+        <a href="#audit-replay-help">{{ replayText('help') }}</a>
       </nav>
     </div>
 
@@ -40,18 +42,18 @@
         <h4>{{ item.title }}</h4>
         <p>{{ item.summary }}</p>
         <div class="decision-meta">
-          <span>对象：{{ item.object }}</span>
-          <span>执行人：{{ item.actor }}</span>
-          <span>证据：{{ item.evidence }}</span>
+          <span>{{ replayText('object') }} {{ item.object }}</span>
+          <span>{{ replayText('actor') }} {{ item.actor }}</span>
+          <span>{{ replayText('evidence') }} {{ item.evidence }}</span>
         </div>
         <button
           type="button"
           class="replay-btn"
           :aria-pressed="selectedId === item.id"
-          :aria-label="`回放决策链：${item.title}`"
-          @click="selectedId = item.id"
+          :aria-label="replayMessage('replayAria', { title: item.title })"
+          @click="selectReplayItem(item.id)"
         >
-          回放决策链
+          {{ replayText('replayButton') }}
         </button>
       </article>
     </div>
@@ -65,34 +67,38 @@
       aria-describedby="audit-replay-help"
     >
       <div class="detail-title">
-        <h4 id="audit-replay-detail-title">{{ selectedItem.title }} 回放链</h4>
+        <h4 id="audit-replay-detail-title">{{ replayMessage('replayChain', { title: selectedItem.title }) }}</h4>
         <span>{{ selectedItem.traceId }}</span>
       </div>
       <ol>
         <li v-for="step in selectedItem.steps" :key="step">{{ step }}</li>
       </ol>
       <div class="trace-footer">
-        <span>风险口径：{{ selectedItem.risk }}</span>
-        <span>留痕状态：{{ selectedItem.auditState }}</span>
+        <span>{{ replayText('risk') }} {{ selectedItem.risk }}</span>
+        <span>{{ replayText('auditState') }} {{ selectedItem.auditState }}</span>
         <RouterLink
           v-if="selectedItem.route"
           class="trace-link"
           :to="selectedItem.route"
-          :aria-label="`打开${selectedItem.routeLabel}：${selectedItem.object}`"
+          :aria-label="
+            replayMessage('openRouteAria', { label: selectedItem.routeLabel ?? '', object: selectedItem.object })
+          "
         >
-          打开{{ selectedItem.routeLabel }}
+          {{ replayMessage('openRoute', { label: selectedItem.routeLabel ?? '' }) }}
         </RouterLink>
       </div>
     </div>
 
-    <div id="audit-config-approvals" class="approval-lane" role="list" aria-label="关键配置变更审批">
-      <h4>关键配置变更审批</h4>
+    <div id="audit-config-approvals" class="approval-lane" role="list" :aria-label="replayText('approvalAria')">
+      <h4>{{ replayText('approvalHeading') }}</h4>
       <div
         v-for="approval in approvals"
         :key="approval.id"
         class="approval-row"
         role="listitem"
-        :aria-label="`审批项：${approval.title}，状态 ${approval.status}，责任人 ${approval.owner}`"
+        :aria-label="
+          replayMessage('approvalItemAria', { title: approval.title, status: approval.status, owner: approval.owner })
+        "
       >
         <div>
           <strong>{{ approval.title }}</strong>
@@ -109,13 +115,32 @@
 import { computed, onMounted, ref } from 'vue'
 import { getAuditLogDetail, getAuditLogs } from '../../api/auditLog'
 import type { AuditLogDetail } from '../../types/auditLog'
-import { readAssistantActionAudits, readAssistantActionAuditsBackendFirst, type AssistantActionAuditRecord } from '../../utils/assistant-action-audit'
+import {
+  readAssistantActionAudits,
+  readAssistantActionAuditsBackendFirst,
+  type AssistantActionAuditRecord,
+} from '../../utils/assistant-action-audit'
 import { readQualityCapaClosureBackendFirst, type QualityCapaClosure } from '../../utils/quality-capa-sync'
-import { readPocEvidenceGovernanceRecordsBackendFirst, type PocEvidenceGovernanceRecord } from '../../utils/poc-evidence-governance'
-import { approvalStatusLabel, isApprovalOpen, readAgentConfigApprovals, readAgentConfigApprovalsBackendFirst, type AgentConfigApprovalRecord } from '../../utils/agent-config-approval-sync'
-import { readPocReviewSignoffRecordBackendFirst, type PocReviewSignoffRecord } from '../../utils/poc-review-signoff-sync'
+import {
+  readPocEvidenceGovernanceRecordsBackendFirst,
+  type PocEvidenceGovernanceRecord,
+} from '../../utils/poc-evidence-governance'
+import {
+  approvalStatusLabel,
+  isApprovalOpen,
+  readAgentConfigApprovalsBackendFirst,
+  readStoredAgentConfigApprovals,
+  type AgentConfigApprovalRecord,
+} from '../../utils/agent-config-approval-sync'
+import {
+  readPocReviewSignoffRecordBackendFirst,
+  type PocReviewSignoffRecord,
+} from '../../utils/poc-review-signoff-sync'
 import { readOtdEvidenceChainRecords, type OtdEvidenceChainItem } from '../../utils/otd-evidence-chain-sync'
-import { readKnowledgeGovernanceReviewsBackendFirst, type KnowledgeGovernanceReviewRecord } from '../../utils/knowledge-governance-sync'
+import {
+  readKnowledgeGovernanceReviewsBackendFirst,
+  type KnowledgeGovernanceReviewRecord,
+} from '../../utils/knowledge-governance-sync'
 import {
   buildQualityKnowledgeRecommendationExperimentCandidateRecords,
   buildQualityKnowledgeGrayReleaseMonitorRecords,
@@ -131,6 +156,20 @@ import {
 } from '../../utils/quality-knowledge-sample-sync'
 import { errorMessage } from '../../utils/error-message'
 import { isOfflineDemoError } from '../../utils/offline-demo-mode'
+import { useLocale } from '../../composables/useLocale'
+
+const { t } = useLocale()
+
+function replayText(key: string): string {
+  return t('auditReplay', key)
+}
+
+function replayMessage(key: string, replacements: Record<string, string | number>): string {
+  return Object.entries(replacements).reduce(
+    (message, [name, value]) => message.replace(`{${name}}`, String(value)),
+    replayText(key),
+  )
+}
 
 interface ReplayItem {
   id: string
@@ -174,14 +213,17 @@ const replaySyncErrors = ref<string[]>([])
 const OTD_EVIDENCE_CHAIN_STORAGE_KEY = 'aimes_otd_evidence_chain'
 
 const qualityGrayReleaseMonitorRecords = computed<QualityKnowledgeGrayReleaseMonitorRecord[]>(() =>
-  buildQualityKnowledgeGrayReleaseMonitorRecords(qualityRetrainingVersionRecords.value, qualityRecommendationFeedbackRecords.value)
+  buildQualityKnowledgeGrayReleaseMonitorRecords(
+    qualityRetrainingVersionRecords.value,
+    qualityRecommendationFeedbackRecords.value,
+  ),
 )
 const qualityExperimentCandidateRecords = computed<QualityKnowledgeRecommendationExperimentCandidateRecord[]>(() =>
   buildQualityKnowledgeRecommendationExperimentCandidateRecords(
     qualityRetrainingVersionRecords.value,
     qualityRecommendationFeedbackRecords.value,
-    qualityGrayReleaseDecisionRecords.value
-  )
+    qualityGrayReleaseDecisionRecords.value,
+  ),
 )
 
 const baseReplayItems: ReplayItem[] = [
@@ -232,10 +274,18 @@ const replayItems = computed<ReplayItem[]>(() => {
   const assistantItems = assistantActionAudits.value.map(mapAssistantAuditToReplay)
   const pocEvidenceItems = pocEvidenceRecords.value.map(mapPocEvidenceToReplay)
   const knowledgeItems = knowledgeReviewRecords.value.map(mapKnowledgeGovernanceReviewToReplay)
-  const qualityRecommendationFeedbackItems = qualityRecommendationFeedbackRecords.value.map(mapQualityRecommendationFeedbackToReplay)
-  const qualityGrayReleaseMonitorItems = qualityGrayReleaseMonitorRecords.value.map(mapQualityGrayReleaseMonitorToReplay)
-  const qualityGrayReleaseDecisionItems = qualityGrayReleaseDecisionRecords.value.map(mapQualityGrayReleaseDecisionToReplay)
-  const qualityExperimentCandidateItems = qualityExperimentCandidateRecords.value.map(mapQualityExperimentCandidateToReplay)
+  const qualityRecommendationFeedbackItems = qualityRecommendationFeedbackRecords.value.map(
+    mapQualityRecommendationFeedbackToReplay,
+  )
+  const qualityGrayReleaseMonitorItems = qualityGrayReleaseMonitorRecords.value.map(
+    mapQualityGrayReleaseMonitorToReplay,
+  )
+  const qualityGrayReleaseDecisionItems = qualityGrayReleaseDecisionRecords.value.map(
+    mapQualityGrayReleaseDecisionToReplay,
+  )
+  const qualityExperimentCandidateItems = qualityExperimentCandidateRecords.value.map(
+    mapQualityExperimentCandidateToReplay,
+  )
   const backendBusinessWriteItems = backendAgentActionAudits.value
     .map(mapAgentBusinessWriteAuditToReplay)
     .filter((item): item is ReplayItem => item !== null)
@@ -245,7 +295,21 @@ const replayItems = computed<ReplayItem[]>(() => {
   const otdEvidenceItems = otdEvidenceRecords.value.map(mapOtdEvidenceToReplay)
   const configApprovalItems = configApprovals.value.map(mapConfigApprovalToReplay)
   const signoffItems = pocReviewSignoff.value ? [mapPocReviewSignoffToReplay(pocReviewSignoff.value)] : []
-  const baseItems = [...scheduleAdoptionFeedbackItems, ...backendBusinessWriteItems, ...qualityExperimentCandidateItems, ...qualityGrayReleaseMonitorItems, ...qualityGrayReleaseDecisionItems, ...qualityRecommendationFeedbackItems, ...knowledgeItems, ...otdEvidenceItems, ...signoffItems, ...pocEvidenceItems, ...assistantItems, ...configApprovalItems, ...baseReplayItems]
+  const baseItems = [
+    ...scheduleAdoptionFeedbackItems,
+    ...backendBusinessWriteItems,
+    ...qualityExperimentCandidateItems,
+    ...qualityGrayReleaseMonitorItems,
+    ...qualityGrayReleaseDecisionItems,
+    ...qualityRecommendationFeedbackItems,
+    ...knowledgeItems,
+    ...otdEvidenceItems,
+    ...signoffItems,
+    ...pocEvidenceItems,
+    ...assistantItems,
+    ...configApprovalItems,
+    ...baseReplayItems,
+  ]
   if (!closure) return baseItems
 
   return [
@@ -257,7 +321,12 @@ const replayItems = computed<ReplayItem[]>(() => {
       object: `${closure.inspectionId} / ${closure.workOrderId}`,
       actor: closure.owner,
       evidence: closure.verification,
-      time: new Date(closure.verifiedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+      time: new Date(closure.verifiedAt).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
       status: 'executed',
       traceId: closure.traceId,
       risk: closure.otdImpact,
@@ -290,7 +359,12 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
     object: record.actionId,
     actor: `${record.actor} / ${record.role}`,
     evidence: record.auditCode,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'assistant',
     traceId: record.traceId ?? record.auditCode,
     risk: record.permitted
@@ -339,45 +413,45 @@ function mapAssistantAuditToReplay(record: AssistantActionAuditRecord): ReplayIt
             '异常处置卡已写入异常管理现场事件中心，并分解为风险升级、AI 排产冻结复核和设备维护确认。',
             `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
           ]
-      : isEngineeringConstraintPackage
-        ? [
-            `AI 生产助手识别可执行意图：${record.label}。`,
-            `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
-            `${statusText}，${routeText}。`,
-            '工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门/工程审批四个责任动作。',
-            `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
-          ]
-        : isCustomerCommitmentPackage
+        : isEngineeringConstraintPackage
           ? [
               `AI 生产助手识别可执行意图：${record.label}。`,
               `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
               `${statusText}，${routeText}。`,
-              `执行反馈：${record.resultMessage}`,
-              '客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购/工程/质量责任确认三类动作。',
+              '工程约束复核包已分解为 BOM 替代料复核、R-B200 OP-090 工艺能力复核、AI 排产约束释放和质量门/工程审批四个责任动作。',
               `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
             ]
-          : isBomKittingPackage
+          : isCustomerCommitmentPackage
             ? [
                 `AI 生产助手识别可执行意图：${record.label}。`,
                 `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
                 `${statusText}，${routeText}。`,
-                'BOM 展开齐套检查包已分解为 M-AL-6061 缺料处置、M-SEAL-20 已齐套确认和 M-AL-6061B 替代料工程确认三类动作。',
+                `执行反馈：${record.resultMessage}`,
+                '客户交付恢复承诺包已分解为客户交付口径、AI 排产窗口复核、采购/工程/质量责任确认三类动作。',
                 `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
               ]
-            : isEquipmentDowntimePackage
+            : isBomKittingPackage
               ? [
                   `AI 生产助手识别可执行意图：${record.label}。`,
                   `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
                   `${statusText}，${routeText}。`,
-                  '设备停机复核包已分解为 CNC-001 维护窗口、CNC-002 / CNC-003 替代设备、影响工单重排和现场班组瓶颈保护四类动作。',
+                  'BOM 展开齐套检查包已分解为 M-AL-6061 缺料处置、M-SEAL-20 已齐套确认和 M-AL-6061B 替代料工程确认三类动作。',
                   `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
                 ]
-        : [
-          `AI 生产助手识别可执行意图：${record.label}。`,
-          `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
-          `${statusText}，${routeText}。`,
-          `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode}。`,
-        ],
+              : isEquipmentDowntimePackage
+                ? [
+                    `AI 生产助手识别可执行意图：${record.label}。`,
+                    `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+                    `${statusText}，${routeText}。`,
+                    '设备停机复核包已分解为 CNC-001 维护窗口、CNC-002 / CNC-003 替代设备、影响工单重排和现场班组瓶颈保护四类动作。',
+                    `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode} / ${record.traceId ?? record.auditCode}。`,
+                  ]
+                : [
+                    `AI 生产助手识别可执行意图：${record.label}。`,
+                    `当前用户 ${record.actor} 以 ${record.role} 角色触发动作，系统完成权限校验。`,
+                    `${statusText}，${routeText}。`,
+                    `执行反馈写入聊天记录，并同步为审计回放记录 ${record.auditCode}。`,
+                  ],
   }
 }
 
@@ -428,27 +502,33 @@ const agentExecuteAuditActions = [
   'AgentExecuteMaintenanceAction',
 ]
 
-async function readScheduleAdoptionFeedbackAudits(onError?: (label: string, error: unknown) => void): Promise<AuditLogDetail[]> {
+async function readScheduleAdoptionFeedbackAudits(
+  onError?: (label: string, error: unknown) => void,
+): Promise<AuditLogDetail[]> {
   try {
     const page = await getAuditLogs('ScheduleAdoptionFeedbackUpsert', 1, 8)
     if (!Array.isArray(page.items)) {
       throw new Error('后端返回非数组审计载荷')
     }
-    const details = await Promise.all(page.items.map(async item => {
-      try {
-        const detail = await getAuditLogDetail(item.id)
-        if (!isAuditLogDetailRecord(detail)) {
-          throw new Error(`${item.id} 后端返回非对象审计载荷`)
+    const details = await Promise.all(
+      page.items.map(async (item) => {
+        try {
+          const detail = await getAuditLogDetail(item.id)
+          if (!isAuditLogDetailRecord(detail)) {
+            throw new Error(`${item.id} 后端返回非对象审计载荷`)
+          }
+          return detail
+        } catch (error: unknown) {
+          onError?.('排产采纳反馈审计详情', error)
+          return null
         }
-        return detail
-      } catch (error: unknown) {
-        onError?.('排产采纳反馈审计详情', error)
-        return null
-      }
-    }))
+      }),
+    )
     return details.filter((item): item is AuditLogDetail => {
       if (item === null) return false
-      const payload = parseScheduleAdoptionFeedbackAuditPayload(item, error => onError?.('排产采纳反馈审计详情', error))
+      const payload = parseScheduleAdoptionFeedbackAuditPayload(item, (error) =>
+        onError?.('排产采纳反馈审计详情', error),
+      )
       if (!payload) return false
       if (!payload.ReasonDetail?.trim()) {
         onError?.('排产采纳反馈审计详情', new Error(`${item.id} 缺少原因说明`))
@@ -462,40 +542,49 @@ async function readScheduleAdoptionFeedbackAudits(onError?: (label: string, erro
   }
 }
 
-async function readBackendAgentActionAudits(onError?: (label: string, error: unknown) => void): Promise<AuditLogDetail[]> {
-  const batches = await Promise.all(agentExecuteAuditActions.map(async action => {
-    try {
-      const page = await getAuditLogs(action, 1, 8)
-      if (!Array.isArray(page.items)) {
-        throw new Error('后端返回非数组审计载荷')
-      }
-      const details = await Promise.all(page.items.map(async item => {
-        try {
-          const detail = await getAuditLogDetail(item.id)
-          if (!isAuditLogDetailRecord(detail)) {
-            throw new Error(`${item.id} 后端返回非对象审计载荷`)
+async function readBackendAgentActionAudits(
+  onError?: (label: string, error: unknown) => void,
+): Promise<AuditLogDetail[]> {
+  const batches = await Promise.all(
+    agentExecuteAuditActions.map(async (action) => {
+      try {
+        const page = await getAuditLogs(action, 1, 8)
+        if (!Array.isArray(page.items)) {
+          throw new Error('后端返回非数组审计载荷')
+        }
+        const details = await Promise.all(
+          page.items.map(async (item) => {
+            try {
+              const detail = await getAuditLogDetail(item.id)
+              if (!isAuditLogDetailRecord(detail)) {
+                throw new Error(`${item.id} 后端返回非对象审计载荷`)
+              }
+              return detail
+            } catch (error: unknown) {
+              onError?.('业务落库审计详情', error)
+              return null
+            }
+          }),
+        )
+        return details.filter((item): item is AuditLogDetail => {
+          if (item === null) return false
+          const payload = parseAgentActionAuditPayload(item, (error) => onError?.('业务落库审计详情', error))
+          if (!payload?.businessWrite) return false
+          if (!isSupportedAgentBusinessWriteResource(payload.businessWrite.resource)) {
+            onError?.(
+              '业务落库审计详情',
+              new Error(`${item.id} 不支持的业务落库资源：${payload.businessWrite.resource ?? '未指定'}`),
+            )
+            return false
           }
-          return detail
-        } catch (error: unknown) {
-          onError?.('业务落库审计详情', error)
-          return null
-        }
-      }))
-      return details.filter((item): item is AuditLogDetail => {
-        if (item === null) return false
-        const payload = parseAgentActionAuditPayload(item, error => onError?.('业务落库审计详情', error))
-        if (!payload?.businessWrite) return false
-        if (!isSupportedAgentBusinessWriteResource(payload.businessWrite.resource)) {
-          onError?.('业务落库审计详情', new Error(`${item.id} 不支持的业务落库资源：${payload.businessWrite.resource ?? '未指定'}`))
-          return false
-        }
-        return true
-      })
-    } catch (error: unknown) {
-      onError?.('业务落库审计', error)
-      return []
-    }
-  }))
+          return true
+        })
+      } catch (error: unknown) {
+        onError?.('业务落库审计', error)
+        return []
+      }
+    }),
+  )
   return batches.flat()
 }
 
@@ -503,16 +592,19 @@ function isAuditLogDetailRecord(value: unknown): value is AuditLogDetail {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Partial<AuditLogDetail>
   return (
-    typeof record.id === 'string'
-    && typeof record.userId === 'string'
-    && typeof record.action === 'string'
-    && typeof record.resource === 'string'
-    && typeof record.createdAt === 'string'
-    && Object.prototype.hasOwnProperty.call(record, 'newValues')
+    typeof record.id === 'string' &&
+    typeof record.userId === 'string' &&
+    typeof record.action === 'string' &&
+    typeof record.resource === 'string' &&
+    typeof record.createdAt === 'string' &&
+    Object.prototype.hasOwnProperty.call(record, 'newValues')
   )
 }
 
-function parseAgentActionAuditPayload(record: AuditLogDetail, onError?: (error: unknown) => void): AgentActionAuditPayload | null {
+function parseAgentActionAuditPayload(
+  record: AuditLogDetail,
+  onError?: (error: unknown) => void,
+): AgentActionAuditPayload | null {
   if (!record.newValues) {
     onError?.(new Error(`${record.id} 审计载荷缺失`))
     return null
@@ -528,7 +620,10 @@ function parseAgentActionAuditPayload(record: AuditLogDetail, onError?: (error: 
   }
 }
 
-function parseScheduleAdoptionFeedbackAuditPayload(record: AuditLogDetail, onError?: (error: unknown) => void): ScheduleAdoptionFeedbackAuditPayload | null {
+function parseScheduleAdoptionFeedbackAuditPayload(
+  record: AuditLogDetail,
+  onError?: (error: unknown) => void,
+): ScheduleAdoptionFeedbackAuditPayload | null {
   if (!record.newValues) {
     onError?.(new Error(`${record.id} 审计载荷缺失`))
     return null
@@ -557,7 +652,8 @@ function mapScheduleAdoptionFeedbackAuditToReplay(record: AuditLogDetail): Repla
   const workshopId = payload.WorkshopId ?? '车间'
   const categoryLabel = payload.CategoryLabel ?? payload.ReasonCategory ?? '未分类原因'
   const objectiveLabel = payload.ObjectiveLabel ?? payload.OptimizationObjective ?? '未指定目标'
-  const decisionLabel = payload.DecisionLabel ?? (payload.Decision === 'rejected' ? '已记录人工排产调整' : '已采纳 Agent 排产建议')
+  const decisionLabel =
+    payload.DecisionLabel ?? (payload.Decision === 'rejected' ? '已记录人工排产调整' : '已采纳 Agent 排产建议')
   const traceId = payload.AiTraceId ?? record.traceId ?? record.id
   const feedbackId = payload.Id ?? record.resourceId ?? record.id
   const agentDecisionId = payload.AgentDecisionId ?? record.resourceId ?? '-'
@@ -570,7 +666,12 @@ function mapScheduleAdoptionFeedbackAuditToReplay(record: AuditLogDetail): Repla
     object: `${schedulePlanId} / ${workshopId}`,
     actor: payload.OperatorUser ?? record.userId,
     evidence: agentDecisionId,
-    time: new Date(payload.CreatedAt ?? record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(payload.CreatedAt ?? record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: payload.Decision === 'accepted' ? 'accepted' : 'executed',
     traceId,
     route: {
@@ -604,7 +705,12 @@ function mapAgentBusinessWriteAuditToReplay(record: AuditLogDetail): ReplayItem 
     type: '业务落库动作',
     actor: record.userId,
     evidence: record.traceId ?? record.id,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'executed' as const,
     traceId: record.traceId ?? record.id,
   }
@@ -707,7 +813,12 @@ function mapPocEvidenceToReplay(record: PocEvidenceGovernanceRecord): ReplayItem
     object: record.object,
     actor: record.owner,
     evidence: record.batchId,
-    time: new Date(record.preparedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.preparedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'evidence',
     traceId: record.auditId,
     risk: record.risk,
@@ -725,7 +836,12 @@ function mapKnowledgeGovernanceReviewToReplay(record: KnowledgeGovernanceReviewR
     object: record.documentId,
     actor: record.reviewer,
     evidence: record.auditId,
-    time: new Date(record.reviewedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.reviewedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'knowledge',
     traceId: record.traceId,
     risk: `有效期延至 ${record.validUntil}，可引用范围：${record.references.join(' / ')}。`,
@@ -801,7 +917,12 @@ function mapBarcodeReworkReleaseEvidenceToReplay(record: OtdEvidenceChainItem): 
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk,
@@ -819,7 +940,12 @@ function mapOutsourcingCommitmentToReplay(record: OtdEvidenceChainItem): ReplayI
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk: '外协承诺已锁定，但仍属于厂外等待，不应计为厂内恢复。',
@@ -842,7 +968,12 @@ function mapOutsourcingReceiptToReplay(record: OtdEvidenceChainItem): ReplayItem
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk: '外协到货已确认，仍需由 AI 排产复核释放窗口和后续工序承诺。',
@@ -865,7 +996,12 @@ function mapOutsourcingScheduleReleaseToReplay(record: OtdEvidenceChainItem): Re
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk: '外协到货已由 AI 排产采纳释放，审计需确认厂外等待口径已关闭且未误计为厂内提前恢复。',
@@ -905,15 +1041,18 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
     'TRACE-QR-WO-RUSH-9001-OP-10-SCHEDULE-RELEASE',
     'TRACE-QR-WO-RUSH-9001-OP-10-LABEL-RELEASE',
   ].includes(record.traceId)
-  const isEngineeringConstraintEvidence = record.stage === '工程约束' || record.stage === '工程放行' || record.stage === '助手工程约束'
-  const isEngineeringChangeEvidence = record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
+  const isEngineeringConstraintEvidence =
+    record.stage === '工程约束' || record.stage === '工程放行' || record.stage === '助手工程约束'
+  const isEngineeringChangeEvidence =
+    record.stage === '工程变更影响' || record.stage === '工程变更批准' || record.stage === '工程变更驳回'
   const isRouteCapabilityEvidence = record.stage === '工艺能力校验' || record.stage === '工艺能力放行'
   const isPurchaseReceiptEvidence = record.stage === '采购回写' || record.stage === '供应到货' || isOutsourcingReceipt
   const isSupplyRiskEvidence = record.stage === '供应风险'
   const isSupplierNetworkEvidence = record.stage === '供应网络'
   const isPurchaseCorrectionEvidence = record.stage === '采购整改'
   const isLaborCapabilityEvidence = record.stage === '人员能力'
-  const isLaborAssignmentEvidence = record.stage === '人员替班' || record.stage === '人员复核' || record.stage === '人员放行'
+  const isLaborAssignmentEvidence =
+    record.stage === '人员替班' || record.stage === '人员复核' || record.stage === '人员放行'
   const isLaborBlockEvidence = record.stage === '人员阻断'
   const isLaborStartEvidence = record.stage === '生产开工'
   if (isBarcodeReworkReleaseEvidence) return mapBarcodeReworkReleaseEvidenceToReplay(record)
@@ -927,175 +1066,180 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
       ? '客户承诺包'
       : isOutsourcingCommitment
         ? '外协承诺包'
-      : isKittingEvidence
-        ? '库存齐套证据'
-      : isEquipmentEvidence
-        ? '设备停机证据'
-        : isProductionCompletionEvidence
-          ? '生产完工证据'
-          : isProductionCloseoutEvidence
-            ? '生产复核证据'
-            : isShopfloorSituationEvidence
-              ? '现场态势证据'
-              : isShopfloorEscalationEvidence
-                ? '现场处置证据'
-                : isAnomalyDispatchEvidence
-                  ? '异常分流证据'
-                  : isRiskSlaReviewEvidence
-                    ? '风险SLA证据'
-                    : isAssistantQualityEvidence
-                      ? '助手质量责任证据'
-                    : isBarcodeExecutionEvidence
-                      ? '扫码执行证据'
-                      : isBarcodeCompletionEvidence
-                        ? '扫码完工证据'
-                        : isBarcodeMaterialEvidence
-                          ? '扫码物料证据'
-                          : isBarcodeQualityGateEvidence
-                            ? '扫码质量门证据'
-                            : isBarcodeHandoffEvidence
-                              ? '扫码交接证据'
-                              : isEngineeringConstraintEvidence
-                                ? '工程约束证据'
-                                : isEngineeringChangeEvidence
-                                  ? '工程变更证据'
-                                  : isRouteCapabilityEvidence
-                                    ? '工艺能力证据'
-                                    : isPurchaseReceiptEvidence
-                                      ? '采购收货证据'
-                                      : isSupplyRiskEvidence
-                                        ? '供应风险证据'
-                                        : isSupplierNetworkEvidence
-                                          ? '供应网络证据'
-                                          : isPurchaseCorrectionEvidence
-                                            ? '采购整改证据'
-                                            : isLaborCapabilityEvidence
-                                              ? '人员能力证据'
-                                              : isLaborAssignmentEvidence
-                                                ? '人员替班证据'
-                                                : isLaborBlockEvidence
-                                                  ? '人员阻断证据'
-                                                  : isLaborStartEvidence
-                                                    ? '人员开工证据'
-                                                    : 'OTD 证据链',
+        : isKittingEvidence
+          ? '库存齐套证据'
+          : isEquipmentEvidence
+            ? '设备停机证据'
+            : isProductionCompletionEvidence
+              ? '生产完工证据'
+              : isProductionCloseoutEvidence
+                ? '生产复核证据'
+                : isShopfloorSituationEvidence
+                  ? '现场态势证据'
+                  : isShopfloorEscalationEvidence
+                    ? '现场处置证据'
+                    : isAnomalyDispatchEvidence
+                      ? '异常分流证据'
+                      : isRiskSlaReviewEvidence
+                        ? '风险SLA证据'
+                        : isAssistantQualityEvidence
+                          ? '助手质量责任证据'
+                          : isBarcodeExecutionEvidence
+                            ? '扫码执行证据'
+                            : isBarcodeCompletionEvidence
+                              ? '扫码完工证据'
+                              : isBarcodeMaterialEvidence
+                                ? '扫码物料证据'
+                                : isBarcodeQualityGateEvidence
+                                  ? '扫码质量门证据'
+                                  : isBarcodeHandoffEvidence
+                                    ? '扫码交接证据'
+                                    : isEngineeringConstraintEvidence
+                                      ? '工程约束证据'
+                                      : isEngineeringChangeEvidence
+                                        ? '工程变更证据'
+                                        : isRouteCapabilityEvidence
+                                          ? '工艺能力证据'
+                                          : isPurchaseReceiptEvidence
+                                            ? '采购收货证据'
+                                            : isSupplyRiskEvidence
+                                              ? '供应风险证据'
+                                              : isSupplierNetworkEvidence
+                                                ? '供应网络证据'
+                                                : isPurchaseCorrectionEvidence
+                                                  ? '采购整改证据'
+                                                  : isLaborCapabilityEvidence
+                                                    ? '人员能力证据'
+                                                    : isLaborAssignmentEvidence
+                                                      ? '人员替班证据'
+                                                      : isLaborBlockEvidence
+                                                        ? '人员阻断证据'
+                                                        : isLaborStartEvidence
+                                                          ? '人员开工证据'
+                                                          : 'OTD 证据链',
     title: `${record.stage}：${record.title}`,
     summary: record.summary,
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk: isCommitmentPackage
       ? `当前状态：${record.statusLabel}。承诺包只能基于 KPI 钻取、责任动作和 OTD 证据链对外复盘。`
       : isOutsourcingCommitment
         ? `当前状态：${record.statusLabel}。外协承诺只能说明外部供应窗口已锁定，不能替代厂内恢复。`
-      : isKittingEvidence
-        ? `当前状态：${record.statusLabel}。该齐套证据必须同时核对 BOM 版本、可用库存、在途量和排产时间窗，避免缺料工单被误排。`
-        : isEquipmentEvidence
-          ? `当前状态：${record.statusLabel}。该设备证据必须核对停机时长、影响工单、替代设备、维护窗口和瓶颈保护策略。`
-          : isProductionCompletionEvidence
-            ? `当前状态：${record.statusLabel}。该生产证据必须核对完工数量、工单进度、质量门、后续工序窗口和 OTD 承诺。`
-            : isProductionCloseoutEvidence
-              ? `当前状态：${record.statusLabel}。该生产复核证据必须核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`
-          : isShopfloorSituationEvidence
-            ? `当前状态：${record.statusLabel}。该现场态势证据必须核对瓶颈负载、齐套缺口、质量返工、责任人、动作入口和排产影响。`
-              : isShopfloorEscalationEvidence
-                ? `当前状态：${record.statusLabel}。该现场处置证据必须核对生产经理审批、风险队列、AI 排产分流、物料/质量复核和关闭留痕。`
-                : isAnomalyDispatchEvidence
-                  ? `当前状态：${record.statusLabel}。该异常分流证据必须核对异常来源、影响工单、风险队列、AI 排产复核、责任人和下游质量/设备/物料处置。`
-                  : isRiskSlaReviewEvidence
-                    ? `当前状态：${record.statusLabel}。该风险 SLA 证据必须核对逾期风险、关键风险、晨会编号、责任动作、排产保护、采购承诺和设备窗口。`
-                    : isAssistantQualityEvidence
-                      ? `当前状态：${record.statusLabel}。该助手质量回写必须核对首件检验、OP-20 扭矩复核窗口、执行包追踪和排产释放条件。`
-                    : isBarcodeExecutionEvidence
-                      ? `当前状态：${record.statusLabel}。该扫码执行证据必须核对扫码对象、现场入口、执行人、下一核对点、生产报工入口和排产影响复核。`
-                      : isBarcodeCompletionEvidence
-                        ? `当前状态：${record.statusLabel}。该扫码完工证据必须核对扫码开工追踪、完工数量、不良数量、质检结论和 OTD 达成状态。`
-                        : isBarcodeMaterialEvidence
-                          ? `当前状态：${record.statusLabel}。该扫码物料证据必须核对物料批次、BOM 用量、齐套状态、质量追溯和完工记录绑定关系。`
-                          : isBarcodeQualityGateEvidence
-                            ? `当前状态：${record.statusLabel}。该扫码质量门证据必须核对首件尺寸复检、Ra 粗糙度抽检、不良数量、放行结论和下道交接条件。`
-                            : isBarcodeHandoffEvidence
-                              ? `当前状态：${record.statusLabel}。该扫码交接证据必须核对上道完工、物料消耗、质量门放行、下道接收数量和待开工状态。`
-                              : isEngineeringConstraintEvidence
-                                ? `当前状态：${record.statusLabel}。该工程证据必须核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产可用窗口。`
-                                : isEngineeringChangeEvidence
-                                  ? `当前状态：${record.statusLabel}。该 ECN 证据必须核对库存缺口、替代料可用量、质量门、供应批次、成本影响和 OTD 模拟/释放结论。`
-                                  : isRouteCapabilityEvidence
-                                    ? `当前状态：${record.statusLabel}。该工艺证据必须核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。`
-                                    : isPurchaseReceiptEvidence
-                                      ? `当前状态：${record.statusLabel}。该采购收货证据必须核对 PO/替代供应商、到货数量、齐套缺口、影响工单和排产释放条件。`
-                                      : isSupplyRiskEvidence
-                                        ? `当前状态：${record.statusLabel}。该供应风险证据必须核对原供应商延期、替代供应商承诺、受影响工单和排产保护建议。`
-                                        : isSupplierNetworkEvidence
-                                          ? `当前状态：${record.statusLabel}。该供应网络证据必须核对供应商绩效、准交率、SLA、报价/产能和违约复盘。`
-                                          : isPurchaseCorrectionEvidence
-                                            ? `当前状态：${record.statusLabel}。该采购整改证据必须核对来料异常、8D 承诺、备用批次、复检入库和排产复核。`
-                                            : isLaborCapabilityEvidence
-                                              ? `当前状态：${record.statusLabel}。该人员能力证据必须核对技能、资质有效期、排班窗口、可用工时和开工约束。`
-                                              : isLaborAssignmentEvidence
-                                                ? `当前状态：${record.statusLabel}。该替班证据必须核对临期资质、候选评分、替班人员、主管复核和放行窗口。`
-                                                : isLaborBlockEvidence
-                                                  ? `当前状态：${record.statusLabel}。该人员阻断证据必须核对无有效候选、停工复核责任人、阻断工序和恢复条件。`
-                                                  : isLaborStartEvidence
-                                                    ? `当前状态：${record.statusLabel}。该开工证据必须核对替班执行人、工位设备、工程复核和生产开工放行。`
-      : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
+        : isKittingEvidence
+          ? `当前状态：${record.statusLabel}。该齐套证据必须同时核对 BOM 版本、可用库存、在途量和排产时间窗，避免缺料工单被误排。`
+          : isEquipmentEvidence
+            ? `当前状态：${record.statusLabel}。该设备证据必须核对停机时长、影响工单、替代设备、维护窗口和瓶颈保护策略。`
+            : isProductionCompletionEvidence
+              ? `当前状态：${record.statusLabel}。该生产证据必须核对完工数量、工单进度、质量门、后续工序窗口和 OTD 承诺。`
+              : isProductionCloseoutEvidence
+                ? `当前状态：${record.statusLabel}。该生产复核证据必须核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`
+                : isShopfloorSituationEvidence
+                  ? `当前状态：${record.statusLabel}。该现场态势证据必须核对瓶颈负载、齐套缺口、质量返工、责任人、动作入口和排产影响。`
+                  : isShopfloorEscalationEvidence
+                    ? `当前状态：${record.statusLabel}。该现场处置证据必须核对生产经理审批、风险队列、AI 排产分流、物料/质量复核和关闭留痕。`
+                    : isAnomalyDispatchEvidence
+                      ? `当前状态：${record.statusLabel}。该异常分流证据必须核对异常来源、影响工单、风险队列、AI 排产复核、责任人和下游质量/设备/物料处置。`
+                      : isRiskSlaReviewEvidence
+                        ? `当前状态：${record.statusLabel}。该风险 SLA 证据必须核对逾期风险、关键风险、晨会编号、责任动作、排产保护、采购承诺和设备窗口。`
+                        : isAssistantQualityEvidence
+                          ? `当前状态：${record.statusLabel}。该助手质量回写必须核对首件检验、OP-20 扭矩复核窗口、执行包追踪和排产释放条件。`
+                          : isBarcodeExecutionEvidence
+                            ? `当前状态：${record.statusLabel}。该扫码执行证据必须核对扫码对象、现场入口、执行人、下一核对点、生产报工入口和排产影响复核。`
+                            : isBarcodeCompletionEvidence
+                              ? `当前状态：${record.statusLabel}。该扫码完工证据必须核对扫码开工追踪、完工数量、不良数量、质检结论和 OTD 达成状态。`
+                              : isBarcodeMaterialEvidence
+                                ? `当前状态：${record.statusLabel}。该扫码物料证据必须核对物料批次、BOM 用量、齐套状态、质量追溯和完工记录绑定关系。`
+                                : isBarcodeQualityGateEvidence
+                                  ? `当前状态：${record.statusLabel}。该扫码质量门证据必须核对首件尺寸复检、Ra 粗糙度抽检、不良数量、放行结论和下道交接条件。`
+                                  : isBarcodeHandoffEvidence
+                                    ? `当前状态：${record.statusLabel}。该扫码交接证据必须核对上道完工、物料消耗、质量门放行、下道接收数量和待开工状态。`
+                                    : isEngineeringConstraintEvidence
+                                      ? `当前状态：${record.statusLabel}。该工程证据必须核对 BOM/工艺路线版本、替代料放行、质量门、人员/设备能力和排产可用窗口。`
+                                      : isEngineeringChangeEvidence
+                                        ? `当前状态：${record.statusLabel}。该 ECN 证据必须核对库存缺口、替代料可用量、质量门、供应批次、成本影响和 OTD 模拟/释放结论。`
+                                        : isRouteCapabilityEvidence
+                                          ? `当前状态：${record.statusLabel}。该工艺证据必须核对瓶颈资源、候选设备/外协、能力缺口、合批窗口和排产释放条件。`
+                                          : isPurchaseReceiptEvidence
+                                            ? `当前状态：${record.statusLabel}。该采购收货证据必须核对 PO/替代供应商、到货数量、齐套缺口、影响工单和排产释放条件。`
+                                            : isSupplyRiskEvidence
+                                              ? `当前状态：${record.statusLabel}。该供应风险证据必须核对原供应商延期、替代供应商承诺、受影响工单和排产保护建议。`
+                                              : isSupplierNetworkEvidence
+                                                ? `当前状态：${record.statusLabel}。该供应网络证据必须核对供应商绩效、准交率、SLA、报价/产能和违约复盘。`
+                                                : isPurchaseCorrectionEvidence
+                                                  ? `当前状态：${record.statusLabel}。该采购整改证据必须核对来料异常、8D 承诺、备用批次、复检入库和排产复核。`
+                                                  : isLaborCapabilityEvidence
+                                                    ? `当前状态：${record.statusLabel}。该人员能力证据必须核对技能、资质有效期、排班窗口、可用工时和开工约束。`
+                                                    : isLaborAssignmentEvidence
+                                                      ? `当前状态：${record.statusLabel}。该替班证据必须核对临期资质、候选评分、替班人员、主管复核和放行窗口。`
+                                                      : isLaborBlockEvidence
+                                                        ? `当前状态：${record.statusLabel}。该人员阻断证据必须核对无有效候选、停工复核责任人、阻断工序和恢复条件。`
+                                                        : isLaborStartEvidence
+                                                          ? `当前状态：${record.statusLabel}。该开工证据必须核对替班执行人、工位设备、工程复核和生产开工放行。`
+                                                          : `当前状态：${record.statusLabel}。该证据用于证明 ${record.object} 的 OTD 影响已进入复盘口径。`,
     auditState: isCommitmentPackage
       ? 'KPI 钻取、客户承诺、责任动作和报表导出已归档'
       : isOutsourcingCommitment
         ? '外协承诺、排产复核和厂外等待口径已归档'
-      : isKittingEvidence
-        ? '库存齐套、BOM 版本、在途量、缺口处置和排产复核已归档'
-        : isEquipmentEvidence
-          ? '设备停机、替代设备、维护窗口、瓶颈保护和排产复核已归档'
-          : isProductionCompletionEvidence
-            ? '生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档'
-            : isProductionCloseoutEvidence
-              ? '完工复核、排产窗口、质量门和承诺交期已归档'
-          : isShopfloorSituationEvidence
-            ? '现场态势、事件来源、责任人、动作入口和排产影响已归档'
-              : isShopfloorEscalationEvidence
-                ? '现场处置包、生产经理审批、排产分流、风险关闭和跨模块回写已归档'
-                : isAnomalyDispatchEvidence
-                  ? '异常确认、风险队列、AI 排产复核、责任人和下游处置已归档'
-                  : isRiskSlaReviewEvidence
-                    ? '风险 SLA 晨会、逾期风险、责任动作、闭环追踪和 OTD 恢复已归档'
-                    : isAssistantQualityEvidence
-                      ? '助手执行包、首件检验、质量复核窗口和排产释放条件已归档'
-                    : isBarcodeExecutionEvidence
-                      ? '扫码对象、现场入口、执行人、下一核对点和生产入口已归档'
-                      : isBarcodeCompletionEvidence
-                        ? '扫码开工追踪、完工数量、质检结论和 OTD 达成状态已归档'
-                        : isBarcodeMaterialEvidence
-                          ? '物料批次、BOM 用量、齐套状态、质量追溯和完工绑定已归档'
-                          : isBarcodeQualityGateEvidence
-                            ? '首件复检、粗糙度抽检、不良数量、放行结论和交接条件已归档'
-                            : isBarcodeHandoffEvidence
-                              ? '上道完工、物料消耗、质量门放行、下道接收和待开工状态已归档'
-                              : isEngineeringConstraintEvidence
-                                ? '工程约束来源、替代料放行、质量门、能力口径和排产复核已归档'
-                                : isEngineeringChangeEvidence
-                                  ? '工程变更影响、审批结论、质量门、成本供应和排产模拟/释放已归档'
-                                  : isRouteCapabilityEvidence
-                                    ? '工艺能力校验、瓶颈资源、分流合批、外协兜底和排产复核已归档'
-                                    : isPurchaseReceiptEvidence
-                                      ? '采购收货、齐套缺口、替代到货、排产释放和 OTD 证据已归档'
-                                      : isSupplyRiskEvidence
-                                        ? '供应延期、替代承诺、排产保护、责任复核和 OTD 证据已归档'
-                                        : isSupplierNetworkEvidence
-                                          ? '供应商绩效、SLA 选优、违约复盘、二供观察和排产复核已归档'
-                                          : isPurchaseCorrectionEvidence
-                                            ? '来料异常、供应商 8D、备用批次、复检入库和排产复核已归档'
-                                            : isLaborCapabilityEvidence
-                                              ? '人员技能、资质、排班、可用工时和开工约束已归档'
-                                              : isLaborAssignmentEvidence
-                                                ? '临期资质、替班评分、主管复核、补证放行和排产复核已归档'
-                                                : isLaborBlockEvidence
-                                                  ? '无有效候选、停工复核、阻断工序、责任人和恢复条件已归档'
-                                                  : isLaborStartEvidence
-                                                    ? '替班执行、工位设备、工程复核、生产开工和 OTD 证据已归档'
-      : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
+        : isKittingEvidence
+          ? '库存齐套、BOM 版本、在途量、缺口处置和排产复核已归档'
+          : isEquipmentEvidence
+            ? '设备停机、替代设备、维护窗口、瓶颈保护和排产复核已归档'
+            : isProductionCompletionEvidence
+              ? '生产完工、工单进度、质量联动、排产复核和 OTD 证据已归档'
+              : isProductionCloseoutEvidence
+                ? '完工复核、排产窗口、质量门和承诺交期已归档'
+                : isShopfloorSituationEvidence
+                  ? '现场态势、事件来源、责任人、动作入口和排产影响已归档'
+                  : isShopfloorEscalationEvidence
+                    ? '现场处置包、生产经理审批、排产分流、风险关闭和跨模块回写已归档'
+                    : isAnomalyDispatchEvidence
+                      ? '异常确认、风险队列、AI 排产复核、责任人和下游处置已归档'
+                      : isRiskSlaReviewEvidence
+                        ? '风险 SLA 晨会、逾期风险、责任动作、闭环追踪和 OTD 恢复已归档'
+                        : isAssistantQualityEvidence
+                          ? '助手执行包、首件检验、质量复核窗口和排产释放条件已归档'
+                          : isBarcodeExecutionEvidence
+                            ? '扫码对象、现场入口、执行人、下一核对点和生产入口已归档'
+                            : isBarcodeCompletionEvidence
+                              ? '扫码开工追踪、完工数量、质检结论和 OTD 达成状态已归档'
+                              : isBarcodeMaterialEvidence
+                                ? '物料批次、BOM 用量、齐套状态、质量追溯和完工绑定已归档'
+                                : isBarcodeQualityGateEvidence
+                                  ? '首件复检、粗糙度抽检、不良数量、放行结论和交接条件已归档'
+                                  : isBarcodeHandoffEvidence
+                                    ? '上道完工、物料消耗、质量门放行、下道接收和待开工状态已归档'
+                                    : isEngineeringConstraintEvidence
+                                      ? '工程约束来源、替代料放行、质量门、能力口径和排产复核已归档'
+                                      : isEngineeringChangeEvidence
+                                        ? '工程变更影响、审批结论、质量门、成本供应和排产模拟/释放已归档'
+                                        : isRouteCapabilityEvidence
+                                          ? '工艺能力校验、瓶颈资源、分流合批、外协兜底和排产复核已归档'
+                                          : isPurchaseReceiptEvidence
+                                            ? '采购收货、齐套缺口、替代到货、排产释放和 OTD 证据已归档'
+                                            : isSupplyRiskEvidence
+                                              ? '供应延期、替代承诺、排产保护、责任复核和 OTD 证据已归档'
+                                              : isSupplierNetworkEvidence
+                                                ? '供应商绩效、SLA 选优、违约复盘、二供观察和排产复核已归档'
+                                                : isPurchaseCorrectionEvidence
+                                                  ? '来料异常、供应商 8D、备用批次、复检入库和排产复核已归档'
+                                                  : isLaborCapabilityEvidence
+                                                    ? '人员技能、资质、排班、可用工时和开工约束已归档'
+                                                    : isLaborAssignmentEvidence
+                                                      ? '临期资质、替班评分、主管复核、补证放行和排产复核已归档'
+                                                      : isLaborBlockEvidence
+                                                        ? '无有效候选、停工复核、阻断工序、责任人和恢复条件已归档'
+                                                        : isLaborStartEvidence
+                                                          ? '替班执行、工位设备、工程复核、生产开工和 OTD 证据已归档'
+                                                          : 'OTD 复盘证据链已归档，可从治理、审计和报表三处核对',
     steps: isCommitmentPackage
       ? [
           `报表中心从 OTD KPI 多维钻取生成客户承诺包：${record.title}。`,
@@ -1110,212 +1254,212 @@ function mapOtdEvidenceToReplay(record: OtdEvidenceChainItem): ReplayItem {
             `追踪编号 ${record.traceId} 写入统一 OTD 证据链，原始 KPI 追踪已同步保留外部约束口径。`,
             `AI 排产可读取该承诺包生成外协复核建议，但不会把厂外等待误判为厂内恢复。`,
           ]
-      : isKittingEvidence
-        ? [
-            `库存齐套读取 ${record.source} 的 BOM 版本、库存可用量、在途量和排产时间窗。`,
-            `${record.stage} 阶段生成缺口证据：${record.title}。`,
-            `对象 ${record.object} 的齐套摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对调拨、替代料、采购加急和排产顺序调整是否闭环。`,
-          ]
-      : isEquipmentEvidence
-        ? [
-            `设备维护读取 ${record.source} 的停机诊断、可替代设备、维护窗口和瓶颈保护策略。`,
-            `${record.stage} 阶段生成停机证据：${record.title}。`,
-            `对象 ${record.object} 的排产影响：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对换设备、延后、加班和拆单建议是否被调度员复核。`,
-          ]
-      : isProductionCompletionEvidence
-        ? [
-            `生产报工读取 ${record.source} 的完工数量、工单进度、质量结果和后续工序窗口。`,
-            `${record.stage} 阶段生成执行证据：${record.title}。`,
-            `对象 ${record.object} 的执行摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对排产页复核、质量门放行和承诺交期是否仍成立。`,
-          ]
-      : isProductionCloseoutEvidence
-        ? [
-            `生产报工读取 ${record.source} 的完工回写、排产页复核、质量门和承诺交期。`,
-            `${record.stage} 阶段生成完工复核证据：${record.title}。`,
-            `对象 ${record.object} 的复核摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给排产复核、报表和审计回放。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`,
-          ]
-      : isShopfloorSituationEvidence
-        ? [
-            `实时监控读取 ${record.source} 的瓶颈负载、物料齐套、质量返工和现场负责人。`,
-            `${record.stage} 阶段生成现场态势证据：${record.title}。`,
-            `对象 ${record.object} 的现场影响：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表和审计回放。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对事件是否已生成排产动作、责任人响应和处置包升级路径。`,
-          ]
-      : isShopfloorEscalationEvidence
-        ? [
-            `现场处置包读取 ${record.source} 的升级来源、生产经理审批、排产动作和风险关闭状态。`,
-            `${record.stage} 阶段生成跨模块处置证据：${record.title}。`,
-            `对象 ${record.object} 的处置摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对 CNC 分流、急单窗口、物料/质量复核和关闭留痕是否闭环。`,
-          ]
-      : isAnomalyDispatchEvidence
-        ? [
-            `异常管理读取 ${record.source} 的异常来源、影响工单、责任人、处置时限和建议动作。`,
-            `${record.stage} 阶段生成分流证据：${record.title}。`,
-            `对象 ${record.object} 的分流摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对质量返工、设备维护、库存隔离或采购整改是否进入下游闭环。`,
-          ]
-      : isRiskSlaReviewEvidence
-        ? [
-            `风险预警读取 ${record.source} 的逾期风险、关键风险、晨会责任人和 OTD 恢复目标。`,
-            `${record.stage} 阶段生成晨会复核证据：${record.title}。`,
-            `对象 ${record.object} 的风险摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产、AI 生产助手、Agent 治理和报表 CSV。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对排产保护、采购承诺、设备窗口和责任动作闭环是否支撑 OTD 恢复。`,
-          ]
-      : isAssistantQualityEvidence
-        ? [
-            `质量闭环读取 ${record.source} 的首件检验、OP-20 扭矩复核窗口和执行包责任动作。`,
-            `${record.stage} 阶段生成助手执行包质量回写：${record.title}。`,
-            `对象 ${record.object} 的质量闭环摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产交接面板和风险处置队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对质量复核是否支撑交期恢复执行包释放。`,
-          ]
-      : isBarcodeExecutionEvidence
-        ? [
-            `条码扫描读取 ${record.source} 的扫码对象、现场工位、执行人和下一核对点。`,
-            `${record.stage} 阶段生成现场执行证据：${record.title}。`,
-            `对象 ${record.object} 的扫码摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表、审计回放和生产报工入口。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对扫码到站、报工入口、开工校验和后续工序是否连续。`,
-          ]
-      : isBarcodeCompletionEvidence
-        ? [
-            `生产报工读取 ${record.source} 的扫码开工追踪、报工数量、不良数量和质检结论。`,
-            `${record.stage} 阶段生成扫码完工证据：${record.title}。`,
-            `对象 ${record.object} 的完工摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表、审计回放、质量门和物料批次追溯。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对扫码开工、完工报数、首件质检、物料消耗和 OTD 达成是否一致。`,
-          ]
-      : isBarcodeMaterialEvidence
-        ? [
-            `生产报工读取 ${record.source} 的物料批次、BOM 用量、齐套状态和扫码完工记录。`,
-            `${record.stage} 阶段生成扫码物料证据：${record.title}。`,
-            `对象 ${record.object} 的批次摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给库存齐套、BOM 用量、质量追溯和报表审计。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对批次消耗、完工数量、齐套扣减和质量追溯是否绑定同一张扫码流转卡。`,
-          ]
-      : isBarcodeQualityGateEvidence
-        ? [
-            `质量门读取 ${record.source} 的扫码完工证据、首件尺寸复检、Ra 粗糙度抽检和不良数量。`,
-            `${record.stage} 阶段生成扫码质量门证据：${record.title}。`,
-            `对象 ${record.object} 的质检摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给质量闭环、报表和审计回放。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对质量门放行、返工阻断、工序交接和后续排产窗口是否一致。`,
-          ]
-      : isBarcodeHandoffEvidence
-        ? [
-            `工序交接读取 ${record.source} 的上道扫码完工、物料消耗、质量门放行和下道接收条件。`,
-            `${record.stage} 阶段生成扫码交接证据：${record.title}。`,
-            `对象 ${record.object} 的交接摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给质量闭环、AI 排产后续窗口和报表审计。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对下道工序是否只在质量门放行后接收，并保持数量、批次和排产窗口连续。`,
-          ]
-      : isEngineeringConstraintEvidence
-        ? [
-            `工程数据读取 ${record.source} 的 BOM/工艺路线版本、替代料、质量门和能力约束。`,
-            `${record.stage} 阶段生成证据：${record.title}。`,
-            `对象 ${record.object} 的工程摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产约束解释。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对替代料放行、质量门保留、人员/设备能力和排产释放窗口。`,
-          ]
-      : isEngineeringChangeEvidence
-        ? [
-            `工程变更读取 ${record.source} 的库存缺口、替代料可用量、质量影响、供应批次、成本和 OTD 模拟。`,
-            `${record.stage} 阶段生成证据：${record.title}。`,
-            `对象 ${record.object} 的 ECN 摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对审批前模拟、正式放行或驳回撤回是否已同步 AI 排产。`,
-          ]
-      : isRouteCapabilityEvidence
-        ? [
-            `工艺路线读取 ${record.source} 的瓶颈资源、候选设备/外协、能力缺口和合批窗口。`,
-            `${record.stage} 阶段生成证据：${record.title}。`,
-            `对象 ${record.object} 的工艺能力摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对分流/合批方案、外协兜底和排产释放条件。`,
-          ]
-      : isPurchaseReceiptEvidence
-        ? [
-            `采购协同读取 ${record.source} 的 PO/替代供应商、到货数量、齐套缺口和受影响工单。`,
-            `${record.stage} 阶段生成收货证据：${record.title}。`,
-            `对象 ${record.object} 的收货摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对齐套缺口是否清零、供应风险是否关闭、排产窗口是否可释放。`,
-          ]
-      : isSupplyRiskEvidence
-        ? [
-            `采购协同读取 ${record.source} 的供应延期、替代供应商承诺、原交期和影响工单。`,
-            `${record.stage} 阶段生成供应风险证据：${record.title}。`,
-            `对象 ${record.object} 的供应摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对冻结窗口、替代承诺、加急到货和排产复核是否闭环。`,
-          ]
-      : isSupplierNetworkEvidence
-        ? [
-            `供应网络读取 ${record.source} 的供应商绩效、准交率、SLA、报价、产能和违约状态。`,
-            `${record.stage} 阶段生成选优证据：${record.title}。`,
-            `对象 ${record.object} 的供应网络摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对首选恢复供应商、原供应商 SLA 违约和二供观察是否进入复盘。`,
-          ]
-      : isPurchaseCorrectionEvidence
-        ? [
-            `采购整改读取 ${record.source} 的来料异常、供应商 8D、备用批次、复检入库和库存齐套回写。`,
-            `${record.stage} 阶段生成整改证据：${record.title}。`,
-            `对象 ${record.object} 的整改摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对隔离、复检、备用批次和排产复核是否闭环。`,
-          ]
-      : isLaborCapabilityEvidence
-        ? [
-            `人员管理读取 ${record.source} 的技能、资质有效期、排班窗口、可用工时和排班来源。`,
-            `${record.stage} 阶段生成能力证据：${record.title}。`,
-            `对象 ${record.object} 的能力摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产人员约束解释。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对该人员是否可进入开工、替班或停工复核。`,
-          ]
-      : isLaborAssignmentEvidence
-        ? [
-            `人员管理读取 ${record.source} 的临期资质、候选评分、替班人员、主管复核和补证放行状态。`,
-            `${record.stage} 阶段生成替班证据：${record.title}。`,
-            `对象 ${record.object} 的替班摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工和 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对替班人员、工程确认、复核状态和排产释放窗口。`,
-          ]
-      : isLaborBlockEvidence
-        ? [
-            `人员管理读取 ${record.source} 的技能缺口、证书临期、班组/班次、排班可用性和复核授权。`,
-            `${record.stage} 阶段生成阻断证据：${record.title}。`,
-            `对象 ${record.object} 的阻断摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工禁用和 AI 排产事件队列。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对停工复核责任人、阻断工序和重新放行条件。`,
-          ]
-      : isLaborStartEvidence
-        ? [
-            `生产报工读取 ${record.source} 的替班执行人、工位、设备和工程复核状态。`,
-            `${record.stage} 阶段生成开工证据：${record.title}。`,
-            `对象 ${record.object} 的开工摘要：${record.summary}`,
-            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表和审计回放。`,
-            `当前状态为 ${record.statusLabel}，审计回放要求核对替班复核已执行且生产开工未绕过人员约束。`,
-          ]
-      : [
-          `${record.stage} 阶段生成证据：${record.title}。`,
-          `对象 ${record.object} 来自 ${record.source}，证据摘要：${record.summary}`,
-          `追踪编号 ${record.traceId} 写入统一 OTD 证据链。`,
-          `当前状态为 ${record.statusLabel}，报表中心 CSV 与审计回放均可核对该记录。`,
-        ],
+        : isKittingEvidence
+          ? [
+              `库存齐套读取 ${record.source} 的 BOM 版本、库存可用量、在途量和排产时间窗。`,
+              `${record.stage} 阶段生成缺口证据：${record.title}。`,
+              `对象 ${record.object} 的齐套摘要：${record.summary}`,
+              `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+              `当前状态为 ${record.statusLabel}，审计回放要求核对调拨、替代料、采购加急和排产顺序调整是否闭环。`,
+            ]
+          : isEquipmentEvidence
+            ? [
+                `设备维护读取 ${record.source} 的停机诊断、可替代设备、维护窗口和瓶颈保护策略。`,
+                `${record.stage} 阶段生成停机证据：${record.title}。`,
+                `对象 ${record.object} 的排产影响：${record.summary}`,
+                `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                `当前状态为 ${record.statusLabel}，审计回放要求核对换设备、延后、加班和拆单建议是否被调度员复核。`,
+              ]
+            : isProductionCompletionEvidence
+              ? [
+                  `生产报工读取 ${record.source} 的完工数量、工单进度、质量结果和后续工序窗口。`,
+                  `${record.stage} 阶段生成执行证据：${record.title}。`,
+                  `对象 ${record.object} 的执行摘要：${record.summary}`,
+                  `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                  `当前状态为 ${record.statusLabel}，审计回放要求核对排产页复核、质量门放行和承诺交期是否仍成立。`,
+                ]
+              : isProductionCloseoutEvidence
+                ? [
+                    `生产报工读取 ${record.source} 的完工回写、排产页复核、质量门和承诺交期。`,
+                    `${record.stage} 阶段生成完工复核证据：${record.title}。`,
+                    `对象 ${record.object} 的复核摘要：${record.summary}`,
+                    `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给排产复核、报表和审计回放。`,
+                    `当前状态为 ${record.statusLabel}，审计回放要求核对完工回写、排产页复核、质量门放行和承诺交期是否仍成立。`,
+                  ]
+                : isShopfloorSituationEvidence
+                  ? [
+                      `实时监控读取 ${record.source} 的瓶颈负载、物料齐套、质量返工和现场负责人。`,
+                      `${record.stage} 阶段生成现场态势证据：${record.title}。`,
+                      `对象 ${record.object} 的现场影响：${record.summary}`,
+                      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表和审计回放。`,
+                      `当前状态为 ${record.statusLabel}，审计回放要求核对事件是否已生成排产动作、责任人响应和处置包升级路径。`,
+                    ]
+                  : isShopfloorEscalationEvidence
+                    ? [
+                        `现场处置包读取 ${record.source} 的升级来源、生产经理审批、排产动作和风险关闭状态。`,
+                        `${record.stage} 阶段生成跨模块处置证据：${record.title}。`,
+                        `对象 ${record.object} 的处置摘要：${record.summary}`,
+                        `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
+                        `当前状态为 ${record.statusLabel}，审计回放要求核对 CNC 分流、急单窗口、物料/质量复核和关闭留痕是否闭环。`,
+                      ]
+                    : isAnomalyDispatchEvidence
+                      ? [
+                          `异常管理读取 ${record.source} 的异常来源、影响工单、责任人、处置时限和建议动作。`,
+                          `${record.stage} 阶段生成分流证据：${record.title}。`,
+                          `对象 ${record.object} 的分流摘要：${record.summary}`,
+                          `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给风险处置队列和 AI 排产事件队列。`,
+                          `当前状态为 ${record.statusLabel}，审计回放要求核对质量返工、设备维护、库存隔离或采购整改是否进入下游闭环。`,
+                        ]
+                      : isRiskSlaReviewEvidence
+                        ? [
+                            `风险预警读取 ${record.source} 的逾期风险、关键风险、晨会责任人和 OTD 恢复目标。`,
+                            `${record.stage} 阶段生成晨会复核证据：${record.title}。`,
+                            `对象 ${record.object} 的风险摘要：${record.summary}`,
+                            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产、AI 生产助手、Agent 治理和报表 CSV。`,
+                            `当前状态为 ${record.statusLabel}，审计回放要求核对排产保护、采购承诺、设备窗口和责任动作闭环是否支撑 OTD 恢复。`,
+                          ]
+                        : isAssistantQualityEvidence
+                          ? [
+                              `质量闭环读取 ${record.source} 的首件检验、OP-20 扭矩复核窗口和执行包责任动作。`,
+                              `${record.stage} 阶段生成助手执行包质量回写：${record.title}。`,
+                              `对象 ${record.object} 的质量闭环摘要：${record.summary}`,
+                              `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产交接面板和风险处置队列。`,
+                              `当前状态为 ${record.statusLabel}，审计回放要求核对质量复核是否支撑交期恢复执行包释放。`,
+                            ]
+                          : isBarcodeExecutionEvidence
+                            ? [
+                                `条码扫描读取 ${record.source} 的扫码对象、现场工位、执行人和下一核对点。`,
+                                `${record.stage} 阶段生成现场执行证据：${record.title}。`,
+                                `对象 ${record.object} 的扫码摘要：${record.summary}`,
+                                `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表、审计回放和生产报工入口。`,
+                                `当前状态为 ${record.statusLabel}，审计回放要求核对扫码到站、报工入口、开工校验和后续工序是否连续。`,
+                              ]
+                            : isBarcodeCompletionEvidence
+                              ? [
+                                  `生产报工读取 ${record.source} 的扫码开工追踪、报工数量、不良数量和质检结论。`,
+                                  `${record.stage} 阶段生成扫码完工证据：${record.title}。`,
+                                  `对象 ${record.object} 的完工摘要：${record.summary}`,
+                                  `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表、审计回放、质量门和物料批次追溯。`,
+                                  `当前状态为 ${record.statusLabel}，审计回放要求核对扫码开工、完工报数、首件质检、物料消耗和 OTD 达成是否一致。`,
+                                ]
+                              : isBarcodeMaterialEvidence
+                                ? [
+                                    `生产报工读取 ${record.source} 的物料批次、BOM 用量、齐套状态和扫码完工记录。`,
+                                    `${record.stage} 阶段生成扫码物料证据：${record.title}。`,
+                                    `对象 ${record.object} 的批次摘要：${record.summary}`,
+                                    `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给库存齐套、BOM 用量、质量追溯和报表审计。`,
+                                    `当前状态为 ${record.statusLabel}，审计回放要求核对批次消耗、完工数量、齐套扣减和质量追溯是否绑定同一张扫码流转卡。`,
+                                  ]
+                                : isBarcodeQualityGateEvidence
+                                  ? [
+                                      `质量门读取 ${record.source} 的扫码完工证据、首件尺寸复检、Ra 粗糙度抽检和不良数量。`,
+                                      `${record.stage} 阶段生成扫码质量门证据：${record.title}。`,
+                                      `对象 ${record.object} 的质检摘要：${record.summary}`,
+                                      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给质量闭环、报表和审计回放。`,
+                                      `当前状态为 ${record.statusLabel}，审计回放要求核对质量门放行、返工阻断、工序交接和后续排产窗口是否一致。`,
+                                    ]
+                                  : isBarcodeHandoffEvidence
+                                    ? [
+                                        `工序交接读取 ${record.source} 的上道扫码完工、物料消耗、质量门放行和下道接收条件。`,
+                                        `${record.stage} 阶段生成扫码交接证据：${record.title}。`,
+                                        `对象 ${record.object} 的交接摘要：${record.summary}`,
+                                        `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给质量闭环、AI 排产后续窗口和报表审计。`,
+                                        `当前状态为 ${record.statusLabel}，审计回放要求核对下道工序是否只在质量门放行后接收，并保持数量、批次和排产窗口连续。`,
+                                      ]
+                                    : isEngineeringConstraintEvidence
+                                      ? [
+                                          `工程数据读取 ${record.source} 的 BOM/工艺路线版本、替代料、质量门和能力约束。`,
+                                          `${record.stage} 阶段生成证据：${record.title}。`,
+                                          `对象 ${record.object} 的工程摘要：${record.summary}`,
+                                          `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产约束解释。`,
+                                          `当前状态为 ${record.statusLabel}，审计回放要求核对替代料放行、质量门保留、人员/设备能力和排产释放窗口。`,
+                                        ]
+                                      : isEngineeringChangeEvidence
+                                        ? [
+                                            `工程变更读取 ${record.source} 的库存缺口、替代料可用量、质量影响、供应批次、成本和 OTD 模拟。`,
+                                            `${record.stage} 阶段生成证据：${record.title}。`,
+                                            `对象 ${record.object} 的 ECN 摘要：${record.summary}`,
+                                            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                            `当前状态为 ${record.statusLabel}，审计回放要求核对审批前模拟、正式放行或驳回撤回是否已同步 AI 排产。`,
+                                          ]
+                                        : isRouteCapabilityEvidence
+                                          ? [
+                                              `工艺路线读取 ${record.source} 的瓶颈资源、候选设备/外协、能力缺口和合批窗口。`,
+                                              `${record.stage} 阶段生成证据：${record.title}。`,
+                                              `对象 ${record.object} 的工艺能力摘要：${record.summary}`,
+                                              `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                              `当前状态为 ${record.statusLabel}，审计回放要求核对分流/合批方案、外协兜底和排产释放条件。`,
+                                            ]
+                                          : isPurchaseReceiptEvidence
+                                            ? [
+                                                `采购协同读取 ${record.source} 的 PO/替代供应商、到货数量、齐套缺口和受影响工单。`,
+                                                `${record.stage} 阶段生成收货证据：${record.title}。`,
+                                                `对象 ${record.object} 的收货摘要：${record.summary}`,
+                                                `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                                `当前状态为 ${record.statusLabel}，审计回放要求核对齐套缺口是否清零、供应风险是否关闭、排产窗口是否可释放。`,
+                                              ]
+                                            : isSupplyRiskEvidence
+                                              ? [
+                                                  `采购协同读取 ${record.source} 的供应延期、替代供应商承诺、原交期和影响工单。`,
+                                                  `${record.stage} 阶段生成供应风险证据：${record.title}。`,
+                                                  `对象 ${record.object} 的供应摘要：${record.summary}`,
+                                                  `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                                  `当前状态为 ${record.statusLabel}，审计回放要求核对冻结窗口、替代承诺、加急到货和排产复核是否闭环。`,
+                                                ]
+                                              : isSupplierNetworkEvidence
+                                                ? [
+                                                    `供应网络读取 ${record.source} 的供应商绩效、准交率、SLA、报价、产能和违约状态。`,
+                                                    `${record.stage} 阶段生成选优证据：${record.title}。`,
+                                                    `对象 ${record.object} 的供应网络摘要：${record.summary}`,
+                                                    `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                                    `当前状态为 ${record.statusLabel}，审计回放要求核对首选恢复供应商、原供应商 SLA 违约和二供观察是否进入复盘。`,
+                                                  ]
+                                                : isPurchaseCorrectionEvidence
+                                                  ? [
+                                                      `采购整改读取 ${record.source} 的来料异常、供应商 8D、备用批次、复检入库和库存齐套回写。`,
+                                                      `${record.stage} 阶段生成整改证据：${record.title}。`,
+                                                      `对象 ${record.object} 的整改摘要：${record.summary}`,
+                                                      `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产事件队列。`,
+                                                      `当前状态为 ${record.statusLabel}，审计回放要求核对隔离、复检、备用批次和排产复核是否闭环。`,
+                                                    ]
+                                                  : isLaborCapabilityEvidence
+                                                    ? [
+                                                        `人员管理读取 ${record.source} 的技能、资质有效期、排班窗口、可用工时和排班来源。`,
+                                                        `${record.stage} 阶段生成能力证据：${record.title}。`,
+                                                        `对象 ${record.object} 的能力摘要：${record.summary}`,
+                                                        `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给 AI 排产人员约束解释。`,
+                                                        `当前状态为 ${record.statusLabel}，审计回放要求核对该人员是否可进入开工、替班或停工复核。`,
+                                                      ]
+                                                    : isLaborAssignmentEvidence
+                                                      ? [
+                                                          `人员管理读取 ${record.source} 的临期资质、候选评分、替班人员、主管复核和补证放行状态。`,
+                                                          `${record.stage} 阶段生成替班证据：${record.title}。`,
+                                                          `对象 ${record.object} 的替班摘要：${record.summary}`,
+                                                          `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工和 AI 排产事件队列。`,
+                                                          `当前状态为 ${record.statusLabel}，审计回放要求核对替班人员、工程确认、复核状态和排产释放窗口。`,
+                                                        ]
+                                                      : isLaborBlockEvidence
+                                                        ? [
+                                                            `人员管理读取 ${record.source} 的技能缺口、证书临期、班组/班次、排班可用性和复核授权。`,
+                                                            `${record.stage} 阶段生成阻断证据：${record.title}。`,
+                                                            `对象 ${record.object} 的阻断摘要：${record.summary}`,
+                                                            `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给生产开工禁用和 AI 排产事件队列。`,
+                                                            `当前状态为 ${record.statusLabel}，审计回放要求核对停工复核责任人、阻断工序和重新放行条件。`,
+                                                          ]
+                                                        : isLaborStartEvidence
+                                                          ? [
+                                                              `生产报工读取 ${record.source} 的替班执行人、工位、设备和工程复核状态。`,
+                                                              `${record.stage} 阶段生成开工证据：${record.title}。`,
+                                                              `对象 ${record.object} 的开工摘要：${record.summary}`,
+                                                              `追踪编号 ${record.traceId} 写入统一 OTD 证据链，并同步给报表和审计回放。`,
+                                                              `当前状态为 ${record.statusLabel}，审计回放要求核对替班复核已执行且生产开工未绕过人员约束。`,
+                                                            ]
+                                                          : [
+                                                              `${record.stage} 阶段生成证据：${record.title}。`,
+                                                              `对象 ${record.object} 来自 ${record.source}，证据摘要：${record.summary}`,
+                                                              `追踪编号 ${record.traceId} 写入统一 OTD 证据链。`,
+                                                              `当前状态为 ${record.statusLabel}，报表中心 CSV 与审计回放均可核对该记录。`,
+                                                            ],
   }
 }
 
@@ -1328,7 +1472,12 @@ function mapProductionAnomalyEvidenceToReplay(record: OtdEvidenceChainItem): Rep
     object: record.object,
     actor: record.source,
     evidence: record.traceId,
-    time: new Date(record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.createdAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'otd',
     traceId: record.traceId,
     risk: `当前状态：${record.statusLabel}。该生产异常证据必须核对异常上报、风险处置队列、异常中心、AI 排产复核和班组长现场处置是否连续。`,
@@ -1352,7 +1501,12 @@ function mapQualityRecommendationFeedbackToReplay(record: QualityKnowledgeRecomm
     object: `${record.targetWorkOrderId} / ${record.operationCode}`,
     actor: record.owner,
     evidence: record.auditId,
-    time: new Date(record.decidedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.decidedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'quality',
     traceId: record.traceId,
     risk: `${record.trainingSetVersion} -> ${record.nextTrainingSetVersion} 已纳入持续学习闭环，下一轮训练追踪 ${record.nextTrainingTraceId}。`,
@@ -1360,7 +1514,7 @@ function mapQualityRecommendationFeedbackToReplay(record: QualityKnowledgeRecomm
     steps: [
       `${record.trainingSetVersion} 已发布到质量知识复用排序和 AI 推荐链路。`,
       `${record.owner} 记录${record.decisionLabel}：${record.reason}`,
-      `效果趋势 ${record.effectTrendLabel}，反馈指标：${record.feedbackMetrics.map(metric => `${metric.label} ${metric.value}`).join(' / ')}。`,
+      `效果趋势 ${record.effectTrendLabel}，反馈指标：${record.feedbackMetrics.map((metric) => `${metric.label} ${metric.value}`).join(' / ')}。`,
       `${record.nextTrainingSetVersion} 下一轮训练集候选生成，追踪编号 ${record.nextTrainingTraceId}。`,
     ],
   }
@@ -1375,35 +1529,48 @@ function mapQualityGrayReleaseDecisionToReplay(record: QualityKnowledgeGrayRelea
     object: `${record.targetWorkOrderId} / ${record.operationCode}`,
     actor: record.decidedBy,
     evidence: record.auditId,
-    time: new Date(record.decidedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.decidedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'quality',
     traceId: record.traceId,
-    risk: record.decision === 'rolled_back'
-      ? `${record.trainingSetVersion} 已从 active 推荐中排除，推荐链路回到 ${record.rollbackTargetVersion ?? 'QK-TRAIN-20260521-R2'}。`
-      : record.approvalStatus === 'approved'
-        ? `${record.trainingSetVersion} 灰度已确认扩大到 ${record.expansionScope?.join(' / ') ?? '同类 OP-20 装配扭矩推荐'}。`
-        : `${record.trainingSetVersion} 灰度扩大仍待质量主管确认，未确认前继续保持受控范围。`,
-    auditState: record.decision === 'rolled_back'
-      ? '灰度监控、回滚审批、推荐降级和证据链已归档'
-      : '灰度监控、扩大审批、推荐范围和证据链已归档',
+    risk:
+      record.decision === 'rolled_back'
+        ? `${record.trainingSetVersion} 已从 active 推荐中排除，推荐链路回到 ${record.rollbackTargetVersion ?? 'QK-TRAIN-20260521-R2'}。`
+        : record.approvalStatus === 'approved'
+          ? `${record.trainingSetVersion} 灰度已确认扩大到 ${record.expansionScope?.join(' / ') ?? '同类 OP-20 装配扭矩推荐'}。`
+          : `${record.trainingSetVersion} 灰度扩大仍待质量主管确认，未确认前继续保持受控范围。`,
+    auditState:
+      record.decision === 'rolled_back'
+        ? '灰度监控、回滚审批、推荐降级和证据链已归档'
+        : '灰度监控、扩大审批、推荐范围和证据链已归档',
     steps: [
       `${record.releaseCycleLabel}发布证据：${record.releaseAuditId} / ${record.releaseTraceId}，范围 ${record.releaseScopeLabel}。`,
-      `${record.trainingSetVersion} 灰度监控形成指标快照：${record.metricSnapshot.map(metric => `${metric.label} ${metric.value}`).join(' / ')}。`,
+      `${record.trainingSetVersion} 灰度监控形成指标快照：${record.metricSnapshot.map((metric) => `${metric.label} ${metric.value}`).join(' / ')}。`,
       `${record.decidedBy} 执行${record.decisionLabel}，审批状态 ${record.approvalLabel}，审计编号 ${record.auditId}。`,
       ...record.actions,
       ...(record.reviewIssueId
-        ? [record.reviewIssueStatus === 'open'
-            ? `${record.reviewIssueId} 待复核问题单已打开，追踪编号 ${record.reviewIssueTraceId}。`
-            : `${record.reviewIssueId} 复核问题单状态 ${record.reviewIssueLabel ?? '待复核'}，追踪编号 ${record.reviewIssueTraceId}。`]
+        ? [
+            record.reviewIssueStatus === 'open'
+              ? `${record.reviewIssueId} 待复核问题单已打开，追踪编号 ${record.reviewIssueTraceId}。`
+              : `${record.reviewIssueId} 复核问题单状态 ${record.reviewIssueLabel ?? '待复核'}，追踪编号 ${record.reviewIssueTraceId}。`,
+          ]
         : []),
       ...(record.reviewIssueActions ?? []),
-      ...(record.reviewIssueValidationAuditId ? [`复核处置审计 ${record.reviewIssueValidationAuditId}，处置追踪 ${record.reviewIssueValidationTraceId}。`] : []),
+      ...(record.reviewIssueValidationAuditId
+        ? [`复核处置审计 ${record.reviewIssueValidationAuditId}，处置追踪 ${record.reviewIssueValidationTraceId}。`]
+        : []),
       `决策追踪编号 ${record.traceId} 已写入 OTD 证据链、Agent 治理和质量推荐页。`,
     ],
   }
 }
 
-function mapQualityExperimentCandidateToReplay(record: QualityKnowledgeRecommendationExperimentCandidateRecord): ReplayItem {
+function mapQualityExperimentCandidateToReplay(
+  record: QualityKnowledgeRecommendationExperimentCandidateRecord,
+): ReplayItem {
   return {
     id: `quality-experiment-candidate-${record.id}`,
     type: '质量实验候选',
@@ -1438,13 +1605,19 @@ function mapQualityGrayReleaseMonitorToReplay(record: QualityKnowledgeGrayReleas
     actor: '知识库管理员 / 质量主管',
     evidence: record.auditId,
     time: record.publishedAt
-      ? new Date(record.publishedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      ? new Date(record.publishedAt).toLocaleString('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
       : '-',
     status: 'quality',
     traceId: record.traceId,
-    risk: releaseCycleLabel === '重新灰度发布'
-      ? `${record.trainingSetVersion} 已在调整范围并重新校验后恢复灰度推荐，旧回滚问题单不再阻断本轮 active 选择。`
-      : `${record.trainingSetVersion} 首次进入受控灰度范围，继续监控推荐采纳、复验通过和负样本误召回。`,
+    risk:
+      releaseCycleLabel === '重新灰度发布'
+        ? `${record.trainingSetVersion} 已在调整范围并重新校验后恢复灰度推荐，旧回滚问题单不再阻断本轮 active 选择。`
+        : `${record.trainingSetVersion} 首次进入受控灰度范围，继续监控推荐采纳、复验通过和负样本误召回。`,
     auditState: `${releaseCycleLabel}审计、灰度范围、监控指标和回滚目标已归档`,
     steps: [
       `${record.trainingSetVersion} 完成${releaseCycleLabel}，发布审计 ${record.auditId}。`,
@@ -1465,7 +1638,12 @@ function mapPocReviewSignoffToReplay(record: PocReviewSignoffRecord): ReplayItem
     object: record.meetingId,
     actor: record.signedBy,
     evidence: record.auditId,
-    time: new Date(record.signedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.signedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'signoff',
     traceId: record.auditId,
     route: {
@@ -1495,20 +1673,19 @@ function hasPocReviewSignoffReplayPayload(record: PocReviewSignoffRecord): boole
 
 function mapConfigApprovalToReplay(record: AgentConfigApprovalRecord): ReplayItem {
   const statusLabel = approvalStatusLabel(record.status)
-  const policyObject = record.policyArea === 'quality'
-    ? '质量推荐实验扩大门禁'
-    : record.configKey
-  const policyScopeLabel = record.policyArea === 'quality'
-    ? '质量推荐实验策略'
-    : 'Agent 排产建议'
+  const policyObject = record.policyArea === 'quality' ? '质量推荐实验扩大门禁' : record.configKey
+  const policyScopeLabel = record.policyArea === 'quality' ? '质量推荐实验策略' : 'Agent 排产建议'
   const policyMetricSteps = record.policyMetrics?.length
-    ? [`门禁指标调整：${record.policyMetrics.map(metric => `${metric.label} ${metric.fromValue} -> ${metric.toValue}`).join(' / ')}。`]
+    ? [
+        `门禁指标调整：${record.policyMetrics.map((metric) => `${metric.label} ${metric.fromValue} -> ${metric.toValue}`).join(' / ')}。`,
+      ]
     : []
-  const finalStep = record.status === 'approved'
-    ? `${record.decidedBy ?? record.owner} 审批通过，${record.configKey} 从 ${record.fromValue} 生效为 ${record.toValue}。`
-    : record.status === 'rejected'
-      ? `${record.decidedBy ?? record.owner} 驳回变更，${record.configKey} 继续保持 ${record.fromValue}。`
-      : `变更仍处于${statusLabel}状态，当前 Agent 继续使用 ${record.fromValue}。`
+  const finalStep =
+    record.status === 'approved'
+      ? `${record.decidedBy ?? record.owner} 审批通过，${record.configKey} 从 ${record.fromValue} 生效为 ${record.toValue}。`
+      : record.status === 'rejected'
+        ? `${record.decidedBy ?? record.owner} 驳回变更，${record.configKey} 继续保持 ${record.fromValue}。`
+        : `变更仍处于${statusLabel}状态，当前 Agent 继续使用 ${record.fromValue}。`
 
   return {
     id: `config-${record.id}`,
@@ -1518,15 +1695,21 @@ function mapConfigApprovalToReplay(record: AgentConfigApprovalRecord): ReplayIte
     object: policyObject,
     actor: record.decidedBy ? `${record.submittedBy} / ${record.decidedBy}` : record.submittedBy,
     evidence: record.auditId,
-    time: new Date(record.decidedAt ?? record.submittedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: new Date(record.decidedAt ?? record.submittedAt).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     status: 'approval',
     traceId: record.auditId,
     risk: record.risk,
-    auditState: record.status === 'approved'
-      ? '关键配置审批通过，变更已进入配置审计'
-      : record.status === 'rejected'
-        ? '关键配置审批驳回，原策略继续生效'
-        : `关键配置仍在审批链路中，未影响${policyScopeLabel}`,
+    auditState:
+      record.status === 'approved'
+        ? '关键配置审批通过，变更已进入配置审计'
+        : record.status === 'rejected'
+          ? '关键配置审批驳回，原策略继续生效'
+          : `关键配置仍在审批链路中，未影响${policyScopeLabel}`,
     steps: [
       `${record.submittedBy} 提交 ${record.configKey} 变更：${record.fromValue} -> ${record.toValue}。`,
       `系统识别为影响${policyScopeLabel}的关键配置，生成审计编号 ${record.auditId}。`,
@@ -1538,61 +1721,66 @@ function mapConfigApprovalToReplay(record: AgentConfigApprovalRecord): ReplayIte
   }
 }
 
-const approvals = computed<ApprovalItem[]>(() => configApprovals.value.map(record => ({
-  id: record.id,
-  title: record.title,
-  reason: record.reason,
-  owner: record.owner,
-  status: approvalStatusLabel(record.status),
-})))
+const approvals = computed<ApprovalItem[]>(() =>
+  configApprovals.value.map((record) => ({
+    id: record.id,
+    title: record.title,
+    reason: record.reason,
+    owner: record.owner,
+    status: approvalStatusLabel(record.status),
+  })),
+)
 
 const selectedId = ref(baseReplayItems[0].id)
+const userSelectedReplayItem = ref(false)
 
-const selectedItem = computed(() => replayItems.value.find(item => item.id === selectedId.value) || replayItems.value[0])
-const pendingApprovalCount = computed(() => configApprovals.value.filter(item => isApprovalOpen(item.status)).length)
+const selectedItem = computed(
+  () => replayItems.value.find((item) => item.id === selectedId.value) || replayItems.value[0],
+)
+const pendingApprovalCount = computed(() => configApprovals.value.filter((item) => isApprovalOpen(item.status)).length)
 const metrics = computed(() => [
-  { label: 'AI 建议留痕', value: replayItems.value.filter(item => item.type === 'AI 建议').length },
-  { label: '助手动作审计', value: replayItems.value.filter(item => item.type === 'AI 助手动作').length },
-  { label: '重排动作回放', value: replayItems.value.filter(item => item.type === '重排动作').length },
-  { label: 'POC 证据回放', value: replayItems.value.filter(item => item.type === 'POC 证据').length },
-  { label: '知识治理回放', value: replayItems.value.filter(item => item.type === '知识治理').length },
-  { label: '质量推荐回放', value: replayItems.value.filter(item => item.type === '质量推荐').length },
-  { label: '质量实验候选', value: replayItems.value.filter(item => item.type === '质量实验候选').length },
-  { label: '质量灰度回放', value: replayItems.value.filter(item => item.type === '质量灰度').length },
-  { label: '质量灰度发布', value: replayItems.value.filter(item => item.type === '质量灰度发布').length },
-  { label: '客户承诺包', value: replayItems.value.filter(item => item.type === '客户承诺包').length },
-  { label: '外协承诺包', value: replayItems.value.filter(item => item.type === '外协承诺包').length },
-  { label: '外协释放回放', value: replayItems.value.filter(item => item.type === '排产释放证据').length },
-  { label: '库存齐套回放', value: replayItems.value.filter(item => item.type === '库存齐套证据').length },
-  { label: '设备停机回放', value: replayItems.value.filter(item => item.type === '设备停机证据').length },
-  { label: '生产异常回放', value: replayItems.value.filter(item => item.type === '生产异常证据').length },
-  { label: '生产完工回放', value: replayItems.value.filter(item => item.type === '生产完工证据').length },
-  { label: '生产复核回放', value: replayItems.value.filter(item => item.type === '生产复核证据').length },
-  { label: '现场态势回放', value: replayItems.value.filter(item => item.type === '现场态势证据').length },
-  { label: '现场处置回放', value: replayItems.value.filter(item => item.type === '现场处置证据').length },
-  { label: '异常分流回放', value: replayItems.value.filter(item => item.type === '异常分流证据').length },
-  { label: '风险SLA回放', value: replayItems.value.filter(item => item.type === '风险SLA证据').length },
-  { label: '扫码执行回放', value: replayItems.value.filter(item => item.type === '扫码执行证据').length },
-  { label: '扫码完工回放', value: replayItems.value.filter(item => item.type === '扫码完工证据').length },
-  { label: '扫码物料回放', value: replayItems.value.filter(item => item.type === '扫码物料证据').length },
-  { label: '扫码质量门回放', value: replayItems.value.filter(item => item.type === '扫码质量门证据').length },
-  { label: '质量复验释放回放', value: replayItems.value.filter(item => item.type === '质量复验释放证据').length },
-  { label: '扫码交接回放', value: replayItems.value.filter(item => item.type === '扫码交接证据').length },
-  { label: '工程约束回放', value: replayItems.value.filter(item => item.type === '工程约束证据').length },
-  { label: '工程变更回放', value: replayItems.value.filter(item => item.type === '工程变更证据').length },
-  { label: '工艺能力回放', value: replayItems.value.filter(item => item.type === '工艺能力证据').length },
-  { label: '采购收货回放', value: replayItems.value.filter(item => item.type === '采购收货证据').length },
-  { label: '供应风险回放', value: replayItems.value.filter(item => item.type === '供应风险证据').length },
-  { label: '供应网络回放', value: replayItems.value.filter(item => item.type === '供应网络证据').length },
-  { label: '采购整改回放', value: replayItems.value.filter(item => item.type === '采购整改证据').length },
-  { label: '业务落库回放', value: replayItems.value.filter(item => item.type === '业务落库动作').length },
-  { label: '排产反馈回放', value: replayItems.value.filter(item => item.type === '排产采纳反馈').length },
-  { label: '人员能力回放', value: replayItems.value.filter(item => item.type === '人员能力证据').length },
-  { label: '人员替班回放', value: replayItems.value.filter(item => item.type === '人员替班证据').length },
-  { label: '人员阻断回放', value: replayItems.value.filter(item => item.type === '人员阻断证据').length },
-  { label: '人员开工回放', value: replayItems.value.filter(item => item.type === '人员开工证据').length },
-  { label: 'OTD 证据回放', value: replayItems.value.filter(item => item.type === 'OTD 证据链').length },
-  { label: 'POC 复盘签署', value: replayItems.value.filter(item => item.type === 'POC 签署').length },
+  { label: 'AI 建议留痕', value: replayItems.value.filter((item) => item.type === 'AI 建议').length },
+  { label: '助手动作审计', value: replayItems.value.filter((item) => item.type === 'AI 助手动作').length },
+  { label: '重排动作回放', value: replayItems.value.filter((item) => item.type === '重排动作').length },
+  { label: 'POC 证据回放', value: replayItems.value.filter((item) => item.type === 'POC 证据').length },
+  { label: '知识治理回放', value: replayItems.value.filter((item) => item.type === '知识治理').length },
+  { label: '质量推荐回放', value: replayItems.value.filter((item) => item.type === '质量推荐').length },
+  { label: '质量实验候选', value: replayItems.value.filter((item) => item.type === '质量实验候选').length },
+  { label: '质量灰度回放', value: replayItems.value.filter((item) => item.type === '质量灰度').length },
+  { label: '质量灰度发布', value: replayItems.value.filter((item) => item.type === '质量灰度发布').length },
+  { label: '客户承诺包', value: replayItems.value.filter((item) => item.type === '客户承诺包').length },
+  { label: '外协承诺包', value: replayItems.value.filter((item) => item.type === '外协承诺包').length },
+  { label: '外协释放回放', value: replayItems.value.filter((item) => item.type === '排产释放证据').length },
+  { label: '库存齐套回放', value: replayItems.value.filter((item) => item.type === '库存齐套证据').length },
+  { label: '设备停机回放', value: replayItems.value.filter((item) => item.type === '设备停机证据').length },
+  { label: '生产异常回放', value: replayItems.value.filter((item) => item.type === '生产异常证据').length },
+  { label: '生产完工回放', value: replayItems.value.filter((item) => item.type === '生产完工证据').length },
+  { label: '生产复核回放', value: replayItems.value.filter((item) => item.type === '生产复核证据').length },
+  { label: '现场态势回放', value: replayItems.value.filter((item) => item.type === '现场态势证据').length },
+  { label: '现场处置回放', value: replayItems.value.filter((item) => item.type === '现场处置证据').length },
+  { label: '异常分流回放', value: replayItems.value.filter((item) => item.type === '异常分流证据').length },
+  { label: '风险SLA回放', value: replayItems.value.filter((item) => item.type === '风险SLA证据').length },
+  { label: '扫码执行回放', value: replayItems.value.filter((item) => item.type === '扫码执行证据').length },
+  { label: '扫码完工回放', value: replayItems.value.filter((item) => item.type === '扫码完工证据').length },
+  { label: '扫码物料回放', value: replayItems.value.filter((item) => item.type === '扫码物料证据').length },
+  { label: '扫码质量门回放', value: replayItems.value.filter((item) => item.type === '扫码质量门证据').length },
+  { label: '质量复验释放回放', value: replayItems.value.filter((item) => item.type === '质量复验释放证据').length },
+  { label: '扫码交接回放', value: replayItems.value.filter((item) => item.type === '扫码交接证据').length },
+  { label: '工程约束回放', value: replayItems.value.filter((item) => item.type === '工程约束证据').length },
+  { label: '工程变更回放', value: replayItems.value.filter((item) => item.type === '工程变更证据').length },
+  { label: '工艺能力回放', value: replayItems.value.filter((item) => item.type === '工艺能力证据').length },
+  { label: '采购收货回放', value: replayItems.value.filter((item) => item.type === '采购收货证据').length },
+  { label: '供应风险回放', value: replayItems.value.filter((item) => item.type === '供应风险证据').length },
+  { label: '供应网络回放', value: replayItems.value.filter((item) => item.type === '供应网络证据').length },
+  { label: '采购整改回放', value: replayItems.value.filter((item) => item.type === '采购整改证据').length },
+  { label: '业务落库回放', value: replayItems.value.filter((item) => item.type === '业务落库动作').length },
+  { label: '排产反馈回放', value: replayItems.value.filter((item) => item.type === '排产采纳反馈').length },
+  { label: '人员能力回放', value: replayItems.value.filter((item) => item.type === '人员能力证据').length },
+  { label: '人员替班回放', value: replayItems.value.filter((item) => item.type === '人员替班证据').length },
+  { label: '人员阻断回放', value: replayItems.value.filter((item) => item.type === '人员阻断证据').length },
+  { label: '人员开工回放', value: replayItems.value.filter((item) => item.type === '人员开工证据').length },
+  { label: 'OTD 证据回放', value: replayItems.value.filter((item) => item.type === 'OTD 证据链').length },
+  { label: 'POC 复盘签署', value: replayItems.value.filter((item) => item.type === 'POC 签署').length },
   { label: '配置审批中', value: pendingApprovalCount.value },
   { label: '证据链覆盖', value: '100%' },
 ])
@@ -1600,6 +1788,11 @@ const metrics = computed(() => [
 function recordReplaySyncError(label: string, error: unknown) {
   if (isOfflineDemoError(error)) return
   replaySyncErrors.value.push(`${label}加载失败：${errorMessage(error, '请稍后重试')}`)
+}
+
+function selectReplayItem(id: string) {
+  userSelectedReplayItem.value = true
+  selectedId.value = id
 }
 
 function ensureReplayArray<T>(label: string, value: unknown): T[] {
@@ -1616,21 +1809,21 @@ function ensureQualityCapaClosure(value: unknown): QualityCapaClosure | null {
   }
   const candidate = value as Partial<QualityCapaClosure>
   if (
-    typeof candidate.inspectionId === 'string'
-    && typeof candidate.workOrderId === 'string'
-    && typeof candidate.traceId === 'string'
-    && typeof candidate.rootCause === 'string'
-    && typeof candidate.evidenceStrength === 'number'
-    && Number.isFinite(candidate.evidenceStrength)
-    && typeof candidate.taskTitle === 'string'
-    && typeof candidate.taskKind === 'string'
-    && typeof candidate.owner === 'string'
-    && typeof candidate.dueAt === 'string'
-    && typeof candidate.verification === 'string'
-    && typeof candidate.verifiedAt === 'string'
-    && typeof candidate.auditState === 'string'
-    && typeof candidate.otdImpact === 'string'
-    && typeof candidate.reviewAction === 'string'
+    typeof candidate.inspectionId === 'string' &&
+    typeof candidate.workOrderId === 'string' &&
+    typeof candidate.traceId === 'string' &&
+    typeof candidate.rootCause === 'string' &&
+    typeof candidate.evidenceStrength === 'number' &&
+    Number.isFinite(candidate.evidenceStrength) &&
+    typeof candidate.taskTitle === 'string' &&
+    typeof candidate.taskKind === 'string' &&
+    typeof candidate.owner === 'string' &&
+    typeof candidate.dueAt === 'string' &&
+    typeof candidate.verification === 'string' &&
+    typeof candidate.verifiedAt === 'string' &&
+    typeof candidate.auditState === 'string' &&
+    typeof candidate.otdImpact === 'string' &&
+    typeof candidate.reviewAction === 'string'
   ) {
     return candidate as QualityCapaClosure
   }
@@ -1659,8 +1852,14 @@ onMounted(async () => {
     recordReplaySyncError('质量 CAPA 闭环', error)
   }
   try {
-    assistantActionAudits.value = ensureReplayArray<AssistantActionAuditRecord>('助手动作审计', await readAssistantActionAuditsBackendFirst({ failLoud: true }))
-    if (assistantActionAudits.value.length === 0 && replaySyncErrors.value.some(error => error.includes('助手动作审计加载失败'))) {
+    assistantActionAudits.value = ensureReplayArray<AssistantActionAuditRecord>(
+      '助手动作审计',
+      await readAssistantActionAuditsBackendFirst({ failLoud: true }),
+    )
+    if (
+      assistantActionAudits.value.length === 0 &&
+      replaySyncErrors.value.some((error) => error.includes('助手动作审计加载失败'))
+    ) {
       assistantActionAudits.value = readAssistantActionAudits()
     }
   } catch (error: unknown) {
@@ -1668,23 +1867,35 @@ onMounted(async () => {
     assistantActionAudits.value = readAssistantActionAudits()
   }
   try {
-    pocEvidenceRecords.value = ensureReplayArray<PocEvidenceGovernanceRecord>('POC 证据治理', await readPocEvidenceGovernanceRecordsBackendFirst())
+    pocEvidenceRecords.value = ensureReplayArray<PocEvidenceGovernanceRecord>(
+      'POC 证据治理',
+      await readPocEvidenceGovernanceRecordsBackendFirst(),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('POC 证据治理', error)
   }
   try {
-    configApprovals.value = ensureReplayArray<AgentConfigApprovalRecord>('配置审批', await readAgentConfigApprovalsBackendFirst({ failLoud: true }))
-    if (configApprovals.value.length === 0 && replaySyncErrors.value.some(error => error.includes('配置审批加载失败'))) {
-      configApprovals.value = readAgentConfigApprovals()
+    configApprovals.value = ensureReplayArray<AgentConfigApprovalRecord>(
+      '配置审批',
+      await readAgentConfigApprovalsBackendFirst({ failLoud: true }),
+    )
+    if (
+      configApprovals.value.length === 0 &&
+      replaySyncErrors.value.some((error) => error.includes('配置审批加载失败'))
+    ) {
+      configApprovals.value = readStoredAgentConfigApprovals()
     }
   } catch (error: unknown) {
     recordReplaySyncError('配置审批', error)
-    configApprovals.value = readAgentConfigApprovals()
+    configApprovals.value = readStoredAgentConfigApprovals()
   }
   try {
     const signoffRecord = await readPocReviewSignoffRecordBackendFirst({ failLoud: true })
     if (signoffRecord && !hasPocReviewSignoffReplayPayload(signoffRecord)) {
-      recordReplaySyncError('POC 复盘签署', new Error(`${signoffRecord.id || signoffRecord.meetingId || 'POC 复盘签署'} 复盘签署审计载荷缺失`))
+      recordReplaySyncError(
+        'POC 复盘签署',
+        new Error(`${signoffRecord.id || signoffRecord.meetingId || 'POC 复盘签署'} 复盘签署审计载荷缺失`),
+      )
     } else {
       pocReviewSignoff.value = signoffRecord
     }
@@ -1698,50 +1909,79 @@ onMounted(async () => {
     recordReplaySyncError('OTD 证据链', error)
   }
   try {
-    knowledgeReviewRecords.value = ensureReplayArray<KnowledgeGovernanceReviewRecord>('知识治理', await readKnowledgeGovernanceReviewsBackendFirst())
+    knowledgeReviewRecords.value = ensureReplayArray<KnowledgeGovernanceReviewRecord>(
+      '知识治理',
+      await readKnowledgeGovernanceReviewsBackendFirst(),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('知识治理', error)
   }
   try {
-    qualityRecommendationFeedbackRecords.value = ensureReplayArray<QualityKnowledgeRecommendationFeedbackRecord>('质量推荐反馈', await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst())
+    qualityRecommendationFeedbackRecords.value = ensureReplayArray<QualityKnowledgeRecommendationFeedbackRecord>(
+      '质量推荐反馈',
+      await readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst(),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('质量推荐反馈', error)
   }
   try {
-    qualityRetrainingVersionRecords.value = ensureReplayArray<QualityKnowledgeRetrainingVersionRecord>('质量再训练版本', await readQualityKnowledgeRetrainingVersionRecordsBackendFirst())
+    qualityRetrainingVersionRecords.value = ensureReplayArray<QualityKnowledgeRetrainingVersionRecord>(
+      '质量再训练版本',
+      await readQualityKnowledgeRetrainingVersionRecordsBackendFirst(),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('质量再训练版本', error)
   }
   try {
-    qualityGrayReleaseDecisionRecords.value = ensureReplayArray<QualityKnowledgeGrayReleaseDecisionRecord>('质量灰度决策', await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst())
+    qualityGrayReleaseDecisionRecords.value = ensureReplayArray<QualityKnowledgeGrayReleaseDecisionRecord>(
+      '质量灰度决策',
+      await readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst(),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('质量灰度决策', error)
   }
   try {
-    backendAgentActionAudits.value = ensureReplayArray<AuditLogDetail>('业务落库审计', await readBackendAgentActionAudits(recordReplaySyncError))
+    backendAgentActionAudits.value = ensureReplayArray<AuditLogDetail>(
+      '业务落库审计',
+      await readBackendAgentActionAudits(recordReplaySyncError),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('业务落库审计', error)
   }
   try {
-    scheduleAdoptionFeedbackAudits.value = ensureReplayArray<AuditLogDetail>('排产采纳反馈审计', await readScheduleAdoptionFeedbackAudits(recordReplaySyncError))
+    scheduleAdoptionFeedbackAudits.value = ensureReplayArray<AuditLogDetail>(
+      '排产采纳反馈审计',
+      await readScheduleAdoptionFeedbackAudits(recordReplaySyncError),
+    )
   } catch (error: unknown) {
     recordReplaySyncError('排产采纳反馈审计', error)
   }
-  if (scheduleAdoptionFeedbackAudits.value[0]) selectedId.value = `schedule-adoption-feedback-${scheduleAdoptionFeedbackAudits.value[0].id}`
-  else if (backendAgentActionAudits.value[0]) selectedId.value = `agent-business-write-${backendAgentActionAudits.value[0].id}`
-  else if (qualityCapaClosure.value) selectedId.value = 'quality-capa-closure'
-  else if (qualityExperimentCandidateRecords.value[0]) selectedId.value = `quality-experiment-candidate-${qualityExperimentCandidateRecords.value[0].id}`
-  else if (qualityGrayReleaseMonitorRecords.value[0]) selectedId.value = `quality-gray-release-monitor-${qualityGrayReleaseMonitorRecords.value[0].id}`
-  else if (qualityGrayReleaseDecisionRecords.value[0]) selectedId.value = `quality-gray-release-decision-${qualityGrayReleaseDecisionRecords.value[0].id}`
-  else if (qualityRecommendationFeedbackRecords.value[0]) selectedId.value = `quality-recommendation-feedback-${qualityRecommendationFeedbackRecords.value[0].id}`
-  else if (knowledgeReviewRecords.value[0]) selectedId.value = knowledgeReviewRecords.value[0].id
-  else if (otdEvidenceRecords.value.find(item => item.stage === '客户承诺包')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '客户承诺包')?.id}`
-  else if (otdEvidenceRecords.value.find(item => item.stage === '外协排产释放')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '外协排产释放')?.id}`
-  else if (otdEvidenceRecords.value.find(item => item.stage === '外协承诺')) selectedId.value = `otd-${otdEvidenceRecords.value.find(item => item.stage === '外协承诺')?.id}`
-  else if (otdEvidenceRecords.value[0]) selectedId.value = `otd-${otdEvidenceRecords.value[0].id}`
-  else if (pocReviewSignoff.value) selectedId.value = pocReviewSignoff.value.id
-  else if (pocEvidenceRecords.value[0]) selectedId.value = pocEvidenceRecords.value[0].id
-  else if (assistantActionAudits.value[0]) selectedId.value = assistantActionAudits.value[0].id
+  if (!userSelectedReplayItem.value) {
+    if (scheduleAdoptionFeedbackAudits.value[0])
+      selectedId.value = `schedule-adoption-feedback-${scheduleAdoptionFeedbackAudits.value[0].id}`
+    else if (backendAgentActionAudits.value[0])
+      selectedId.value = `agent-business-write-${backendAgentActionAudits.value[0].id}`
+    else if (qualityCapaClosure.value) selectedId.value = 'quality-capa-closure'
+    else if (qualityExperimentCandidateRecords.value[0])
+      selectedId.value = `quality-experiment-candidate-${qualityExperimentCandidateRecords.value[0].id}`
+    else if (qualityGrayReleaseMonitorRecords.value[0])
+      selectedId.value = `quality-gray-release-monitor-${qualityGrayReleaseMonitorRecords.value[0].id}`
+    else if (qualityGrayReleaseDecisionRecords.value[0])
+      selectedId.value = `quality-gray-release-decision-${qualityGrayReleaseDecisionRecords.value[0].id}`
+    else if (qualityRecommendationFeedbackRecords.value[0])
+      selectedId.value = `quality-recommendation-feedback-${qualityRecommendationFeedbackRecords.value[0].id}`
+    else if (knowledgeReviewRecords.value[0]) selectedId.value = knowledgeReviewRecords.value[0].id
+    else if (otdEvidenceRecords.value.find((item) => item.stage === '客户承诺包'))
+      selectedId.value = `otd-${otdEvidenceRecords.value.find((item) => item.stage === '客户承诺包')?.id}`
+    else if (otdEvidenceRecords.value.find((item) => item.stage === '外协排产释放'))
+      selectedId.value = `otd-${otdEvidenceRecords.value.find((item) => item.stage === '外协排产释放')?.id}`
+    else if (otdEvidenceRecords.value.find((item) => item.stage === '外协承诺'))
+      selectedId.value = `otd-${otdEvidenceRecords.value.find((item) => item.stage === '外协承诺')?.id}`
+    else if (otdEvidenceRecords.value[0]) selectedId.value = `otd-${otdEvidenceRecords.value[0].id}`
+    else if (pocReviewSignoff.value) selectedId.value = pocReviewSignoff.value.id
+    else if (pocEvidenceRecords.value[0]) selectedId.value = pocEvidenceRecords.value[0].id
+    else if (assistantActionAudits.value[0]) selectedId.value = assistantActionAudits.value[0].id
+  }
 })
 </script>
 
@@ -1754,9 +1994,7 @@ onMounted(async () => {
   padding: 18px;
   border: 1px solid #c7d2fe;
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(248, 250, 255, 0.98), rgba(255, 255, 255, 0.98)),
-    #fff;
+  background: linear-gradient(180deg, rgba(248, 250, 255, 0.98), rgba(255, 255, 255, 0.98)), #fff;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
