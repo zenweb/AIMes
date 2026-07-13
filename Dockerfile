@@ -9,6 +9,9 @@ COPY src/backend/MES.Application/MES.Application.csproj src/backend/MES.Applicat
 COPY src/backend/MES.Domain/MES.Domain.csproj src/backend/MES.Domain/
 COPY src/backend/MES.Infrastructure/MES.Infrastructure.csproj src/backend/MES.Infrastructure/
 RUN dotnet restore src/backend/MES.Api/MES.Api.csproj
+RUN dotnet tool install --global dotnet-ef --version 10.0.9
+
+ENV PATH="${PATH}:/root/.dotnet/tools"
 
 COPY src/backend src/backend
 RUN dotnet publish src/backend/MES.Api/MES.Api.csproj -c Release -o /app/publish --no-restore
@@ -19,7 +22,7 @@ WORKDIR /frontend
 COPY src/frontend/package.json src/frontend/package-lock.json ./
 RUN npm ci
 COPY src/frontend/ ./
-RUN npm run build
+RUN npx nuxi build --preset static
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:8c0b6857eab7b2aa57884c839bf4678414606bd7d17370f18a842ac5cf414711 AS final
 WORKDIR /app

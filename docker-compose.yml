@@ -17,9 +17,6 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # 仅挂载 seed.sql 用于演示数据；Production schema 由部署步骤显式执行 EF Migrations。
-      # init.sql 已删除（与 EF Migrations 双轨易漂移，决定 EF Migrations 为唯一事实源）。
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -39,6 +36,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    command:
+      - dotnet
+      - ef
+      - database
+      - update
+      - --project
+      - src/backend/MES.Infrastructure/MES.Infrastructure.csproj
+      - --startup-project
+      - src/backend/MES.Api/MES.Api.csproj
+      - --context
+      - MesDbContext
+    environment:
+      Database__Provider: PostgreSQL
+      ConnectionStrings__DefaultConnection: Host=postgresql;Database=mes;Username=postgres;Password=postgres
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: "no"
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
@@ -102,6 +123,8 @@ services:
     depends_on:
       postgresql:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:

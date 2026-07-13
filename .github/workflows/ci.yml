@@ -130,6 +130,44 @@ jobs:
       - name: Docker build
         run: docker build --pull=false -t aimes:ci .
 
+  recovery:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release evidence contract tests
+        shell: pwsh
+        run: |
+          pwsh scripts/test-postgresql-backup-restore.ps1
+          pwsh scripts/test-gray-health-observation.ps1
+          pwsh scripts/test-gray-incident-evidence-import.ps1
+          pwsh scripts/test-gray-observation-workflow.ps1
+          pwsh scripts/test-release-recovery-ci.ps1
+          pwsh scripts/test-release-gate-backup-restore-contract.ps1
+
+      - name: Start PostgreSQL and apply migrations
+        run: |
+          docker compose up -d --wait postgresql
+          docker compose build migrator
+          docker compose run --rm migrator
+
+      - name: PostgreSQL backup and isolated restore
+        shell: pwsh
+        run: pwsh scripts/run-postgresql-backup-restore.ps1 -ReportPath TestResults/Recovery/postgresql-backup-restore.md
+
+      - name: Upload recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgresql-backup-restore
+          path: TestResults/Recovery/postgresql-backup-restore.md
+
+      - name: Cleanup recovery environment
+        if: always()
+        run: docker compose down -v
+
   security:
     runs-on: ubuntu-latest
 
