@@ -7,7 +7,7 @@ namespace MES.Application.Services;
 
 public interface IAuditLogAppService
 {
-    Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, int page, int pageSize, CancellationToken ct = default);
+    Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, string? traceId, int page, int pageSize, CancellationToken ct = default);
     Task<AuditLogDetailDto?> GetAuditLogByIdAsync(string id, CancellationToken ct = default);
     Task WriteAuditLogAsync(string userId, string action, string resource, string? resourceId, string? oldValues, string? newValues, string? ipAddress, string? userAgent, AuditInitiatedBy initiatedBy = AuditInitiatedBy.User, CancellationToken ct = default);
 }
@@ -21,10 +21,10 @@ public class AuditLogAppService : IAuditLogAppService
         _repo = repo;
     }
 
-    public async Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, int page, int pageSize, CancellationToken ct = default)
+    public async Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, string? traceId, int page, int pageSize, CancellationToken ct = default)
     {
-        var total = await _repo.CountAsync(action, ct);
-        var items = await _repo.GetPagedAsync(action, page, pageSize, ct);
+        var total = await _repo.CountAsync(action, traceId, ct);
+        var items = await _repo.GetPagedAsync(action, traceId, page, pageSize, ct);
 
         return new PagedResult<AuditLogDto>
         {
