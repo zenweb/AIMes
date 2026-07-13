@@ -93,10 +93,49 @@ function Get-EvidenceReferencePaths([string]$Value) {
         ForEach-Object { $_.Value.TrimEnd(',', ';', '.', ':', ')', ']') })
 }
 
-function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
-    foreach ($evidencePath in (Get-EvidenceReferencePaths $EvidenceValue)) {
+function Test-IncidentQueryEvidenceContentPass(
+    [string]$Value,
+    [string]$ExpectedGrayReleaseId,
+    [DateTimeOffset]$ExpectedObservationStartedAt,
+    [DateTimeOffset]$ExpectedObservationEndedAt
+) {
+    $evidenceReferences = Get-EvidenceReferencePaths $Value
+    if ($evidenceReferences.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($evidencePath in $evidenceReferences) {
         $candidate = Join-Path $script:repositoryRoot ($evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
         if (-not (Test-Path $candidate)) {
+            continue
+        }
+
+        $text = Get-Content -Raw -Path $candidate
+        $contentPass = $text.Contains($ExpectedGrayReleaseId) `
+            -and $text.Contains($ExpectedObservationStartedAt.ToString("yyyy-MM-dd")) `
+            -and $text.Contains($ExpectedObservationEndedAt.ToString("yyyy-MM-dd")) `
+            -and $text -match '(?i)P0\s*(?:=|:)\s*0' `
+            -and $text -match '(?i)P1\s*(?:=|:)\s*0' `
+            -and $text -match '(?i)(monitoring|incident query|incident search|on-call|gray observation|production incidents)'
+        if ($contentPass) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
+    $evidenceReferences = Get-EvidenceReferencePaths $EvidenceValue
+    if ($evidenceReferences.Count -eq 0) {
+        $script:violations.Add("Gray observation evidence must include a repo-local reviewed monitoring or incident-review PASS packet.")
+        return $false
+    }
+
+    foreach ($evidencePath in $evidenceReferences) {
+        $candidate = Join-Path $script:repositoryRoot ($evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-Path $candidate)) {
+            $script:violations.Add("Gray observation Evidence reference does not exist: $evidencePath")
             continue
         }
 
@@ -119,25 +158,7 @@ function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
             continue
         }
 
-        $incidentPaths = Get-EvidenceReferencePaths $incidentEvidence
-        $incidentContentPass = $false
-        foreach ($incidentPath in $incidentPaths) {
-            $incidentCandidate = Join-Path $script:repositoryRoot ($incidentPath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
-            if (-not (Test-Path $incidentCandidate)) {
-                continue
-            }
-
-            $incidentText = Get-Content -Raw -Path $incidentCandidate
-            $incidentContentPass = $incidentText.Contains($releaseId) `
-                -and $incidentText.Contains($started.ToString("yyyy-MM-dd")) `
-                -and $incidentText.Contains($ended.ToString("yyyy-MM-dd")) `
-                -and $incidentText -match '(?i)P0\s*(?:=|:)\s*0' `
-                -and $incidentText -match '(?i)P1\s*(?:=|:)\s*0' `
-                -and $incidentText -match '(?i)(monitoring|incident|on-call|gray observation)'
-            if ($incidentContentPass) {
-                break
-            }
-        }
+        $incidentContentPass = Test-IncidentQueryEvidenceContentPass $incidentEvidence $releaseId $started $ended
 
         $statusPass = [string]::Equals($status, "REVIEWED", [StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($status, "PASS", [StringComparison]::OrdinalIgnoreCase)
@@ -155,6 +176,7 @@ function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
         }
     }
 
+    $script:violations.Add("Gray observation evidence is not a reviewed monitoring or incident-review PASS packet.")
     return $false
 }
 
