@@ -31,4 +31,17 @@
     </ProjectReference>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(AimesOpenSource)' == 'true'">
+    <Compile Remove="AI\AnomalyAgentTests.cs" />
+    <Compile Remove="AI\KnowledgeAgentTests.cs" />
+    <Compile Remove="AI\LlmConcurrencyGateTests.cs" />
+    <Compile Remove="AI\LlmGatewayServiceTests.cs" />
+    <Compile Remove="AI\MaintenanceAgentTests.cs" />
+    <Compile Remove="AI\ProcessParameterAgentTests.cs" />
+    <Compile Remove="AI\QualityAgentTests.cs" />
+    <Compile Remove="AI\SchedulingAgentTests.cs" />
+    <Compile Remove="AI\VectorStoreServiceTests.cs" />
+    <Compile Remove="Application\QualityAppServiceTests.cs" />
+  </ItemGroup>
+
 </Project>
