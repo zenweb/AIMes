@@ -82,6 +82,82 @@ function Test-EvidenceReferenceExists([string]$Value) {
     return $true
 }
 
+function Get-EvidenceReferencePaths([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return @()
+    }
+
+    return @($Value |
+        Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' |
+        ForEach-Object { $_.Matches } |
+        ForEach-Object { $_.Value.TrimEnd(',', ';', '.', ':', ')', ']') })
+}
+
+function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
+    foreach ($evidencePath in (Get-EvidenceReferencePaths $EvidenceValue)) {
+        $candidate = Join-Path $script:repositoryRoot ($evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-Path $candidate)) {
+            continue
+        }
+
+        $text = Get-Content -Raw -Path $candidate
+        $lines = $text -split "`r?`n"
+        $status = Get-AnchoredLineValues $lines "Status" | Select-Object -First 1
+        $reviewer = Get-AnchoredLineValues $lines "Reviewer" | Select-Object -First 1
+        $reviewedAt = Get-AnchoredLineValues $lines "ReviewedAt" | Select-Object -First 1
+        $releaseId = Get-AnchoredLineValues $lines "GrayReleaseId" | Select-Object -First 1
+        $startedAt = Get-AnchoredLineValues $lines "ObservationStartedAt" | Select-Object -First 1
+        $endedAt = Get-AnchoredLineValues $lines "ObservationEndedAt" | Select-Object -First 1
+        $monitoringSource = Get-AnchoredLineValues $lines "MonitoringSource" | Select-Object -First 1
+        $incidentEvidence = Get-AnchoredLineValues $lines "IncidentQueryEvidence" | Select-Object -First 1
+
+        try {
+            $reviewed = [DateTimeOffset]::Parse($reviewedAt)
+            $started = [DateTimeOffset]::Parse($startedAt)
+            $ended = [DateTimeOffset]::Parse($endedAt)
+        } catch {
+            continue
+        }
+
+        $incidentPaths = Get-EvidenceReferencePaths $incidentEvidence
+        $incidentContentPass = $false
+        foreach ($incidentPath in $incidentPaths) {
+            $incidentCandidate = Join-Path $script:repositoryRoot ($incidentPath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            if (-not (Test-Path $incidentCandidate)) {
+                continue
+            }
+
+            $incidentText = Get-Content -Raw -Path $incidentCandidate
+            $incidentContentPass = $incidentText.Contains($releaseId) `
+                -and $incidentText.Contains($started.ToString("yyyy-MM-dd")) `
+                -and $incidentText.Contains($ended.ToString("yyyy-MM-dd")) `
+                -and $incidentText -match '(?i)P0\s*(?:=|:)\s*0' `
+                -and $incidentText -match '(?i)P1\s*(?:=|:)\s*0' `
+                -and $incidentText -match '(?i)(monitoring|incident|on-call|gray observation)'
+            if ($incidentContentPass) {
+                break
+            }
+        }
+
+        $statusPass = [string]::Equals($status, "REVIEWED", [StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals($status, "PASS", [StringComparison]::OrdinalIgnoreCase)
+        if ($statusPass `
+            -and (Test-AnchoredReportPass $text) `
+            -and (Test-RealEvidence $reviewer) `
+            -and $reviewed -le [DateTimeOffset]::UtcNow `
+            -and (Test-RealEvidence $releaseId) `
+            -and ($ended - $started).TotalDays -ge 14 `
+            -and $ended -le [DateTimeOffset]::UtcNow `
+            -and (Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0") `
+            -and (Test-RealEvidence $monitoringSource) `
+            -and $incidentContentPass) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Test-NoBlockingSecuritySignoffText([string]$Text) {
     $lines = $Text -split "`r?`n"
     $hasUnsignedStatus = (Get-AnchoredLineValues $lines "Status" | Where-Object {
@@ -128,7 +204,9 @@ function Test-SecuritySignoffEvidencePass([string]$Text) {
 
     $hasSelfAssessment = $Text.Contains("Automated Self-Assessment")
     $hasAttackChain = $Text.Contains("Attack Chain A/B/C")
-    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object {
+        (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_)
+    } | Select-Object -First 1) -ne $null
 
     return $hasSigner `
         -and $hasParseableSignedAt `
@@ -455,7 +533,11 @@ function Test-GrayObservationEvidencePass([string]$Text) {
 
     $hasRequiredWindowText = $Text.Contains("14 calendar days")
     $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
-    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
+    $evidenceValues = @(Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ })
+    $hasEvidence = ($evidenceValues | Where-Object {
+        (Test-EvidenceReferenceExists $_) -and
+            (Test-GrayMonitoringEvidenceReferencePass $_)
+    } | Select-Object -First 1) -ne $null
 
     return $hasPassStatus `
         -and $hasGrayReleaseId `
