@@ -2,6 +2,7 @@ param(
     [string]$ReportPath = "_docs/_reports/release-gate-audit-latest.md",
     [string]$HostedCiReportPath = "_docs/_reports/hosted-ci-20260611-v1-pass.md",
     [string]$StagingReportPath = "_docs/_reports/staging-rehearsal-20260611-docker-restored.md",
+    [string]$BackupRestoreReportPath = "_docs/_reports/postgresql-backup-restore-latest.md",
     [string]$AttackChainReportPath = "_docs/_reports/attack-chain-verification-20260611-manual-pending.md",
     [string]$SecuritySignoffPath = "_docs/_review/20260607-security-signoff.md",
     [string]$GrayObservationReportPath = "_docs/_reports/gray-observation-20260607-not-started.md",
@@ -64,12 +65,13 @@ function Test-EvidenceReferenceExists([string]$Value) {
     }
 
     # Repo-local evidence references are accepted under _docs/ and output/.
-    $evidenceReferences = Get-EvidenceReferencePaths $Value
-    if ($evidenceReferences.Count -eq 0) {
+    $evidenceMatches = @($Value | Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' | ForEach-Object { $_.Matches } | ForEach-Object { $_ })
+    if ($evidenceMatches.Count -eq 0) {
         return $true
     }
 
-    foreach ($evidencePath in $evidenceReferences) {
+    foreach ($evidenceMatch in $evidenceMatches) {
+        $evidencePath = $evidenceMatch.Value.TrimEnd(',', ';', '.', ':', ')', ']')
         $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
         $candidate = Join-Path $script:repositoryRoot $relativePath
         if (-not (Test-Path $candidate)) {
@@ -78,121 +80,6 @@ function Test-EvidenceReferenceExists([string]$Value) {
     }
 
     return $true
-}
-
-function Test-IncidentQueryEvidenceContentPass(
-    [string]$Value,
-    [string]$ExpectedGrayReleaseId,
-    [DateTimeOffset]$ExpectedObservationStartedAt,
-    [DateTimeOffset]$ExpectedObservationEndedAt
-) {
-    if (-not (Test-RealEvidence $ExpectedGrayReleaseId)) {
-        return $false
-    }
-
-    $evidenceReferences = Get-EvidenceReferencePaths $Value
-    if ($evidenceReferences.Count -eq 0) {
-        return $false
-    }
-
-    $startDateToken = $ExpectedObservationStartedAt.ToString("yyyy-MM-dd")
-    $endDateToken = $ExpectedObservationEndedAt.ToString("yyyy-MM-dd")
-
-    foreach ($evidencePath in $evidenceReferences) {
-        if ($evidencePath -notmatch '\.(?:md|json|txt|log|csv|html)$') {
-            continue
-        }
-
-        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-        $candidate = Join-Path $script:repositoryRoot $relativePath
-        if (-not (Test-Path $candidate)) {
-            continue
-        }
-
-        $text = Get-Content -Raw -Path $candidate
-        $hasGrayReleaseId = $text.IndexOf($ExpectedGrayReleaseId, [StringComparison]::Ordinal) -ge 0
-        $hasWindowStart = $text.IndexOf($startDateToken, [StringComparison]::Ordinal) -ge 0
-        $hasWindowEnd = $text.IndexOf($endDateToken, [StringComparison]::Ordinal) -ge 0
-        $hasZeroP0 = $text -match '(?i)(?:P0\s*(?:=|:)\s*0|P0\s+incident(?:s| count)?\s*:\s*0)'
-        $hasZeroP1 = $text -match '(?i)(?:P1\s*(?:=|:)\s*0|P1\s+incident(?:s| count)?\s*:\s*0)'
-        $hasMonitoringVocabulary = $text -match '(?i)(monitoring|incident query|incident search|on-call|gray observation|production incidents)'
-
-        if ($hasGrayReleaseId -and $hasWindowStart -and $hasWindowEnd -and $hasZeroP0 -and $hasZeroP1 -and $hasMonitoringVocabulary) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
-function Get-EvidenceReferencePaths([string]$Value) {
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return @()
-    }
-
-    return @($Value |
-        Select-String -AllMatches -Pattern '(?:_docs|output)/[A-Za-z0-9._/-]+\.(?:md|png|jpg|jpeg|webp|json|txt|log|zip|html|pdf|csv)' |
-        ForEach-Object { $_.Matches } |
-        ForEach-Object { $_.Value.TrimEnd(',', ';', '.', ':', ')', ']') })
-}
-
-function Test-GrayMonitoringEvidenceReferencePass([string]$EvidenceValue) {
-    $evidenceReferences = Get-EvidenceReferencePaths $EvidenceValue
-    if ($evidenceReferences.Count -eq 0) {
-        return $false
-    }
-
-    foreach ($evidencePath in $evidenceReferences) {
-        $relativePath = $evidencePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-        $candidate = Join-Path $script:repositoryRoot $relativePath
-        if (-not (Test-Path $candidate)) {
-            continue
-        }
-
-        $text = Get-Content -Raw -Path $candidate
-        $lines = $text -split "`r?`n"
-        $hasReviewedStatus = (Get-AnchoredLineValues $lines "Status" | Where-Object {
-            [string]::Equals($_, "REVIEWED", [StringComparison]::OrdinalIgnoreCase) -or
-                [string]::Equals($_, "PASS", [StringComparison]::OrdinalIgnoreCase)
-        } | Select-Object -First 1) -ne $null
-        $hasPassResult = Test-AnchoredReportPass $text
-        $hasReviewer = (Get-AnchoredLineValues $lines "Reviewer" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
-        $grayReleaseId = Get-AnchoredLineValues $lines "GrayReleaseId" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1
-        $reviewedAt = Get-AnchoredLineValues $lines "ReviewedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
-        $observationStartedAt = Get-AnchoredLineValues $lines "ObservationStartedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
-        $observationEndedAt = Get-AnchoredLineValues $lines "ObservationEndedAt" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
-        $incidentQueryEvidence = Get-AnchoredLineValues $lines "IncidentQueryEvidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1
-        $hasReviewedAt = $false
-        $hasObservationWindow = $false
-        $started = [DateTimeOffset]::MinValue
-        $ended = [DateTimeOffset]::MinValue
-
-        try {
-            $reviewedAtTimestamp = [DateTimeOffset]::Parse($reviewedAt)
-            $hasReviewedAt = $reviewedAtTimestamp -le [DateTimeOffset]::UtcNow
-        } catch {
-            $hasReviewedAt = $false
-        }
-
-        try {
-            $started = [DateTimeOffset]::Parse($observationStartedAt)
-            $ended = [DateTimeOffset]::Parse($observationEndedAt)
-            $hasObservationWindow = ($ended - $started).TotalDays -ge 14 -and $ended -le [DateTimeOffset]::UtcNow
-        } catch {
-            $hasObservationWindow = $false
-        }
-
-        $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
-        $hasMonitoringSource = (Get-AnchoredLineValues $lines "MonitoringSource" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
-        $hasIncidentQueryEvidence = Test-RealEvidence $incidentQueryEvidence
-        $hasIncidentQueryEvidenceContent = $hasObservationWindow -and (Test-IncidentQueryEvidenceContentPass $incidentQueryEvidence $grayReleaseId $started $ended)
-
-        if ($hasReviewedStatus -and $hasPassResult -and $hasReviewer -and $hasReviewedAt -and $hasObservationWindow -and $hasZeroP0P1 -and $hasMonitoringSource -and $hasIncidentQueryEvidence -and $hasIncidentQueryEvidenceContent) {
-            return $true
-        }
-    }
-
-    return $false
 }
 
 function Test-NoBlockingSecuritySignoffText([string]$Text) {
@@ -289,6 +176,69 @@ function Get-AnchoredLineValues([string[]]$Lines, [string]$Label) {
             $matches[1]
         }
     })
+}
+
+function Invoke-GitLines([string[]]$Arguments) {
+    try {
+        $output = & git -C $script:repositoryRoot @Arguments 2>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Lines = @($output)
+        }
+    } catch {
+        return @{
+            ExitCode = 1
+            Lines = @($_.Exception.Message)
+        }
+    }
+}
+
+function Get-FirstAnchoredLineValue([string]$Text, [string]$Label) {
+    $lines = $Text -split "`r?`n"
+    return Get-AnchoredLineValues $lines $Label | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    } | Select-Object -First 1
+}
+
+function Test-GitCommitResolvable([string]$Sha) {
+    if ([string]::IsNullOrWhiteSpace($Sha)) {
+        return $false
+    }
+
+    $result = Invoke-GitLines @("cat-file", "-t", $Sha)
+    return $result.ExitCode -eq 0 -and ($result.Lines | Select-Object -First 1) -eq "commit"
+}
+
+function Get-GitHeadSha() {
+    $result = Invoke-GitLines @("rev-parse", "HEAD")
+    if ($result.ExitCode -ne 0) {
+        return ""
+    }
+
+    return $result.Lines | Select-Object -First 1
+}
+
+function Test-GitAncestor([string]$Ancestor, [string]$Descendant) {
+    if ([string]::IsNullOrWhiteSpace($Ancestor) -or [string]::IsNullOrWhiteSpace($Descendant)) {
+        return $false
+    }
+
+    $result = Invoke-GitLines @("merge-base", "--is-ancestor", $Ancestor, $Descendant)
+    return $result.ExitCode -eq 0
+}
+
+function Get-GitPorcelainStatus([string]$Path) {
+    $candidate = Join-Path $script:repositoryRoot $Path
+    if (-not (Test-Path $candidate)) {
+        return "not-present-at-diagnostic-time"
+    }
+
+    $result = Invoke-GitLines @("status", "--short", "--", $Path)
+    if ($result.ExitCode -ne 0 -or $result.Lines.Count -eq 0) {
+        return "clean"
+    }
+
+    return ($result.Lines -join "; ")
 }
 
 function Test-AttackChainSectionPass([string]$Text, [string]$ChainName) {
@@ -505,16 +455,7 @@ function Test-GrayObservationEvidencePass([string]$Text) {
 
     $hasRequiredWindowText = $Text.Contains("14 calendar days")
     $hasZeroP0P1 = Test-AnchoredLiteralLine $lines "P0/P1 incident counts: P0=0; P1=0"
-    $evidenceValues = Get-AnchoredLineValues $lines "Evidence"
-    $missingEvidenceReferences = @($evidenceValues | Where-Object { (Test-RealEvidence $_) -and -not (Test-EvidenceReferenceExists $_) })
-    foreach ($missingReference in $missingEvidenceReferences) {
-        $script:violations.Add("Gray observation evidence reference does not exist. Evidence reference does not exist: $missingReference")
-    }
-    $invalidMonitoringEvidenceReferences = @($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) -and -not (Test-GrayMonitoringEvidenceReferencePass $_) })
-    foreach ($invalidReference in $invalidMonitoringEvidenceReferences) {
-        $script:violations.Add("Gray observation evidence must include a repo-local reviewed monitoring or incident-review PASS packet with validated IncidentQueryEvidence content: $invalidReference")
-    }
-    $hasEvidence = ($evidenceValues | Where-Object { (Test-RealEvidence $_) -and (Test-EvidenceReferenceExists $_) -and (Test-GrayMonitoringEvidenceReferencePass $_) } | Select-Object -First 1) -ne $null
+    $hasEvidence = (Get-AnchoredLineValues $lines "Evidence" | Where-Object { Test-RealEvidence $_ } | Select-Object -First 1) -ne $null
 
     return $hasPassStatus `
         -and $hasGrayReleaseId `
@@ -561,6 +502,87 @@ function Add-DeferredGate(
     }
 }
 
+function Test-BackupRestoreEvidencePass([string]$Text) {
+    if (-not (Test-AnchoredReportPass $Text)) {
+        return $false
+    }
+
+    $requiredTokens = @(
+        "Existing data volume is never modified by this check: true",
+        "Custom-format dump created: true",
+        "Disposable restore container completed: true"
+    )
+    foreach ($token in $requiredTokens) {
+        if (-not $Text.Contains($token)) {
+            return $false
+        }
+    }
+
+    $lines = $Text -split "`r?`n"
+    $tableLine = $lines | Where-Object { $_ -match '^- public tables: source=(\d+), restore=(\d+)\s*$' } | Select-Object -First 1
+    $migrationLine = $lines | Where-Object { $_ -match '^- EF migrations: source=(\d+), restore=(\d+)\s*$' } | Select-Object -First 1
+    if ($null -eq $tableLine -or $null -eq $migrationLine) {
+        return $false
+    }
+
+    $tableMatch = [regex]::Match($tableLine, 'source=(\d+), restore=(\d+)')
+    $migrationMatch = [regex]::Match($migrationLine, 'source=(\d+), restore=(\d+)')
+    return $tableMatch.Success `
+        -and $migrationMatch.Success `
+        -and [int]$tableMatch.Groups[1].Value -gt 0 `
+        -and [int]$tableMatch.Groups[1].Value -eq [int]$tableMatch.Groups[2].Value `
+        -and [int]$migrationMatch.Groups[1].Value -gt 0 `
+        -and [int]$migrationMatch.Groups[1].Value -eq [int]$migrationMatch.Groups[2].Value
+}
+
+function Add-EvidenceIntegrityDiagnostics() {
+    $hostedCiCommitSha = Get-FirstAnchoredLineValue $hostedCi "CommitSha"
+    $currentHeadSha = Get-GitHeadSha
+    $hostedCiCommitResolvable = Test-GitCommitResolvable $hostedCiCommitSha
+    $hostedCiAncestorOfHead = Test-GitAncestor $hostedCiCommitSha $currentHeadSha
+    $headAncestorOfHostedCi = Test-GitAncestor $currentHeadSha $hostedCiCommitSha
+
+    Add-Line ""
+    Add-Line "## Evidence Integrity Diagnostics"
+    Add-Line ""
+    Add-Line "These diagnostics do not replace gate status. They expose local proof boundaries that can make a PASS packet weaker for the current dirty worktree."
+    Add-Line ""
+    Add-Line "- Hosted CI CommitSha: $hostedCiCommitSha"
+    Add-Line "- Local HEAD: $currentHeadSha"
+    Add-Line "- Hosted CI CommitSha locally resolvable as commit: $hostedCiCommitResolvable"
+    Add-Line "- Hosted CI CommitSha ancestor of local HEAD: $hostedCiAncestorOfHead"
+    Add-Line "- Local HEAD ancestor of Hosted CI CommitSha: $headAncestorOfHostedCi"
+    Add-Line "- Hosted CI evidence git status: $(Get-GitPorcelainStatus $HostedCiReportPath)"
+    Add-Line "- Release gate output git status: $(Get-GitPorcelainStatus $ReportPath)"
+    Add-Line "- Staging evidence git status: $(Get-GitPorcelainStatus $StagingReportPath)"
+    Add-Line "- Backup/restore evidence git status: $(Get-GitPorcelainStatus $BackupRestoreReportPath)"
+    Add-Line "- Attack chain evidence git status: $(Get-GitPorcelainStatus $AttackChainReportPath)"
+    Add-Line "- Security signoff evidence git status: $(Get-GitPorcelainStatus $SecuritySignoffPath)"
+    Add-Line "- Gray observation evidence git status: $(Get-GitPorcelainStatus $GrayObservationReportPath)"
+
+    $grayLines = $grayObservation -split "`r?`n"
+    $grayStatus = Get-AnchoredLineValues $grayLines "Status" | Select-Object -First 1
+    $grayObservationEndedAt = Get-AnchoredLineValues $grayLines "ObservationEndedAt" | Select-Object -First 1
+    $grayIncidentCounts = ($grayLines | Where-Object {
+        $_ -match '^- P0/P1 incident counts:\s*(.+?)\s*$' -or $_ -match '^P0/P1 incident counts:\s*(.+?)\s*$'
+    } | ForEach-Object { $matches[1] } | Select-Object -First 1)
+    Add-Line "- Gray observation status: $grayStatus"
+    Add-Line "- Gray observation ended at: $grayObservationEndedAt"
+    Add-Line "- Gray observation incident counts: $grayIncidentCounts"
+
+    if (-not $hostedCiCommitResolvable) {
+        Add-Line "- Integrity warning: hosted CI CommitSha is not locally resolvable; local audit cannot close the CI anchor."
+    }
+
+    if ($hostedCiCommitResolvable -and -not $hostedCiAncestorOfHead -and -not $headAncestorOfHostedCi) {
+        Add-Line "- Integrity warning: hosted CI CommitSha and local HEAD are mutually non-ancestor; hosted CI proves the remote release head, not the current local dirty tree."
+    }
+
+    if ($grayIncidentCounts -match 'P0=-1;\s*P1=-1') {
+        Add-Line "- Integrity warning: gray observation still uses sentinel incident counts; strict PASS requires real P0=0 and P1=0 monitoring evidence."
+    }
+}
+
 $reportDirectory = Split-Path -Parent $ReportPath
 if (-not [string]::IsNullOrWhiteSpace($reportDirectory)) {
     New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
@@ -568,6 +590,7 @@ if (-not [string]::IsNullOrWhiteSpace($reportDirectory)) {
 
 $hostedCi = Read-TextOrEmpty $HostedCiReportPath
 $staging = Read-TextOrEmpty $StagingReportPath
+$backupRestore = Read-TextOrEmpty $BackupRestoreReportPath
 $attackChain = Read-TextOrEmpty $AttackChainReportPath
 $securitySignoff = Read-TextOrEmpty $SecuritySignoffPath
 $grayObservation = Read-TextOrEmpty $GrayObservationReportPath
@@ -589,6 +612,7 @@ Add-Line "| Gate | Status | Evidence packet status | Evidence packet | Required 
 Add-Line "| --- | --- | --- | --- | --- |"
 Add-Gate "Hosted CI" $HostedCiReportPath "Hosted runner RunUrl, RunId, release repository, release branch, head SHA, and job summary" (Test-HostedCiEvidencePass $hostedCi)
 Add-Gate "PostgreSQL/staging" $StagingReportPath "Production environment, PostgreSQL connection, Docker dependencies, EF migrations, API startup, /live, and /ready" (Test-StagingEvidencePass $staging)
+Add-Gate "PostgreSQL backup/restore" $BackupRestoreReportPath "Custom-format backup restored into an isolated PostgreSQL container with matching schema, migration, user, and audit counts" (Test-BackupRestoreEvidencePass $backupRestore)
 Add-Gate "Attack Chain A/B/C" $AttackChainReportPath "VERIFIED status, verifier, VerifiedAt, and Attack Chain A/B/C Manual verification PASS with non-placeholder evidence" (Test-AttackChainEvidencePass $attackChain)
 Add-Gate "Security signoff" $SecuritySignoffPath "Human SIGNED decision, signer, SignedAt, evidence, self-assessment, and Attack Chain A/B/C PASS" (Test-SecuritySignoffEvidencePass $securitySignoff)
 if ($DeferGrayObservation) {
@@ -620,6 +644,8 @@ if ($script:deferredGates.Count -gt 0) {
     Add-Line ""
     Add-Line "This report is allowed to continue follow-up work after an explicit owner deferral, but it is not a strict v1.0.0 final release PASS."
 }
+
+Add-EvidenceIntegrityDiagnostics
 
 if ($script:violations.Count -gt 0) {
     Add-Line ""

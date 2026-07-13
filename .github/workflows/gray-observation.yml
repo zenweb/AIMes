@@ -1,0 +1,63 @@
+name: Gray Observation
+
+on:
+  workflow_dispatch:
+    inputs:
+      gray_release_id:
+        description: "Gray release identifier"
+        required: false
+        type: string
+      sample_count:
+        description: "Health samples for this run"
+        required: false
+        default: "1"
+        type: string
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  health-observation:
+    runs-on: ubuntu-latest
+    env:
+      AIMES_GRAY_BASE_URL: ${{ vars.AIMES_GRAY_BASE_URL }}
+      AIMES_GRAY_RELEASE_ID: ${{ inputs.gray_release_id || vars.AIMES_GRAY_RELEASE_ID }}
+      AIMES_GRAY_SAMPLE_COUNT: ${{ inputs.sample_count || '1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate observation target
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AIMES_GRAY_BASE_URL)) {
+            throw "AIMES_GRAY_BASE_URL repository variable is required."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:AIMES_GRAY_RELEASE_ID)) {
+            throw "AIMES_GRAY_RELEASE_ID repository variable or workflow input is required."
+          }
+
+      - name: Collect gray health evidence
+        shell: pwsh
+        run: |
+          pwsh scripts/run-gray-health-observation.ps1 `
+            -BaseUrl $env:AIMES_GRAY_BASE_URL `
+            -GrayReleaseId $env:AIMES_GRAY_RELEASE_ID `
+            -SampleCount ([int]$env:AIMES_GRAY_SAMPLE_COUNT) `
+            -IntervalSeconds 0 `
+            -ReportPath TestResults/Gray/gray-health-observation.md `
+            -EvidencePath TestResults/Gray/gray-health-observation.jsonl
+
+      - name: Upload gray health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gray-health-observation-${{ github.run_id }}
+          path: TestResults/Gray/
+
+      - name: Assert strict gate boundary is explicit
+        shell: pwsh
+        run: |
+          $report = Get-Content -Raw TestResults/Gray/gray-health-observation.md
+          if (-not $report.Contains("StrictGrayGateClosed: false")) {
+            throw "Health-only evidence must keep the strict P0/P1 gate closed."
+          }
