@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditDecisionReplayPanel from '../../src/components/auditLog/AuditDecisionReplayPanel.vue'
 import type { AuditLog, AuditLogDetail } from '../../src/types/auditLog'
+import { useLocale } from '../../src/composables/useLocale'
 
 const getAuditLogDetail = vi.hoisted(() => vi.fn())
 const getAuditLogs = vi.hoisted(() => vi.fn())
@@ -9,8 +10,8 @@ const readAssistantActionAudits = vi.hoisted(() => vi.fn(() => []))
 const readAssistantActionAuditsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
 const readQualityCapaClosureBackendFirst = vi.hoisted(() => vi.fn(async () => null))
 const readPocEvidenceGovernanceRecordsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
-const readAgentConfigApprovals = vi.hoisted(() => vi.fn(() => []))
 const readAgentConfigApprovalsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
+const readStoredAgentConfigApprovals = vi.hoisted(() => vi.fn(() => []))
 const readPocReviewSignoffRecordBackendFirst = vi.hoisted(() => vi.fn(async () => null))
 const readOtdEvidenceChainRecords = vi.hoisted(() => vi.fn(() => []))
 const readKnowledgeGovernanceReviewsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
@@ -20,7 +21,9 @@ const qualityKnowledgeGrayReleaseCycleLabel = vi.hoisted(() => vi.fn(() => ''))
 const readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
 const readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
 const readQualityKnowledgeRetrainingVersionRecordsBackendFirst = vi.hoisted(() => vi.fn(async () => []))
-const isOfflineDemoError = vi.hoisted(() => vi.fn((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError'))
+const isOfflineDemoError = vi.hoisted(() =>
+  vi.fn((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError'),
+)
 
 vi.mock('../../src/api/auditLog', () => ({
   getAuditLogDetail,
@@ -43,8 +46,8 @@ vi.mock('../../src/utils/poc-evidence-governance', () => ({
 vi.mock('../../src/utils/agent-config-approval-sync', () => ({
   approvalStatusLabel: (status: string) => status,
   isApprovalOpen: vi.fn((status: string) => status === 'pending' || status === 'reviewing'),
-  readAgentConfigApprovals,
   readAgentConfigApprovalsBackendFirst,
+  readStoredAgentConfigApprovals,
 }))
 
 vi.mock('../../src/utils/poc-review-signoff-sync', () => ({
@@ -104,8 +107,8 @@ describe('AuditDecisionReplayPanel', () => {
     readAssistantActionAuditsBackendFirst.mockResolvedValue([])
     readQualityCapaClosureBackendFirst.mockResolvedValue(null)
     readPocEvidenceGovernanceRecordsBackendFirst.mockResolvedValue([])
-    readAgentConfigApprovals.mockReturnValue([])
     readAgentConfigApprovalsBackendFirst.mockResolvedValue([])
+    readStoredAgentConfigApprovals.mockReturnValue([])
     readPocReviewSignoffRecordBackendFirst.mockResolvedValue(null)
     readOtdEvidenceChainRecords.mockReturnValue([])
     readKnowledgeGovernanceReviewsBackendFirst.mockResolvedValue([])
@@ -115,7 +118,9 @@ describe('AuditDecisionReplayPanel', () => {
     readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst.mockResolvedValue([])
     readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst.mockResolvedValue([])
     readQualityKnowledgeRetrainingVersionRecordsBackendFirst.mockResolvedValue([])
-    isOfflineDemoError.mockImplementation((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError')
+    isOfflineDemoError.mockImplementation(
+      (error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError',
+    )
   })
 
   it('marks the selected replay action for assistive technology', async () => {
@@ -153,22 +158,46 @@ describe('AuditDecisionReplayPanel', () => {
     const guidance = wrapper.get('.audit-replay-guidance')
     expect(guidance.attributes('id')).toBe('audit-replay-help')
     expect(guidance.text()).toContain('回放前请核对决策对象、执行人、证据编号、风险口径和留痕状态。')
-    expect(guidance.text()).toContain('Before replay, verify decision object, actor, evidence id, risk wording, and audit state.')
+    expect(guidance.text()).toContain(
+      'Before replay, verify decision object, actor, evidence id, risk wording, and audit state.',
+    )
 
     const links = guidance.findAll('a')
-    expect(links.map(link => link.text())).toEqual([
+    expect(links.map((link) => link.text())).toEqual([
       '生产报工 / Production',
       '报表中心 / Reports',
       '配置审批 / Approvals',
       '帮助 / Help',
     ])
-    expect(links.map(link => link.attributes('href'))).toEqual([
-      '/production',
-      '/report',
+    expect(links.map((link) => link.attributes('href'))).toEqual([
+      '/scheduling/production',
+      '/scheduling/report',
       '#audit-config-approvals',
       '#audit-replay-help',
     ])
     expect(wrapper.get('.replay-detail').attributes('aria-describedby')).toBe('audit-replay-help')
+  })
+
+  it('renders replay controls in English while preserving original evidence content', async () => {
+    const { setLocale } = useLocale()
+    setLocale('en-US')
+
+    try {
+      const wrapper = mountAuditDecisionReplayPanel()
+      await flushPromises()
+
+      expect(wrapper.get('.replay-heading h3').text()).toBe(
+        'Replay suggestions, adoption, rescheduling actions, and configuration approvals',
+      )
+      expect(wrapper.findAll('.replay-btn')[0].text()).toBe('Replay decision chain')
+      expect(wrapper.findAll('.replay-btn')[0].attributes('aria-label')).toContain('Replay decision chain:')
+      expect(wrapper.get('.decision-meta').text()).toContain('Object:')
+      expect(wrapper.get('.trace-footer').text()).toContain('Risk statement:')
+      expect(wrapper.get('.approval-lane h4').text()).toBe('Critical configuration change approvals')
+      expect(wrapper.text()).toContain('WO-RUSH-9001')
+    } finally {
+      setLocale('zh-CN')
+    }
   })
 
   it('replays backend business-write audit entries with a labelled business-object link', async () => {
@@ -328,7 +357,9 @@ describe('AuditDecisionReplayPanel', () => {
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('AI 助手生成设备停机复核包 回放链')
     expect(wrapper.get('.decision-card.assistant').text()).toContain('已生成 CNC-001 设备停机复核包；权限通过并已执行')
-    expect(wrapper.get('.replay-detail').text()).toContain('助手设备停机复核包已同步设备维护、AI 排产、风险预警和 OTD 证据链')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '助手设备停机复核包已同步设备维护、AI 排产、风险预警和 OTD 证据链',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('目标页面 /equipment')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-CHAT-EQ-DOWNTIME-20260615')
     expect(wrapper.get('.replay-metrics').text()).toContain('助手动作审计')
@@ -466,11 +497,12 @@ describe('AuditDecisionReplayPanel', () => {
       userAgent: 'AgentExecutor',
     }
     getAuditLogs.mockImplementation(async (action: string) => ({
-      items: action === 'AgentExecuteQualityDisposition'
-        ? [qualityListItem]
-        : action === 'AgentExecuteMaintenanceAction'
-          ? [equipmentListItem]
-          : [],
+      items:
+        action === 'AgentExecuteQualityDisposition'
+          ? [qualityListItem]
+          : action === 'AgentExecuteMaintenanceAction'
+            ? [equipmentListItem]
+            : [],
       totalCount: action === 'AgentExecuteQualityDisposition' || action === 'AgentExecuteMaintenanceAction' ? 1 : 0,
       totalPages: 1,
     }))
@@ -483,16 +515,19 @@ describe('AuditDecisionReplayPanel', () => {
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
-    const replayButtons = wrapper.findAll('.decision-card')
-      .filter(card => card.text().includes('业务落库动作'))
-      .map(card => card.get('.replay-btn'))
+    const replayButtons = wrapper
+      .findAll('.decision-card')
+      .filter((card) => card.text().includes('业务落库动作'))
+      .map((card) => card.get('.replay-btn'))
     expect(replayButtons).toHaveLength(2)
 
     await replayButtons[0].trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('质量处置落库：INS-003 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 quality-inspection：INS-003，缺陷 硬度不足 / 数量 6。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 quality-inspection：INS-003，缺陷 硬度不足 / 数量 6。',
+    )
     expect(wrapper.get('.trace-link').text()).toBe('打开质量闭环')
     expect(wrapper.get('.trace-link').attributes('aria-label')).toBe('打开质量闭环：INS-003')
 
@@ -664,7 +699,9 @@ describe('AuditDecisionReplayPanel', () => {
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-DETAIL-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-detail-ok / M-AL-6061 / 收货 48')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-detail-ok / M-AL-6061 / 收货 48',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -715,14 +752,16 @@ describe('AuditDecisionReplayPanel', () => {
       totalPages: 1,
     }))
     getAuditLogDetail.mockImplementation(async (id: string) =>
-      id === 'audit-po-detail-shape-broken' ? { items: [] } : auditDetail
+      id === 'audit-po-detail-shape-broken' ? { items: [] } : auditDetail,
     )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-DETAIL-SHAPE-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-detail-shape-ok / M-AL-6061 / 收货 44')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-detail-shape-ok / M-AL-6061 / 收货 44',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -780,14 +819,16 @@ describe('AuditDecisionReplayPanel', () => {
       totalPages: 1,
     }))
     getAuditLogDetail.mockImplementation(async (id: string) =>
-      id === 'audit-po-payload-broken' ? malformedAuditDetail : successfulAuditDetail
+      id === 'audit-po-payload-broken' ? malformedAuditDetail : successfulAuditDetail,
     )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-PAYLOAD-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-payload-ok / M-AL-6061 / 收货 40')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-payload-ok / M-AL-6061 / 收货 40',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -854,14 +895,16 @@ describe('AuditDecisionReplayPanel', () => {
       totalPages: 1,
     }))
     getAuditLogDetail.mockImplementation(async (id: string) =>
-      id === 'audit-unsupported-resource' ? unsupportedAuditDetail : successfulAuditDetail
+      id === 'audit-unsupported-resource' ? unsupportedAuditDetail : successfulAuditDetail,
     )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-RESOURCE-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-resource-ok / M-AL-6061 / 收货 36')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-resource-ok / M-AL-6061 / 收货 36',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -919,14 +962,16 @@ describe('AuditDecisionReplayPanel', () => {
       totalPages: 1,
     }))
     getAuditLogDetail.mockImplementation(async (id: string) =>
-      id === 'audit-missing-payload' ? missingPayloadAuditDetail : successfulAuditDetail
+      id === 'audit-missing-payload' ? missingPayloadAuditDetail : successfulAuditDetail,
     )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-MISSING-PAYLOAD-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-missing-payload-ok / M-AL-6061 / 收货 28')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-missing-payload-ok / M-AL-6061 / 收货 28',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -984,14 +1029,16 @@ describe('AuditDecisionReplayPanel', () => {
       totalPages: 1,
     }))
     getAuditLogDetail.mockImplementation(async (id: string) =>
-      id === 'audit-scalar-payload' ? scalarPayloadAuditDetail : successfulAuditDetail
+      id === 'audit-scalar-payload' ? scalarPayloadAuditDetail : successfulAuditDetail,
     )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('采购收货落库：PO-SCALAR-PAYLOAD-OK-20260520 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('业务写入 purchase-order：po-scalar-payload-ok / M-AL-6061 / 收货 26')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '业务写入 purchase-order：po-scalar-payload-ok / M-AL-6061 / 收货 26',
+    )
     const alert = wrapper.get('.replay-sync-alert')
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.attributes('aria-live')).toBe('assertive')
@@ -1032,7 +1079,9 @@ describe('AuditDecisionReplayPanel', () => {
 
     const approvalRow = wrapper.get('.approval-row')
     expect(approvalRow.attributes('role')).toBe('listitem')
-    expect(approvalRow.attributes('aria-label')).toBe('审批项：Scheduling.LockWindowHours 8h -> 10h，状态 pending，责任人 生产经理审批')
+    expect(approvalRow.attributes('aria-label')).toBe(
+      '审批项：Scheduling.LockWindowHours 8h -> 10h，状态 pending，责任人 生产经理审批',
+    )
   })
 
   it('keeps replay cards visible and alerts when configuration approvals fail to load', async () => {
@@ -1069,7 +1118,7 @@ describe('AuditDecisionReplayPanel', () => {
 
   it('keeps local configuration approval evidence when backend payload is invalid', async () => {
     readAgentConfigApprovalsBackendFirst.mockResolvedValueOnce({ items: [] })
-    readAgentConfigApprovals.mockReturnValue([
+    readStoredAgentConfigApprovals.mockReturnValue([
       {
         id: 'cfg-quality-experiment-gate',
         title: 'Quality.RecommendationExperimentExpansionGate 灰度扩大门禁',
@@ -1097,16 +1146,22 @@ describe('AuditDecisionReplayPanel', () => {
     await flushPromises()
 
     expect(wrapper.get('.approval-badge').text()).toBe('1 个配置待审批')
-    expect(wrapper.get('.approval-row').attributes('aria-label')).toBe('审批项：Quality.RecommendationExperimentExpansionGate 灰度扩大门禁，状态 reviewing，责任人 质量主管审批')
+    expect(wrapper.get('.approval-row').attributes('aria-label')).toBe(
+      '审批项：Quality.RecommendationExperimentExpansionGate 灰度扩大门禁，状态 reviewing，责任人 质量主管审批',
+    )
 
-    const configCard = wrapper.findAll('.decision-card').find(card => card.text().includes('质量推荐实验扩大门禁审批'))
+    const configCard = wrapper
+      .findAll('.decision-card')
+      .find((card) => card.text().includes('质量推荐实验扩大门禁审批'))
     expect(configCard?.exists()).toBe(true)
     await configCard!.get('.replay-btn').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('配置审批：质量推荐实验扩大门禁审批 回放链')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-CFG-QA-EXPERIMENT-GATE-LOCAL')
-    expect(wrapper.get('.replay-detail').text()).toContain('门禁指标调整：复验通过率 100% -> >=95% / 负样本误召回 0 次 -> 0 次。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '门禁指标调整：复验通过率 100% -> >=95% / 负样本误召回 0 次 -> 0 次。',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('灰度扩大仍需质量主管复核')
 
     const alert = wrapper.get('.replay-sync-alert')
@@ -1118,7 +1173,7 @@ describe('AuditDecisionReplayPanel', () => {
 
   it('keeps local configuration approval evidence when backend approval loading fails', async () => {
     readAgentConfigApprovalsBackendFirst.mockRejectedValueOnce(new Error('approval backend timeout'))
-    readAgentConfigApprovals.mockReturnValue([
+    readStoredAgentConfigApprovals.mockReturnValue([
       {
         id: 'cfg-schedule-lock-local',
         title: 'Scheduling.LockWindowHours 8h -> 10h',
@@ -1134,9 +1189,7 @@ describe('AuditDecisionReplayPanel', () => {
         submittedAt: '2026-06-15T03:20:00.000Z',
         risk: '锁定窗口扩大后必须保留人工审批和回滚窗口。',
         policyArea: 'schedule',
-        policyMetrics: [
-          { label: '锁定窗口', fromValue: '8h', toValue: '10h' },
-        ],
+        policyMetrics: [{ label: '锁定窗口', fromValue: '8h', toValue: '10h' }],
         controlSummary: '审批前保持旧配置，审批后写入审计回放。',
       },
     ])
@@ -1145,9 +1198,11 @@ describe('AuditDecisionReplayPanel', () => {
     await flushPromises()
 
     expect(wrapper.get('.approval-badge').text()).toBe('1 个配置待审批')
-    expect(wrapper.get('.approval-row').attributes('aria-label')).toBe('审批项：Scheduling.LockWindowHours 8h -> 10h，状态 pending，责任人 生产经理审批')
+    expect(wrapper.get('.approval-row').attributes('aria-label')).toBe(
+      '审批项：Scheduling.LockWindowHours 8h -> 10h，状态 pending，责任人 生产经理审批',
+    )
 
-    const configCard = wrapper.findAll('.decision-card').find(card => card.text().includes('排产锁定窗口审批'))
+    const configCard = wrapper.findAll('.decision-card').find((card) => card.text().includes('排产锁定窗口审批'))
     expect(configCard?.exists()).toBe(true)
     await configCard!.get('.replay-btn').trigger('click')
     await flushPromises()
@@ -1297,6 +1352,58 @@ describe('AuditDecisionReplayPanel', () => {
     expect(alert.text()).toContain('OTD evidence chain API unavailable')
   })
 
+  it('does not let delayed startup default selection override a user replay choice', async () => {
+    let resolveKnowledgeReviews: (records: []) => void = () => undefined
+    readKnowledgeGovernanceReviewsBackendFirst.mockReturnValue(
+      new Promise((resolve) => {
+        resolveKnowledgeReviews = resolve
+      }),
+    )
+    readOtdEvidenceChainRecords.mockReturnValue([
+      {
+        id: 'quality-retraining-candidate',
+        stage: '知识再训练',
+        title: 'WO-DEMO-1018 OP-20 进入再训练候选',
+        summary: '低分复用样本进入再训练候选。',
+        object: 'WO-DEMO-1018 / OP-20',
+        source: '质量知识反馈 / 样本治理',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1018-OP-20-RETRAINING-CANDIDATE',
+        status: 'active',
+        statusLabel: '待再训练样本确认',
+        createdAt: '2026-05-21T10:00:00.000Z',
+      },
+      {
+        id: 'quality-reuse-draft',
+        stage: '质量处置草案',
+        title: 'WO-DEMO-1012 同类缺陷处置草案已生成',
+        summary: 'AUD-KG-QA-REUSE-20260521-001 命中 92%。',
+        object: 'WO-DEMO-1012 / OP-10',
+        source: '质量闭环 / 知识命中 / AI 处置草案',
+        traceId: 'TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT',
+        status: 'active',
+        statusLabel: '草案待复核',
+        createdAt: '2026-05-21T10:00:00.000Z',
+      },
+    ])
+
+    const wrapper = mountAuditDecisionReplayPanel()
+    await flushPromises()
+
+    const draftCard = wrapper
+      .findAll('.decision-card')
+      .find((card) => card.text().includes('质量处置草案：WO-DEMO-1012 同类缺陷处置草案已生成'))
+    expect(draftCard?.exists()).toBe(true)
+    await draftCard!.get('.replay-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.replay-detail h4').text()).toBe('质量处置草案：WO-DEMO-1012 同类缺陷处置草案已生成 回放链')
+
+    resolveKnowledgeReviews([])
+    await flushPromises()
+
+    expect(wrapper.get('.replay-detail h4').text()).toBe('质量处置草案：WO-DEMO-1012 同类缺陷处置草案已生成 回放链')
+    expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-WO-DEMO-1012-OP-10-REUSE-DRAFT')
+  })
+
   it('keeps base replay cards visible and alerts when assistant action audit payload is not an array', async () => {
     readAssistantActionAuditsBackendFirst.mockResolvedValueOnce({ items: [] })
 
@@ -1318,9 +1425,15 @@ describe('AuditDecisionReplayPanel', () => {
       error.name = 'OfflineDemoApiError'
       return error
     }
-    readAssistantActionAuditsBackendFirst.mockRejectedValueOnce(createOfflineDemoError('/api/v1/scheduling/assistant-action-audits'))
-    readAgentConfigApprovalsBackendFirst.mockRejectedValueOnce(createOfflineDemoError('/api/v1/scheduling/agent-config-approvals'))
-    readKnowledgeGovernanceReviewsBackendFirst.mockRejectedValueOnce(createOfflineDemoError('/api/v1/scheduling/knowledge-governance-reviews'))
+    readAssistantActionAuditsBackendFirst.mockRejectedValueOnce(
+      createOfflineDemoError('/api/v1/scheduling/assistant-action-audits'),
+    )
+    readAgentConfigApprovalsBackendFirst.mockRejectedValueOnce(
+      createOfflineDemoError('/api/v1/scheduling/agent-config-approvals'),
+    )
+    readKnowledgeGovernanceReviewsBackendFirst.mockRejectedValueOnce(
+      createOfflineDemoError('/api/v1/scheduling/knowledge-governance-reviews'),
+    )
     getAuditLogs.mockRejectedValue(createOfflineDemoError('/api/v1/audit-logs'))
 
     const wrapper = mountAuditDecisionReplayPanel()
@@ -1593,7 +1706,9 @@ describe('AuditDecisionReplayPanel', () => {
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('外协到货：WO-DEMO-1009 外协热处理到货 回放链')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-OUTSOURCE-RECEIPT-20260615')
-    expect(wrapper.get('.replay-detail').text()).toContain('原外协承诺追踪 TRACE-OUTSOURCE-COMMITMENT-20260615 保留为前置证据')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '原外协承诺追踪 TRACE-OUTSOURCE-COMMITMENT-20260615 保留为前置证据',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('按到货后最早可执行窗口复核释放排产')
     expect(wrapper.get('.replay-metrics').text()).toContain('采购收货回放')
   })
@@ -1619,8 +1734,12 @@ describe('AuditDecisionReplayPanel', () => {
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('生产异常：CNC-01 主轴停机异常上报 回放链')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-PROD-ANOMALY-CNC01-20260615')
-    expect(wrapper.get('.replay-detail').text()).toContain('生产异常上报、风险队列、异常中心、AI 排产复核和 OTD 证据已归档')
-    expect(wrapper.get('.replay-detail').text()).toContain('该生产异常证据必须核对异常上报、风险处置队列、异常中心、AI 排产复核和班组长现场处置是否连续')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '生产异常上报、风险队列、异常中心、AI 排产复核和 OTD 证据已归档',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '该生产异常证据必须核对异常上报、风险处置队列、异常中心、AI 排产复核和班组长现场处置是否连续',
+    )
     expect(wrapper.get('.replay-metrics').text()).toContain('生产异常回放')
   })
 
@@ -1819,9 +1938,15 @@ describe('AuditDecisionReplayPanel', () => {
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
 
-    expect(wrapper.get('.replay-detail h4').text()).toBe('QK-TRAIN-20260521-R3 回滚到 R2 正式版回放 · 重新灰度发布 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-REPUBLISH-ROLLED-BACK')
-    expect(wrapper.get('.replay-detail').text()).toContain('重新灰度发布发布证据：AUD-KG-QA-RETRAINING-R3-GRAY-REPUBLISH-20260521-001')
+    expect(wrapper.get('.replay-detail h4').text()).toBe(
+      'QK-TRAIN-20260521-R3 回滚到 R2 正式版回放 · 重新灰度发布 回放链',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'TRACE-KG-QA-WO-DEMO-1018-OP-20-R3-GRAY-REPUBLISH-ROLLED-BACK',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '重新灰度发布发布证据：AUD-KG-QA-RETRAINING-R3-GRAY-REPUBLISH-20260521-001',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R3 已从 active 推荐中排除')
     expect(wrapper.get('.replay-detail').text()).toContain('R3-REPUBLISH-REVIEW-ISSUE-20260521-001 待复核问题单已打开')
     expect(wrapper.get('.replay-metrics').text()).toContain('质量灰度回放')
@@ -1865,8 +1990,12 @@ describe('AuditDecisionReplayPanel', () => {
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('QK-TRAIN-20260522-R4 扩大推荐范围回放 · 扩大灰度发布 回放链')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-WO-DEMO-1024-OP-30-R4-GRAY-EXPAND-APPROVED')
-    expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260522-R4 灰度已确认扩大到 OP-30 终检缺陷推荐 / OP-35 包装复检推荐')
-    expect(wrapper.get('.replay-detail').text()).toContain('审批状态 质量主管已批准扩大，审计编号 AUD-KG-QA-RETRAINING-R4-GRAY-EXPAND-APPROVED-20260522-001')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'QK-TRAIN-20260522-R4 灰度已确认扩大到 OP-30 终检缺陷推荐 / OP-35 包装复检推荐',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '审批状态 质量主管已批准扩大，审计编号 AUD-KG-QA-RETRAINING-R4-GRAY-EXPAND-APPROVED-20260522-001',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260522-R4 已加入同类工序 active 推荐候选')
     expect(wrapper.find('.replay-sync-alert').exists()).toBe(false)
   })
@@ -1887,7 +2016,9 @@ describe('AuditDecisionReplayPanel', () => {
   })
 
   it('keeps base replay cards visible and alerts when quality gray release decisions fail to load', async () => {
-    readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst.mockRejectedValue(new Error('gray decision API unavailable'))
+    readQualityKnowledgeGrayReleaseDecisionRecordsBackendFirst.mockRejectedValue(
+      new Error('gray decision API unavailable'),
+    )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()
@@ -1936,7 +2067,9 @@ describe('AuditDecisionReplayPanel', () => {
     expect(wrapper.get('.replay-detail h4').text()).toBe('WO-DEMO-1018 OP-20 QK-TRAIN-20260521-R3 推荐采纳回放 回放链')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-FEEDBACK-R3')
     expect(wrapper.get('.replay-detail').text()).toContain('效果趋势 89 -> 94 分')
-    expect(wrapper.get('.replay-detail').text()).toContain('反馈指标：推荐采纳率 100% / 复验通过率 100% / 负样本误召回 0 次。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '反馈指标：推荐采纳率 100% / 复验通过率 100% / 负样本误召回 0 次。',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R4 下一轮训练集候选生成')
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-WO-DEMO-1018-OP-20-NEXT-TRAINING-R4')
     expect(wrapper.get('.replay-metrics').text()).toContain('质量推荐回放')
@@ -1976,12 +2109,24 @@ describe('AuditDecisionReplayPanel', () => {
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('QK-TRAIN-20260521-R4 负样本补丁候选回放 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R3 回滚审计 AUD-KG-QA-R3-ROLLBACK-20260521-001 / TRACE-KG-QA-R3-ROLLBACK 触发候选生成。')
-    expect(wrapper.get('.replay-detail').text()).toContain('指标快照：推荐采纳率 72% / 复验通过率 88% / 负样本误召回 2 次。')
-    expect(wrapper.get('.replay-detail').text()).toContain('负样本覆盖 硬度不足 / 扭矩偏移负样本，覆盖率 覆盖 82%，仍缺 3 条夜班返工误召回样本。')
-    expect(wrapper.get('.replay-detail').text()).toContain('候选审计 AUD-KG-QA-R4-CANDIDATE-20260521-001 / TRACE-KG-QA-R4-CANDIDATE；补齐夜班返工负样本后进入影子验证。')
-    expect(wrapper.get('.replay-detail').text()).toContain('引用证据：R3 灰度回滚审计；夜班返工复验记录；负样本误召回复盘')
-    expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R4 未通过 采纳 >=95% / 复验 >=98% / 误召回 0 前不得进入主动推荐扩大。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'QK-TRAIN-20260521-R3 回滚审计 AUD-KG-QA-R3-ROLLBACK-20260521-001 / TRACE-KG-QA-R3-ROLLBACK 触发候选生成。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '指标快照：推荐采纳率 72% / 复验通过率 88% / 负样本误召回 2 次。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '负样本覆盖 硬度不足 / 扭矩偏移负样本，覆盖率 覆盖 82%，仍缺 3 条夜班返工误召回样本。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '候选审计 AUD-KG-QA-R4-CANDIDATE-20260521-001 / TRACE-KG-QA-R4-CANDIDATE；补齐夜班返工负样本后进入影子验证。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '引用证据：R3 灰度回滚审计；夜班返工复验记录；负样本误召回复盘',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'QK-TRAIN-20260521-R4 未通过 采纳 >=95% / 复验 >=98% / 误召回 0 前不得进入主动推荐扩大。',
+    )
     expect(wrapper.get('.replay-metrics').text()).toContain('质量实验候选')
   })
 
@@ -2020,17 +2165,27 @@ describe('AuditDecisionReplayPanel', () => {
     await flushPromises()
 
     expect(wrapper.get('.replay-detail h4').text()).toBe('QK-TRAIN-20260521-R4 重新灰度发布回放 回放链')
-    expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R4 完成重新灰度发布，发布审计 AUD-KG-QA-R4-GRAY-REPUBLISH-20260522-001。')
-    expect(wrapper.get('.replay-detail').text()).toContain('灰度范围：OP-20 装配扭矩推荐灰度，版本策略：R4 负样本补丁版。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'QK-TRAIN-20260521-R4 完成重新灰度发布，发布审计 AUD-KG-QA-R4-GRAY-REPUBLISH-20260522-001。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '灰度范围：OP-20 装配扭矩推荐灰度，版本策略：R4 负样本补丁版。',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('灰度范围明细：WO-DEMO-1018 OP-20 / WO-DEMO-1020 OP-20。')
-    expect(wrapper.get('.replay-detail').text()).toContain('监控指标：推荐采纳率 96% / 复验通过率 99% / 负样本误召回 0 次。')
-    expect(wrapper.get('.replay-detail').text()).toContain('QK-TRAIN-20260521-R4 已在调整范围并重新校验后恢复灰度推荐，旧回滚问题单不再阻断本轮 active 选择。')
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      '监控指标：推荐采纳率 96% / 复验通过率 99% / 负样本误召回 0 次。',
+    )
+    expect(wrapper.get('.replay-detail').text()).toContain(
+      'QK-TRAIN-20260521-R4 已在调整范围并重新校验后恢复灰度推荐，旧回滚问题单不再阻断本轮 active 选择。',
+    )
     expect(wrapper.get('.replay-detail').text()).toContain('TRACE-KG-QA-R4-GRAY-REPUBLISH')
     expect(wrapper.get('.replay-metrics').text()).toContain('质量灰度发布')
   })
 
   it('keeps base replay cards visible and alerts when quality feedback inputs fail to load', async () => {
-    readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst.mockRejectedValue(new Error('feedback API unavailable'))
+    readQualityKnowledgeRecommendationFeedbackRecordsBackendFirst.mockRejectedValue(
+      new Error('feedback API unavailable'),
+    )
     readQualityKnowledgeRetrainingVersionRecordsBackendFirst.mockResolvedValueOnce({ items: [] })
 
     const wrapper = mountAuditDecisionReplayPanel()
@@ -2048,7 +2203,9 @@ describe('AuditDecisionReplayPanel', () => {
   })
 
   it('keeps base replay cards visible and alerts when quality retraining versions fail to load', async () => {
-    readQualityKnowledgeRetrainingVersionRecordsBackendFirst.mockRejectedValue(new Error('retraining version API unavailable'))
+    readQualityKnowledgeRetrainingVersionRecordsBackendFirst.mockRejectedValue(
+      new Error('retraining version API unavailable'),
+    )
 
     const wrapper = mountAuditDecisionReplayPanel()
     await flushPromises()

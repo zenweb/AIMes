@@ -177,6 +177,10 @@ export function readAgentConfigApprovals(): AgentConfigApprovalRecord[] {
   })
 }
 
+export function readStoredAgentConfigApprovals(): AgentConfigApprovalRecord[] {
+  return readOverrides().filter(isCompleteBackendApprovalRecord)
+}
+
 function mergeApprovalRecord(
   defaultRecord: AgentConfigApprovalRecord,
   backendRecord: AgentConfigApprovalRecord | undefined,
