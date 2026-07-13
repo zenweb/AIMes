@@ -61,6 +61,21 @@ public class AuditLogAppServiceTests
         item.CreatedAt.Should().Be(createdAt);
     }
 
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(1, 0)]
+    [InlineData(-1, 20)]
+    [InlineData(1, -1)]
+    [InlineData(1, 201)]
+    public async Task GetAuditLogsAsync_WithInvalidPaging_ShouldRejectBeforeRepository(int page, int pageSize)
+    {
+        var act = () => _sut.GetAuditLogsAsync(null, null, page, pageSize);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        _auditLogRepoMock.Verify(r => r.CountAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _auditLogRepoMock.Verify(r => r.GetPagedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task GetAuditLogByIdAsync_WhenFound_ShouldReturnDetailPayloadAndAiHashes()
     {
@@ -113,7 +128,11 @@ public class AuditLogAppServiceTests
             ipAddress: "10.0.0.8",
             userAgent: "MES-Test",
             initiatedBy: AuditInitiatedBy.System,
-            ct: ct);
+            ct: ct,
+            businessKey: "Routing:route-001",
+            traceId: "trace-routing-001",
+            promptHash: "prompt-hash",
+            contextHash: "context-hash");
 
         _auditLogRepoMock.Verify(r => r.AddAsync(
             It.Is<AuditLog>(log =>
@@ -121,6 +140,10 @@ public class AuditLogAppServiceTests
                 && log.Action == "DELETE"
                 && log.Resource == "routing"
                 && log.ResourceId == "route-001"
+                && log.BusinessKey == "Routing:route-001"
+                && log.TraceId == "trace-routing-001"
+                && log.PromptHash == "prompt-hash"
+                && log.ContextHash == "context-hash"
                 && log.OldValues == "{\"status\":\"Active\"}"
                 && log.NewValues == null
                 && log.IpAddress == "10.0.0.8"

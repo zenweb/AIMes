@@ -194,6 +194,10 @@ describe('AuditDecisionReplayPanel', () => {
       expect(wrapper.get('.decision-meta').text()).toContain('Object:')
       expect(wrapper.get('.trace-footer').text()).toContain('Risk statement:')
       expect(wrapper.get('.approval-lane h4').text()).toBe('Critical configuration change approvals')
+      expect(wrapper.get('.replay-metrics').text()).toContain('AI suggestion audit')
+      expect(wrapper.get('.replay-metrics').text()).toContain('Evidence chain records')
+      expect(wrapper.get('.replay-metrics').text()).not.toContain('证据链覆盖')
+      expect(wrapper.get('.replay-metrics').text()).not.toContain('100%')
       expect(wrapper.text()).toContain('WO-RUSH-9001')
     } finally {
       setLocale('zh-CN')

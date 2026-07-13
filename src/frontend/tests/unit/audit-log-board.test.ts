@@ -40,6 +40,11 @@ const logs: AuditLog[] = [
 
 const detail: AuditLogDetail = {
   ...logs[1],
+  initiatedBy: 'Agent',
+  businessKey: 'WorkOrder:WO-001',
+  traceId: 'TRACE-WO-001',
+  promptHash: 'prompt-sha256',
+  contextHash: 'context-sha256',
   oldValues: '{"status":"Queued"}',
   newValues: '{"status":"Released"}',
   ipAddress: '10.0.0.12',
@@ -84,6 +89,27 @@ describe('AuditLogBoard', () => {
     expect(getAuditLogDetail).toHaveBeenCalledWith('audit-2')
     expect(wrapper.get('.detail-modal').text()).toContain('audit-2')
     expect(wrapper.get('.json-block').text()).toContain('"status": "Released"')
+    expect(wrapper.get('.detail-modal').text()).toContain('Agent')
+    expect(wrapper.get('.detail-modal').text()).toContain('WorkOrder:WO-001')
+    expect(wrapper.get('.detail-modal').text()).toContain('prompt-sha256')
+    expect(wrapper.get('.detail-modal').text()).toContain('context-sha256')
+  })
+
+  it('filters the list by the trace selected from audit details', async () => {
+    const wrapper = mountAuditLogBoard()
+    await flushPromises()
+
+    await wrapper.findAll('.btn-sm')[1].trigger('click')
+    await flushPromises()
+    const traceButton = wrapper.get('.detail-trace-button')
+    expect(traceButton.attributes('aria-label')).toBe('筛选同一追踪：TRACE-WO-001')
+
+    await traceButton.trigger('click')
+    await flushPromises()
+
+    expect(getAuditLogs).toHaveBeenLastCalledWith(undefined, 1, 20, 'TRACE-WO-001')
+    expect(wrapper.find('.detail-modal').exists()).toBe(false)
+    expect(window.location.search).toBe('?traceId=TRACE-WO-001')
   })
 
   it('loads only the trace selected by an audit replay deep link', async () => {
@@ -127,6 +153,15 @@ describe('AuditLogBoard', () => {
     expect(wrapper.text()).toContain('Production')
     expect(wrapper.text()).not.toContain('Equipment')
     expect(wrapper.find('.pagination').exists()).toBe(false)
+  })
+
+  it('offers PATCH in the action filter and labels the final table column as details', async () => {
+    const wrapper = mountAuditLogBoard()
+    await flushPromises()
+
+    const options = wrapper.findAll('.filter-select option').map((option) => option.text())
+    expect(options).toContain('PATCH（修改）')
+    expect(wrapper.find('thead').findAll('th').at(-1)?.text()).toBe('详情')
   })
 
   it('loads the next audit page and lets the reviewer close an opened detail modal', async () => {
@@ -284,6 +319,12 @@ describe('AuditLogBoard', () => {
       expect(wrapper.findAll('.btn-sm')[1].attributes('aria-label')).toBe(
         'View audit detail: operator1 updated Production wo-001',
       )
+      await wrapper.findAll('.btn-sm')[1].trigger('click')
+      await flushPromises()
+      expect(wrapper.get('.detail-modal').text()).toContain('Initiated by')
+      expect(wrapper.get('.detail-modal').text()).toContain('Business key')
+      expect(wrapper.get('.detail-modal').text()).toContain('Prompt hash')
+      expect(wrapper.get('.detail-trace-button').attributes('aria-label')).toBe('Filter this trace: TRACE-WO-001')
     } finally {
       setLocale('zh-CN')
     }

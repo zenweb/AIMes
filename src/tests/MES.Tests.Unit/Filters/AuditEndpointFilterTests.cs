@@ -38,7 +38,11 @@ public sealed class AuditEndpointFilterTests
                 It.IsAny<string?>(),
                 "UnitTestAgent/1.0",
                 AuditInitiatedBy.User,
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                "employee:employee-001",
+                "trace-http-001",
+                null,
+                null))
             .Returns(Task.CompletedTask);
 
         var httpContext = new DefaultHttpContext
@@ -50,8 +54,10 @@ public sealed class AuditEndpointFilterTests
             ]))
         };
         httpContext.Request.Method = HttpMethods.Post;
+        httpContext.TraceIdentifier = "trace-http-001";
         httpContext.Request.RouteValues["id"] = "employee-001";
         httpContext.Request.Headers.UserAgent = "UnitTestAgent/1.0";
+        httpContext.Request.Headers["X-Initiated-By"] = "Agent";
 
         var filter = new AuditEndpointFilter("employee");
         var payload = new { EmployeeNumber = "EMP-AUD-001", Name = "Audit Employee" };
@@ -81,7 +87,11 @@ public sealed class AuditEndpointFilterTests
             It.IsAny<string?>(),
             "UnitTestAgent/1.0",
             AuditInitiatedBy.User,
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>(),
+            "employee:employee-001",
+            "trace-http-001",
+            null,
+            null), Times.Once);
     }
 
     private sealed class TestEndpointFilterInvocationContext(

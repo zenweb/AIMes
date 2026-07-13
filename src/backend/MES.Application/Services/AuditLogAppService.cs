@@ -9,7 +9,7 @@ public interface IAuditLogAppService
 {
     Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, string? traceId, int page, int pageSize, CancellationToken ct = default);
     Task<AuditLogDetailDto?> GetAuditLogByIdAsync(string id, CancellationToken ct = default);
-    Task WriteAuditLogAsync(string userId, string action, string resource, string? resourceId, string? oldValues, string? newValues, string? ipAddress, string? userAgent, AuditInitiatedBy initiatedBy = AuditInitiatedBy.User, CancellationToken ct = default);
+    Task WriteAuditLogAsync(string userId, string action, string resource, string? resourceId, string? oldValues, string? newValues, string? ipAddress, string? userAgent, AuditInitiatedBy initiatedBy = AuditInitiatedBy.User, CancellationToken ct = default, string? businessKey = null, string? traceId = null, string? promptHash = null, string? contextHash = null);
 }
 
 public class AuditLogAppService : IAuditLogAppService
@@ -23,6 +23,7 @@ public class AuditLogAppService : IAuditLogAppService
 
     public async Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(string? action, string? traceId, int page, int pageSize, CancellationToken ct = default)
     {
+        ValidatePaging(page, pageSize);
         var total = await _repo.CountAsync(action, traceId, ct);
         var items = await _repo.GetPagedAsync(action, traceId, page, pageSize, ct);
 
@@ -44,6 +45,13 @@ public class AuditLogAppService : IAuditLogAppService
             Page = page,
             PageSize = pageSize,
         };
+    }
+
+    private static void ValidatePaging(int page, int pageSize)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(pageSize, 200);
     }
 
     public async Task<AuditLogDetailDto?> GetAuditLogByIdAsync(string id, CancellationToken ct = default)
@@ -75,7 +83,11 @@ public class AuditLogAppService : IAuditLogAppService
         string userId, string action, string resource, string? resourceId,
         string? oldValues, string? newValues, string? ipAddress, string? userAgent,
         AuditInitiatedBy initiatedBy = AuditInitiatedBy.User,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? businessKey = null,
+        string? traceId = null,
+        string? promptHash = null,
+        string? contextHash = null)
     {
         var log = new AuditLog
         {
@@ -84,6 +96,10 @@ public class AuditLogAppService : IAuditLogAppService
             Action = action,
             Resource = resource,
             ResourceId = resourceId,
+            BusinessKey = businessKey,
+            TraceId = traceId,
+            PromptHash = promptHash,
+            ContextHash = contextHash,
             OldValues = oldValues,
             NewValues = newValues,
             IpAddress = ipAddress,

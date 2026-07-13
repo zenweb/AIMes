@@ -52,6 +52,17 @@ public sealed class AuditLogControllerTests : IClassFixture<TestWebApplicationFa
         audit.Items.Should().OnlyContain(item => item.TraceId == matchingTraceId);
     }
 
+    [Theory]
+    [InlineData("page=0&pageSize=20")]
+    [InlineData("page=1&pageSize=0")]
+    [InlineData("page=1&pageSize=201")]
+    public async Task GetAuditLogs_WithInvalidPaging_ShouldReturnBadRequest(string query)
+    {
+        var response = await _client.GetAsync($"/api/v1/audit-logs/?{query}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private sealed class PagedResultResponse<T>
     {
         public List<T> Items { get; set; } = [];

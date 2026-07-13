@@ -42,6 +42,7 @@
         <option value="POST">{{ tr('post') }}</option>
         <option value="PUT">{{ tr('put') }}</option>
         <option value="DELETE">{{ tr('delete') }}</option>
+        <option value="PATCH">{{ tr('patch') }}</option>
       </select>
       <span v-if="traceIdFilter" class="trace-filter">{{ auditMessage('traceReplay', { trace: traceIdFilter }) }}</span>
       <button v-if="traceIdFilter" class="btn-sm" type="button" @click="clearTraceFilter">
@@ -58,7 +59,7 @@
           <th>{{ tr('operation') }}</th>
           <th>{{ tr('resource') }}</th>
           <th>{{ tr('resourceId') }}</th>
-          <th>{{ tr('operation') }}</th>
+          <th>{{ tr('view') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -111,6 +112,31 @@
           <div class="detail-field">
             <label>{{ tr('resourceId') }}</label
             ><span class="mono">{{ detail.resourceId || '-' }}</span>
+          </div>
+          <div class="detail-field">
+            <label>{{ tr('initiatedBy') }}</label><span>{{ detail.initiatedBy || '-' }}</span>
+          </div>
+          <div class="detail-field">
+            <label>{{ tr('businessKey') }}</label><span class="mono">{{ detail.businessKey || '-' }}</span>
+          </div>
+          <div class="detail-field">
+            <label>{{ tr('traceId') }}</label>
+            <button
+              v-if="detail.traceId"
+              type="button"
+              class="detail-trace-button mono"
+              :aria-label="auditMessage('filterTrace', { trace: detail.traceId })"
+              @click="filterByDetailTrace(detail.traceId)"
+            >
+              {{ detail.traceId }}
+            </button>
+            <span v-else>-</span>
+          </div>
+          <div class="detail-field">
+            <label>{{ tr('promptHash') }}</label><span class="mono">{{ detail.promptHash || '-' }}</span>
+          </div>
+          <div class="detail-field">
+            <label>{{ tr('contextHash') }}</label><span class="mono">{{ detail.contextHash || '-' }}</span>
           </div>
           <div class="detail-field">
             <label>{{ tr('ipAddress') }}</label
@@ -246,6 +272,17 @@ function clearTraceFilter() {
   page.value = 1
   if (typeof window !== 'undefined') {
     window.history.replaceState({}, '', window.location.pathname)
+  }
+  void load()
+}
+
+function filterByDetailTrace(traceId: string) {
+  traceIdFilter.value = traceId
+  page.value = 1
+  detail.value = null
+  if (typeof window !== 'undefined') {
+    const query = new URLSearchParams({ traceId })
+    window.history.replaceState({}, '', `${window.location.pathname}?${query.toString()}`)
   }
   void load()
 }
@@ -457,6 +494,16 @@ onMounted(() => {
 }
 .muted {
   color: #999;
+}
+.detail-trace-button {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1677ff;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
 }
 .empty {
   text-align: center;
