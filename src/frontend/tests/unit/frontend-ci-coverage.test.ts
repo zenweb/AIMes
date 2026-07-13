@@ -45,4 +45,15 @@ describe('frontend CI coverage gate', () => {
     expect(ciWorkflow).not.toContain('path: src/frontend/dist/')
     expect(dockerfile).toContain('RUN npm run build:static')
   })
+
+  it('uses supported Node 24 generation GitHub Actions in CI', () => {
+    const ciWorkflow = readText('.github/workflows/ci.yml')
+
+    expect(ciWorkflow).toContain('actions/checkout@v7')
+    expect(ciWorkflow).toContain('actions/setup-node@v6')
+    expect(ciWorkflow).toContain('actions/setup-dotnet@v5')
+    expect(ciWorkflow).toContain('actions/cache@v6')
+    expect(ciWorkflow).toContain('actions/upload-artifact@v7')
+    expect(ciWorkflow).not.toMatch(/actions\/(checkout|setup-node|setup-dotnet|cache|upload-artifact)@v4/)
+  })
 })

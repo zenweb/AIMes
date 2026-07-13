@@ -24,7 +24,7 @@ jobs:
       AIMES_GRAY_SAMPLE_COUNT: ${{ inputs.sample_count || '1' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate observation target
         shell: pwsh
@@ -49,7 +49,7 @@ jobs:
 
       - name: Upload gray health evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gray-health-observation-${{ github.run_id }}
           path: TestResults/Gray/
