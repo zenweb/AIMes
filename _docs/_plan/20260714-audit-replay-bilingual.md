@@ -8,4 +8,5 @@
 - [x] 归档托管 CI、容器构建和 PostgreSQL 备份隔离恢复证据。
 - [x] 补齐审计 PATCH 筛选、详情证据元数据、Trace 回筛、写操作 Trace 持久化、分页边界和真实证据计数。
 - [x] 完成前端 119/1345、后端单测 475/475、集成 227/227、架构 130/130、lint、format 回归验证。
+- [x] 对齐 CI、Docker 与 ASP.NET 的 Nuxt static 产物契约，确保 frontend-build artifact 包含 index.html 且缺失时失败。
 - [ ] 取得真实灰度环境与 14 天事故证据。

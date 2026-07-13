@@ -13,4 +13,5 @@
 - 通用写操作审计现在保存 `resource:id` business key 与 HTTP `TraceIdentifier`；非法分页在 API 层返回 400，`pageSize` 限制为 1..200，避免审计回放查询失真或过载。
 - 回放指标移除虚假的固定 `100%` 覆盖率，改为实时证据链条数，并完成中英文指标标题本地化。
 - 回归验证：前端 `119/1345`、后端单测 `475/475`、集成测试 `227/227`、架构测试 `130/130`、lint 和 `dotnet format --verify-no-changes` 全部通过。
+- 修复 hosted CI 前端制品空上传：新增统一 `build:static`，CI、Docker 都生成 `.output/public/index.html`；artifact 路径改为真实 Nuxt 静态目录，并在入口或文件缺失时 fail loud。
 - 外部灰度观察仍需真实部署目标和 14 天事故证据，未将本次 UI/回放验证冒充灰度 PASS。

@@ -29,4 +29,20 @@ describe('frontend CI coverage gate', () => {
     expect(vitestConfig).toContain('functions: 15')
     expect(vitestConfig).toContain('statements: 15')
   })
+
+  it('uploads the real Nuxt public build and fails when the release artifact is missing', () => {
+    const packageJson = JSON.parse(readText('src/frontend/package.json')) as {
+      scripts?: Record<string, string>
+    }
+    const ciWorkflow = readText('.github/workflows/ci.yml')
+    const dockerfile = readText('Dockerfile')
+
+    expect(packageJson.scripts?.['build:static']).toContain('build --preset static')
+    expect(ciWorkflow).toContain('npm run build:static')
+    expect(ciWorkflow).toContain('src/frontend/.output/public/index.html')
+    expect(ciWorkflow).toContain('path: src/frontend/.output/public/')
+    expect(ciWorkflow).toContain('if-no-files-found: error')
+    expect(ciWorkflow).not.toContain('path: src/frontend/dist/')
+    expect(dockerfile).toContain('RUN npm run build:static')
+  })
 })

@@ -117,14 +117,22 @@ jobs:
         working-directory: src/frontend
 
       - name: Build
-        run: npm run build
+        run: npm run build:static
         working-directory: src/frontend
+
+      - name: Verify deployable frontend entrypoint
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "src/frontend/.output/public/index.html")) {
+            throw "Static frontend build is missing index.html"
+          }
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: src/frontend/dist/
+          path: src/frontend/.output/public/
+          if-no-files-found: error
 
   container:
     runs-on: ubuntu-latest

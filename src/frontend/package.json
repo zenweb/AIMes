@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node ./node_modules/nuxt/bin/nuxt.mjs dev --host 127.0.0.1 --port 5173",
     "build": "node ./node_modules/nuxt/bin/nuxt.mjs build",
+    "build:static": "node ./node_modules/nuxt/bin/nuxt.mjs build --preset static",
     "preview": "node ./scripts/preview.mjs",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",

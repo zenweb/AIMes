@@ -2,4 +2,5 @@
 
 1. 按用户关键路径继续迁移其他业务面板的硬编码界面文案；动态审计正文保持原始记录语言。审计列表与回放控制框架本轮已完成。
 2. [已完成] PR #4 已合并并通过最终 V1 CI，回放控制框架、托管 CI 和 PostgreSQL 恢复证据已归档。
-3. 提供公网灰度 URL、release id 和真实事故导出，完成严格 14 天 Gray observation。
+3. [已完成] 修复 CI 前端 artifact 空上传，统一 static 构建并对缺失入口 fail loud。
+4. 提供公网灰度 URL、release id 和真实事故导出，完成严格 14 天 Gray observation。
