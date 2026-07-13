@@ -2,10 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditLogBoard from '../../src/components/auditLog/AuditLogBoard.vue'
 import type { AuditLog, AuditLogDetail } from '../../src/types/auditLog'
+import { useLocale } from '../../src/composables/useLocale'
 
 const getAuditLogDetail = vi.hoisted(() => vi.fn())
 const getAuditLogs = vi.hoisted(() => vi.fn())
-const isOfflineDemoError = vi.hoisted(() => vi.fn((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError'))
+const isOfflineDemoError = vi.hoisted(() =>
+  vi.fn((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError'),
+)
 
 vi.mock('../../src/api/auditLog', () => ({
   getAuditLogDetail,
@@ -55,13 +58,16 @@ function mountAuditLogBoard() {
 
 describe('AuditLogBoard', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/scheduling/audit-logs')
     getAuditLogs.mockResolvedValue({
       items: logs,
       totalCount: logs.length,
       totalPages: 1,
     })
     getAuditLogDetail.mockResolvedValue(detail)
-    isOfflineDemoError.mockImplementation((error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError')
+    isOfflineDemoError.mockImplementation(
+      (error: unknown) => error instanceof Error && error.name === 'OfflineDemoApiError',
+    )
   })
 
   it('names each detail action with audit context and opens the selected log', async () => {
@@ -78,6 +84,24 @@ describe('AuditLogBoard', () => {
     expect(getAuditLogDetail).toHaveBeenCalledWith('audit-2')
     expect(wrapper.get('.detail-modal').text()).toContain('audit-2')
     expect(wrapper.get('.json-block').text()).toContain('"status": "Released"')
+  })
+
+  it('loads only the trace selected by an audit replay deep link', async () => {
+    window.history.replaceState({}, '', '/scheduling/audit-logs?traceId=TRACE-PO-001')
+    const wrapper = mountAuditLogBoard()
+    await flushPromises()
+
+    expect(getAuditLogs).toHaveBeenCalledWith(undefined, 1, 20, 'TRACE-PO-001')
+    expect(wrapper.text()).toContain('operator1')
+  })
+
+  it('opens the audit detail selected by an audit replay deep link', async () => {
+    window.history.replaceState({}, '', '/scheduling/audit-logs?id=audit-2')
+    const wrapper = mountAuditLogBoard()
+    await flushPromises()
+
+    expect(getAuditLogDetail).toHaveBeenCalledWith('audit-2')
+    expect(wrapper.get('.detail-modal').text()).toContain('audit-2')
   })
 
   it('reloads audit logs with the selected action filter and resets to the first page', async () => {
@@ -190,13 +214,15 @@ describe('AuditLogBoard', () => {
 
   it('alerts while showing local demo audit logs when one audit list item is not a log object', async () => {
     getAuditLogs.mockResolvedValueOnce({
-      items: [{
-        id: 'audit-list-item-shape',
-        userId: 'operator1',
-        resource: 'Production',
-        resourceId: 'wo-001',
-        createdAt: '2026-06-01T09:00:00Z',
-      }],
+      items: [
+        {
+          id: 'audit-list-item-shape',
+          userId: 'operator1',
+          resource: 'Production',
+          resourceId: 'wo-001',
+          createdAt: '2026-06-01T09:00:00Z',
+        },
+      ],
       totalCount: 1,
       totalPages: 1,
     })
@@ -243,5 +269,23 @@ describe('AuditLogBoard', () => {
     expect(alert.text()).toContain('审计日志详情加载失败')
     expect(alert.text()).toContain('audit-2 后端返回非对象审计详情载荷')
     expect(wrapper.find('.detail-modal').exists()).toBe(false)
+  })
+
+  it('renders audit controls in English when the application locale is English', async () => {
+    const { setLocale } = useLocale()
+    setLocale('en-US')
+
+    try {
+      const wrapper = mountAuditLogBoard()
+      await flushPromises()
+
+      expect(wrapper.get('.page-title').text()).toBe('Audit Log')
+      expect(wrapper.get('.filter-select').text()).toContain('All actions')
+      expect(wrapper.findAll('.btn-sm')[1].attributes('aria-label')).toBe(
+        'View audit detail: operator1 updated Production wo-001',
+      )
+    } finally {
+      setLocale('zh-CN')
+    }
   })
 })

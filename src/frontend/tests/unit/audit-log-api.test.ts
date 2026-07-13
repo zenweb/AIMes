@@ -14,7 +14,7 @@ describe('audit log api contract', () => {
     httpGet.mockReset()
   })
 
-  it('uses backend paging contract and includes action only when filtering audit logs', async () => {
+  it('uses backend paging contract and includes action and trace filters when supplied', async () => {
     const pagedResult = {
       items: [{ id: 'audit-001', action: 'AgentExecutePurchaseAction' }],
       totalCount: 1,
@@ -22,13 +22,16 @@ describe('audit log api contract', () => {
     }
     httpGet.mockResolvedValueOnce({ data: pagedResult })
     httpGet.mockResolvedValueOnce({ data: { ...pagedResult, items: [] } })
+    httpGet.mockResolvedValueOnce({ data: pagedResult })
 
     await expect(getAuditLogs('AgentExecutePurchaseAction', 3, 15)).resolves.toBe(pagedResult)
     await getAuditLogs(undefined, 2, 10)
+    await getAuditLogs(undefined, 1, 20, 'TRACE-PO-001')
 
     expect(httpGet.mock.calls).toEqual([
       ['/audit-logs', { params: { page: 3, pageSize: 15, action: 'AgentExecutePurchaseAction' } }],
       ['/audit-logs', { params: { page: 2, pageSize: 10 } }],
+      ['/audit-logs', { params: { page: 1, pageSize: 20, traceId: 'TRACE-PO-001' } }],
     ])
   })
 

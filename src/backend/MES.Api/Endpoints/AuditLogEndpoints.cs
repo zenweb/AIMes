@@ -14,12 +14,13 @@ public static class AuditLogEndpoints
 
     private static async Task<IResult> GetAuditLogsAsync(
         string? action,
+        string? traceId,
         IAuditLogAppService auditLogService,
         CancellationToken ct,
         int page = 1,
         int pageSize = 20)
     {
-        var result = await auditLogService.GetAuditLogsAsync(action, page, pageSize, ct);
+        var result = await auditLogService.GetAuditLogsAsync(action, traceId, page, pageSize, ct);
         return TypedResults.Ok(result);
     }
 

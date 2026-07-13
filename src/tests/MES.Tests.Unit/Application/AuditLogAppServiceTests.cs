@@ -18,7 +18,7 @@ public class AuditLogAppServiceTests
     }
 
     [Fact]
-    public async Task GetAuditLogsAsync_ShouldUseActionFilteredRepositoryPagingAndHidePayloadFields()
+    public async Task GetAuditLogsAsync_ShouldUseActionAndTraceFilteredRepositoryPagingAndHidePayloadFields()
     {
         using var cts = new CancellationTokenSource();
         var ct = cts.Token;
@@ -41,10 +41,10 @@ public class AuditLogAppServiceTests
             }
         };
 
-        _auditLogRepoMock.Setup(r => r.CountAsync("POST", ct)).ReturnsAsync(11);
-        _auditLogRepoMock.Setup(r => r.GetPagedAsync("POST", 2, 5, ct)).ReturnsAsync(logs);
+        _auditLogRepoMock.Setup(r => r.CountAsync("POST", "trace-001", ct)).ReturnsAsync(11);
+        _auditLogRepoMock.Setup(r => r.GetPagedAsync("POST", "trace-001", 2, 5, ct)).ReturnsAsync(logs);
 
-        var result = await _sut.GetAuditLogsAsync("POST", 2, 5, ct);
+        var result = await _sut.GetAuditLogsAsync("POST", "trace-001", 2, 5, ct);
 
         result.TotalCount.Should().Be(11);
         result.Page.Should().Be(2);
